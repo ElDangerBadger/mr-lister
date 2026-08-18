@@ -156,9 +156,7 @@ ALLOWED_JOB_TRANSITIONS: dict[JobState, frozenset[JobState]] = {
     JobState.LISTING_DRAFTED: frozenset(
         {JobState.LISTING_VALIDATED, JobState.NEEDS_REVISION, JobState.FAILED_TERMINAL}
     ),
-    JobState.LISTING_VALIDATED: frozenset(
-        {JobState.READY_FOR_PRODUCTION, JobState.NEEDS_REVISION}
-    ),
+    JobState.LISTING_VALIDATED: frozenset({JobState.READY_FOR_PRODUCTION, JobState.NEEDS_REVISION}),
     JobState.READY_FOR_PRODUCTION: frozenset(
         {JobState.PRINTIFY_DRAFT_CREATED, JobState.FAILED_RETRYABLE, JobState.FAILED_TERMINAL}
     ),
@@ -191,6 +189,12 @@ ALLOWED_JOB_TRANSITIONS: dict[JobState, frozenset[JobState]] = {
     JobState.FAILED_TERMINAL: frozenset(),
     JobState.CANCELLED: frozenset(),
 }
+
+
+def can_transition(current: JobState, target: JobState) -> bool:
+    """Return whether the canonical state machine permits a transition."""
+
+    return target in ALLOWED_JOB_TRANSITIONS[current]
 
 
 class ReviewSnapshot(ContractModel):

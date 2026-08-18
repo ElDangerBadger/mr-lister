@@ -78,10 +78,10 @@ ruff check .
 
 ## Roadmap
 
-See [docs/roadmap.md](docs/roadmap.md) for the dependency-ordered build plan and
-[docs/architecture](docs/architecture) for the governing technical decisions.
+See the [roadmap](docs/roadmap.md), [demo target](docs/demo-target.md), and
+[architecture decisions](docs/architecture) for the dependency-ordered build plan and its
+governing technical choices.
 
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE).
-
