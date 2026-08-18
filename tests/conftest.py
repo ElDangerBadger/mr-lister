@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from base64 import b64decode
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +12,14 @@ from mr_lister.contracts import (
     Placement,
     ProductProfile,
     ValidationResult,
+)
+from mr_lister.workflow.fakes import FakeIntelligenceAdapter, FakeProductionAdapter
+from mr_lister.workflow.profiles import ProductProfileRepository
+from mr_lister.workflow.service import ListingWorkflow
+from mr_lister.workflow.store import InMemoryJobStore
+
+SYNTHETIC_PNG = b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XhC1AAAAAElFTkSuQmCC"
 )
 
 
@@ -51,3 +61,20 @@ def valid_result() -> ValidationResult:
 @pytest.fixture
 def now() -> datetime:
     return datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def production() -> FakeProductionAdapter:
+    return FakeProductionAdapter()
+
+
+@pytest.fixture
+def workflow(production: FakeProductionAdapter, now: datetime) -> ListingWorkflow:
+    return ListingWorkflow(
+        store=InMemoryJobStore(),
+        profiles=ProductProfileRepository(Path("config/product_profiles")),
+        intelligence=FakeIntelligenceAdapter(),
+        production=production,
+        clock=lambda: now,
+        job_id_factory=lambda: "job_phase1_fixture",
+    )

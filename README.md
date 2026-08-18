@@ -64,6 +64,31 @@ pytest
 ruff check .
 ```
 
+## Phase 1 local API
+
+Phase 1 provides a synchronous local workflow with in-memory state, deterministic validation,
+fake Bedrock intelligence, and fake Printify publication. It performs no network requests or
+external writes.
+
+```bash
+source .venv/bin/activate
+uvicorn mr_lister.api.app:app --reload
+```
+
+The API is available at `http://127.0.0.1:8000`, with interactive OpenAPI documentation at
+`/docs`. Its vertical slice exposes:
+
+- `POST /jobs`
+- `GET /jobs/{job_id}`
+- `GET /jobs/{job_id}/review`
+- `PUT /jobs/{job_id}/review/listing`
+- `POST /jobs/{job_id}/approve`
+- `POST /jobs/{job_id}/publish`
+- `GET /jobs/{job_id}/report`
+
+The local API wires the bundled `synthetic_gildan_5000` profile only to the fake adapter. Its
+deliberately non-live identifiers cannot create a real Printify product.
+
 ## Core product rules
 
 - AI is used only where interpretation or generation is valuable.

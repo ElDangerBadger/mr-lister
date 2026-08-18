@@ -1,0 +1,15 @@
+{
+  "contract_version": "1.0.0",
+  "profile_id": "synthetic_gildan_5000",
+  "profile_version": 1,
+  "blueprint_id": 900001,
+  "print_provider_id": 900002,
+  "variant_ids": [900101, 900102, 900103],
+  "retail_price_cents": 2499,
+  "placement": {
+    "x": 0.5,
+    "y": 0.3183,
+    "scale": 0.65
+  },
+  "publish_enabled": true
+}
