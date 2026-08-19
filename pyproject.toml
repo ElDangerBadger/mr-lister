@@ -10,7 +10,10 @@ readme = "README.md"
 requires-python = ">=3.12,<3.14"
 license = { file = "LICENSE" }
 dependencies = [
+    "boto3>=1.43,<2",
+    "botocore[crt]>=1.43,<2",
     "fastapi>=0.116,<1",
+    "pillow>=11.3,<13",
     "pydantic>=2.10,<3",
     "python-multipart>=0.0.20,<1",
     "strands-agents>=1.52,<2",
@@ -31,6 +34,9 @@ packages = ["src/mr_lister"]
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
+markers = [
+    "live_bedrock: explicitly enabled tests that invoke Amazon Bedrock",
+]
 
 [tool.ruff]
 line-length = 100

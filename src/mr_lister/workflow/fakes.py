@@ -7,18 +7,21 @@ from mr_lister.workflow.models import ArtworkInput
 
 
 class FakeIntelligenceAdapter:
-    def inspect_artwork(self, artwork: ArtworkInput) -> ArtworkAnalysis:
+    def inspect_artwork(self, artwork: ArtworkInput, content: bytes) -> ArtworkAnalysis:
+        del content
         subject = PurePath(artwork.filename).stem.replace("_", " ").replace("-", " ").strip()
         return ArtworkAnalysis(
             subject=subject or "untitled artwork",
+            visual_elements=("synthetic artwork",),
             styles=("synthetic fixture",),
             themes=("print on demand",),
             confidence=0.9,
         )
 
     def draft_listing(
-        self, artwork: ArtworkInput, analysis: ArtworkAnalysis
+        self, artwork: ArtworkInput, content: bytes, analysis: ArtworkAnalysis
     ) -> ListingIntelligence:
+        del content
         subject = analysis.subject.title()
         return ListingIntelligence(
             title=f"{subject} Graphic Tee",
@@ -28,17 +31,17 @@ class FakeIntelligenceAdapter:
             ),
             tags=(
                 "graphic tee",
-                "art shirt",
+                "wearable artwork",
                 "pod design",
-                "gift for artists",
-                "casual shirt",
-                "unisex tee",
-                "statement shirt",
-                "creative gift",
-                "printed apparel",
-                "everyday tee",
-                "unique artwork",
-                "modern graphic",
+                "artist gift",
+                "casual apparel",
+                "unisex fashion",
+                "bold statement",
+                "creative keepsake",
+                "printed clothing",
+                "everyday style",
+                "unique illustration",
+                "modern motif",
                 "seller fixture",
             ),
             audience=("art lovers", "gift shoppers"),

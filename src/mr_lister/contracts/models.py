@@ -42,6 +42,7 @@ class ContractModel(BaseModel):
 class ArtworkAnalysis(ContractModel):
     contract_version: ContractVersion = CONTRACT_VERSION
     subject: ShortText
+    visual_elements: tuple[ShortText, ...] = ()
     styles: tuple[ShortText, ...] = ()
     themes: tuple[ShortText, ...] = ()
     visible_text: tuple[ShortText, ...] = ()

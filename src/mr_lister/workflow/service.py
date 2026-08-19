@@ -19,6 +19,8 @@ from mr_lister.contracts import (
     can_transition,
 )
 from mr_lister.workflow.errors import (
+    IntelligenceConfigurationError,
+    IntelligenceUnavailableError,
     InvalidGeneratedOutputError,
     InvalidStateError,
     StaleApprovalError,
@@ -89,10 +91,24 @@ class ListingWorkflow:
         self._transition(job_id, JobState.INTAKE_VALIDATED)
         self._transition(job_id, JobState.ANALYZING_ARTWORK)
         try:
-            analysis = ArtworkAnalysis.model_validate(self.intelligence.inspect_artwork(artwork))
-            listing = ListingIntelligence.model_validate(
-                self.intelligence.draft_listing(artwork, analysis)
+            analysis = ArtworkAnalysis.model_validate(
+                self.intelligence.inspect_artwork(artwork, content)
             )
+            listing = ListingIntelligence.model_validate(
+                self.intelligence.draft_listing(artwork, content, analysis)
+            )
+        except IntelligenceUnavailableError:
+            self._transition(job_id, JobState.FAILED_RETRYABLE)
+            self._event(job_id, "intelligence_temporarily_unavailable", {})
+            raise
+        except IntelligenceConfigurationError:
+            self._transition(job_id, JobState.FAILED_TERMINAL)
+            self._event(job_id, "intelligence_configuration_rejected", {})
+            raise
+        except InvalidGeneratedOutputError:
+            self._transition(job_id, JobState.FAILED_TERMINAL)
+            self._event(job_id, "generated_output_rejected", {})
+            raise
         except ValidationError as error:
             self._transition(job_id, JobState.FAILED_TERMINAL)
             self._event(job_id, "generated_output_rejected", {})
@@ -110,6 +126,14 @@ class ListingWorkflow:
             validation=validation,
         )
         self.store.reviews[job_id] = review
+        if not validation.passed:
+            self._transition(job_id, JobState.NEEDS_REVISION)
+            self._event(
+                job_id,
+                "listing_validation_failed",
+                {"issue_codes": [issue.code for issue in validation.issues]},
+            )
+            return self.store.get_job(job_id)
         self._transition(job_id, JobState.LISTING_VALIDATED)
         self._transition(job_id, JobState.READY_FOR_PRODUCTION)
 
@@ -145,7 +169,11 @@ class ListingWorkflow:
 
     def revise_listing(self, job_id: str, revision: ListingRevisionRequest) -> ReviewSnapshot:
         job = self.store.get_job(job_id)
-        if job.state not in {JobState.AWAITING_APPROVAL, JobState.APPROVED}:
+        if job.state not in {
+            JobState.AWAITING_APPROVAL,
+            JobState.APPROVED,
+            JobState.NEEDS_REVISION,
+        }:
             raise InvalidStateError("Listing can only be revised from review or approved state")
 
         current = self.store.get_review(job_id)
@@ -162,13 +190,22 @@ class ListingWorkflow:
             approval_status=ApprovalStatus.INVALIDATED,
         )
 
-        self._transition(
-            job_id,
-            JobState.NEEDS_REVISION,
-            approved_review_version=None,
-        )
+        if job.state is not JobState.NEEDS_REVISION:
+            self._transition(
+                job_id,
+                JobState.NEEDS_REVISION,
+                approved_review_version=None,
+            )
         self.store.reviews[job_id] = review
         self._transition(job_id, JobState.LISTING_DRAFTED, review_version=next_version)
+        if not validation.passed:
+            self._transition(job_id, JobState.NEEDS_REVISION)
+            self._event(
+                job_id,
+                "listing_validation_failed",
+                {"issue_codes": [issue.code for issue in validation.issues]},
+            )
+            return review
         self._transition(job_id, JobState.LISTING_VALIDATED)
         self._transition(job_id, JobState.READY_FOR_PRODUCTION)
         artwork = self.store.artworks[job_id]

@@ -19,6 +19,18 @@ class InvalidGeneratedOutputError(WorkflowError):
     code = "INVALID_GENERATED_OUTPUT"
 
 
+class IntelligenceUnavailableError(WorkflowError):
+    """A retryable model-provider failure."""
+
+    code = "INTELLIGENCE_UNAVAILABLE"
+
+
+class IntelligenceConfigurationError(WorkflowError):
+    """A non-retryable provider configuration, authorization, or invocation failure."""
+
+    code = "INTELLIGENCE_CONFIGURATION"
+
+
 class IdempotencyConflictError(WorkflowError):
     code = "IDEMPOTENCY_CONFLICT"
 

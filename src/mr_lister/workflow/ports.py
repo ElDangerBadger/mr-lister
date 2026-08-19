@@ -9,10 +9,10 @@ from mr_lister.workflow.models import ArtworkInput
 
 
 class IntelligencePort(Protocol):
-    def inspect_artwork(self, artwork: ArtworkInput) -> ArtworkAnalysis: ...
+    def inspect_artwork(self, artwork: ArtworkInput, content: bytes) -> ArtworkAnalysis: ...
 
     def draft_listing(
-        self, artwork: ArtworkInput, analysis: ArtworkAnalysis
+        self, artwork: ArtworkInput, content: bytes, analysis: ArtworkAnalysis
     ) -> ListingIntelligence: ...
 
 

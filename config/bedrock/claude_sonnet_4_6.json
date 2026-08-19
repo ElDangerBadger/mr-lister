@@ -1,0 +1,8 @@
+{
+  "region": "us-west-2",
+  "model_id": "us.anthropic.claude-sonnet-4-6",
+  "output_mode": "native_json_schema",
+  "max_tokens": 2048,
+  "temperature": 0.0,
+  "max_repair_attempts": 1
+}

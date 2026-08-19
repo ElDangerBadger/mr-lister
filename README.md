@@ -37,9 +37,9 @@ The model may interpret artwork, draft listing text, and explain revisions. It m
 publication authority, bypass validation, invent operational policy, or duplicate an external
 write. Those responsibilities remain in deterministic code and explicit configuration.
 
-## Phase 0 scope
+## Foundation
 
-This repository currently establishes:
+Phase 0 established:
 
 - versioned domain contracts;
 - explicit job states and transition rules;
@@ -50,7 +50,7 @@ This repository currently establishes:
 - a proof ledger for validated assumptions;
 - local tests and continuous integration.
 
-Live AWS, Bedrock, Printify, and Etsy connections are intentionally excluded from Phase 0.
+Live AWS, Bedrock, Printify, and Etsy connections were intentionally excluded from that phase.
 
 ## Local development
 
@@ -89,6 +89,39 @@ The API is available at `http://127.0.0.1:8000`, with interactive OpenAPI docume
 The local API wires the bundled `synthetic_gildan_5000` profile only to the fake adapter. Its
 deliberately non-live identifiers cannot create a real Printify product.
 
+## Phase 2 Bedrock intelligence
+
+The current Phase 2 branch adds a provider-neutral Amazon Bedrock Converse adapter. It creates a
+bounded inspection rendition from the seller's original PNG, asks the configured model for artwork
+analysis and listing intelligence, and then applies stricter application-owned contracts.
+Unsupported outputs receive only a configuration-bounded number of semantic repair attempts. The
+Nova development profile permits two so it can perform a second global tag-diversity cleanup.
+
+Prompt version `2026-08-18.5` first inventories concrete visual elements before interpretation and
+asks for 13 distinct, buyer-relevant tag phrases. Exact duplicate tags fail validation; repeated
+meaningful keywords across tags fail deterministic listing validation after the bounded repair
+budget. The draft remains available in `needs_revision`, but no production draft or approval can
+occur until the tag set passes.
+
+Routine development uses the deterministic fake adapter. Cost-gated live development defaults to
+Amazon Nova 2 Lite, while Claude Sonnet 4.6 remains an optional quality benchmark. Nova supplies
+JSON from a schema-bearing prompt; Claude can use Bedrock's native structured output. Both paths
+must pass the same application validation before reaching human review.
+
+The default application and test suite remain offline. Real model traffic requires an explicit
+environment gate, uses fake production, and must stop at human review; AWS credentials alone do
+not silently select the live adapter.
+
+```bash
+python -m tools.phase2_evaluation --check-assets
+pytest -m "not live_bedrock"
+```
+
+See the [Phase 2 AWS runbook](docs/aws-bedrock-phase2.md) for narrow IAM policies, the AWS-credit
+guardrail, optional Anthropic activation, and cost-controlled canary commands. The
+[evaluation guide](tests/evaluation/README.md) documents the eight-case split harness, repeated
+trials, and provider comparisons.
+
 ## Core product rules
 
 - AI is used only where interpretation or generation is valuable.
@@ -104,8 +137,8 @@ deliberately non-live identifiers cannot create a real Printify product.
 ## Roadmap
 
 See the [roadmap](docs/roadmap.md), [demo target](docs/demo-target.md), and
-[architecture decisions](docs/architecture) for the dependency-ordered build plan and its
-governing technical choices.
+[phase checklist](docs/phase-checklist.md) for current progress. The
+[architecture decisions](docs/architecture) record the governing technical choices.
 
 ## License
 

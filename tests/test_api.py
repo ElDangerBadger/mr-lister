@@ -8,7 +8,7 @@ from mr_lister.api.app import create_app
 from mr_lister.workflow.service import ListingWorkflow
 
 SYNTHETIC_PNG = b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XhC1AAAAAElFTkSuQmCC"
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR4nGNU07X8z8DAwMAEIkAYABbVAY+Z/lCyAAAAAElFTkSuQmCC"
 )
 
 

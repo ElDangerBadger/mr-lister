@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse
 from mr_lister.contracts import JobRecord, ReviewSnapshot
 from mr_lister.workflow.errors import (
     IdempotencyConflictError,
+    IntelligenceConfigurationError,
+    IntelligenceUnavailableError,
     InvalidArtworkError,
     InvalidGeneratedOutputError,
     InvalidStateError,
@@ -52,6 +54,10 @@ def create_app(workflow: ListingWorkflow | None = None) -> FastAPI:
             status_code = 404
         elif isinstance(error, (IdempotencyConflictError, InvalidStateError, StaleApprovalError)):
             status_code = 409
+        elif isinstance(error, IntelligenceUnavailableError):
+            status_code = 503
+        elif isinstance(error, IntelligenceConfigurationError):
+            status_code = 502
         elif isinstance(
             error,
             (InvalidArtworkError, InvalidGeneratedOutputError, ProfileNotFoundError),

@@ -29,6 +29,16 @@ def test_contracts_are_immutable(artwork_analysis: ArtworkAnalysis) -> None:
         artwork_analysis.subject = "Changed subject"
 
 
+def test_artwork_analysis_captures_concrete_visual_elements() -> None:
+    analysis = ArtworkAnalysis(
+        subject="Owl carrying a lantern",
+        visual_elements=("owl", "amber lantern", "crescent moon"),
+        confidence=0.9,
+    )
+
+    assert analysis.visual_elements == ("owl", "amber lantern", "crescent moon")
+
+
 def test_listing_requires_exactly_thirteen_tags(listing: ListingIntelligence) -> None:
     payload = listing.model_dump()
     payload["tags"] = payload["tags"][:-1]
