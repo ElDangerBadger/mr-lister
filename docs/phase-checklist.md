@@ -20,19 +20,20 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
   - [x] Fixture-driven end-to-end API and workflow tests
   - [x] Final clean-install, lint, format, test, and build verification
   - Evidence: 32 tests pass; lint and format checks pass; source distribution and wheel build.
-- [ ] Phase 2 — Bedrock listing intelligence (prompt v5 live rebaseline pending)
+- [ ] Phase 2 — Bedrock listing intelligence (prompt v7 evidence review pending)
   - [x] Bedrock Converse adapter and multimodal artwork inspection
   - [x] Schema-constrained artwork and listing output
   - [x] Exactly 13 application-validated tags
   - [x] Configuration-bounded repair (Nova maximum two) for invalid or low-diversity output
   - [x] Private diagnostics with redaction and explicit raw-output opt-in
-  - [x] Eight-case calibration/regression/holdout evaluation set and cost-gated live harness
+  - [x] Eleven-case calibration/regression/holdout evaluation set and cost-gated live harness
   - [x] Concrete visual-element inventory before listing generation
   - [x] Etsy-aware tag diversification prompt, deterministic ready-to-post gate, and zero-reuse
     evaluation metric
+  - [x] Provider candidate pool and deterministic final 13-tag selector
   - [x] One-to-three-trial run capture and comparable provider/run summaries
-  - [x] Provider-capability split: prompted JSON for Nova, native structured output for Claude
-  - [x] Least-privilege Nova and Claude invoke-policy templates
+  - [x] Provider-capability split: prompted JSON for Nova/Luna, native structured output for Claude
+  - [x] Least-privilege Nova, Luna, and Claude invoke-policy templates
   - [x] One live Nova 2 Lite canary reaches human review with fake production
   - [x] Prompt v1 five-case Nova evaluation passed its Phase 2 quality floor
   - [x] Prompt v2 calibration exposed tag reuse after schema repair without touching holdouts
@@ -43,8 +44,15 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
   - [x] Prompt v5 regression split passes 3/3, including prompt injection and transparency
   - [x] Prompt v5 untouched holdout first-look run preserved without prompt or rubric tuning
   - [x] Claude Sonnet 4.6 Bedrock activation and one live comparison canary
+  - [ ] OpenAI GPT-5.6 Luna canary and six-case frozen regression comparison
+  - [x] Google Gemma 3 27B canary and six-case known regression comparison
   - [x] Repeated meaningful tag keywords route the job to `needs_revision` before production
-  - [ ] Prompt v5 full eight-case Nova evaluation passes the revised quality floor
+  - [x] Original v5 holdouts preserved as regressions after immutable first-look evidence
+  - [x] Fresh v6 holdouts frozen before prompt v6 inference
+  - [x] Prompt v7 original-failure regressions pass the revised quality floor
+  - [x] Prompt v7 fresh holdouts preserved in an immutable first-look run
+  - [ ] Prompt v7 fresh holdouts pass the revised quality floor (2/3 passed; seahorse semantic miss)
+  - [ ] Prompt v6 full eleven-case Nova evaluation passes the revised quality floor
   - The Claude quality benchmark is comparative evidence, not a Phase 2 exit criterion.
   - Historical v1 evidence: all five explicitly gated Nova cases reached human review
     with zero repairs and no publish calls. Across the accepted set: 8,033 total tokens, 19.683
@@ -70,7 +78,12 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     nevertheless repeated four meaningful tag keywords while claiming the set contained no reuse.
     That finding promoted tag-keyword repetition from a warning to a deterministic workflow error:
     unresolved drafts remain available for human correction, but cannot create a production draft
-    or receive approval. Current offline verification: 89 tests pass; lint and format checks pass.
+    or receive approval.
+  - Current Gemma v7 evidence: the canary and six known regressions have passing evidence under the
+    deterministic selector. The immutable v6 holdout first look produced safe, complete listings
+    for 3/3 and passed the strict quality floor for 2/3; transparent seahorse missed the intended
+    kelp and bubble semantics. Every accepted result stopped at human approval with zero publish
+    calls. Current offline verification: 101 tests pass; lint and format checks pass.
 - [ ] Phase 3 — Strands agent and AgentCore Runtime
   - [ ] Bounded Strands tool surface
   - [ ] Recommendation-versus-authorization instructions

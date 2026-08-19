@@ -1,6 +1,6 @@
 {
-  "manifest_version": "1.1.0",
-  "prompt_version": "2026-08-18.5",
+  "manifest_version": "1.2.0",
+  "prompt_version": "2026-08-18.7",
   "ownership": "Original Mr Lister evaluation artwork; do not substitute marketplace listings.",
   "cases": [
     {
@@ -83,10 +83,10 @@
     {
       "id": "holdout_owl_lantern",
       "category": "illustrated_subject",
-      "split": "holdout",
+      "split": "regression",
       "asset": "assets/holdout_owl_lantern.png",
       "sha256": "0eae2c30366a4262087c03f98b0b65ef400a2af4563f69a1142b0950dd0e927b",
-      "purpose": "Frozen post-prompt holdout for subject, prop, and night-symbol grounding.",
+      "purpose": "Former v5 holdout retained as regression for subject, prop, and night grounding.",
       "expected": {
         "visual_anchors": ["owl", "lantern", ["crescent moon", "moon"]],
         "visible_text": [],
@@ -97,10 +97,10 @@
     {
       "id": "holdout_gardening_motto",
       "category": "typography_heavy",
-      "split": "holdout",
+      "split": "regression",
       "asset": "assets/holdout_gardening_motto.png",
       "sha256": "a34a1930f9442d47b35540ced9cca892c40c0a3b56e271c65cb9e5b7799dbe30",
-      "purpose": "Frozen post-prompt holdout for exact text plus gardening-object grounding.",
+      "purpose": "Former v5 holdout retained as regression for text and object grounding.",
       "expected": {
         "visual_anchors": [
           ["watering can", "watering pot"],
@@ -119,16 +119,82 @@
     {
       "id": "holdout_transparent_jellyfish",
       "category": "light_art_transparency",
-      "split": "holdout",
+      "split": "regression",
       "asset": "assets/holdout_transparent_jellyfish.png",
       "sha256": "12d15003d1bb881397a278592be424b4160356db2baa67f5b435df9e89a64a8e",
-      "purpose": "Frozen post-prompt holdout for pale marine line art on transparency.",
+      "purpose": "Former v5 holdout retained as regression for pale marine transparency.",
       "expected": {
-        "visual_anchors": [["jellyfish", "jelly fish"], ["coral", "reef"], ["bubbles", "bubble"]],
+        "visual_anchors": [
+          ["jellyfish", "jelly fish"],
+          ["coral", "reef", "orange arches", "curved shapes"],
+          ["bubbles", "bubble", "circles", "circle"]
+        ],
         "visible_text": [],
         "title_terms": ["jellyfish"],
         "tag_concepts": [
           ["jellyfish", "jelly fish"],
+          ["ocean", "sea", "marine"],
+          ["coastal", "coast", "seaside"]
+        ]
+      }
+    },
+    {
+      "id": "holdout_v6_fox_telescope",
+      "category": "illustrated_subject",
+      "split": "holdout",
+      "asset": "assets/holdout_v6_fox_telescope.png",
+      "sha256": "200c319128b2bb83d3313664a3f5fd501ec9d9d7c9f326875184569874d332d1",
+      "purpose": "Frozen v6 holdout for subject, scientific prop, and night-symbol grounding.",
+      "expected": {
+        "visual_anchors": ["fox", "telescope", ["star", "stars", "star field"]],
+        "visible_text": [],
+        "title_terms": ["fox"],
+        "tag_concepts": [
+          ["fox", "vulpine"],
+          ["stargazing", "astronomy", "telescope"],
+          ["night", "celestial", "stars"]
+        ]
+      }
+    },
+    {
+      "id": "holdout_v6_bloom_motto",
+      "category": "typography_heavy",
+      "split": "holdout",
+      "asset": "assets/holdout_v6_bloom_motto.png",
+      "sha256": "84e71e136212956688f67efbf2bf8d66ae4796ea7fe4b8a3ab79c97561cd173d",
+      "purpose": "Frozen v6 holdout for exact text plus garden-tool and flower grounding.",
+      "expected": {
+        "visual_anchors": [
+          ["trowel", "garden tool", "gardening tool"],
+          ["flower", "bloom", "blossom"],
+          ["lettering", "typography", "text"]
+        ],
+        "visible_text": ["MAKE ROOM TO BLOOM"],
+        "title_terms": ["make room to bloom"],
+        "tag_concepts": [
+          ["gardening", "garden", "gardener"],
+          ["bloom", "blossom", "flower", "floral"],
+          ["motto", "quote", "slogan", "typography", "lettering"]
+        ]
+      }
+    },
+    {
+      "id": "holdout_v6_transparent_seahorse",
+      "category": "light_art_transparency",
+      "split": "holdout",
+      "asset": "assets/holdout_v6_transparent_seahorse.png",
+      "sha256": "b8572c5f02a10ea3a4096537b439bb5a94900617d60d92dca406ecede07bf87b",
+      "purpose": "Frozen v6 holdout for pale marine line art on transparency.",
+      "expected": {
+        "visual_anchors": [
+          ["seahorse", "sea horse"],
+          ["kelp", "seaweed", "sea grass"],
+          ["bubble", "bubbles"]
+        ],
+        "visible_text": [],
+        "title_terms": ["seahorse"],
+        "tag_concepts": [
+          ["seahorse", "sea horse"],
           ["ocean", "sea", "marine"],
           ["coastal", "coast", "seaside"]
         ]

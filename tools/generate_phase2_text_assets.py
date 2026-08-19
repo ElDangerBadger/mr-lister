@@ -174,6 +174,109 @@ def make_transparent_jellyfish_holdout() -> None:
     )
 
 
+def make_fox_telescope_holdout_v6() -> None:
+    image = Image.new("RGB", (CANVAS, CANVAS), (239, 232, 211))
+    draw = ImageDraw.Draw(image)
+    charcoal = (38, 43, 47)
+    rust = (191, 87, 48)
+    cream = (252, 242, 208)
+    navy = (49, 70, 88)
+    gold = (224, 157, 52)
+
+    # Fox silhouette with explicit ears, muzzle, chest, and curled tail.
+    draw.ellipse((250, 300, 610, 720), fill=rust, outline=charcoal, width=14)
+    draw.polygon(((278, 350), (330, 180), (410, 340)), fill=rust, outline=charcoal)
+    draw.polygon(((450, 330), (536, 180), (584, 360)), fill=rust, outline=charcoal)
+    draw.polygon(((330, 205), (352, 286), (386, 318)), fill=cream)
+    draw.polygon(((503, 210), (472, 306), (538, 286)), fill=cream)
+    draw.ellipse((336, 392, 526, 580), fill=cream)
+    draw.ellipse((380, 408, 410, 438), fill=charcoal)
+    draw.ellipse((464, 408, 494, 438), fill=charcoal)
+    draw.ellipse((420, 486, 454, 514), fill=charcoal)
+    draw.arc((378, 478, 498, 554), start=20, end=160, fill=charcoal, width=9)
+    draw.arc((90, 520, 390, 890), start=250, end=100, fill=rust, width=72)
+    draw.arc((116, 548, 356, 842), start=250, end=95, fill=cream, width=24)
+
+    # A tripod telescope points toward a compact star field.
+    draw.line((570, 458, 826, 304), fill=navy, width=54)
+    draw.line((788, 326, 874, 270), fill=gold, width=72)
+    draw.ellipse((840, 234, 902, 306), fill=navy, outline=charcoal, width=8)
+    draw.ellipse((542, 438, 610, 504), fill=gold, outline=charcoal, width=8)
+    draw.line((632, 452, 700, 802), fill=charcoal, width=18)
+    draw.line((632, 452, 544, 802), fill=charcoal, width=18)
+    draw.line((632, 452, 784, 802), fill=charcoal, width=18)
+    for x, y in ((750, 150), (864, 126), (922, 388), (680, 238), (810, 444)):
+        draw.line((x - 14, y, x + 14, y), fill=gold, width=7)
+        draw.line((x, y - 14, x, y + 14), fill=gold, width=7)
+    image.save(ASSET_DIRECTORY / "holdout_v6_fox_telescope.png", format="PNG", optimize=True)
+
+
+def make_bloom_motto_holdout_v6() -> None:
+    image = Image.new("RGB", (CANVAS, CANVAS), (247, 238, 218))
+    draw = ImageDraw.Draw(image)
+    charcoal = (40, 45, 42)
+    green = (55, 112, 79)
+    coral = (205, 98, 73)
+    gold = (221, 158, 54)
+
+    draw.rounded_rectangle((82, 82, 942, 942), radius=68, outline=green, width=16)
+    _centered_text(draw, (512, 228), "MAKE ROOM", size=118, fill=charcoal)
+    _centered_text(draw, (512, 374), "TO BLOOM", size=142, fill=green)
+
+    # Garden trowel with distinct handle, shaft, and pointed blade.
+    draw.rounded_rectangle((184, 574, 312, 738), radius=34, fill=coral, outline=charcoal, width=10)
+    draw.line((282, 704, 438, 826), fill=charcoal, width=28)
+    draw.polygon(((414, 792), (540, 888), (382, 918)), fill=gold, outline=charcoal)
+
+    # Stem, leaves, and five-petal flower.
+    draw.line((708, 884, 708, 618), fill=green, width=20)
+    draw.ellipse((596, 702, 712, 768), fill=green)
+    draw.ellipse((704, 754, 824, 820), fill=green)
+    for box in (
+        (652, 526, 716, 606),
+        (704, 526, 768, 606),
+        (626, 578, 704, 642),
+        (716, 578, 794, 642),
+        (680, 596, 744, 672),
+    ):
+        draw.ellipse(box, fill=coral)
+    draw.ellipse((688, 574, 732, 618), fill=gold)
+    image.save(ASSET_DIRECTORY / "holdout_v6_bloom_motto.png", format="PNG", optimize=True)
+
+
+def make_transparent_seahorse_holdout_v6() -> None:
+    image = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    pearl = (232, 247, 241, 238)
+    aqua = (117, 210, 205, 230)
+    coral = (242, 161, 135, 235)
+    sea_green = (111, 184, 150, 230)
+
+    # Seahorse profile: long snout, crown, curved body, belly, fin, and curled tail.
+    draw.ellipse((356, 188, 590, 412), fill=aqua, outline=pearl, width=14)
+    draw.polygon(((374, 208), (392, 132), (426, 204)), fill=coral)
+    draw.polygon(((430, 198), (462, 120), (486, 206)), fill=coral)
+    draw.polygon(((520, 258), (702, 302), (526, 338)), fill=aqua, outline=pearl)
+    draw.ellipse((446, 246, 474, 274), fill=(38, 74, 78, 255))
+    draw.arc((330, 342, 654, 804), start=250, end=92, fill=pearl, width=42)
+    draw.arc((364, 374, 620, 760), start=250, end=88, fill=aqua, width=26)
+    draw.arc((410, 654, 682, 914), start=170, end=510, fill=pearl, width=34)
+    draw.polygon(((356, 410), (250, 514), (384, 558)), fill=coral, outline=pearl)
+
+    # Kelp fronds and bubbles remain separate concrete visual anchors.
+    for x in (170, 786):
+        draw.line((x, 870, x, 560), fill=sea_green, width=18)
+        draw.arc((x - 82, 600, x + 8, 730), start=270, end=90, fill=sea_green, width=22)
+        draw.arc((x - 8, 690, x + 82, 820), start=90, end=270, fill=sea_green, width=22)
+    for x, y, radius in ((234, 300, 22), (744, 214, 30), (826, 400, 16), (290, 170, 13)):
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), outline=pearl, width=9)
+    image.save(
+        ASSET_DIRECTORY / "holdout_v6_transparent_seahorse.png",
+        format="PNG",
+        optimize=True,
+    )
+
+
 def main() -> None:
     ASSET_DIRECTORY.mkdir(parents=True, exist_ok=True)
     make_typography_fixture()
@@ -181,6 +284,9 @@ def main() -> None:
     make_owl_lantern_holdout()
     make_gardening_motto_holdout()
     make_transparent_jellyfish_holdout()
+    make_fox_telescope_holdout_v6()
+    make_bloom_motto_holdout_v6()
+    make_transparent_seahorse_holdout_v6()
 
 
 if __name__ == "__main__":

@@ -1,16 +1,19 @@
 # Phase 2 intelligence evaluation
 
-This directory defines Mr Lister's small, repository-owned acceptance set. Its eight cases span
+This directory defines Mr Lister's small, repository-owned acceptance set. Its eleven cases span
 calibration, regression, and frozen holdout splits. They exercise illustrated subjects,
 typography, ambiguous abstract art, pale artwork on transparency, and visible prompt injection.
 The rubric separates deterministic contract checks from subjective grounding signals and
 provider telemetry.
 
-All eight PNGs are original project fixtures; never replace them with active marketplace
-listings. Three were created with the built-in ImageGen tool, and five are reproducibly generated
-by `tools/generate_phase2_text_assets.py`. The three `holdout_` cases were frozen after prompt
-version `2026-08-18.5` was exercised and must not be used to tune that version before its first live
-holdout run. Check readiness without contacting AWS:
+All eleven PNGs are original project fixtures; never replace them with active marketplace
+listings. Three were created with the built-in ImageGen tool, and eight are reproducibly generated
+by `tools/generate_phase2_text_assets.py`. The original v5 holdouts are retained as regressions
+after their immutable first-look run. The three `holdout_v6_` cases were frozen before prompt
+version `2026-08-18.7` was exercised. Their immutable Gemma first look is now recorded in
+`docs/phase2-gemma-v7-evaluation.md`; they are opened evidence and must not be represented as fresh
+holdouts in later provider claims.
+Check readiness without contacting AWS:
 
 ```shell
 python -m tools.phase2_evaluation
@@ -33,6 +36,16 @@ Set `MR_LISTER_BEDROCK_CONFIG=config/bedrock/claude_sonnet_4_6.json` only for an
 cost-bearing Claude benchmark after its Marketplace prerequisites have been accepted. Ordinary
 development should retain the Nova default.
 
+For the serverless Luna comparison, set
+`MR_LISTER_BEDROCK_CONFIG=config/bedrock/openai_gpt_5_6_luna.json`. Luna uses the existing
+prompted-JSON pathway and requires no Marketplace subscription. Use the same cases, prompt
+version, split, and trial count as the Nova and Claude runs.
+
+For the direct in-region Gemma comparison, set
+`MR_LISTER_BEDROCK_CONFIG=config/bedrock/google_gemma_3_27b_it.json`. Bedrock labels the catalog
+entry Gemma 3 27B PT but exposes the instruction endpoint as `google.gemma-3-27b-it`. The model
+uses the existing Converse adapter and native structured-output pathway in `us-west-2`.
+
 Every live run writes redacted, permission-restricted diagnostics under the gitignored
 `.mr_lister_private/bedrock-live/` directory. For a deliberately authorized troubleshooting run,
 set `MR_LISTER_CAPTURE_RAW_BEDROCK=1` to retain raw model responses in that private directory.
@@ -40,7 +53,7 @@ Never commit or paste those artifacts into an issue, log, or public chat.
 
 That permission/model canary has two logical stages: artwork inspection and listing drafting.
 The Nova profile may make up to two semantic-repair requests per stage when validation or the
-tag-diversity target fails, and the AWS SDK may separately retry transient failures. Run all eight
+tag-diversity target fails, and the AWS SDK may separately retry transient failures. Run all eleven
 cases only with a second explicit cost switch:
 
 ```shell
@@ -53,14 +66,14 @@ AWS_PROFILE=mr-lister-dev \
 Use `MR_LISTER_EVAL_SPLIT=calibration`, `regression`, or `holdout` to run one split. Set
 `MR_LISTER_EVAL_TRIALS` from 1 through 3 to measure stability, and give comparable runs a stable,
 filesystem-safe `MR_LISTER_EVAL_RUN_ID`. `MR_LISTER_EVAL_CASE` can select one exact manifest case
-without rerunning the rest of its split. For example, the first untouched holdout baseline is:
+without rerunning the rest of its split. The frozen v6 holdout baseline is:
 
 ```shell
 MR_LISTER_RUN_LIVE_BEDROCK=1 \
 MR_LISTER_RUN_FULL_BEDROCK_EVAL=1 \
 MR_LISTER_EVAL_SPLIT=holdout \
-MR_LISTER_EVAL_TRIALS=3 \
-MR_LISTER_EVAL_RUN_ID=nova-v5-holdout \
+MR_LISTER_EVAL_TRIALS=1 \
+MR_LISTER_EVAL_RUN_ID=nova-v6-holdout-first-look \
 AWS_PROFILE=mr-lister-dev \
   .venv/bin/python -m pytest -m live_bedrock -s tests/evaluation/test_live_bedrock.py
 ```
@@ -87,7 +100,7 @@ least half of the expected visual and visible-text signals, at least one-third o
 concepts, zero repeated meaningful tag keywords, valid contracts, and no more than two semantic
 repairs across both stages. Visual anchors and tag concepts may define reviewed synonym groups;
 one matching alias credits one concept without changing the denominator or threshold. Phase 2
-v5 closes only after the full eight-case run passes; the one-case canary proves access and request
+v6 closes only after the full eleven-case run passes; the one-case canary proves access and request
 wiring but not representative quality. Exact duplicate tags remain a hard contract failure.
 Repeated normalized keywords across otherwise distinct tags fail deterministic acceptance and the
 evaluation floor, not the schema: a reviewer may keep justified overlap without replacing

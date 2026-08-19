@@ -97,16 +97,16 @@ analysis and listing intelligence, and then applies stricter application-owned c
 Unsupported outputs receive only a configuration-bounded number of semantic repair attempts. The
 Nova development profile permits two so it can perform a second global tag-diversity cleanup.
 
-Prompt version `2026-08-18.5` first inventories concrete visual elements before interpretation and
-asks for 13 distinct, buyer-relevant tag phrases. Exact duplicate tags fail validation; repeated
-meaningful keywords across tags fail deterministic listing validation after the bounded repair
-budget. The draft remains available in `needs_revision`, but no production draft or approval can
-occur until the tag set passes.
+Prompt version `2026-08-18.7` first inventories concrete visual elements before interpretation and
+asks for a ranked pool of 18–30 buyer-relevant tag phrases. Application code selects the strongest
+feasible 13-tag subset without repeated meaningful keywords. An unusable pool receives bounded
+repair and cannot cross the intelligence boundary; human-edited listings remain subject to the
+same deterministic validation before production or approval.
 
-Routine development uses the deterministic fake adapter. Cost-gated live development defaults to
-Amazon Nova 2 Lite, while Claude Sonnet 4.6 remains an optional quality benchmark. Nova supplies
-JSON from a schema-bearing prompt; Claude can use Bedrock's native structured output. Both paths
-must pass the same application validation before reaching human review.
+Routine development uses the deterministic fake adapter. Cost-gated live evaluation currently
+uses Gemma 3 27B as the provisional quality lead; Amazon Nova 2 Lite remains the low-cost baseline,
+while OpenAI GPT-5.6 Luna and Claude Sonnet 4.6 are optional benchmarks. All paths must pass the
+same application validation before reaching human review.
 
 The default application and test suite remain offline. Real model traffic requires an explicit
 environment gate, uses fake production, and must stop at human review; AWS credentials alone do
@@ -119,7 +119,7 @@ pytest -m "not live_bedrock"
 
 See the [Phase 2 AWS runbook](docs/aws-bedrock-phase2.md) for narrow IAM policies, the AWS-credit
 guardrail, optional Anthropic activation, and cost-controlled canary commands. The
-[evaluation guide](tests/evaluation/README.md) documents the eight-case split harness, repeated
+[evaluation guide](tests/evaluation/README.md) documents the eleven-case split harness, repeated
 trials, and provider comparisons.
 
 ## Core product rules

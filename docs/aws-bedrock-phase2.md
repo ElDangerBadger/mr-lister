@@ -4,7 +4,8 @@ This runbook is deliberately narrow. Mr Lister's live-development path calls Ama
 through the Bedrock Converse API in `us-west-2`, using the US cross-Region inference profile
 `us.amazon.nova-2-lite-v1:0`. The profile can route to `us-east-1`, `us-east-2`, or `us-west-2`.
 The default application and ordinary test suite still use the local fake adapter and make no AWS
-calls. Claude Sonnet 4.6 remains an optional, explicitly selected quality benchmark.
+calls. OpenAI GPT-5.6 Luna and Claude Sonnet 4.6 are optional, explicitly selected quality
+benchmarks.
 
 ## Least-privilege development policy
 
@@ -12,8 +13,17 @@ The default development policy template is
 [`infra/iam/bedrock-nova-2-lite-invoke-policy.json.tmpl`](../infra/iam/bedrock-nova-2-lite-invoke-policy.json.tmpl).
 The optional Claude benchmark has a separate
 [`infra/iam/bedrock-claude-sonnet-4-6-invoke-policy.json.tmpl`](../infra/iam/bedrock-claude-sonnet-4-6-invoke-policy.json.tmpl).
+The Luna benchmark uses
+[`infra/iam/bedrock-openai-gpt-5-6-luna-invoke-policy.json.tmpl`](../infra/iam/bedrock-openai-gpt-5-6-luna-invoke-policy.json.tmpl).
+The Gemma 3 27B comparison uses the deployable, account-independent
+[`infra/iam/bedrock-google-gemma-3-27b-it-invoke-policy.json`](../infra/iam/bedrock-google-gemma-3-27b-it-invoke-policy.json).
 Each grants only `bedrock:InvokeModel` for one selected inference profile and its three destination
-foundation models. The conditions prevent direct invocation outside the profile.
+foundation models. The conditions prevent direct invocation outside the profile. Luna additionally
+requires invocation permission on the account's `project/default` resource, as documented on its
+model card; it does not require project administration permissions.
+
+Gemma is the exception to that profile description: it grants `bedrock:InvokeModel` only on the
+single `us-west-2` foundation-model ARN because the model is invoked directly in-region.
 
 It intentionally does **not** grant:
 
@@ -40,6 +50,10 @@ sed "s/<AWS_ACCOUNT_ID>/${MR_LISTER_ACCOUNT_ID}/g" \
 During the short account-administration session, create a customer-managed IAM policy from the
 rendered JSON and attach it to the `mr-lister-developers` group. A useful policy name is
 `MrListerBedrockNova2LiteInvoke`. Do not attach `AmazonBedrockFullAccess` to the developer group.
+
+For the Luna comparison, render the Luna template instead and use a distinct name such as
+`MrListerBedrockOpenAIGPT56LunaInvoke`. OpenAI's Bedrock models are not Marketplace products, so
+there is no vendor subscription or Marketplace bootstrap policy.
 
 If AWS later changes the destinations for a new inference profile, review and update this policy
 explicitly. Do not replace the destination ARNs with wildcards.
@@ -140,7 +154,28 @@ MR_LISTER_RUN_LIVE_BEDROCK=1 \
 .venv/bin/python -m pytest -m live_bedrock -q
 ```
 
-That command permits only the first calibration case. The full eight-case suite requires the
+Select Luna without changing the default configuration:
+
+```bash
+AWS_PROFILE=mr-lister-dev \
+AWS_DEFAULT_REGION=us-west-2 \
+MR_LISTER_RUN_LIVE_BEDROCK=1 \
+MR_LISTER_BEDROCK_CONFIG=config/bedrock/openai_gpt_5_6_luna.json \
+MR_LISTER_EVAL_RUN_ID=luna-v6-canary \
+  .venv/bin/python -m pytest -m live_bedrock -s tests/evaluation/test_live_bedrock.py
+```
+
+Luna supports image input and Converse on `bedrock-runtime`, but not native structured outputs.
+Mr Lister therefore uses prompted JSON and applies its unchanged application-owned contracts and
+bounded repair path, just as it does for Nova.
+
+Gemma 3 27B is invoked directly in `us-west-2` as `google.gemma-3-27b-it`; it does not use a
+cross-Region inference profile. Select it with
+`MR_LISTER_BEDROCK_CONFIG=config/bedrock/google_gemma_3_27b_it.json`. Its Bedrock Runtime path
+supports image input, Converse, and native structured outputs, while application validation
+remains authoritative.
+
+That command permits only the first calibration case. The full eleven-case suite requires the
 additional `MR_LISTER_RUN_FULL_BEDROCK_EVAL=1` cost gate. The evaluation guide documents split
 selection, one-to-three repeated trials, immutable private score artifacts, and like-for-like
 Nova/Claude comparisons: [`tests/evaluation/README.md`](../tests/evaluation/README.md).
@@ -178,6 +213,8 @@ skip even when the pytest marker is selected.
 
 - [Nova 2 Lite model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-2-lite.html)
 - [Claude Sonnet 4.6 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html)
+- [OpenAI GPT-5.6 Luna model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-56-luna.html)
+- [Google Gemma 3 27B model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-google-gemma-3-27b-pt.html)
 - [Bedrock model access and Anthropic FTU](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html)
 - [Inference profile IAM prerequisites](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-prereq.html)
 - [AWS CLI browser login](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sign-in.html)

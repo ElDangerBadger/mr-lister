@@ -99,11 +99,23 @@ def validate_listing(listing: ListingIntelligence) -> ValidationResult:
 def find_repeated_tag_keywords(tags: tuple[str, ...]) -> tuple[str, ...]:
     """Return normalized searchable words used in more than one Etsy tag."""
 
-    counts: dict[str, int] = {}
-    for tag in tags:
-        for keyword in set(_tag_keywords(tag)):
-            counts[keyword] = counts.get(keyword, 0) + 1
-    return tuple(sorted(keyword for keyword, count in counts.items() if count > 1))
+    return tuple(find_repeated_tag_keyword_locations(tags))
+
+
+def find_repeated_tag_keyword_locations(
+    tags: tuple[str, ...],
+) -> dict[str, tuple[int, ...]]:
+    """Map repeated normalized words to their one-based tag positions."""
+
+    locations: dict[str, list[int]] = {}
+    for position, tag in enumerate(tags, start=1):
+        for keyword in normalized_tag_keywords(tag):
+            locations.setdefault(keyword, []).append(position)
+    return {
+        keyword: tuple(positions)
+        for keyword, positions in sorted(locations.items())
+        if len(positions) > 1
+    }
 
 
 def tag_keyword_reuse_count(tags: tuple[str, ...]) -> int:
@@ -111,16 +123,18 @@ def tag_keyword_reuse_count(tags: tuple[str, ...]) -> int:
 
     counts: dict[str, int] = {}
     for tag in tags:
-        for keyword in set(_tag_keywords(tag)):
+        for keyword in normalized_tag_keywords(tag):
             counts[keyword] = counts.get(keyword, 0) + 1
     return sum(count - 1 for count in counts.values() if count > 1)
 
 
-def _tag_keywords(tag: str) -> tuple[str, ...]:
-    return tuple(
+def normalized_tag_keywords(tag: str) -> frozenset[str]:
+    """Return searchable tag keywords using Etsy-boundary normalization rules."""
+
+    return frozenset(
         keyword
         for token in findall(r"[a-z0-9]+", tag.casefold())
-        if (keyword := _keyword_root(token)) not in _TAG_STOP_WORDS
+        if len(keyword := _keyword_root(token)) > 1 and keyword not in _TAG_STOP_WORDS
     )
 
 

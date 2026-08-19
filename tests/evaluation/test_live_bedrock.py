@@ -135,10 +135,7 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
     )
     review = workflow.get_review(job.job_id)
 
-    assert job.state is JobState.AWAITING_APPROVAL
-    assert review.validation.passed is True
     assert review.profile.publish_enabled is False
-    assert production.create_calls == 1
     assert production.publish_calls == 0
     score = score_case(
         case,
@@ -152,6 +149,13 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
         "prompt_version": manifest.prompt_version,
         "split": case.split,
         "trial": trial_index + 1,
+        "workflow": {
+            "state": job.state,
+            "validation_passed": review.validation.passed,
+            "validation_issue_codes": [issue.code for issue in review.validation.issues],
+            "production_create_calls": production.create_calls,
+            "production_publish_calls": production.publish_calls,
+        },
         "model_settings": {
             "output_mode": settings.output_mode,
             "temperature": settings.temperature,
@@ -166,6 +170,9 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
     }
     _write_score_artifact(score_artifact, case.case_id, trial_index + 1)
     print(json.dumps(score_artifact, sort_keys=True))
+    assert job.state is JobState.AWAITING_APPROVAL
+    assert review.validation.passed is True
+    assert production.create_calls == 1
     assert not quality_failures(score), quality_failures(score)
 
 

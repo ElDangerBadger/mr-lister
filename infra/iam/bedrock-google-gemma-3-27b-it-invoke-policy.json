@@ -1,0 +1,11 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeGoogleGemma327BITInUSWest2",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": "arn:aws:bedrock:us-west-2::foundation-model/google.gemma-3-27b-it"
+    }
+  ]
+}

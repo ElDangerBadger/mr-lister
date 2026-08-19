@@ -24,6 +24,11 @@ from mr_lister.intelligence.diagnostics import (
     NoOpDiagnosticSink,
 )
 from mr_lister.intelligence.images import BedrockImage, prepare_bedrock_image
+from mr_lister.intelligence.listing_draft import (
+    ListingCandidateDraft,
+    finalize_listing_draft,
+    select_etsy_tags,
+)
 from mr_lister.intelligence.prompts import (
     ARTWORK_PROMPT,
     LISTING_PROMPT,
@@ -39,7 +44,7 @@ from mr_lister.workflow.errors import (
     InvalidGeneratedOutputError,
 )
 from mr_lister.workflow.models import ArtworkInput
-from mr_lister.workflow.validation import find_repeated_tag_keywords
+from mr_lister.workflow.validation import find_repeated_tag_keyword_locations
 
 ContractT = TypeVar("ContractT", bound=BaseModel)
 
@@ -132,14 +137,15 @@ class BedrockListingIntelligenceAdapter:
     ) -> ListingIntelligence:
         del content
         prompt = LISTING_PROMPT.format(analysis_json=analysis.model_dump_json())
-        return self._invoke_contract(
+        draft = self._invoke_contract(
             operation="draft_listing",
-            contract=ListingIntelligence,
-            schema_name="mr_lister_listing_intelligence_v1",
+            contract=ListingCandidateDraft,
+            schema_name="mr_lister_listing_candidate_draft_v1",
             prompt=prompt,
             image=None,
             artwork_sha256=artwork.content_sha256,
         )
+        return finalize_listing_draft(draft)
 
     def _invoke_contract(
         self,
@@ -190,11 +196,6 @@ class BedrockListingIntelligenceAdapter:
                 accepted = contract.model_validate_json(contract_payload)
             except (ValidationError, ValueError) as error:
                 problems = _safe_validation_problems(error)
-                if contract is ListingIntelligence:
-                    problems = _append_problems(
-                        problems,
-                        _listing_keyword_problems_from_json(contract_payload),
-                    )
                 self._emit_response_diagnostic(
                     operation=operation,
                     attempt=attempt + 1,
@@ -222,7 +223,7 @@ class BedrockListingIntelligenceAdapter:
                 continue
 
             quality_problems = _repairable_quality_problems(accepted)
-            if quality_problems and attempt < self._settings.max_repair_attempts:
+            if quality_problems:
                 self._emit_response_diagnostic(
                     operation=operation,
                     attempt=attempt + 1,
@@ -235,6 +236,8 @@ class BedrockListingIntelligenceAdapter:
                     error_message="Model output missed a repairable listing quality target",
                     validation_problems=quality_problems,
                 )
+                if attempt >= self._settings.max_repair_attempts:
+                    break
                 messages = [
                     *messages,
                     {"role": "assistant", "content": [{"text": raw_output}]},
@@ -439,38 +442,21 @@ def _safe_validation_problems(error: Exception) -> str:
 
 
 def _repairable_quality_problems(contract: BaseModel) -> str:
-    if not isinstance(contract, ListingIntelligence):
+    if not isinstance(contract, ListingCandidateDraft):
         return ""
-    return _listing_keyword_problem(contract.tags)
-
-
-def _listing_keyword_problems_from_json(payload: str) -> str:
-    """Recover tag-diversity feedback even when another field fails the contract."""
-
     try:
-        decoded = json.loads(payload)
-    except (json.JSONDecodeError, TypeError):
+        select_etsy_tags(contract.tag_candidates)
+    except ValueError:
+        collisions = find_repeated_tag_keyword_locations(contract.tag_candidates)
+        repeated = ", ".join(collisions) or "insufficient alternative vocabulary"
+        return (
+            "- tag_candidates: The ranked pool cannot produce 13 tags without meaningful "
+            f"keyword reuse. Add relevant alternative phrases using distinct vocabulary; the "
+            f"most constraining repeated roots include: {repeated}. Keep 18 to 30 unique "
+            "candidates and do not remove listing fields. (candidate_selection)"
+        )
+    else:
         return ""
-    if not isinstance(decoded, dict):
-        return ""
-    tags = decoded.get("tags")
-    if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
-        return ""
-    return _listing_keyword_problem(tuple(tags))
-
-
-def _listing_keyword_problem(tags: tuple[str, ...]) -> str:
-    repeated = find_repeated_tag_keywords(tags)
-    if not repeated:
-        return ""
-    return (
-        "- tags: Each meaningful keyword should appear in only one tag; diversify repeated "
-        f"keywords: {', '.join(repeated)} (keyword_repetition)"
-    )
-
-
-def _append_problems(current: str, additional: str) -> str:
-    return "\n".join(problem for problem in (current, additional) if problem)
 
 
 def _unwrap_single_json_fence(raw_output: str) -> str:

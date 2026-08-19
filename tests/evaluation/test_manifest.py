@@ -25,7 +25,7 @@ def test_manifest_covers_phase_2_acceptance_categories_and_metrics() -> None:
     assert {case.category for case in manifest.cases} == REQUIRED_CASE_CATEGORIES
     assert manifest.prompt_version == PROMPT_VERSION
     assert manifest.metrics >= REQUIRED_METRICS
-    assert len({case.case_id for case in manifest.cases}) == 8
+    assert len({case.case_id for case in manifest.cases}) == 11
     assert {case.split for case in manifest.cases} == {"calibration", "regression", "holdout"}
     assert all(case.asset.parent == MANIFEST.parent / "assets" for case in manifest.cases)
     assert all(

@@ -76,11 +76,15 @@ def test_repeated_tag_keywords_are_a_deterministic_validation_error(
 
 
 def test_tag_keyword_validation_normalizes_simple_plural_variants() -> None:
-    from mr_lister.workflow.validation import find_repeated_tag_keywords
+    from mr_lister.workflow.validation import (
+        find_repeated_tag_keyword_locations,
+        find_repeated_tag_keywords,
+    )
 
     tags = ("artist present", "gifts for artists")
 
     assert find_repeated_tag_keywords(tags) == ("artist",)
+    assert find_repeated_tag_keyword_locations(tags) == {"artist": (1, 2)}
 
 
 def test_repeated_model_keywords_stop_before_production_and_require_revision(

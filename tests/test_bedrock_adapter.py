@@ -61,7 +61,7 @@ def artwork_analysis() -> dict:
     }
 
 
-def listing(*, tag_count: int = 13) -> dict:
+def listing(*, tag_count: int = 20) -> dict:
     tags = [
         "badger portrait",
         "woodland explorer",
@@ -76,11 +76,18 @@ def listing(*, tag_count: int = 13) -> dict:
         "night sky",
         "wearable artwork",
         "hiking gift",
+        "geometric wildlife",
+        "black amber",
+        "compass rose",
+        "camping wardrobe",
+        "bold shapes",
+        "wilderness fan",
+        "trail keepsake",
     ]
     return {
         "title": "Geometric Badger Graphic Tee",
         "description": "A bold geometric badger design for woodland art fans.",
-        "tags": tags[:tag_count],
+        "tag_candidates": tags[:tag_count],
         "audience": ["badger fans"],
         "title_rationale": "Names the actual subject and product.",
         "tag_rationale": "Covers subject, style, product, and buyer intent.",
@@ -207,10 +214,10 @@ def test_converse_request_matches_installed_botocore_service_model() -> None:
     assert result.subject == "geometric badger"
 
 
-def test_invalid_listing_is_repaired_once_and_revalidated() -> None:
+def test_invalid_candidate_pool_is_repaired_once_and_revalidated() -> None:
     content = transparent_png()
     diagnostics = InMemoryDiagnosticSink()
-    client = ScriptedConverseClient(response(listing(tag_count=12)), response(listing()))
+    client = ScriptedConverseClient(response(listing(tag_count=17)), response(listing()))
     adapter = build_adapter(client, diagnostics=diagnostics, max_repair_attempts=1)
 
     result = adapter.draft_listing(
@@ -223,25 +230,25 @@ def test_invalid_listing_is_repaired_once_and_revalidated() -> None:
     assert len(client.calls) == 2
     assert all("image" not in block for block in client.calls[0]["messages"][0]["content"])
     repair_text = client.calls[1]["messages"][-1]["content"][0]["text"]
-    assert "at least 13 items" in repair_text
+    assert "at least 18 items" in repair_text
     assert [record["status"] for record in diagnostics.records] == [
         "invalid_output",
         "accepted",
     ]
-    assert "at least 13 items" in diagnostics.records[0]["metadata"]["validation_problems"]
+    assert "at least 18 items" in diagnostics.records[0]["metadata"]["validation_problems"]
     assert diagnostics.records[1]["metadata"]["validation_problems"] is None
     assert all("raw_model_output" not in record for record in diagnostics.records)
-    assert diagnostics.records[-1]["prompt_version"] == "2026-08-18.5"
+    assert diagnostics.records[-1]["prompt_version"] == "2026-08-18.7"
     assert len(diagnostics.records[-1]["response_sha256"]) == 64
 
 
-def test_repeated_tag_keywords_receive_one_soft_quality_repair() -> None:
+def test_selector_skips_colliding_candidates_without_model_repair() -> None:
     content = transparent_png()
     repeated = listing()
-    repeated["tags"] = [
+    repeated["tag_candidates"] = [
         "badger portrait",
         "badger explorer",
-        *listing()["tags"][2:],
+        *listing()["tag_candidates"][2:],
     ]
     diagnostics = InMemoryDiagnosticSink()
     client = ScriptedConverseClient(response(repeated), response(listing()))
@@ -253,27 +260,24 @@ def test_repeated_tag_keywords_receive_one_soft_quality_repair() -> None:
         ArtworkAnalysis.model_validate(artwork_analysis()),
     )
 
-    assert result.tags == tuple(listing()["tags"])
-    assert len(client.calls) == 2
-    repair_text = client.calls[1]["messages"][-1]["content"][0]["text"]
-    assert "diversify repeated keywords: badger" in repair_text
-    assert [record["status"] for record in diagnostics.records] == [
-        "invalid_output",
-        "accepted",
-    ]
+    assert result.tags[0] == "badger portrait"
+    assert "badger explorer" not in result.tags
+    assert len(result.tags) == 13
+    assert len(client.calls) == 1
+    assert [record["status"] for record in diagnostics.records] == ["accepted"]
 
 
-def test_final_listing_with_repetition_is_returned_for_workflow_validation() -> None:
+def test_unselectable_candidate_pool_receives_bounded_repair() -> None:
     content = transparent_png()
     repeated = listing()
-    repeated["tags"] = [
-        "badger portrait",
-        "badger explorer",
-        *listing()["tags"][2:],
+    repeated["tag_candidates"] = [
+        f"badger {left} {right}"
+        for left in ("for", "with", "and")
+        for right in ("a", "an", "the", "to", "in", "on")
     ]
     diagnostics = InMemoryDiagnosticSink()
-    client = ScriptedConverseClient(response(repeated))
-    adapter = build_adapter(client, diagnostics=diagnostics, max_repair_attempts=0)
+    client = ScriptedConverseClient(response(repeated), response(listing()))
+    adapter = build_adapter(client, diagnostics=diagnostics, max_repair_attempts=1)
 
     result = adapter.draft_listing(
         artwork_input(content),
@@ -281,17 +285,40 @@ def test_final_listing_with_repetition_is_returned_for_workflow_validation() -> 
         ArtworkAnalysis.model_validate(artwork_analysis()),
     )
 
-    assert result.tags[0:2] == ("badger portrait", "badger explorer")
-    assert diagnostics.records[0]["status"] == "accepted"
-    assert (
-        "diversify repeated keywords: badger"
-        in diagnostics.records[0]["metadata"]["validation_problems"]
+    assert len(result.tags) == 13
+    assert len(client.calls) == 2
+    assert diagnostics.records[0]["status"] == "invalid_output"
+    assert "cannot produce 13 tags" in client.calls[1]["messages"][-1]["content"][0]["text"]
+
+
+def test_final_unselectable_pool_raises_sanitized_domain_error() -> None:
+    content = transparent_png()
+    unusable = listing()
+    unusable["tag_candidates"] = [
+        f"badger {left} {right}"
+        for left in ("for", "with", "and")
+        for right in ("a", "an", "the", "to", "in", "on")
+    ]
+    diagnostics = InMemoryDiagnosticSink()
+    adapter = build_adapter(
+        ScriptedConverseClient(response(unusable)),
+        diagnostics=diagnostics,
+        max_repair_attempts=0,
     )
+
+    with pytest.raises(InvalidGeneratedOutputError, match="bounded repair"):
+        adapter.draft_listing(
+            artwork_input(content),
+            content,
+            ArtworkAnalysis.model_validate(artwork_analysis()),
+        )
+
+    assert diagnostics.records[0]["status"] == "invalid_output"
 
 
 def test_output_outside_contract_is_rejected_after_bounded_repair() -> None:
     content = transparent_png()
-    client = ScriptedConverseClient(response("not json"), response(listing(tag_count=12)))
+    client = ScriptedConverseClient(response("not json"), response(listing(tag_count=17)))
     adapter = build_adapter(client, max_repair_attempts=1)
 
     with pytest.raises(InvalidGeneratedOutputError, match="bounded repair"):
