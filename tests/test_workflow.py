@@ -62,6 +62,30 @@ def test_submit_prepares_one_reviewable_fake_draft(
     assert production.create_calls == 1
 
 
+def test_intake_and_prepare_are_separate_idempotent_steps(
+    workflow: ListingWorkflow, production: FakeProductionAdapter
+) -> None:
+    intake = workflow.intake(
+        filename="geometric_badger.png",
+        content_type="image/png",
+        content=SYNTHETIC_PNG,
+        idempotency_key="separate-intake-001",
+        profile_id="synthetic_gildan_5000",
+    )
+
+    assert intake.state is JobState.INTAKE_VALIDATED
+    assert intake.job_id not in workflow.store.reviews
+    assert production.create_calls == 0
+
+    prepared = workflow.prepare(intake.job_id)
+    repeated = workflow.prepare(intake.job_id)
+
+    assert prepared.state is JobState.AWAITING_APPROVAL
+    assert repeated == prepared
+    assert workflow.get_review(intake.job_id).validation.passed is True
+    assert production.create_calls == 1
+
+
 def test_repeated_tag_keywords_are_a_deterministic_validation_error(
     listing,
 ) -> None:

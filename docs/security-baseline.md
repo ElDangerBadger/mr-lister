@@ -33,14 +33,16 @@
 
 ## Threat checklist
 
-- [ ] Prompt injection through visible artwork text cannot call tools or alter authorization.
-- [ ] A model cannot enable a product profile or publication environment.
+- [x] Prompt injection cannot expose approval/publication capability or alter authorization.
+- [x] Prompt injection cannot induce an unsafe or out-of-scope available tool call in the bounded
+  Phase 3 controller surface.
+- [x] A model cannot enable a product profile or publication environment.
 - [ ] A stale approval cannot publish a revised listing.
 - [ ] A repeated request cannot create a duplicate product or listing.
 - [ ] A partial Printify failure preserves enough state for safe recovery.
 - [ ] Price units cannot cross a dollars/cents boundary without a test.
-- [ ] Cross-job object access is denied.
-- [ ] Secrets are redacted from exceptions and traces.
+- [x] Cross-job object access is denied by the job-bound agent tool schemas.
+- [x] Phase 3 canary exceptions are sanitized, audit records are digest-only, and automatic
+  prompt/tool tracing is disabled.
 - [ ] Production-like resources are separated from public demo resources.
 - [ ] Artifact deletion and account-disconnect paths are documented before launch.
-

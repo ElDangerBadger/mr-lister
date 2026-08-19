@@ -64,13 +64,35 @@ class ListingWorkflow:
         idempotency_key: str,
         profile_id: str,
     ) -> JobRecord:
+        job = self.intake(
+            filename=filename,
+            content_type=content_type,
+            content=content,
+            idempotency_key=idempotency_key,
+            profile_id=profile_id,
+        )
+        if job.state is JobState.INTAKE_VALIDATED:
+            return self.prepare(job.job_id)
+        return job
+
+    def intake(
+        self,
+        *,
+        filename: str,
+        content_type: str,
+        content: bytes,
+        idempotency_key: str,
+        profile_id: str,
+    ) -> JobRecord:
+        """Validate and persist one job without invoking intelligence or production."""
+
         artwork = validate_artwork(filename=filename, content_type=content_type, content=content)
         request_fingerprint = f"{artwork.content_sha256}:{profile_id}"
         existing_job_id = self.store.resolve_intake(idempotency_key, request_fingerprint)
         if existing_job_id is not None:
             return self.store.get_job(existing_job_id)
 
-        profile = self.profiles.get(profile_id)
+        self.profiles.get(profile_id)
         job_id = self._job_id_factory()
         now = self._clock()
         job = JobRecord(
@@ -85,10 +107,24 @@ class ListingWorkflow:
         self.store.jobs[job_id] = job
         self.store.artworks[job_id] = artwork
         self.store.artwork_contents[job_id] = content
+        self.store.profile_ids[job_id] = profile_id
         self.store.bind_intake(idempotency_key, request_fingerprint, job_id)
         self._event(job_id, "artwork_uploaded", {"filename": artwork.filename})
 
         self._transition(job_id, JobState.INTAKE_VALIDATED)
+        return self.store.get_job(job_id)
+
+    def prepare(self, job_id: str) -> JobRecord:
+        """Create a validated, reviewable draft for one previously accepted intake."""
+
+        job = self.store.get_job(job_id)
+        if job.state is not JobState.INTAKE_VALIDATED:
+            if job_id in self.store.reviews:
+                return job
+            raise InvalidStateError("Job is not ready for listing preparation")
+        artwork = self.store.artworks[job_id]
+        content = self.store.artwork_contents[job_id]
+        profile = self.profiles.get(self.store.profile_ids[job_id])
         self._transition(job_id, JobState.ANALYZING_ARTWORK)
         try:
             analysis = ArtworkAnalysis.model_validate(

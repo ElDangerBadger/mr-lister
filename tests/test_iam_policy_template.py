@@ -88,3 +88,82 @@ def test_gemma_policy_is_direct_in_region_and_narrow() -> None:
         "arn:aws:bedrock:us-west-2::foundation-model/google.gemma-3-27b-it"
     )
     assert "*" not in serialized
+
+
+def test_agentcore_runtime_trusts_only_the_runtime_service() -> None:
+    template = Path("infra/iam/agentcore-runtime-trust-policy.json.tmpl").read_text(
+        encoding="utf-8"
+    )
+    assert template.count("<AWS_ACCOUNT_ID>") == 2
+    policy = json.loads(template.replace("<AWS_ACCOUNT_ID>", "123456789012"))
+
+    assert policy["Statement"] == [
+        {
+            "Sid": "TrustOnlyThisAccountsAgentCoreResources",
+            "Effect": "Allow",
+            "Principal": {"Service": "bedrock-agentcore.amazonaws.com"},
+            "Action": "sts:AssumeRole",
+            "Condition": {
+                "StringEquals": {"aws:SourceAccount": "123456789012"},
+                "ArnLike": {
+                    "aws:SourceArn": ("arn:aws:bedrock-agentcore:us-west-2:123456789012:*")
+                },
+            },
+        }
+    ]
+
+
+def test_agentcore_runtime_policy_has_logs_and_narrow_nova_only() -> None:
+    statements, serialized = _load_policy(
+        "infra/iam/agentcore-runtime-policy.json.tmpl",
+        account_id_occurrences=6,
+    )
+
+    actions = {
+        action
+        for statement in statements
+        for action in (
+            statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]]
+        )
+    }
+    assert actions == {
+        "logs:DescribeLogStreams",
+        "logs:CreateLogGroup",
+        "logs:PutResourcePolicy",
+        "logs:DescribeLogGroups",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "bedrock:InvokeModel",
+    }
+    assert "bedrock:*" not in serialized
+    assert "InvokeModelWithResponseStream" not in serialized
+
+
+def test_agentcore_developer_policy_is_runtime_and_log_scoped() -> None:
+    statements, serialized = _load_policy(
+        "infra/iam/agentcore-phase3-deployer-policy.json.tmpl",
+        account_id_occurrences=10,
+    )
+
+    assert len(statements) == 8
+    assert statements[0]["Action"] == [
+        "bedrock-agentcore:ListAgentRuntimes",
+        "bedrock-agentcore:ListAgentRuntimeEndpoints",
+    ]
+    assert statements[0]["Resource"] == "*"
+    assert statements[1]["Resource"].endswith(":runtime/*")
+    assert statements[2]["Resource"] == [
+        "arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/*",
+        ("arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/*/runtime-endpoint/*"),
+    ]
+    assert statements[3]["Action"] == "bedrock-agentcore:InvokeAgentRuntime"
+    assert statements[4]["Action"] == "bedrock-agentcore:StopRuntimeSession"
+    assert statements[6]["Action"] == [
+        "logs:DescribeLogStreams",
+        "logs:FilterLogEvents",
+    ]
+    assert statements[7]["Action"] == "logs:GetLogEvents"
+    assert all(resource.endswith(":log-stream:*") for resource in statements[7]["Resource"])
+    assert "/aws/vendedlogs/bedrock-agentcore/" in serialized
+    assert "iam:*" not in serialized
+    assert "cloudformation:*" not in serialized

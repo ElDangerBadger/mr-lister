@@ -1,0 +1,71 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DiscoverAgentCoreRuntimes",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock-agentcore:ListAgentRuntimes",
+        "bedrock-agentcore:ListAgentRuntimeEndpoints"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "InspectOnlyAccountAgentCoreRuntimes",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:GetAgentRuntime",
+      "Resource": "arn:aws:bedrock-agentcore:us-west-2:<AWS_ACCOUNT_ID>:runtime/*"
+    },
+    {
+      "Sid": "InspectOnlyAccountAgentCoreRuntimeEndpoints",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:GetAgentRuntimeEndpoint",
+      "Resource": [
+        "arn:aws:bedrock-agentcore:us-west-2:<AWS_ACCOUNT_ID>:runtime/*",
+        "arn:aws:bedrock-agentcore:us-west-2:<AWS_ACCOUNT_ID>:runtime/*/runtime-endpoint/*"
+      ]
+    },
+    {
+      "Sid": "InvokeOnlyAccountAgentCoreCanaries",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:InvokeAgentRuntime",
+      "Resource": "arn:aws:bedrock-agentcore:us-west-2:<AWS_ACCOUNT_ID>:runtime/*"
+    },
+    {
+      "Sid": "StopOnlyAccountAgentCoreCanarySessions",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:StopRuntimeSession",
+      "Resource": [
+        "arn:aws:bedrock-agentcore:us-west-2:<AWS_ACCOUNT_ID>:runtime/*",
+        "arn:aws:bedrock-agentcore:us-west-2:<AWS_ACCOUNT_ID>:runtime/*/runtime-endpoint/*"
+      ]
+    },
+    {
+      "Sid": "DiscoverCloudWatchLogGroups",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*"
+    },
+    {
+      "Sid": "DiscoverAndFilterAgentCoreRuntimeLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogStreams",
+        "logs:FilterLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:us-west-2:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/*",
+        "arn:aws:logs:us-west-2:<AWS_ACCOUNT_ID>:log-group:/aws/vendedlogs/bedrock-agentcore/runtime/APPLICATION_LOGS/*"
+      ]
+    },
+    {
+      "Sid": "ReadOnlyAgentCoreRuntimeLogEvents",
+      "Effect": "Allow",
+      "Action": "logs:GetLogEvents",
+      "Resource": [
+        "arn:aws:logs:us-west-2:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*",
+        "arn:aws:logs:us-west-2:<AWS_ACCOUNT_ID>:log-group:/aws/vendedlogs/bedrock-agentcore/runtime/APPLICATION_LOGS/*:log-stream:*"
+      ]
+    }
+  ]
+}

@@ -97,12 +97,31 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     suite requires no live inference; all live evaluation results stopped at human approval with
     fake production and zero publish calls. Detailed evidence is in
     [`phase2-gemma-v7-evaluation.md`](phase2-gemma-v7-evaluation.md).
-- [ ] Phase 3 — Strands agent and AgentCore Runtime
-  - [ ] Bounded Strands tool surface
-  - [ ] Recommendation-versus-authorization instructions
-  - [ ] Structured result handling and recoverable tool failures
-  - [ ] AgentCore-compatible local entry point and Runtime deployment
-  - [ ] Session/job correlation and sanitized observability
+- [x] Phase 3 — Strands agent and AgentCore Runtime
+  - [x] Bounded, single-job Strands tool surface with capability-scoped review/revise modes
+  - [x] Recommendation-versus-authorization instructions and no approval/publication tools
+  - [x] Structured result handling and sanitized recoverable tool failures
+  - [x] AgentCore-compatible local HTTP entry point (`/invocations` and `/ping`)
+  - [x] Preparation/drafting tool path from validated intake to staged review
+  - [x] AgentCore Runtime packaging and deployment
+    - [x] Narrow explicit CodeZip bundle, schema validation, and ARM64 package
+    - [x] Direct CodeZip deployment in `us-west-2` and deployed Nova invocation canary
+  - [x] Session/job correlation and sanitized application observability
+  - Exit evidence: 129 offline tests pass; lint and format checks pass. Nova passed both routine
+    and visible-prompt-injection controller cases, selected inspection and validation tools, and
+    stopped at human review. Gemma preserved the authority boundary but failed tool selection in
+    both cases, so it remains the image/listing worker rather than the controller. The official SDK
+    local smoke passed. AgentCore Runtime version 2 and its default endpoint reached `READY`. The
+    live deployed review completed in 2.541 seconds, used only `inspect_staged_review` and
+    `validate_staged_listing`, and returned `human_review`, `requires_human_approval=true`, and
+    `publication_authorized=false`. Its sanitized audit recorded 3 cycles, 4,942 input tokens, 195
+    output tokens, and a correlation digest without raw session/job IDs or prompt content.
+    Automatic OTel prompt/tool tracing is disabled. AWS vended payload capture was used only with
+    synthetic canary data, removed before the Phase 3 freeze, and produced no event in the final
+    zero-model-cost privacy check.
+  - Deferred refinement: reduce repeated tool/schema context below the current 5,137-token deployed
+    canary baseline after the Phase 3 freeze; this is an efficiency improvement, not a safety or
+    correctness blocker.
 - [ ] Phase 4 — AWS persistence and durable workflow
   - [ ] Private S3 artifact storage and lifecycle policy
   - [ ] DynamoDB operational records

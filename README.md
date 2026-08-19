@@ -91,7 +91,7 @@ deliberately non-live identifiers cannot create a real Printify product.
 
 ## Phase 2 Bedrock intelligence
 
-The current Phase 2 branch adds a provider-neutral Amazon Bedrock Converse adapter. It creates a
+The completed Phase 2 implementation adds a provider-neutral Amazon Bedrock Converse adapter. It creates a
 bounded inspection rendition from the seller's original PNG, asks the configured model for artwork
 analysis and listing intelligence, and then applies stricter application-owned contracts.
 Unsupported outputs receive only a configuration-bounded number of semantic repair attempts. The
@@ -121,6 +121,24 @@ See the [Phase 2 AWS runbook](docs/aws-bedrock-phase2.md) for narrow IAM policie
 guardrail, optional Anthropic activation, and cost-controlled canary commands. The
 [evaluation guide](tests/evaluation/README.md) documents the eleven-case split harness, repeated
 trials, and provider comparisons.
+
+## Phase 3 Strands and AgentCore
+
+Phase 3 is complete. Amazon Nova 2 Lite is the selected capability-scoped Strands controller;
+Gemma 3 27B remains the image/listing-intelligence worker. Each invocation is bound to one job and
+one application-selected mode. Preparation can move validated intake to staged human review;
+review exposes inspection and validation, while revise additionally exposes listing revision. The
+agent has no approval or publication tool.
+
+The official AgentCore SDK boundary provides `GET /ping` and `POST /invocations`. Runtime version 2
+is deployed in `us-west-2` as a narrow Linux ARM64 CodeZip with an external least-privilege runtime
+role. Its live canary selected only inspection and validation tools, required human approval,
+denied publication authority, and emitted a digest-only audit record. The deployment remains a
+synthetic controller canary with fake production—not the complete production application.
+
+See the [Phase 3 architecture decision](docs/architecture/0007-capability-scoped-strands-agent.md)
+and [AgentCore runbook](docs/aws-agentcore-phase3.md) for the enforced boundary and deployment
+sequence.
 
 ## Core product rules
 

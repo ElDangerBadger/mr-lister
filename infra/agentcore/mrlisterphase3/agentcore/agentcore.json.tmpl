@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "mrlisterphase3",
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "mrlisterphase3"
+  },
+  "runtimes": [
+    {
+      "name": "mr_lister_phase3",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "../../../.mr_lister_private/agentcore-bundle",
+      "runtimeVersion": "PYTHON_3_13",
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP",
+      "authorizerType": "AWS_IAM",
+      "executionRoleArn": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/mr-lister-agentcore-runtime-canary",
+      "instrumentation": {
+        "enableOtel": false
+      },
+      "lifecycleConfiguration": {
+        "idleRuntimeSessionTimeout": 900,
+        "maxLifetime": 3600
+      }
+    }
+  ],
+  "memories": [],
+  "knowledgeBases": [],
+  "credentials": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": [],
+  "configBundles": [],
+  "abTests": [],
+  "harnesses": [],
+  "datasets": [],
+  "payments": []
+}

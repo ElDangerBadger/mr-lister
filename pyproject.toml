@@ -11,12 +11,14 @@ requires-python = ">=3.12,<3.14"
 license = { file = "LICENSE" }
 dependencies = [
     "boto3>=1.43,<2",
+    "bedrock-agentcore>=1.22,<2",
     "botocore[crt]>=1.43,<2",
     "fastapi>=0.116,<1",
     "pillow>=11.3,<13",
     "pydantic>=2.10,<3",
     "python-multipart>=0.0.20,<1",
     "strands-agents>=1.52,<2",
+    "uvicorn>=0.35,<1",
 ]
 
 [project.optional-dependencies]
@@ -25,7 +27,7 @@ dev = [
     "httpx>=0.28,<1",
     "pytest>=8.3,<9",
     "ruff>=0.11,<1",
-    "uvicorn>=0.35,<1",
+    "uv>=0.12,<1",
 ]
 
 [tool.hatch.build.targets.wheel]

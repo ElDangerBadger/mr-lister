@@ -14,6 +14,7 @@ class InMemoryJobStore:
         self.jobs: dict[str, JobRecord] = {}
         self.artworks: dict[str, ArtworkInput] = {}
         self.artwork_contents: dict[str, bytes] = {}
+        self.profile_ids: dict[str, str] = {}
         self.reviews: dict[str, ReviewSnapshot] = {}
         self.events: dict[str, list[WorkflowEvent]] = defaultdict(list)
         self.external_writes: dict[str, list[ExternalWriteRecord]] = defaultdict(list)

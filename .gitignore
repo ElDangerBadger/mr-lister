@@ -1,6 +1,8 @@
 docs_legacy/
 .DS_Store
 .venv/
+node_modules/
+infra/iam/*.local.json
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -9,3 +11,8 @@ build/
 dist/
 *.egg-info/
 .mr_lister_private/
+infra/agentcore/mrlisterphase3/AGENTS.md
+infra/agentcore/mrlisterphase3/README.md
+infra/agentcore/mrlisterphase3/agentcore/.cli/
+infra/agentcore/mrlisterphase3/agentcore/.llm-context/
+infra/agentcore/mrlisterphase3/agentcore/cdk/

@@ -1,0 +1,56 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CreateAndInspectAgentCoreRuntimeLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogStreams",
+        "logs:CreateLogGroup"
+      ],
+      "Resource": "arn:aws:logs:us-west-2:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/*"
+    },
+    {
+      "Sid": "ConfigureOnlyMrListerRuntimeLogs",
+      "Effect": "Allow",
+      "Action": "logs:PutResourcePolicy",
+      "Resource": "arn:aws:logs:us-west-2:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/mr_lister_phase3-*"
+    },
+    {
+      "Sid": "DiscoverOnlyAccountLogGroups",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "arn:aws:logs:us-west-2:<AWS_ACCOUNT_ID>:log-group:*"
+    },
+    {
+      "Sid": "WriteOnlyAgentCoreRuntimeLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:us-west-2:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*"
+    },
+    {
+      "Sid": "InvokeNova2LiteUSProfile",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": "arn:aws:bedrock:us-west-2:<AWS_ACCOUNT_ID>:inference-profile/us.amazon.nova-2-lite-v1:0"
+    },
+    {
+      "Sid": "InvokeNova2LiteOnlyThroughUSProfile",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": [
+        "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0",
+        "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0",
+        "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "bedrock:InferenceProfileArn": "arn:aws:bedrock:us-west-2:<AWS_ACCOUNT_ID>:inference-profile/us.amazon.nova-2-lite-v1:0"
+        }
+      }
+    }
+  ]
+}
