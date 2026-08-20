@@ -1,0 +1,532 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Transform": "AWS::Serverless-2016-10-31",
+  "Description": "Mr Lister Phase 4 durable workflow resources",
+  "Parameters": {
+    "EnvironmentName": {
+      "Type": "String",
+      "Default": "dev",
+      "AllowedPattern": "^[a-z][a-z0-9-]{1,15}$"
+    },
+    "AgentCoreRuntimeArn": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Optional durable AgentCore runtime ARN; blank keeps deterministic fake preparation"
+    }
+  },
+  "Conditions": {
+    "UseAgentCoreRuntime": {
+      "Fn::Not": [{"Fn::Equals": [{"Ref": "AgentCoreRuntimeArn"}, ""]}]
+    }
+  },
+  "Resources": {
+    "PrivateArtifactBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {
+          "Fn::Sub": "mr-lister-phase4-artifacts-${EnvironmentName}-${AWS::AccountId}-${AWS::Region}"
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "AbortIncompleteMultipartUploads",
+              "Status": "Enabled",
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": 7
+              }
+            },
+            {
+              "Id": "ExpireNoncurrentArtifactVersions",
+              "Status": "Enabled",
+              "NoncurrentVersionExpiration": {
+                "NoncurrentDays": 30
+              }
+            }
+          ]
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "MrLister"
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          },
+          {
+            "Key": "DataClassification",
+            "Value": "PrivateArtwork"
+          }
+        ],
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        }
+      }
+    },
+    "PrivateArtifactBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "PrivateArtifactBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "PrivateArtifactBucket",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Sub": "${PrivateArtifactBucket.Arn}/*"
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "OperationalStateTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "PK",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "SK",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "TableName": {"Fn::Sub": "mr-lister-phase4-${EnvironmentName}"},
+        "KeySchema": [
+          {
+            "AttributeName": "PK",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "SK",
+            "KeyType": "RANGE"
+          }
+        ],
+        "SSESpecification": {
+          "SSEEnabled": true
+        },
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "MrLister"
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          },
+          {
+            "Key": "DataClassification",
+            "Value": "OperationalState"
+          }
+        ]
+      }
+    },
+    "PrepareFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase4-${EnvironmentName}-prepare-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [
+          {
+            "PolicyName": "PrepareOnly",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {"Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/mr-lister-phase4-${EnvironmentName}-prepare:*"}},
+                {"Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}},
+                {"Effect": "Allow", "Action": "s3:GetObject", "Resource": {"Fn::Sub": "${PrivateArtifactBucket.Arn}/private/artwork/*"}}
+              ]
+            }
+          },
+          {
+            "Fn::If": [
+              "UseAgentCoreRuntime",
+              {
+                "PolicyName": "InvokeConfiguredAgentCoreRuntime",
+                "PolicyDocument": {
+                  "Version": "2012-10-17",
+                  "Statement": [{"Effect": "Allow", "Action": "bedrock-agentcore:InvokeAgentRuntime", "Resource": {"Ref": "AgentCoreRuntimeArn"}}]
+                }
+              },
+              {"Ref": "AWS::NoValue"}
+            ]
+          }
+        ]
+      }
+    },
+    "RegisterApprovalWaitFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase4-${EnvironmentName}-register-wait-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [{"PolicyName": "RegisterApprovalWaitOnly", "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+          {"Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/mr-lister-phase4-${EnvironmentName}-register-wait:*"}},
+          {"Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}}
+        ]}}]
+      }
+    },
+    "ApprovalFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase4-${EnvironmentName}-approval-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [{"PolicyName": "ApproveOnly", "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+          {"Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/mr-lister-phase4-${EnvironmentName}-approval:*"}},
+          {"Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:TransactWriteItems"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}},
+          {"Effect": "Allow", "Action": "states:SendTaskSuccess", "Resource": "*"}
+        ]}}]
+      }
+    },
+    "FakePublishFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase4-${EnvironmentName}-fake-publish-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [{"PolicyName": "FakePublishOnly", "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+          {"Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/mr-lister-phase4-${EnvironmentName}-fake-publish:*"}},
+          {"Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}}
+        ]}}]
+      }
+    },
+    "FakeVerifyFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase4-${EnvironmentName}-fake-verify-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [{"PolicyName": "FakeVerifyOnly", "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+          {"Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/mr-lister-phase4-${EnvironmentName}-fake-verify:*"}},
+          {"Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:TransactWriteItems"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}}
+        ]}}]
+      }
+    },
+    "PrepareFunction": {
+      "Type": "AWS::Serverless::Function",
+      "Metadata": {
+        "BuildMethod": "makefile"
+      },
+      "Properties": {
+        "Architectures": ["arm64"],
+        "CodeUri": "lambda/",
+        "FunctionName": {"Fn::Sub": "mr-lister-phase4-${EnvironmentName}-prepare"},
+        "Handler": "phase4_lambda.prepare_handler",
+        "MemorySize": 512,
+        "Role": {"Fn::GetAtt": ["PrepareFunctionRole", "Arn"]},
+        "Runtime": "python3.13",
+        "Timeout": 120,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_ARTIFACT_BUCKET": {"Ref": "PrivateArtifactBucket"},
+            "MR_LISTER_STATE_TABLE": {"Ref": "OperationalStateTable"},
+            "MR_LISTER_PROFILE_DIRECTORY": "config/product_profiles",
+            "MR_LISTER_AGENTCORE_RUNTIME_ARN": {"Ref": "AgentCoreRuntimeArn"}
+          }
+        }
+      }
+    },
+    "RegisterApprovalWaitFunction": {
+      "Type": "AWS::Serverless::Function",
+      "Metadata": {"BuildMethod": "makefile"},
+      "Properties": {
+        "Architectures": ["arm64"],
+        "CodeUri": "lambda/",
+        "FunctionName": {"Fn::Sub": "mr-lister-phase4-${EnvironmentName}-register-wait"},
+        "Handler": "phase4_lambda.register_approval_wait_handler",
+        "MemorySize": 256,
+        "Role": {"Fn::GetAtt": ["RegisterApprovalWaitFunctionRole", "Arn"]},
+        "Runtime": "python3.13",
+        "Timeout": 30,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_ARTIFACT_BUCKET": {"Ref": "PrivateArtifactBucket"},
+            "MR_LISTER_STATE_TABLE": {"Ref": "OperationalStateTable"},
+            "MR_LISTER_PROFILE_DIRECTORY": "config/product_profiles"
+          }
+        }
+      }
+    },
+    "ApprovalFunction": {
+      "Type": "AWS::Serverless::Function",
+      "Metadata": {"BuildMethod": "makefile"},
+      "Properties": {
+        "Architectures": ["arm64"],
+        "CodeUri": "lambda/",
+        "FunctionName": {"Fn::Sub": "mr-lister-phase4-${EnvironmentName}-approval"},
+        "Handler": "phase4_lambda.approval_handler",
+        "MemorySize": 256,
+        "Role": {"Fn::GetAtt": ["ApprovalFunctionRole", "Arn"]},
+        "Runtime": "python3.13",
+        "Timeout": 30,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_ARTIFACT_BUCKET": {"Ref": "PrivateArtifactBucket"},
+            "MR_LISTER_STATE_TABLE": {"Ref": "OperationalStateTable"},
+            "MR_LISTER_PROFILE_DIRECTORY": "config/product_profiles"
+          }
+        }
+      }
+    },
+    "FakePublishFunction": {
+      "Type": "AWS::Serverless::Function",
+      "Metadata": {"BuildMethod": "makefile"},
+      "Properties": {
+        "Architectures": ["arm64"],
+        "CodeUri": "lambda/",
+        "FunctionName": {"Fn::Sub": "mr-lister-phase4-${EnvironmentName}-fake-publish"},
+        "Handler": "phase4_lambda.fake_publish_handler",
+        "MemorySize": 256,
+        "Role": {"Fn::GetAtt": ["FakePublishFunctionRole", "Arn"]},
+        "Runtime": "python3.13",
+        "Timeout": 30,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_ARTIFACT_BUCKET": {"Ref": "PrivateArtifactBucket"},
+            "MR_LISTER_STATE_TABLE": {"Ref": "OperationalStateTable"},
+            "MR_LISTER_PROFILE_DIRECTORY": "config/product_profiles"
+          }
+        }
+      }
+    },
+    "FakeVerifyFunction": {
+      "Type": "AWS::Serverless::Function",
+      "Metadata": {"BuildMethod": "makefile"},
+      "Properties": {
+        "Architectures": ["arm64"],
+        "CodeUri": "lambda/",
+        "FunctionName": {"Fn::Sub": "mr-lister-phase4-${EnvironmentName}-fake-verify"},
+        "Handler": "phase4_lambda.fake_verify_handler",
+        "MemorySize": 256,
+        "Role": {"Fn::GetAtt": ["FakeVerifyFunctionRole", "Arn"]},
+        "Runtime": "python3.13",
+        "Timeout": 30,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_ARTIFACT_BUCKET": {"Ref": "PrivateArtifactBucket"},
+            "MR_LISTER_STATE_TABLE": {"Ref": "OperationalStateTable"},
+            "MR_LISTER_PROFILE_DIRECTORY": "config/product_profiles"
+          }
+        }
+      }
+    },
+    "PrepareFunctionLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/mr-lister-phase4-${EnvironmentName}-prepare"
+        },
+        "RetentionInDays": 14
+      }
+    },
+    "RegisterApprovalWaitFunctionLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/mr-lister-phase4-${EnvironmentName}-register-wait"
+        },
+        "RetentionInDays": 14
+      }
+    },
+    "ApprovalFunctionLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/mr-lister-phase4-${EnvironmentName}-approval"
+        },
+        "RetentionInDays": 14
+      }
+    },
+    "FakePublishFunctionLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/mr-lister-phase4-${EnvironmentName}-fake-publish"
+        },
+        "RetentionInDays": 14
+      }
+    },
+    "FakeVerifyFunctionLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/mr-lister-phase4-${EnvironmentName}-fake-verify"
+        },
+        "RetentionInDays": 14
+      }
+    },
+    "DurableWorkflowLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {"Fn::Sub": "/aws/vendedlogs/states/mr-lister-${EnvironmentName}"},
+        "RetentionInDays": 14
+      }
+    },
+    "DurableWorkflow": {
+      "Type": "AWS::Serverless::StateMachine",
+      "Properties": {
+        "Type": "STANDARD",
+        "Name": {"Fn::Sub": "mr-lister-phase4-${EnvironmentName}"},
+        "DefinitionUri": "statemachine/durable-workflow.asl.json",
+        "DefinitionSubstitutions": {
+          "PrepareFunctionArn": {"Fn::GetAtt": ["PrepareFunction", "Arn"]},
+          "RegisterApprovalWaitFunctionArn": {
+            "Fn::GetAtt": ["RegisterApprovalWaitFunction", "Arn"]
+          },
+          "FakePublishFunctionArn": {"Fn::GetAtt": ["FakePublishFunction", "Arn"]},
+          "FakeVerifyFunctionArn": {"Fn::GetAtt": ["FakeVerifyFunction", "Arn"]}
+        },
+        "Logging": {
+          "Destinations": [
+            {
+              "CloudWatchLogsLogGroup": {
+                "LogGroupArn": {
+                  "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vendedlogs/states/mr-lister-${EnvironmentName}:*"
+                }
+              }
+            }
+          ],
+          "IncludeExecutionData": false,
+          "Level": "ERROR"
+        },
+        "Policies": [
+          {
+            "LambdaInvokePolicy": {"FunctionName": {"Ref": "PrepareFunction"}}
+          },
+          {
+            "LambdaInvokePolicy": {"FunctionName": {"Ref": "RegisterApprovalWaitFunction"}}
+          },
+          {
+            "LambdaInvokePolicy": {"FunctionName": {"Ref": "FakePublishFunction"}}
+          },
+          {
+            "LambdaInvokePolicy": {"FunctionName": {"Ref": "FakeVerifyFunction"}}
+          },
+          {
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "logs:CreateLogDelivery",
+                  "logs:GetLogDelivery",
+                  "logs:UpdateLogDelivery",
+                  "logs:DeleteLogDelivery",
+                  "logs:ListLogDeliveries",
+                  "logs:PutResourcePolicy",
+                  "logs:DescribeResourcePolicies",
+                  "logs:DescribeLogGroups"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+        ],
+        "Tags": {
+          "Project": "MrLister",
+          "Environment": {"Ref": "EnvironmentName"}
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "PrivateArtifactBucketName": {
+      "Value": {
+        "Ref": "PrivateArtifactBucket"
+      }
+    },
+    "PrivateArtifactBucketArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PrivateArtifactBucket",
+          "Arn"
+        ]
+      }
+    },
+    "OperationalStateTableName": {
+      "Value": {
+        "Ref": "OperationalStateTable"
+      }
+    },
+    "OperationalStateTableArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "OperationalStateTable",
+          "Arn"
+        ]
+      }
+    },
+    "DurableWorkflowArn": {
+      "Value": {"Ref": "DurableWorkflow"}
+    },
+    "ApprovalFunctionArn": {
+      "Value": {"Fn::GetAtt": ["ApprovalFunction", "Arn"]}
+    }
+  }
+}

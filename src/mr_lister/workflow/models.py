@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from mr_lister.contracts import ContractModel, JobRecord, ReviewSnapshot
 
@@ -30,6 +31,54 @@ class ExternalWriteRecord(ContractModel):
     request_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
     external_id: str = Field(min_length=1)
     occurred_at: datetime
+
+
+class ExternalWriteStatus(StrEnum):
+    CLAIMED = "claimed"
+    COMPLETED = "completed"
+    RECONCILIATION_REQUIRED = "reconciliation_required"
+
+
+class ExternalWriteClaim(ContractModel):
+    operation: Literal["sync_product_draft", "publish_listing"]
+    idempotency_key: str = Field(min_length=1)
+    request_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    status: ExternalWriteStatus
+    claimed_at: datetime
+    result: dict[str, str] | None = None
+    completed_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def completion_fields_match_status(self) -> ExternalWriteClaim:
+        is_completed = self.status is ExternalWriteStatus.COMPLETED
+        if is_completed != (self.result is not None and self.completed_at is not None):
+            raise ValueError("Completed writes require both result and completed_at")
+        if self.result is not None and not self.result.get("external_id"):
+            raise ValueError("Completed write result requires external_id")
+        return self
+
+
+class ApprovalWaitStatus(StrEnum):
+    PENDING = "pending"
+    CONSUMED = "consumed"
+
+
+class ApprovalWaitRecord(ContractModel):
+    job_id: str = Field(min_length=1)
+    review_version: int = Field(ge=1)
+    task_token: str = Field(min_length=1, repr=False)
+    status: ApprovalWaitStatus
+    created_at: datetime
+    expires_at: datetime
+    consumed_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def wait_times_match_status(self) -> ApprovalWaitRecord:
+        if self.expires_at <= self.created_at:
+            raise ValueError("Approval wait must expire after it is created")
+        if (self.status is ApprovalWaitStatus.CONSUMED) != (self.consumed_at is not None):
+            raise ValueError("Consumed approval waits require consumed_at")
+        return self
 
 
 class RunReport(ContractModel):

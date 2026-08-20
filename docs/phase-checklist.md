@@ -122,12 +122,43 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
   - Deferred refinement: reduce repeated tool/schema context below the current 5,137-token deployed
     canary baseline after the Phase 3 freeze; this is an efficiency improvement, not a safety or
     correctness blocker.
-- [ ] Phase 4 — AWS persistence and durable workflow
-  - [ ] Private S3 artifact storage and lifecycle policy
-  - [ ] DynamoDB operational records
-  - [ ] Step Functions prepare/review/publish/verify lifecycle
-  - [ ] Least-privilege IAM and Secrets Manager integration
-  - [ ] Pause/resume and retry/idempotency acceptance
+- [x] Phase 4 — AWS persistence and durable workflow
+  - [x] Application-owned persistence boundary and optimistic record-version guard
+  - [x] Architecture decision: Step Functions requests work; application code and atomic storage
+    conditions authorize state changes
+  - [x] Private S3 artifact boundary and lifecycle-policy infrastructure baseline
+  - [x] DynamoDB operational records
+    - [x] On-demand encrypted single-table infrastructure baseline
+    - [x] Atomic intake claim, job, artwork metadata, and first event transaction
+    - [x] Conditional job/review/event transition transaction with shared application validation
+    - [x] Fresh-store reconstruction and transaction-shape tests
+    - [x] Restartable analysis and listing checkpoints
+    - [x] External-write claim/finalize and reconciliation records
+    - [x] Version-bound approval-wait records with TTL and atomic approval consumption
+  - [x] Step Functions prepare/review/publish/verify lifecycle
+    - [x] Standard ASL definition with identifier-only command payloads
+    - [x] Strict prepare, approval-wait, approval-callback, fake-publish, and fake-verify handlers
+    - [x] Durable restart routes for approved, publishing, published, and verified checkpoints
+    - [x] Bounded retry rules, sanitized terminal failure, and execution-data logging disabled
+    - [x] SAM 1.165 lint/build with CPython 3.13 Linux ARM64 artifacts
+    - [x] Deploy the SAM stack and pass one explicitly gated AWS canary through `VERIFIED`
+  - [x] Least-privilege IAM and Secrets Manager integration
+    - [x] Command-specific DynamoDB/S3/Lambda/callback policy baseline
+    - [x] CloudWatch log groups with 14-day retention
+    - [x] Secrets Manager interface and exact-ARN Phase 5 credential boundary
+    - [x] Resource-scoped administrator bootstrap and developer change-set policy template
+    - [x] Apply the one-time bootstrap stack in `us-west-2`
+  - [x] Pause/resume and retry/idempotency acceptance
+    - [x] Offline approval pause, callback replay, checkpoint resume, and exactly-once fake writes
+    - [x] Live workflow-history privacy inspection and process-exit canary
+  - Exit evidence: the bootstrap and application stacks are deployed in `us-west-2`; the standard
+    SAM update path reports the stack is current. One execution remained durable across client
+    process exit, Lambda code/IAM updates, and a replay-safe approval callback before reaching
+    `VERIFIED`. A second untouched canary independently reached `VERIFIED` with record version 11,
+    14 ordered events, and exactly two completed idempotent fake-write records. Its 27-event Step
+    Functions history contained no PNG bytes, listing body, prompt text, or credential indicators.
+    The expected opaque callback-token field existed only at the approval wait boundary. AgentCore
+    remained disabled, no paid model inference ran, and the final offline suite passes 177 tests.
 - [ ] Phase 5 — Real Printify draft creation
   - [ ] Printify authentication and artwork upload
   - [ ] Verified product profile, placement, variants, and integer-cent pricing

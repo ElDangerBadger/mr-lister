@@ -1,6 +1,7 @@
 docs_legacy/
 .DS_Store
 .venv/
+.aws-sam/
 node_modules/
 infra/iam/*.local.json
 __pycache__/

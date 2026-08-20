@@ -1,0 +1,24 @@
+version = 0.1
+
+[phase4-dev.validate.parameters]
+template_file = "infra/phase4/durable-workflow.json"
+region = "us-west-2"
+profile = "mr-lister-dev"
+lint = true
+
+[phase4-dev.build.parameters]
+template_file = "infra/phase4/durable-workflow.json"
+build_dir = ".aws-sam/phase4-build"
+cache_dir = ".aws-sam/phase4-cache"
+build_in_source = true
+
+[phase4-dev.deploy.parameters]
+template_file = ".aws-sam/phase4-build/template.yaml"
+stack_name = "mr-lister-phase4-dev"
+s3_prefix = "mr-lister-phase4-dev"
+region = "us-west-2"
+profile = "mr-lister-dev"
+capabilities = "CAPABILITY_NAMED_IAM"
+confirm_changeset = true
+fail_on_empty_changeset = false
+parameter_overrides = "EnvironmentName=dev AgentCoreRuntimeArn=\"\""

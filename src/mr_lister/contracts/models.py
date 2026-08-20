@@ -218,6 +218,8 @@ class ReviewSnapshot(ContractModel):
 class JobRecord(ContractModel):
     contract_version: ContractVersion = CONTRACT_VERSION
     job_id: Annotated[str, StringConstraints(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]+$")]
+    record_version: int = Field(default=0, ge=0)
+    event_sequence: int = Field(default=0, ge=0)
     state: JobState
     review_version: int = Field(ge=0)
     approved_review_version: int | None = Field(default=None, ge=1)

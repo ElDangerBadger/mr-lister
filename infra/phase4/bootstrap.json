@@ -1,0 +1,358 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "One-time least-privilege bootstrap for Mr Lister Phase 4 deployment",
+  "Parameters": {
+    "EnvironmentName": {
+      "Type": "String",
+      "Default": "dev",
+      "AllowedPattern": "^[a-z][a-z0-9-]{1,15}$"
+    },
+    "DeveloperGroupName": {
+      "Type": "String",
+      "Default": "mr-lister-developers"
+    }
+  },
+  "Resources": {
+    "DeploymentArtifactBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {
+          "Fn::Sub": "mr-lister-sam-artifacts-${AWS::AccountId}-${AWS::Region}"
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "AbortIncompleteUploads",
+              "Status": "Enabled",
+              "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7}
+            },
+            {
+              "Id": "ExpireOldBuildVersions",
+              "Status": "Enabled",
+              "NoncurrentVersionExpiration": {"NoncurrentDays": 30}
+            }
+          ]
+        },
+        "OwnershipControls": {
+          "Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "VersioningConfiguration": {"Status": "Enabled"}
+      }
+    },
+    "CloudFormationExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "mr-lister-phase4-cfn-execution-${EnvironmentName}"
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "cloudformation.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ManageOnlyMrListerPhase4Resources",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "ExpandOnlyTheAwsServerlessTransform",
+                  "Effect": "Allow",
+                  "Action": "cloudformation:CreateChangeSet",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:cloudformation:${AWS::Region}:aws:transform/Serverless-2016-10-31"
+                  }
+                },
+                {
+                  "Sid": "ReadDeploymentArtifacts",
+                  "Effect": "Allow",
+                  "Action": ["s3:GetObject", "s3:GetObjectVersion"],
+                  "Resource": {
+                    "Fn::Sub": "${DeploymentArtifactBucket.Arn}/mr-lister-phase4-dev/*"
+                  }
+                },
+                {
+                  "Sid": "ManagePrivateArtworkBucket",
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:CreateBucket",
+                    "s3:DeleteBucket",
+                    "s3:GetBucketPolicy",
+                    "s3:PutBucketPolicy",
+                    "s3:DeleteBucketPolicy",
+                    "s3:GetBucketTagging",
+                    "s3:PutBucketTagging",
+                    "s3:GetBucketVersioning",
+                    "s3:PutBucketVersioning",
+                    "s3:GetEncryptionConfiguration",
+                    "s3:PutEncryptionConfiguration",
+                    "s3:GetLifecycleConfiguration",
+                    "s3:PutLifecycleConfiguration",
+                    "s3:GetBucketOwnershipControls",
+                    "s3:PutBucketOwnershipControls",
+                    "s3:GetBucketPublicAccessBlock",
+                    "s3:PutBucketPublicAccessBlock"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase4-artifacts-${EnvironmentName}-${AWS::AccountId}-${AWS::Region}"
+                  }
+                },
+                {
+                  "Sid": "ManageOperationalTable",
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:CreateTable",
+                    "dynamodb:DeleteTable",
+                    "dynamodb:DescribeTable",
+                    "dynamodb:UpdateTable",
+                    "dynamodb:DescribeTimeToLive",
+                    "dynamodb:UpdateTimeToLive",
+                    "dynamodb:ListTagsOfResource",
+                    "dynamodb:TagResource",
+                    "dynamodb:UntagResource"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/mr-lister-phase4-${EnvironmentName}"
+                  }
+                },
+                {
+                  "Sid": "ManageLambdaFunctions",
+                  "Effect": "Allow",
+                  "Action": [
+                    "lambda:CreateFunction",
+                    "lambda:DeleteFunction",
+                    "lambda:GetFunction",
+                    "lambda:GetFunctionConfiguration",
+                    "lambda:UpdateFunctionCode",
+                    "lambda:UpdateFunctionConfiguration",
+                    "lambda:TagResource",
+                    "lambda:UntagResource"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:mr-lister-phase4-${EnvironmentName}-*"
+                  }
+                },
+                {
+                  "Sid": "ManageStateMachine",
+                  "Effect": "Allow",
+                  "Action": [
+                    "states:CreateStateMachine",
+                    "states:DeleteStateMachine",
+                    "states:DescribeStateMachine",
+                    "states:UpdateStateMachine",
+                    "states:TagResource",
+                    "states:UntagResource"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:mr-lister-phase4-${EnvironmentName}"
+                  }
+                },
+                {
+                  "Sid": "ManageApplicationLogGroups",
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:DeleteLogGroup",
+                    "logs:PutRetentionPolicy",
+                    "logs:DeleteRetentionPolicy",
+                    "logs:TagResource",
+                    "logs:UntagResource"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/mr-lister-phase4-${EnvironmentName}-*"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vendedlogs/states/mr-lister-${EnvironmentName}*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "ManageApplicationRoles",
+                  "Effect": "Allow",
+                  "Action": [
+                    "iam:CreateRole",
+                    "iam:DeleteRole",
+                    "iam:GetRole",
+                    "iam:TagRole",
+                    "iam:UntagRole",
+                    "iam:PutRolePolicy",
+                    "iam:DeleteRolePolicy",
+                    "iam:GetRolePolicy",
+                    "iam:AttachRolePolicy",
+                    "iam:DetachRolePolicy",
+                    "iam:ListRolePolicies",
+                    "iam:ListAttachedRolePolicies"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/mr-lister-phase4-dev-*"
+                  }
+                },
+                {
+                  "Sid": "PassOnlyApplicationRoles",
+                  "Effect": "Allow",
+                  "Action": "iam:PassRole",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/mr-lister-phase4-dev-*"
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "iam:PassedToService": [
+                        "lambda.amazonaws.com",
+                        "states.amazonaws.com"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "DeveloperDeploymentPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": {
+          "Fn::Sub": "mr-lister-phase4-deployer-${EnvironmentName}"
+        },
+        "Groups": [{"Ref": "DeveloperGroupName"}],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ManageOnlyThePhase4Stack",
+              "Effect": "Allow",
+              "Action": [
+                "cloudformation:CreateChangeSet",
+                "cloudformation:DeleteChangeSet",
+                "cloudformation:DescribeChangeSet",
+                "cloudformation:DescribeStackEvents",
+                "cloudformation:DescribeStacks",
+                "cloudformation:DeleteStack",
+                "cloudformation:ExecuteChangeSet",
+                "cloudformation:GetTemplate",
+                "cloudformation:GetTemplateSummary",
+                "cloudformation:ListChangeSets",
+                "cloudformation:ListStackResources"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/mr-lister-phase4-${EnvironmentName}/*"
+              }
+            },
+            {
+              "Sid": "UploadOnlyPhase4BuildArtifacts",
+              "Effect": "Allow",
+              "Action": ["s3:GetBucketLocation", "s3:ListBucket"],
+              "Resource": {"Fn::GetAtt": ["DeploymentArtifactBucket", "Arn"]}
+            },
+            {
+              "Sid": "ManageOnlyPhase4BuildObjects",
+              "Effect": "Allow",
+              "Action": ["s3:DeleteObject", "s3:GetObject", "s3:PutObject"],
+              "Resource": {
+                "Fn::Sub": "${DeploymentArtifactBucket.Arn}/mr-lister-phase4-dev/*"
+              }
+            },
+            {
+              "Sid": "RunCanaryAgainstPrivateArtworkOnly",
+              "Effect": "Allow",
+              "Action": ["s3:GetObject", "s3:PutObject"],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase4-artifacts-${EnvironmentName}-${AWS::AccountId}-${AWS::Region}/private/artwork/*"
+              }
+            },
+            {
+              "Sid": "RunCanaryAgainstPhase4StateOnly",
+              "Effect": "Allow",
+              "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:Query",
+                "dynamodb:TransactWriteItems"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/mr-lister-phase4-${EnvironmentName}"
+              }
+            },
+            {
+              "Sid": "StartOnlyThePhase4CanaryWorkflow",
+              "Effect": "Allow",
+              "Action": "states:StartExecution",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:mr-lister-phase4-${EnvironmentName}"
+              }
+            },
+            {
+              "Sid": "ReadOnlyPhase4CanaryExecutions",
+              "Effect": "Allow",
+              "Action": ["states:DescribeExecution", "states:GetExecutionHistory"],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:mr-lister-phase4-${EnvironmentName}:*"
+              }
+            },
+            {
+              "Sid": "ListOnlyPhase4CanaryExecutions",
+              "Effect": "Allow",
+              "Action": "states:ListExecutions",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:mr-lister-phase4-${EnvironmentName}"
+              }
+            },
+            {
+              "Sid": "InvokeOnlyThePhase4ApprovalFunction",
+              "Effect": "Allow",
+              "Action": "lambda:InvokeFunction",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:mr-lister-phase4-${EnvironmentName}-approval"
+              }
+            },
+            {
+              "Sid": "PassOnlyThePhase4CloudFormationRole",
+              "Effect": "Allow",
+              "Action": "iam:PassRole",
+              "Resource": {"Fn::GetAtt": ["CloudFormationExecutionRole", "Arn"]},
+              "Condition": {
+                "StringEquals": {
+                  "iam:PassedToService": "cloudformation.amazonaws.com"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "DeploymentArtifactBucketName": {
+      "Value": {"Ref": "DeploymentArtifactBucket"}
+    },
+    "CloudFormationExecutionRoleArn": {
+      "Value": {"Fn::GetAtt": ["CloudFormationExecutionRole", "Arn"]}
+    },
+    "DeveloperDeploymentPolicyArn": {
+      "Value": {"Ref": "DeveloperDeploymentPolicy"}
+    }
+  }
+}

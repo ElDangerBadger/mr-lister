@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from base64 import b64decode
+from datetime import timedelta
 
 import pytest
 
 from mr_lister.contracts import ApprovalStatus, ArtworkAnalysis, JobState
 from mr_lister.workflow.errors import (
+    ApprovalWaitExpiredError,
+    ExternalWritePendingError,
     IdempotencyConflictError,
     IntelligenceConfigurationError,
     IntelligenceUnavailableError,
@@ -16,7 +19,7 @@ from mr_lister.workflow.errors import (
     StaleApprovalError,
 )
 from mr_lister.workflow.fakes import FakeProductionAdapter
-from mr_lister.workflow.models import ListingRevisionRequest
+from mr_lister.workflow.models import ExternalWriteStatus, ListingRevisionRequest
 from mr_lister.workflow.service import ListingWorkflow
 
 SYNTHETIC_PNG = b64decode(
@@ -84,6 +87,123 @@ def test_intake_and_prepare_are_separate_idempotent_steps(
     assert repeated == prepared
     assert workflow.get_review(intake.job_id).validation.passed is True
     assert production.create_calls == 1
+
+
+def test_prepare_resumes_from_persisted_intelligence_checkpoints(
+    workflow: ListingWorkflow, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class CountingIntelligence:
+        def __init__(self) -> None:
+            self.inspect_calls = 0
+            self.draft_calls = 0
+
+        def inspect_artwork(self, _artwork, _content):
+            self.inspect_calls += 1
+            return ArtworkAnalysis(subject="Badger", confidence=0.9)
+
+        def draft_listing(self, _artwork, _content, _analysis):
+            self.draft_calls += 1
+            from mr_lister.workflow.fakes import FakeIntelligenceAdapter
+
+            return FakeIntelligenceAdapter().draft_listing(_artwork, _content, _analysis)
+
+    intelligence = CountingIntelligence()
+    workflow.intelligence = intelligence
+    original_commit = workflow.store.commit_transition
+    crash_once = True
+
+    def crash_after_checkpoints(**request):
+        nonlocal crash_once
+        if request["updated"].state is JobState.LISTING_DRAFTED and crash_once:
+            crash_once = False
+            raise RuntimeError("synthetic process exit after listing checkpoint")
+        return original_commit(**request)
+
+    monkeypatch.setattr(workflow.store, "commit_transition", crash_after_checkpoints)
+    with pytest.raises(RuntimeError, match="synthetic process exit"):
+        submit(workflow, key="checkpoint-resume")
+
+    job_id = next(iter(workflow.store.jobs))
+    assert workflow.get_job(job_id).state is JobState.ANALYZING_ARTWORK
+    assert workflow.store.get_analysis_checkpoint(job_id) is not None
+    assert workflow.store.get_listing_checkpoint(job_id) is not None
+
+    monkeypatch.setattr(workflow.store, "commit_transition", original_commit)
+    resumed = workflow.prepare(job_id)
+
+    assert resumed.state is JobState.AWAITING_APPROVAL
+    assert intelligence.inspect_calls == 1
+    assert intelligence.draft_calls == 1
+
+
+def test_completed_product_write_resumes_without_duplicate_external_call(
+    workflow: ListingWorkflow,
+    production: FakeProductionAdapter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_transition = workflow._transition
+    crash_once = True
+
+    def crash_after_completed_write(job_id, target, **updates):
+        nonlocal crash_once
+        if target is JobState.PRINTIFY_DRAFT_CREATED and crash_once:
+            crash_once = False
+            raise RuntimeError("synthetic process exit after completed write")
+        return original_transition(job_id, target, **updates)
+
+    monkeypatch.setattr(workflow, "_transition", crash_after_completed_write)
+    with pytest.raises(RuntimeError, match="completed write"):
+        submit(workflow, key="completed-write-resume")
+
+    job_id = next(iter(workflow.store.jobs))
+    assert workflow.get_job(job_id).state is JobState.READY_FOR_PRODUCTION
+    assert production.create_calls == 1
+
+    monkeypatch.setattr(workflow, "_transition", original_transition)
+    resumed = workflow.prepare(job_id)
+
+    assert resumed.state is JobState.AWAITING_APPROVAL
+    assert production.create_calls == 1
+
+
+def test_unresolved_external_claim_stops_retry_for_reconciliation(
+    workflow: ListingWorkflow,
+) -> None:
+    class AmbiguousProduction:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def create_draft(self, **_request):
+            self.calls += 1
+            raise RuntimeError("connection ended after request dispatch")
+
+        def publish(self, **_request):
+            raise AssertionError("publication is not part of this test")
+
+    production = AmbiguousProduction()
+    workflow.production = production
+
+    with pytest.raises(RuntimeError, match="request dispatch"):
+        submit(workflow, key="ambiguous-write")
+    job_id = next(iter(workflow.store.jobs))
+    review = workflow.get_review(job_id)
+    artwork = workflow.store.get_artwork(job_id)
+    claim, created = workflow._claim_write(
+        job_id,
+        operation="sync_product_draft",
+        idempotency_key=f"draft:{job_id}:{review.review_version}",
+        request_material=(
+            f"{artwork.content_sha256}:{review.profile.profile_id}:"
+            f"{review.profile.profile_version}:{review.review_version}"
+        ),
+    )
+
+    with pytest.raises(ExternalWritePendingError, match="requires reconciliation"):
+        workflow.prepare(job_id)
+
+    assert created is False
+    assert claim.status is ExternalWriteStatus.RECONCILIATION_REQUIRED
+    assert production.calls == 1
 
 
 def test_repeated_tag_keywords_are_a_deterministic_validation_error(
@@ -275,7 +395,14 @@ def test_invalid_generated_output_fails_job_predictably(workflow: ListingWorkflo
 
     failed_job = next(iter(workflow.store.jobs.values()))
     assert failed_job.state is JobState.FAILED_TERMINAL
-    assert workflow.store.artwork_contents[failed_job.job_id] == SYNTHETIC_PNG
+    artwork = workflow.store.get_artwork(failed_job.job_id)
+    assert (
+        workflow.artifacts.get_artwork(
+            object_key=failed_job.artwork_object_key,
+            expected_sha256=artwork.content_sha256,
+        )
+        == SYNTHETIC_PNG
+    )
 
 
 @pytest.mark.parametrize(
@@ -332,13 +459,16 @@ def test_publish_requires_approval(workflow: ListingWorkflow) -> None:
         workflow.publish(job.job_id)
 
 
-def test_publish_requires_profile_permission(workflow: ListingWorkflow) -> None:
+def test_publish_requires_profile_permission(
+    workflow: ListingWorkflow, monkeypatch: pytest.MonkeyPatch
+) -> None:
     job = submit(workflow)
-    review = workflow.get_review(job.job_id)
-    workflow.store.reviews[job.job_id] = review.model_copy(
-        update={"profile": review.profile.model_copy(update={"publish_enabled": False})}
-    )
     workflow.approve(job.job_id, 1)
+    approved_review = workflow.get_review(job.job_id)
+    denied_review = approved_review.model_copy(
+        update={"profile": approved_review.profile.model_copy(update={"publish_enabled": False})}
+    )
+    monkeypatch.setattr(workflow.store, "get_review", lambda _job_id: denied_review)
 
     with pytest.raises(InvalidStateError, match="does not permit publication"):
         workflow.publish(job.job_id)
@@ -373,6 +503,68 @@ def test_approved_publication_is_idempotent(
     assert published.state is JobState.VERIFIED
     assert repeated.published_listing_id == published.published_listing_id
     assert production.publish_calls == 1
+
+
+def test_version_bound_approval_wait_is_consumed_with_approval(
+    workflow: ListingWorkflow, now
+) -> None:
+    job = submit(workflow, key="approval-wait")
+    wait = workflow.register_approval_wait(
+        job.job_id,
+        review_version=1,
+        task_token="synthetic-server-side-task-token",
+        expires_at=now + timedelta(hours=1),
+    )
+    assert wait.task_token not in repr(wait)
+
+    approved, task_token = workflow.approve_waiting_job(job.job_id, 1)
+    replayed, replayed_token = workflow.approve_waiting_job(job.job_id, 1)
+
+    assert approved.state is JobState.APPROVED
+    assert approved.approved_review_version == 1
+    assert task_token == wait.task_token
+    assert replayed == approved
+    assert replayed_token == task_token
+    consumed = workflow.store.get_approval_wait(job.job_id)
+    assert consumed is not None
+    assert consumed.status.value == "consumed"
+
+
+def test_expired_approval_wait_cannot_approve(
+    workflow: ListingWorkflow,
+    now,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = submit(workflow, key="expired-approval-wait")
+    workflow.register_approval_wait(
+        job.job_id,
+        review_version=1,
+        task_token="expired-task-token",
+        expires_at=now + timedelta(seconds=1),
+    )
+    monkeypatch.setattr(workflow, "_clock", lambda: now + timedelta(seconds=2))
+
+    with pytest.raises(ApprovalWaitExpiredError):
+        workflow.approve_waiting_job(job.job_id, 1)
+
+    assert workflow.get_job(job.job_id).state is JobState.AWAITING_APPROVAL
+
+
+def test_review_revision_prevents_stale_wait_release(workflow: ListingWorkflow, now) -> None:
+    job = submit(workflow, key="stale-approval-wait")
+    workflow.register_approval_wait(
+        job.job_id,
+        review_version=1,
+        task_token="stale-task-token",
+        expires_at=now + timedelta(hours=1),
+    )
+    workflow.revise_listing(job.job_id, revision_from_workflow(workflow, job.job_id))
+
+    with pytest.raises(StaleApprovalError):
+        workflow.approve_waiting_job(job.job_id, 1)
+
+    assert workflow.get_job(job.job_id).state is JobState.AWAITING_APPROVAL
+    assert workflow.get_job(job.job_id).review_version == 2
 
 
 def test_report_contains_traceable_state_events(workflow: ListingWorkflow) -> None:

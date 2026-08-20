@@ -18,7 +18,10 @@ from mr_lister.contracts import (
     ReviewSnapshot,
     can_transition,
 )
+from mr_lister.workflow.artifacts import ArtifactStore, InMemoryArtifactStore
 from mr_lister.workflow.errors import (
+    ApprovalWaitExpiredError,
+    ExternalWritePendingError,
     IntelligenceConfigurationError,
     IntelligenceUnavailableError,
     InvalidGeneratedOutputError,
@@ -26,14 +29,17 @@ from mr_lister.workflow.errors import (
     StaleApprovalError,
 )
 from mr_lister.workflow.models import (
-    ExternalWriteRecord,
+    ApprovalWaitRecord,
+    ApprovalWaitStatus,
+    ExternalWriteClaim,
+    ExternalWriteStatus,
     ListingRevisionRequest,
     RunReport,
     WorkflowEvent,
 )
 from mr_lister.workflow.ports import IntelligencePort, ProductionPort
 from mr_lister.workflow.profiles import ProductProfileRepository
-from mr_lister.workflow.store import InMemoryJobStore
+from mr_lister.workflow.store import JobStore
 from mr_lister.workflow.validation import validate_artwork, validate_listing
 
 
@@ -41,10 +47,11 @@ class ListingWorkflow:
     def __init__(
         self,
         *,
-        store: InMemoryJobStore,
+        store: JobStore,
         profiles: ProductProfileRepository,
         intelligence: IntelligencePort,
         production: ProductionPort,
+        artifacts: ArtifactStore | None = None,
         clock: Callable[[], datetime] | None = None,
         job_id_factory: Callable[[], str] | None = None,
     ) -> None:
@@ -52,6 +59,7 @@ class ListingWorkflow:
         self.profiles = profiles
         self.intelligence = intelligence
         self.production = production
+        self.artifacts = artifacts or InMemoryArtifactStore()
         self._clock = clock or (lambda: datetime.now(UTC))
         self._job_id_factory = job_id_factory or (lambda: f"job_{uuid4().hex}")
 
@@ -88,51 +96,103 @@ class ListingWorkflow:
 
         artwork = validate_artwork(filename=filename, content_type=content_type, content=content)
         request_fingerprint = f"{artwork.content_sha256}:{profile_id}"
-        existing_job_id = self.store.resolve_intake(idempotency_key, request_fingerprint)
-        if existing_job_id is not None:
-            return self.store.get_job(existing_job_id)
-
+        existing = self.store.resolve_intake(idempotency_key, request_fingerprint)
+        if existing is not None:
+            return existing
         self.profiles.get(profile_id)
+        object_key = self.artifacts.put_artwork(
+            content_sha256=artwork.content_sha256,
+            content=content,
+        )
         job_id = self._job_id_factory()
         now = self._clock()
         job = JobRecord(
             job_id=job_id,
+            event_sequence=1,
             state=JobState.UPLOADED,
             review_version=0,
             idempotency_key=idempotency_key,
-            artwork_object_key=f"local/{artwork.content_sha256}.png",
+            artwork_object_key=object_key,
             created_at=now,
             updated_at=now,
         )
-        self.store.jobs[job_id] = job
-        self.store.artworks[job_id] = artwork
-        self.store.artwork_contents[job_id] = content
-        self.store.profile_ids[job_id] = profile_id
-        self.store.bind_intake(idempotency_key, request_fingerprint, job_id)
-        self._event(job_id, "artwork_uploaded", {"filename": artwork.filename})
+        job, created = self.store.create_intake(
+            job=job,
+            artwork=artwork,
+            profile_id=profile_id,
+            request_fingerprint=request_fingerprint,
+            event=WorkflowEvent(
+                sequence=1,
+                occurred_at=now,
+                name="artwork_uploaded",
+                details={"filename": artwork.filename},
+            ),
+        )
+        if not created:
+            return job
 
         self._transition(job_id, JobState.INTAKE_VALIDATED)
         return self.store.get_job(job_id)
 
     def prepare(self, job_id: str) -> JobRecord:
-        """Create a validated, reviewable draft for one previously accepted intake."""
+        """Resume preparation from the first incomplete durable checkpoint."""
 
         job = self.store.get_job(job_id)
-        if job.state is not JobState.INTAKE_VALIDATED:
-            if job_id in self.store.reviews:
-                return job
-            raise InvalidStateError("Job is not ready for listing preparation")
-        artwork = self.store.artworks[job_id]
-        content = self.store.artwork_contents[job_id]
-        profile = self.profiles.get(self.store.profile_ids[job_id])
-        self._transition(job_id, JobState.ANALYZING_ARTWORK)
+        if job.state in {
+            JobState.AWAITING_APPROVAL,
+            JobState.NEEDS_REVISION,
+            JobState.APPROVED,
+            JobState.PUBLISHING,
+            JobState.PUBLISHED,
+            JobState.VERIFIED,
+        }:
+            return job
+        if job.state in {JobState.INTAKE_VALIDATED, JobState.FAILED_RETRYABLE}:
+            job = self._transition(job_id, JobState.ANALYZING_ARTWORK)
+        if job.state is JobState.ANALYZING_ARTWORK:
+            self._prepare_intelligence_checkpoints(job_id)
+            job = self.store.get_job(job_id)
+        if job.state is JobState.LISTING_DRAFTED:
+            review = self.store.get_review(job_id)
+            if not review.validation.passed:
+                self._transition(job_id, JobState.NEEDS_REVISION)
+                self._event(
+                    job_id,
+                    "listing_validation_failed",
+                    {"issue_codes": [issue.code for issue in review.validation.issues]},
+                )
+                return self.store.get_job(job_id)
+            job = self._transition(job_id, JobState.LISTING_VALIDATED)
+        if job.state is JobState.LISTING_VALIDATED:
+            job = self._transition(job_id, JobState.READY_FOR_PRODUCTION)
+        if job.state is JobState.READY_FOR_PRODUCTION:
+            self._prepare_product_draft(job_id)
+            job = self.store.get_job(job_id)
+        if job.state is JobState.PRINTIFY_DRAFT_CREATED:
+            return self._transition(job_id, JobState.AWAITING_APPROVAL)
+        raise InvalidStateError("Job is not ready for listing preparation")
+
+    def _prepare_intelligence_checkpoints(self, job_id: str) -> None:
+        job = self.store.get_job(job_id)
+        artwork = self.store.get_artwork(job_id)
+        content = self.artifacts.get_artwork(
+            object_key=job.artwork_object_key,
+            expected_sha256=artwork.content_sha256,
+        )
+        profile = self.profiles.get(self.store.get_profile_id(job_id))
         try:
-            analysis = ArtworkAnalysis.model_validate(
-                self.intelligence.inspect_artwork(artwork, content)
-            )
-            listing = ListingIntelligence.model_validate(
-                self.intelligence.draft_listing(artwork, content, analysis)
-            )
+            analysis = self.store.get_analysis_checkpoint(job_id)
+            if analysis is None:
+                analysis = ArtworkAnalysis.model_validate(
+                    self.intelligence.inspect_artwork(artwork, content)
+                )
+                self.store.save_analysis_checkpoint(job_id, analysis)
+            listing = self.store.get_listing_checkpoint(job_id)
+            if listing is None:
+                listing = ListingIntelligence.model_validate(
+                    self.intelligence.draft_listing(artwork, content, analysis)
+                )
+                self.store.save_listing_checkpoint(job_id, listing)
         except IntelligenceUnavailableError:
             self._transition(job_id, JobState.FAILED_RETRYABLE)
             self._event(job_id, "intelligence_temporarily_unavailable", {})
@@ -151,51 +211,74 @@ class ListingWorkflow:
             raise InvalidGeneratedOutputError(
                 "Intelligence adapter returned output outside the application contract"
             ) from error
-        self._transition(job_id, JobState.LISTING_DRAFTED, review_version=1)
-
-        validation = validate_listing(listing)
         review = ReviewSnapshot(
             review_version=1,
             artwork_analysis=analysis,
             listing=listing,
             profile=profile,
-            validation=validation,
-        )
-        self.store.reviews[job_id] = review
-        if not validation.passed:
-            self._transition(job_id, JobState.NEEDS_REVISION)
-            self._event(
-                job_id,
-                "listing_validation_failed",
-                {"issue_codes": [issue.code for issue in validation.issues]},
-            )
-            return self.store.get_job(job_id)
-        self._transition(job_id, JobState.LISTING_VALIDATED)
-        self._transition(job_id, JobState.READY_FOR_PRODUCTION)
-
-        image_id, product_id = self.production.create_draft(
-            job_id=job_id,
-            artwork=artwork,
-            listing=listing,
-            profile=profile,
-        )
-        self._record_write(
-            job_id,
-            operation="sync_product_draft",
-            idempotency_key=f"draft:{job_id}:1",
-            request_material=(
-                f"{artwork.content_sha256}:{profile.profile_id}:{profile.profile_version}:1"
-            ),
-            external_id=product_id,
+            validation=validate_listing(listing),
         )
         self._transition(
             job_id,
+            JobState.LISTING_DRAFTED,
+            review=review,
+            review_version=1,
+        )
+
+    def _prepare_product_draft(self, job_id: str) -> None:
+        review = self.store.get_review(job_id)
+        artwork = self.store.get_artwork(job_id)
+        request_material = (
+            f"{artwork.content_sha256}:{review.profile.profile_id}:"
+            f"{review.profile.profile_version}:{review.review_version}"
+        )
+        idempotency_key = f"draft:{job_id}:{review.review_version}"
+        claim, created = self._claim_write(
+            job_id,
+            operation="sync_product_draft",
+            idempotency_key=idempotency_key,
+            request_material=request_material,
+        )
+        if claim.status is ExternalWriteStatus.COMPLETED:
+            assert claim.result is not None
+            result = claim.result
+        elif not created:
+            raise ExternalWritePendingError(
+                "Product draft write is already claimed and requires reconciliation"
+            )
+        else:
+            try:
+                image_id, product_id = self.production.create_draft(
+                    job_id=job_id,
+                    artwork=artwork,
+                    listing=review.listing,
+                    profile=review.profile,
+                )
+            except Exception:
+                self.store.require_external_write_reconciliation(
+                    job_id,
+                    idempotency_key=idempotency_key,
+                    request_fingerprint=claim.request_fingerprint,
+                )
+                raise
+            result = {"external_id": product_id, "image_id": image_id}
+            self.store.complete_external_write(
+                job_id,
+                idempotency_key=idempotency_key,
+                request_fingerprint=claim.request_fingerprint,
+                result=result,
+                completed_at=self._clock(),
+            )
+        product_id = result["external_id"]
+        image_id = result["image_id"]
+        review = review.model_copy(update={"printify_product_id": product_id})
+        self._transition(
+            job_id,
             JobState.PRINTIFY_DRAFT_CREATED,
+            review=review,
             printify_image_id=image_id,
             printify_product_id=product_id,
         )
-        self.store.reviews[job_id] = review.model_copy(update={"printify_product_id": product_id})
-        return self._transition(job_id, JobState.AWAITING_APPROVAL)
 
     def get_job(self, job_id: str) -> JobRecord:
         return self.store.get_job(job_id)
@@ -232,8 +315,12 @@ class ListingWorkflow:
                 JobState.NEEDS_REVISION,
                 approved_review_version=None,
             )
-        self.store.reviews[job_id] = review
-        self._transition(job_id, JobState.LISTING_DRAFTED, review_version=next_version)
+        self._transition(
+            job_id,
+            JobState.LISTING_DRAFTED,
+            review=review,
+            review_version=next_version,
+        )
         if not validation.passed:
             self._transition(job_id, JobState.NEEDS_REVISION)
             self._event(
@@ -244,32 +331,10 @@ class ListingWorkflow:
             return review
         self._transition(job_id, JobState.LISTING_VALIDATED)
         self._transition(job_id, JobState.READY_FOR_PRODUCTION)
-        artwork = self.store.artworks[job_id]
-        image_id, product_id = self.production.create_draft(
-            job_id=job_id,
-            artwork=artwork,
-            listing=listing,
-            profile=current.profile,
-        )
-        self._record_write(
-            job_id,
-            operation="sync_product_draft",
-            idempotency_key=f"draft:{job_id}:{next_version}",
-            request_material=(
-                f"{artwork.content_sha256}:{current.profile.profile_id}:"
-                f"{current.profile.profile_version}:{next_version}"
-            ),
-            external_id=product_id,
-        )
-        self._transition(
-            job_id,
-            JobState.PRINTIFY_DRAFT_CREATED,
-            printify_image_id=image_id,
-            printify_product_id=product_id,
-        )
+        self._prepare_product_draft(job_id)
         self._transition(job_id, JobState.AWAITING_APPROVAL)
         self._event(job_id, "review_revised", {"review_version": next_version})
-        return review
+        return self.store.get_review(job_id)
 
     def approve(self, job_id: str, review_version: int) -> JobRecord:
         job = self.store.get_job(job_id)
@@ -283,22 +348,84 @@ class ListingWorkflow:
         if not review.validation.passed:
             raise InvalidStateError("An invalid review cannot be approved")
 
-        self.store.reviews[job_id] = review.model_copy(
-            update={"approval_status": ApprovalStatus.APPROVED}
-        )
+        approved_review = review.model_copy(update={"approval_status": ApprovalStatus.APPROVED})
         approved = self._transition(
             job_id,
             JobState.APPROVED,
+            review=approved_review,
             approved_review_version=review_version,
         )
         self._event(job_id, "review_approved", {"review_version": review_version})
-        return approved
+        return self.store.get_job(approved.job_id)
+
+    def register_approval_wait(
+        self,
+        job_id: str,
+        *,
+        review_version: int,
+        task_token: str,
+        expires_at: datetime,
+    ) -> ApprovalWaitRecord:
+        now = self._clock()
+        return self.store.register_approval_wait(
+            ApprovalWaitRecord(
+                job_id=job_id,
+                review_version=review_version,
+                task_token=task_token,
+                status=ApprovalWaitStatus.PENDING,
+                created_at=now,
+                expires_at=expires_at,
+            )
+        )
+
+    def approve_waiting_job(self, job_id: str, review_version: int) -> tuple[JobRecord, str]:
+        """Approve one version and consume its callback token in the same store transaction."""
+
+        job = self.store.get_job(job_id)
+        review = self.store.get_review(job_id)
+        wait = self.store.get_approval_wait(job_id)
+        if wait is None or wait.review_version != review_version:
+            raise StaleApprovalError("Approval wait does not match the requested review version")
+        now = self._clock()
+        if now >= wait.expires_at:
+            raise ApprovalWaitExpiredError("Approval wait has expired")
+        if wait.status is ApprovalWaitStatus.CONSUMED:
+            if job.state is JobState.APPROVED and job.approved_review_version == review_version:
+                return job, wait.task_token
+            raise InvalidStateError("Consumed approval wait does not match an approved job")
+        if review_version != review.review_version:
+            raise StaleApprovalError("Approval does not match the current review version")
+        if job.state is not JobState.AWAITING_APPROVAL:
+            raise InvalidStateError("Job is not awaiting approval")
+        if not review.validation.passed:
+            raise InvalidStateError("An invalid review cannot be approved")
+        consumed_wait = wait.model_copy(
+            update={"status": ApprovalWaitStatus.CONSUMED, "consumed_at": now}
+        )
+        approved_review = review.model_copy(update={"approval_status": ApprovalStatus.APPROVED})
+        approved = self._transition(
+            job_id,
+            JobState.APPROVED,
+            review=approved_review,
+            approval_wait=(wait, consumed_wait),
+            approved_review_version=review_version,
+        )
+        self._event(job_id, "review_approved", {"review_version": review_version})
+        return self.store.get_job(approved.job_id), wait.task_token
 
     def publish(self, job_id: str) -> JobRecord:
+        published = self.publish_draft(job_id)
+        if published.state is JobState.VERIFIED:
+            return published
+        return self.verify_publication(job_id)
+
+    def publish_draft(self, job_id: str) -> JobRecord:
+        """Resume fake publication through the durable PUBLISHED checkpoint."""
+
         job = self.store.get_job(job_id)
         if job.state is JobState.VERIFIED:
             return job
-        if job.state is not JobState.APPROVED:
+        if job.state not in {JobState.APPROVED, JobState.PUBLISHING, JobState.PUBLISHED}:
             raise InvalidStateError("Job must be approved before publication")
         if job.approved_review_version != job.review_version:
             raise StaleApprovalError("Publication approval is stale")
@@ -308,80 +435,135 @@ class ListingWorkflow:
         if not review.profile.publish_enabled:
             raise InvalidStateError("Product profile does not permit publication")
 
-        self._transition(job_id, JobState.PUBLISHING)
-        listing_id = self.production.publish(
-            job_id=job_id,
-            product_id=job.printify_product_id,
-        )
-        self._record_write(
-            job_id,
-            operation="publish_listing",
-            idempotency_key=f"publish:{job_id}:{job.review_version}",
-            request_material=(
-                f"{job.printify_product_id}:{job.review_version}:{job.approved_review_version}"
-            ),
-            external_id=listing_id,
-        )
-        self._transition(job_id, JobState.PUBLISHED, published_listing_id=listing_id)
+        if job.state is JobState.APPROVED:
+            job = self._transition(job_id, JobState.PUBLISHING)
+        if job.state is JobState.PUBLISHING:
+            idempotency_key = f"publish:{job_id}:{job.review_version}"
+            claim, created = self._claim_write(
+                job_id,
+                operation="publish_listing",
+                idempotency_key=idempotency_key,
+                request_material=(
+                    f"{job.printify_product_id}:{job.review_version}:{job.approved_review_version}"
+                ),
+            )
+            if claim.status is ExternalWriteStatus.COMPLETED:
+                assert claim.result is not None
+                listing_id = claim.result["external_id"]
+            elif not created:
+                raise ExternalWritePendingError(
+                    "Publication write is already claimed and requires reconciliation"
+                )
+            else:
+                try:
+                    listing_id = self.production.publish(
+                        job_id=job_id,
+                        product_id=job.printify_product_id,
+                    )
+                except Exception:
+                    self.store.require_external_write_reconciliation(
+                        job_id,
+                        idempotency_key=idempotency_key,
+                        request_fingerprint=claim.request_fingerprint,
+                    )
+                    raise
+                self.store.complete_external_write(
+                    job_id,
+                    idempotency_key=idempotency_key,
+                    request_fingerprint=claim.request_fingerprint,
+                    result={"external_id": listing_id},
+                    completed_at=self._clock(),
+                )
+            job = self._transition(
+                job_id,
+                JobState.PUBLISHED,
+                published_listing_id=listing_id,
+            )
+        return self.store.get_job(job.job_id)
+
+    def verify_publication(self, job_id: str) -> JobRecord:
+        """Verify the persisted fake publication in a separately retryable command."""
+
+        job = self.store.get_job(job_id)
+        if job.state is JobState.VERIFIED:
+            return job
+        if job.state is not JobState.PUBLISHED or not job.published_listing_id:
+            raise InvalidStateError("Job must have a published listing before verification")
         verified = self._transition(job_id, JobState.VERIFIED)
-        self._event(job_id, "publication_verified", {"listing_id": listing_id})
-        return verified
+        self._event(
+            job_id,
+            "publication_verified",
+            {"listing_id": verified.published_listing_id},
+        )
+        return self.store.get_job(verified.job_id)
 
     def get_report(self, job_id: str) -> RunReport:
         return RunReport(
             job=self.store.get_job(job_id),
-            artwork=self.store.artworks[job_id],
+            artwork=self.store.get_artwork(job_id),
             review=self.store.get_review(job_id),
-            external_writes=tuple(self.store.external_writes[job_id]),
-            events=tuple(self.store.events[job_id]),
+            external_writes=self.store.list_external_writes(job_id),
+            events=self.store.list_events(job_id),
         )
 
-    def _transition(self, job_id: str, target: JobState, **updates: object) -> JobRecord:
+    def _transition(
+        self,
+        job_id: str,
+        target: JobState,
+        *,
+        review: ReviewSnapshot | None = None,
+        approval_wait: tuple[ApprovalWaitRecord, ApprovalWaitRecord] | None = None,
+        **updates: object,
+    ) -> JobRecord:
         current = self.store.get_job(job_id)
         if not can_transition(current.state, target):
             raise InvalidStateError(f"Cannot transition from {current.state} to {target}")
         payload = current.model_dump()
         payload.update(updates)
         payload["state"] = target
+        payload["record_version"] = current.record_version + 1
+        payload["event_sequence"] = current.event_sequence + 1
         payload["updated_at"] = self._clock()
         updated = JobRecord.model_validate(payload)
-        self.store.jobs[job_id] = updated
-        self._event(job_id, "state_changed", {"from": current.state, "to": target})
+        event = WorkflowEvent(
+            sequence=updated.event_sequence,
+            occurred_at=self._clock(),
+            name="state_changed",
+            details={"from": current.state, "to": target},
+        )
+        self.store.commit_transition(
+            current=current,
+            updated=updated,
+            event=event,
+            review=review,
+            approval_wait=approval_wait,
+        )
         return updated
 
     def _event(self, job_id: str, name: str, details: dict[str, object]) -> None:
-        events = self.store.events[job_id]
-        events.append(
-            WorkflowEvent(
-                sequence=len(events) + 1,
-                occurred_at=self._clock(),
-                name=name,
-                details=details,
-            )
+        self.store.append_event(
+            job_id,
+            occurred_at=self._clock(),
+            name=name,
+            details=details,
         )
 
-    def _record_write(
+    def _claim_write(
         self,
         job_id: str,
         *,
         operation: str,
         idempotency_key: str,
         request_material: str,
-        external_id: str,
-    ) -> None:
+    ) -> tuple[ExternalWriteClaim, bool]:
         fingerprint = sha256(request_material.encode()).hexdigest()
-        records = self.store.external_writes[job_id]
-        for record in records:
-            if record.idempotency_key == idempotency_key:
-                if record.request_fingerprint != fingerprint:
-                    raise InvalidStateError("External write idempotency fingerprint changed")
-                return
-        records.append(
-            ExternalWriteRecord(
+        return self.store.claim_external_write(
+            job_id,
+            ExternalWriteClaim(
                 operation=operation,
                 idempotency_key=idempotency_key,
                 request_fingerprint=fingerprint,
-                external_id=external_id,
-                occurred_at=self._clock(),
-            )
+                status=ExternalWriteStatus.CLAIMED,
+                claimed_at=self._clock(),
+            ),
         )

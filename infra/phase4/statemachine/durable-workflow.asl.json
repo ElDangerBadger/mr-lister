@@ -1,0 +1,183 @@
+{
+  "Comment": "Mr Lister Phase 4 durable fake-production workflow",
+  "StartAt": "PrepareJob",
+  "TimeoutSeconds": 691200,
+  "States": {
+    "PrepareJob": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${PrepareFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Retry": [
+        {
+          "ErrorEquals": ["RetryableWorkflowCommand"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "Lambda.ClientExecutionTimeoutException",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": null,
+          "Next": "WorkflowFailed"
+        }
+      ],
+      "Next": "PreparationOutcome"
+    },
+    "PreparationOutcome": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.state",
+          "StringEquals": "awaiting_approval",
+          "Next": "WaitForApproval"
+        },
+        {
+          "Variable": "$.state",
+          "StringEquals": "needs_revision",
+          "Next": "NeedsRevision"
+        },
+        {
+          "Variable": "$.state",
+          "StringEquals": "approved",
+          "Next": "FakePublish"
+        },
+        {
+          "Variable": "$.state",
+          "StringEquals": "publishing",
+          "Next": "FakePublish"
+        },
+        {
+          "Variable": "$.state",
+          "StringEquals": "published",
+          "Next": "FakeVerify"
+        },
+        {
+          "Variable": "$.state",
+          "StringEquals": "verified",
+          "Next": "WorkflowSucceeded"
+        }
+      ],
+      "Default": "WorkflowFailed"
+    },
+    "WaitForApproval": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "${RegisterApprovalWaitFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id",
+          "review_version.$": "$.review_version",
+          "task_token.$": "$$.Task.Token",
+          "expires_in_seconds": 604800
+        }
+      },
+      "TimeoutSeconds": 604800,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": null,
+          "Next": "WorkflowFailed"
+        }
+      ],
+      "Next": "FakePublish"
+    },
+    "FakePublish": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FakePublishFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "RetryableWorkflowCommand",
+            "Lambda.ClientExecutionTimeoutException",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": null,
+          "Next": "WorkflowFailed"
+        }
+      ],
+      "Next": "FakeVerify"
+    },
+    "FakeVerify": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FakeVerifyFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "RetryableWorkflowCommand",
+            "Lambda.ClientExecutionTimeoutException",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": null,
+          "Next": "WorkflowFailed"
+        }
+      ],
+      "Next": "WorkflowSucceeded"
+    },
+    "NeedsRevision": {
+      "Type": "Succeed"
+    },
+    "WorkflowSucceeded": {
+      "Type": "Succeed"
+    },
+    "WorkflowFailed": {
+      "Type": "Fail",
+      "Error": "MR_LISTER_DURABLE_WORKFLOW_FAILED",
+      "Cause": "A sanitized durable workflow command failed"
+    }
+  }
+}
