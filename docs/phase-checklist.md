@@ -159,10 +159,27 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     Functions history contained no PNG bytes, listing body, prompt text, or credential indicators.
     The expected opaque callback-token field existed only at the approval wait boundary. AgentCore
     remained disabled, no paid model inference ran, and the final offline suite passes 177 tests.
-- [ ] Phase 5 — Real Printify draft creation
-  - [ ] Printify authentication and artwork upload
-  - [ ] Verified product profile, placement, variants, and integer-cent pricing
-  - [ ] Idempotent unpublished product creation and external-ID persistence
+- [x] Phase 5 — Real Printify draft creation
+  - [x] Printify authentication and artwork upload
+    - [x] PNG/SVG-preserving writer and independently durable upload checkpoint
+    - [x] Secrets Manager runtime configuration and one gated live upload
+  - [x] Verified product profile, placement, variants, and integer-cent pricing
+    - [x] Live catalog selection: Gildan 64000 blueprint 145, SwiftPOD 39, five colors,
+      six sizes
+    - [x] Thirty exact variants and three size-specific print canvases
+    - [x] $29.99 integer-cent price and centered front-placement policy
+    - [x] Live mockup calibration: profile v2 top-aligns square artwork at `y=0.25`
+    - [x] Second live canary visually accepted the corrected top alignment
+    - [x] Read-only, fail-closed catalog preflight contract
+  - [x] Idempotent unpublished product creation and external-ID persistence
+  - Live canary evidence: the deployed `us-west-2` workflow read the exact seller secret through
+    the prepare role, uploaded one frozen PNG, and created unpublished Printify product
+    `6a88bb49f2c2450fa1065afd`. Job `job_0b6c7b32a2794c5682964d498817edb1` stopped at
+    `AWAITING_APPROVAL` with separate completed upload and product-create records. No approval,
+    publication, order, or fulfillment call occurred.
+  - Exit evidence: profile v2 canary product `6a88bd96cf106ff5b30727c5` was visually accepted
+    with correct sizing and top alignment. Both canary executions were subsequently stopped and
+    verified `ABORTED`; their unpublished products and immutable workflow evidence were retained.
 - [ ] Phase 6 — Review and approval interface
   - [ ] Upload, progress, consolidated review, and supported edits
   - [ ] Validation and margin visibility
@@ -172,6 +189,7 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
   - [ ] Approval-version and publish guard verification
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports
+  - [ ] Notify the seller only after publication is positively verified complete
 - [ ] Phase 8 — Hardening, evaluation, and submission
   - [ ] Security, failure-mode, privacy, and cost review
   - [ ] Evaluation evidence and demo rehearsal

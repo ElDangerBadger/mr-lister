@@ -17,6 +17,11 @@ from pydantic import ValidationError
 
 from mr_lister.agent.contracts import AgentCoreResponse
 from mr_lister.durable.contracts import ApprovalCommand, ApprovalWaitCommand, JobCommand
+from mr_lister.production import (
+    PrintifyProductionAdapter,
+    PrintifyProductionClient,
+    load_printify_connection,
+)
 from mr_lister.workflow.artifacts import S3ArtifactStore
 from mr_lister.workflow.dynamodb import DynamoDBJobStore
 from mr_lister.workflow.errors import (
@@ -27,6 +32,7 @@ from mr_lister.workflow.errors import (
 from mr_lister.workflow.fakes import FakeIntelligenceAdapter, FakeProductionAdapter
 from mr_lister.workflow.models import ApprovalWaitStatus
 from mr_lister.workflow.profiles import ProductProfileRepository
+from mr_lister.workflow.secrets import SecretsManagerSecretReader
 from mr_lister.workflow.service import ListingWorkflow
 
 
@@ -54,16 +60,29 @@ def build_services() -> Phase4Services:
     s3 = session.client("s3")
     table_name = os.environ["MR_LISTER_STATE_TABLE"]
     artifact_bucket = os.environ["MR_LISTER_ARTIFACT_BUCKET"]
+    printify_secret_arn = os.environ.get("MR_LISTER_PRINTIFY_SECRET_ARN", "").strip()
     agentcore_runtime_arn = os.environ.get("MR_LISTER_AGENTCORE_RUNTIME_ARN", "").strip()
     profile_directory = Path(
         os.environ.get("MR_LISTER_PROFILE_DIRECTORY", "config/product_profiles")
     )
+    production = FakeProductionAdapter()
+    if printify_secret_arn:
+        connection = load_printify_connection(
+            reader=SecretsManagerSecretReader(session.client("secretsmanager")),
+            secret_arn=printify_secret_arn,
+        )
+        production = PrintifyProductionAdapter(
+            client=PrintifyProductionClient(
+                token_provider=lambda: connection.api_token.get_secret_value()
+            ),
+            shop_id=connection.shop_id,
+        )
     workflow = ListingWorkflow(
         store=DynamoDBJobStore(client=dynamodb, table_name=table_name),
         artifacts=S3ArtifactStore(client=s3, bucket=artifact_bucket),
         profiles=ProductProfileRepository(profile_directory),
         intelligence=FakeIntelligenceAdapter(),
-        production=FakeProductionAdapter(),
+        production=production,
     )
     return Phase4Services(
         workflow=workflow,

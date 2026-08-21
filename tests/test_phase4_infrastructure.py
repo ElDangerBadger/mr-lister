@@ -96,6 +96,31 @@ def test_operational_table_is_on_demand_encrypted_retained_and_ttl_ready() -> No
     }
 
 
+def test_printify_secret_is_optional_exact_arn_and_prepare_only() -> None:
+    template = load_template()
+    parameter = template["Parameters"]["PrintifySecretArn"]
+    assert parameter["Default"] == ""
+    assert "secretsmanager" in parameter["AllowedPattern"]
+
+    prepare = template["Resources"]["PrepareFunction"]
+    assert prepare["Properties"]["Environment"]["Variables"]["MR_LISTER_PRINTIFY_SECRET_ARN"] == {
+        "Ref": "PrintifySecretArn"
+    }
+
+    role_policies = template["Resources"]["PrepareFunctionRole"]["Properties"]["Policies"]
+    serialized = json.dumps(role_policies)
+    assert "secretsmanager:GetSecretValue" in serialized
+    assert "secretsmanager:DescribeSecret" in serialized
+    assert '"Resource": {"Ref": "PrintifySecretArn"}' in serialized
+
+    other_roles = [
+        resource
+        for name, resource in template["Resources"].items()
+        if name.endswith("FunctionRole") and name != "PrepareFunctionRole"
+    ]
+    assert all("secretsmanager" not in json.dumps(role) for role in other_roles)
+
+
 def test_application_resources_have_scopeable_physical_names() -> None:
     resources = load_template()["Resources"]
 

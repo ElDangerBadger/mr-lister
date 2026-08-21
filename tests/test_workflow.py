@@ -62,6 +62,7 @@ def test_submit_prepares_one_reviewable_fake_draft(
     assert review.validation.passed is True
     assert review.validation.issues == ()
     assert review.approval_status is ApprovalStatus.PENDING
+    assert production.upload_calls == 1
     assert production.create_calls == 1
 
 
@@ -79,6 +80,7 @@ def test_intake_and_prepare_are_separate_idempotent_steps(
     assert intake.state is JobState.INTAKE_VALIDATED
     assert intake.job_id not in workflow.store.reviews
     assert production.create_calls == 0
+    assert production.upload_calls == 0
 
     prepared = workflow.prepare(intake.job_id)
     repeated = workflow.prepare(intake.job_id)
@@ -87,6 +89,7 @@ def test_intake_and_prepare_are_separate_idempotent_steps(
     assert repeated == prepared
     assert workflow.get_review(intake.job_id).validation.passed is True
     assert production.create_calls == 1
+    assert production.upload_calls == 1
 
 
 def test_prepare_resumes_from_persisted_intelligence_checkpoints(
@@ -157,13 +160,43 @@ def test_completed_product_write_resumes_without_duplicate_external_call(
 
     job_id = next(iter(workflow.store.jobs))
     assert workflow.get_job(job_id).state is JobState.READY_FOR_PRODUCTION
+    assert production.upload_calls == 1
     assert production.create_calls == 1
 
     monkeypatch.setattr(workflow, "_transition", original_transition)
     resumed = workflow.prepare(job_id)
 
     assert resumed.state is JobState.AWAITING_APPROVAL
+    assert production.upload_calls == 1
     assert production.create_calls == 1
+
+
+def test_completed_upload_resumes_without_duplicate_upload(
+    workflow: ListingWorkflow,
+    production: FakeProductionAdapter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_create = production.create_product_draft
+    crash_once = True
+
+    def crash_before_product_create(**request):
+        nonlocal crash_once
+        if crash_once:
+            crash_once = False
+            raise RuntimeError("synthetic process exit between writes")
+        return original_create(**request)
+
+    monkeypatch.setattr(production, "create_product_draft", crash_before_product_create)
+    with pytest.raises(RuntimeError, match="between writes"):
+        submit(workflow, key="completed-upload-resume")
+
+    job_id = next(iter(workflow.store.jobs))
+    assert production.upload_calls == 1
+
+    # The failed product claim is deliberately not auto-retried until an operator
+    # reconciles it, but the completed upload remains independently durable.
+    writes = workflow.store.list_external_writes(job_id)
+    assert [write.operation for write in writes] == ["upload_artwork"]
 
 
 def test_unresolved_external_claim_stops_retry_for_reconciliation(
@@ -173,7 +206,10 @@ def test_unresolved_external_claim_stops_retry_for_reconciliation(
         def __init__(self) -> None:
             self.calls = 0
 
-        def create_draft(self, **_request):
+        def upload_artwork(self, **_request):
+            return "uploaded-image"
+
+        def create_product_draft(self, **_request):
             self.calls += 1
             raise RuntimeError("connection ended after request dispatch")
 
@@ -190,11 +226,11 @@ def test_unresolved_external_claim_stops_retry_for_reconciliation(
     artwork = workflow.store.get_artwork(job_id)
     claim, created = workflow._claim_write(
         job_id,
-        operation="sync_product_draft",
+        operation="create_product_draft",
         idempotency_key=f"draft:{job_id}:{review.review_version}",
         request_material=(
             f"{artwork.content_sha256}:{review.profile.profile_id}:"
-            f"{review.profile.profile_version}:{review.review_version}"
+            f"{review.profile.profile_version}:{review.review_version}:uploaded-image"
         ),
     )
 
@@ -577,7 +613,8 @@ def test_report_contains_traceable_state_events(workflow: ListingWorkflow) -> No
     assert report.job.state is JobState.VERIFIED
     assert report.artwork.filename == "geometric_badger.png"
     assert [write.operation for write in report.external_writes] == [
-        "sync_product_draft",
+        "upload_artwork",
+        "create_product_draft",
         "publish_listing",
     ]
     assert report.events[0].name == "artwork_uploaded"

@@ -52,23 +52,33 @@ class FakeIntelligenceAdapter:
 
 class FakeProductionAdapter:
     def __init__(self) -> None:
-        self.drafts: dict[str, tuple[str, str]] = {}
+        self.uploads: dict[str, str] = {}
+        self.drafts: dict[str, str] = {}
         self.publications: dict[str, str] = {}
+        self.upload_calls = 0
         self.create_calls = 0
         self.publish_calls = 0
 
-    def create_draft(
+    def upload_artwork(self, *, job_id: str, artwork: ArtworkInput, content: bytes) -> str:
+        del artwork, content
+        if job_id not in self.uploads:
+            self.upload_calls += 1
+            self.uploads[job_id] = f"fake-image-{job_id}"
+        return self.uploads[job_id]
+
+    def create_product_draft(
         self,
         *,
         job_id: str,
         artwork: ArtworkInput,
         listing: ListingIntelligence,
         profile: ProductProfile,
-    ) -> tuple[str, str]:
-        del artwork, listing, profile
+        image_id: str,
+    ) -> str:
+        del artwork, listing, profile, image_id
         if job_id not in self.drafts:
             self.create_calls += 1
-            self.drafts[job_id] = (f"fake-image-{job_id}", f"fake-product-{job_id}")
+            self.drafts[job_id] = f"fake-product-{job_id}"
         return self.drafts[job_id]
 
     def publish(self, *, job_id: str, product_id: str) -> str:

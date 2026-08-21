@@ -1,0 +1,45 @@
+{
+  "contract_version": "1.0.0",
+  "profile_id": "gildan_64000_swiftpod",
+  "profile_version": 2,
+  "blueprint_id": 145,
+  "print_provider_id": 39,
+  "variant_ids": [],
+  "colors": ["Black", "Charcoal", "Dark Chocolate", "Navy", "Sand"],
+  "sizes": ["S", "M", "L", "XL", "2XL", "3XL"],
+  "retail_price_cents": 2999,
+  "buyer_shipping_cents": 0,
+  "placement_groups": [
+    {
+      "group_id": "small",
+      "sizes": ["S"],
+      "canvas_width": 3021,
+      "canvas_height": 3927,
+      "position": "front",
+      "decoration_method": "dtg",
+      "placement": {"x": 0.5, "y": 0.25, "scale": 0.65},
+      "angle": 0
+    },
+    {
+      "group_id": "medium",
+      "sizes": ["M"],
+      "canvas_width": 3356,
+      "canvas_height": 4364,
+      "position": "front",
+      "decoration_method": "dtg",
+      "placement": {"x": 0.5, "y": 0.25, "scale": 0.65},
+      "angle": 0
+    },
+    {
+      "group_id": "large",
+      "sizes": ["L", "XL", "2XL", "3XL"],
+      "canvas_width": 3692,
+      "canvas_height": 4800,
+      "position": "front",
+      "decoration_method": "dtg",
+      "placement": {"x": 0.5, "y": 0.25, "scale": 0.65},
+      "angle": 0
+    }
+  ],
+  "publish_enabled": false
+}

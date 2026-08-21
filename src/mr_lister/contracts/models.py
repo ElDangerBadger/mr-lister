@@ -75,15 +75,36 @@ class Placement(ContractModel):
     scale: float = Field(gt=0.0, le=1.0)
 
 
+class PlacementGroup(ContractModel):
+    group_id: Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]+$")]
+    sizes: tuple[ShortText, ...] = Field(min_length=1)
+    canvas_width: int = Field(gt=0)
+    canvas_height: int = Field(gt=0)
+    position: str = Field(default="front", pattern=r"^[a-z][a-z0-9_-]*$")
+    decoration_method: str = Field(default="dtg", pattern=r"^[a-z][a-z0-9_-]*$")
+    placement: Placement
+    angle: int = Field(default=0, ge=-360, le=360)
+
+    @model_validator(mode="after")
+    def sizes_must_be_unique(self) -> PlacementGroup:
+        if len(set(self.sizes)) != len(self.sizes):
+            raise ValueError("Placement-group sizes must be unique")
+        return self
+
+
 class ProductProfile(ContractModel):
     contract_version: ContractVersion = CONTRACT_VERSION
     profile_id: Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]+$")]
     profile_version: int = Field(ge=1)
     blueprint_id: int = Field(gt=0)
     print_provider_id: int = Field(gt=0)
-    variant_ids: tuple[int, ...] = Field(min_length=1)
+    variant_ids: tuple[int, ...] = ()
+    colors: tuple[ShortText, ...] = ()
+    sizes: tuple[ShortText, ...] = ()
     retail_price_cents: int = Field(gt=0)
-    placement: Placement
+    buyer_shipping_cents: int = Field(default=0, ge=0)
+    placement: Placement | None = None
+    placement_groups: tuple[PlacementGroup, ...] = ()
     publish_enabled: bool = False
 
     @model_validator(mode="after")
@@ -92,6 +113,25 @@ class ProductProfile(ContractModel):
             raise ValueError("Variant IDs must be positive")
         if len(set(self.variant_ids)) != len(self.variant_ids):
             raise ValueError("Variant IDs must be unique")
+        has_live_selectors = bool(self.colors or self.sizes or self.placement_groups)
+        if not self.variant_ids and not has_live_selectors:
+            raise ValueError("Profile requires static variant IDs or live catalog selectors")
+        if has_live_selectors:
+            if not self.colors or not self.sizes or not self.placement_groups:
+                raise ValueError(
+                    "Live catalog profiles require colors, sizes, and placement groups"
+                )
+            if len(set(self.colors)) != len(self.colors):
+                raise ValueError("Profile colors must be unique")
+            if len(set(self.sizes)) != len(self.sizes):
+                raise ValueError("Profile sizes must be unique")
+            grouped_sizes = tuple(size for group in self.placement_groups for size in group.sizes)
+            if len(set(grouped_sizes)) != len(grouped_sizes):
+                raise ValueError("Each size must belong to exactly one placement group")
+            if set(grouped_sizes) != set(self.sizes):
+                raise ValueError("Placement groups must cover every selected size exactly once")
+        elif self.placement is None:
+            raise ValueError("Static variant profiles require a placement")
         return self
 
 

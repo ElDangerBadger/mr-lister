@@ -21,4 +21,4 @@ profile = "mr-lister-dev"
 capabilities = "CAPABILITY_NAMED_IAM"
 confirm_changeset = true
 fail_on_empty_changeset = false
-parameter_overrides = "EnvironmentName=dev AgentCoreRuntimeArn=\"\""
+parameter_overrides = "EnvironmentName=dev AgentCoreRuntimeArn=\"\" PrintifySecretArn=\"\""

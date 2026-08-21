@@ -284,7 +284,7 @@ def test_checkpoints_and_completed_write_survive_store_reconstruction(
     store.save_analysis_checkpoint(job.job_id, artwork_analysis)
     store.save_listing_checkpoint(job.job_id, listing)
     claim = ExternalWriteClaim(
-        operation="sync_product_draft",
+        operation="create_product_draft",
         idempotency_key=f"draft:{job.job_id}:1",
         request_fingerprint="b" * 64,
         status=ExternalWriteStatus.CLAIMED,

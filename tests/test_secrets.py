@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
+from mr_lister.production.settings import load_printify_connection
 from mr_lister.workflow.secrets import SecretsManagerSecretReader
 
 SECRET_ARN = "arn:aws:secretsmanager:us-west-2:123456789012:secret:mr-lister/dev/printify-x"
@@ -51,3 +53,30 @@ def test_phase4_secret_policy_is_read_only_and_placeholder_scoped() -> None:
             "Resource": "<MARKETPLACE_SECRET_ARN>",
         }
     ]
+
+
+def test_printify_connection_parses_json_without_exposing_token() -> None:
+    reader = SecretsManagerSecretReader(
+        RecordingSecretsManager('{"api_token":"private-token","shop_id":"42"}')
+    )
+
+    connection = load_printify_connection(reader=reader, secret_arn=SECRET_ARN)
+
+    assert connection.shop_id == 42
+    assert connection.api_token.get_secret_value() == "private-token"
+    assert "private-token" not in repr(connection)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        '{"api_token":"","shop_id":42}',
+        '{"api_token":"token","shop_id":0}',
+        '{"api_token":"token","shop_id":42,"unexpected":true}',
+    ],
+)
+def test_printify_connection_fails_closed_on_invalid_secret_json(value: str) -> None:
+    reader = SecretsManagerSecretReader(RecordingSecretsManager(value))
+
+    with pytest.raises(ValidationError):
+        load_printify_connection(reader=reader, secret_arn=SECRET_ARN)

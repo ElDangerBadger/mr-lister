@@ -26,7 +26,7 @@ class WorkflowEvent(ContractModel):
 
 
 class ExternalWriteRecord(ContractModel):
-    operation: Literal["sync_product_draft", "publish_listing"]
+    operation: Literal["upload_artwork", "create_product_draft", "publish_listing"]
     idempotency_key: str = Field(min_length=1)
     request_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
     external_id: str = Field(min_length=1)
@@ -40,7 +40,7 @@ class ExternalWriteStatus(StrEnum):
 
 
 class ExternalWriteClaim(ContractModel):
-    operation: Literal["sync_product_draft", "publish_listing"]
+    operation: Literal["upload_artwork", "create_product_draft", "publish_listing"]
     idempotency_key: str = Field(min_length=1)
     request_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
     status: ExternalWriteStatus

@@ -65,3 +65,21 @@ class StaleApprovalError(WorkflowError):
 
 class ProfileNotFoundError(WorkflowError):
     code = "PROFILE_NOT_FOUND"
+
+
+class ProductionUnavailableError(WorkflowError):
+    """A retryable production-provider or network failure."""
+
+    code = "PRODUCTION_UNAVAILABLE"
+
+
+class ProductionConfigurationError(WorkflowError):
+    """A terminal production credential or account configuration failure."""
+
+    code = "PRODUCTION_CONFIGURATION"
+
+
+class ProductionInputError(WorkflowError):
+    """A terminal product-profile, catalog, or source-artwork failure."""
+
+    code = "PRODUCTION_INPUT"

@@ -228,16 +228,58 @@ class ListingWorkflow:
     def _prepare_product_draft(self, job_id: str) -> None:
         review = self.store.get_review(job_id)
         artwork = self.store.get_artwork(job_id)
-        request_material = (
-            f"{artwork.content_sha256}:{review.profile.profile_id}:"
-            f"{review.profile.profile_version}:{review.review_version}"
+        job = self.store.get_job(job_id)
+        content = self.artifacts.get_artwork(
+            object_key=job.artwork_object_key,
+            expected_sha256=artwork.content_sha256,
         )
-        idempotency_key = f"draft:{job_id}:{review.review_version}"
+
+        upload_key = f"upload:{job_id}:{artwork.content_sha256}"
+        upload_claim, upload_created = self._claim_write(
+            job_id,
+            operation="upload_artwork",
+            idempotency_key=upload_key,
+            request_material=f"{artwork.content_sha256}:{artwork.content_type}",
+        )
+        if upload_claim.status is ExternalWriteStatus.COMPLETED:
+            assert upload_claim.result is not None
+            image_id = upload_claim.result["external_id"]
+        elif not upload_created:
+            raise ExternalWritePendingError(
+                "Artwork upload is already claimed and requires reconciliation"
+            )
+        else:
+            try:
+                image_id = self.production.upload_artwork(
+                    job_id=job_id,
+                    artwork=artwork,
+                    content=content,
+                )
+            except Exception:
+                self.store.require_external_write_reconciliation(
+                    job_id,
+                    idempotency_key=upload_key,
+                    request_fingerprint=upload_claim.request_fingerprint,
+                )
+                raise
+            self.store.complete_external_write(
+                job_id,
+                idempotency_key=upload_key,
+                request_fingerprint=upload_claim.request_fingerprint,
+                result={"external_id": image_id},
+                completed_at=self._clock(),
+            )
+
+        draft_request_material = (
+            f"{artwork.content_sha256}:{review.profile.profile_id}:"
+            f"{review.profile.profile_version}:{review.review_version}:{image_id}"
+        )
+        draft_key = f"draft:{job_id}:{review.review_version}"
         claim, created = self._claim_write(
             job_id,
-            operation="sync_product_draft",
-            idempotency_key=idempotency_key,
-            request_material=request_material,
+            operation="create_product_draft",
+            idempotency_key=draft_key,
+            request_material=draft_request_material,
         )
         if claim.status is ExternalWriteStatus.COMPLETED:
             assert claim.result is not None
@@ -248,29 +290,29 @@ class ListingWorkflow:
             )
         else:
             try:
-                image_id, product_id = self.production.create_draft(
+                product_id = self.production.create_product_draft(
                     job_id=job_id,
                     artwork=artwork,
                     listing=review.listing,
                     profile=review.profile,
+                    image_id=image_id,
                 )
             except Exception:
                 self.store.require_external_write_reconciliation(
                     job_id,
-                    idempotency_key=idempotency_key,
+                    idempotency_key=draft_key,
                     request_fingerprint=claim.request_fingerprint,
                 )
                 raise
-            result = {"external_id": product_id, "image_id": image_id}
+            result = {"external_id": product_id}
             self.store.complete_external_write(
                 job_id,
-                idempotency_key=idempotency_key,
+                idempotency_key=draft_key,
                 request_fingerprint=claim.request_fingerprint,
                 result=result,
                 completed_at=self._clock(),
             )
         product_id = result["external_id"]
-        image_id = result["image_id"]
         review = review.model_copy(update={"printify_product_id": product_id})
         self._transition(
             job_id,

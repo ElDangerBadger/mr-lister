@@ -17,13 +17,22 @@ class IntelligencePort(Protocol):
 
 
 class ProductionPort(Protocol):
-    def create_draft(
+    def upload_artwork(
+        self,
+        *,
+        job_id: str,
+        artwork: ArtworkInput,
+        content: bytes,
+    ) -> str: ...
+
+    def create_product_draft(
         self,
         *,
         job_id: str,
         artwork: ArtworkInput,
         listing: ListingIntelligence,
         profile: ProductProfile,
-    ) -> tuple[str, str]: ...
+        image_id: str,
+    ) -> str: ...
 
     def publish(self, *, job_id: str, product_id: str) -> str: ...

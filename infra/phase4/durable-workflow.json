@@ -12,11 +12,20 @@
       "Type": "String",
       "Default": "",
       "Description": "Optional durable AgentCore runtime ARN; blank keeps deterministic fake preparation"
+    },
+    "PrintifySecretArn": {
+      "Type": "String",
+      "Default": "",
+      "AllowedPattern": "^$|^arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:mr-lister/[a-z0-9/_-]+-[A-Za-z0-9]{6}$",
+      "Description": "Exact ARN for one Printify seller connection; blank keeps fake production"
     }
   },
   "Conditions": {
     "UseAgentCoreRuntime": {
       "Fn::Not": [{"Fn::Equals": [{"Ref": "AgentCoreRuntimeArn"}, ""]}]
+    },
+    "UsePrintifySecret": {
+      "Fn::Not": [{"Fn::Equals": [{"Ref": "PrintifySecretArn"}, ""]}]
     }
   },
   "Resources": {
@@ -208,6 +217,25 @@
               },
               {"Ref": "AWS::NoValue"}
             ]
+          },
+          {
+            "Fn::If": [
+              "UsePrintifySecret",
+              {
+                "PolicyName": "ReadOnlyConfiguredPrintifySecret",
+                "PolicyDocument": {
+                  "Version": "2012-10-17",
+                  "Statement": [
+                    {
+                      "Effect": "Allow",
+                      "Action": ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"],
+                      "Resource": {"Ref": "PrintifySecretArn"}
+                    }
+                  ]
+                }
+              },
+              {"Ref": "AWS::NoValue"}
+            ]
           }
         ]
       }
@@ -288,7 +316,8 @@
             "MR_LISTER_ARTIFACT_BUCKET": {"Ref": "PrivateArtifactBucket"},
             "MR_LISTER_STATE_TABLE": {"Ref": "OperationalStateTable"},
             "MR_LISTER_PROFILE_DIRECTORY": "config/product_profiles",
-            "MR_LISTER_AGENTCORE_RUNTIME_ARN": {"Ref": "AgentCoreRuntimeArn"}
+            "MR_LISTER_AGENTCORE_RUNTIME_ARN": {"Ref": "AgentCoreRuntimeArn"},
+            "MR_LISTER_PRINTIFY_SECRET_ARN": {"Ref": "PrintifySecretArn"}
           }
         }
       }
