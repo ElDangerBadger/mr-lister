@@ -46,6 +46,7 @@ from mr_lister.control.models import (
     WorkRequestStatus,
     WorkType,
 )
+from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.control.store import InMemorySellerControlStore
 from mr_lister.control.worker_commands import (
     BeginPreparationCommand,
@@ -60,6 +61,26 @@ JOB_ID = "job_phase6_strands_001"
 WORK_ID = "work_phase6_strands_001"
 REVIEW_FINGERPRINT = "b" * 64
 EVIDENCE_FINGERPRINT = "e" * 64
+
+
+def _durable_source_material() -> dict[str, object]:
+    return {
+        "job_id": JOB_ID,
+        "owner_id": OWNER_ID,
+        "bucket": "mr-lister-phase6-runtime-test",
+        "object_key": f"private/owners/{OWNER_ID}/jobs/{JOB_ID}/source/source.png",
+        "version_id": "version_phase6_runtime",
+        "content_sha256": "7" * 64,
+        "size_bytes": 512,
+        "media_type": "image/png",
+        "product_profile_id": "gildan_5000_test",
+        "product_profile_version": 1,
+        "product_profile_fingerprint": "9" * 64,
+        "created_at": NOW,
+    }
+
+
+DURABLE_SOURCE_FP = source_artifact_fingerprint(**_durable_source_material())
 
 
 def authority_records() -> tuple[ControlJobRecord, WorkRequest]:
@@ -401,7 +422,7 @@ class StaticPreparedReviewProducer:
         assert work_request_id == WORK_ID
         self.calls.append((job_id, work_request_id))
         return PreparedReviewObservation(
-            source_artifact_fingerprint="8" * 64,
+            source_artifact_fingerprint=DURABLE_SOURCE_FP,
             artwork_analysis=ArtworkAnalysis(
                 subject="A geometric badger",
                 visual_elements=("compass", "pine trees"),
@@ -475,7 +496,7 @@ def durable_worker_runtime() -> tuple[
         job_id=JOB_ID,
         event_sequence=1,
         state=ControlJobState.INTAKE_VALIDATED,
-        source_artifact_fingerprint="8" * 64,
+        source_artifact_fingerprint=DURABLE_SOURCE_FP,
         active_work_request_id=WORK_ID,
         created_at=NOW,
         updated_at=NOW,
@@ -514,19 +535,10 @@ def durable_worker_runtime() -> tuple[
         work_request_id=WORK_ID,
         created_at=NOW,
     )
+    source_material = _durable_source_material()
     source = SourceArtifactRecord(
-        job_id=JOB_ID,
-        owner_id=OWNER_ID,
-        fingerprint="8" * 64,
-        bucket="mr-lister-phase6-runtime-test",
-        object_key=f"private/owners/{OWNER_ID}/jobs/{JOB_ID}/source/source.png",
-        version_id="version_phase6_runtime",
-        content_sha256="7" * 64,
-        size_bytes=512,
-        product_profile_id="gildan_5000_test",
-        product_profile_version=1,
-        product_profile_fingerprint="9" * 64,
-        created_at=NOW,
+        fingerprint=source_artifact_fingerprint(**source_material),
+        **source_material,
     )
     store.create_job(
         job=job,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -49,6 +51,13 @@ from mr_lister.control.models import (
     WorkType,
     can_control_transition,
 )
+from mr_lister.control.source_artwork import validate_source_artifact_authority
+from mr_lister.control.upload_models import (
+    UploadCompletionCommit,
+    UploadIntent,
+    UploadIntentCommit,
+    UploadReceipt,
+)
 
 _WORK_IDENTITY_FIELDS = (
     "contract_version",
@@ -69,6 +78,43 @@ _COMMAND_WORK_TRANSITIONS = frozenset(
         (WorkRequestStatus.DISPATCHED, WorkRequestStatus.COMPLETED),
     }
 )
+_SAFE_JOB_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$")
+_OWNER_JOB_SORT_KEY = re.compile(r"^[0-9]{20}#[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$")
+
+
+def owner_job_sort_key(job: ControlJobRecord) -> str:
+    """Build the stable, descending-query sort key for a current job row."""
+
+    if _SAFE_JOB_ID.fullmatch(job.job_id) is None:
+        raise ValueError("The job identifier cannot be used as a page cursor")
+    seconds = int(job.updated_at.timestamp())
+    epoch_micros = seconds * 1_000_000 + job.updated_at.microsecond
+    return f"{epoch_micros:020d}#{job.job_id}"
+
+
+def encode_owner_job_cursor(job: ControlJobRecord) -> str:
+    """Encode a bounded owner-index key as an opaque URL-safe page cursor."""
+
+    material = owner_job_sort_key(job)
+    return urlsafe_b64encode(material.encode("ascii")).decode("ascii").rstrip("=")
+
+
+def decode_owner_job_cursor(cursor: str) -> tuple[str, str]:
+    """Decode only canonical cursors emitted by :func:`encode_owner_job_cursor`."""
+
+    if not cursor or len(cursor) > 200 or not cursor.isascii():
+        raise ValueError("The owner job page cursor is invalid")
+    try:
+        decoded = urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)).decode("ascii")
+    except (UnicodeDecodeError, ValueError):
+        raise ValueError("The owner job page cursor is invalid") from None
+    if _OWNER_JOB_SORT_KEY.fullmatch(decoded) is None:
+        raise ValueError("The owner job page cursor is invalid")
+    canonical = urlsafe_b64encode(decoded.encode("ascii")).decode("ascii").rstrip("=")
+    if canonical != cursor:
+        raise ValueError("The owner job page cursor is invalid")
+    _timestamp, job_id = decoded.split("#", 1)
+    return decoded, job_id
 
 
 @dataclass(frozen=True)
@@ -98,6 +144,14 @@ class CommandCommit:
     failure: FailureRecord | None = None
     work_request: WorkRequest | None = None
     work_update: tuple[WorkRequest, WorkRequest] | None = None
+
+
+@dataclass(frozen=True)
+class OwnerJobPage:
+    """One bounded, owner-scoped page sorted by most recent durable change."""
+
+    jobs: tuple[ControlJobRecord, ...]
+    next_cursor: str | None = None
 
 
 def revalidate_work_request(current: WorkRequest, **updates: object) -> WorkRequest:
@@ -181,6 +235,10 @@ def validate_initial_job(
         raise InvalidControlStateError("INTAKE_VALIDATED requires its preparation work")
     if source_artifact is None:
         raise InvalidControlStateError("INTAKE_VALIDATED requires its pinned source artifact")
+    try:
+        validate_source_artifact_authority(source_artifact)
+    except ValueError:
+        raise InvalidControlStateError("The initial source artifact authority is invalid") from None
     if (
         source_artifact.job_id != job.job_id
         or source_artifact.owner_id != job.owner_id
@@ -806,6 +864,28 @@ class SellerControlStore(Protocol):
 
     def get_job_for_owner(self, owner_id: str, job_id: str) -> ControlJobRecord: ...
 
+    def list_jobs_for_owner(
+        self,
+        owner_id: str,
+        *,
+        limit: int = 25,
+        cursor: str | None = None,
+    ) -> OwnerJobPage: ...
+
+    def get_upload_intent_for_owner(self, owner_id: str, upload_id: str) -> UploadIntent: ...
+
+    def resolve_upload_receipt(
+        self,
+        owner_id: str,
+        command_type: str,
+        upload_id: str,
+        key_digest: str,
+    ) -> UploadReceipt | None: ...
+
+    def commit_upload_intent(self, commit: UploadIntentCommit) -> UploadReceipt: ...
+
+    def complete_upload(self, commit: UploadCompletionCommit) -> UploadReceipt: ...
+
     def get_review(self, job_id: str, review_version: int) -> ReviewContent: ...
 
     def get_source_artifact(self, job_id: str) -> SourceArtifactRecord: ...
@@ -893,6 +973,8 @@ class InMemorySellerControlStore:
         self._work: dict[tuple[str, str], WorkRequest] = {}
         self._events: dict[str, list[DomainEvent]] = defaultdict(list)
         self._receipts: dict[tuple[str, str, str, str], CommandReceipt] = {}
+        self._upload_intents: dict[str, UploadIntent] = {}
+        self._upload_receipts: dict[tuple[str, str, str, str], UploadReceipt] = {}
 
     @property
     def jobs(self) -> Mapping[str, ControlJobRecord]:
@@ -911,6 +993,108 @@ class InMemorySellerControlStore:
             raise NotFoundError("The requested job was not found")
         return job
 
+    def list_jobs_for_owner(
+        self,
+        owner_id: str,
+        *,
+        limit: int = 25,
+        cursor: str | None = None,
+    ) -> OwnerJobPage:
+        if not 1 <= limit <= 100:
+            raise ValueError("Owner job page limit must be between 1 and 100")
+        recent = sorted(
+            (job for job in self._jobs.values() if job.owner_id == owner_id),
+            key=lambda job: (job.updated_at, job.job_id),
+            reverse=True,
+        )
+        start = 0
+        if cursor is not None:
+            cursor_sort_key, cursor_job_id = decode_owner_job_cursor(cursor)
+            matches = [
+                index
+                for index, job in enumerate(recent)
+                if job.job_id == cursor_job_id and owner_job_sort_key(job) == cursor_sort_key
+            ]
+            if not matches:
+                raise NotFoundError("The requested job page was not found")
+            start = matches[0] + 1
+        selected = tuple(recent[start : start + limit])
+        has_more = start + len(selected) < len(recent)
+        return OwnerJobPage(
+            jobs=selected,
+            next_cursor=(encode_owner_job_cursor(selected[-1]) if selected and has_more else None),
+        )
+
+    def get_upload_intent_for_owner(self, owner_id: str, upload_id: str) -> UploadIntent:
+        with self._lock:
+            intent = self._upload_intents.get(upload_id)
+            if intent is None or intent.owner_id != owner_id:
+                raise NotFoundError("The requested upload was not found")
+            return intent
+
+    def resolve_upload_receipt(
+        self,
+        owner_id: str,
+        command_type: str,
+        upload_id: str,
+        key_digest: str,
+    ) -> UploadReceipt | None:
+        with self._lock:
+            return self._upload_receipts.get((owner_id, command_type, upload_id, key_digest))
+
+    def commit_upload_intent(self, commit: UploadIntentCommit) -> UploadReceipt:
+        with self._lock:
+            receipt_key = self._upload_receipt_key(commit.receipt)
+            existing_receipt = self._upload_receipts.get(receipt_key)
+            if existing_receipt is not None:
+                if existing_receipt.request_fingerprint == commit.receipt.request_fingerprint:
+                    return existing_receipt
+                raise IdempotencyConflictError(
+                    "The idempotency key was already used for another upload request"
+                )
+            persisted = self._upload_intents.get(commit.updated.upload_id)
+            if commit.current is None:
+                if persisted is not None:
+                    raise IdempotencyConflictError("The generated upload identifier already exists")
+            elif persisted != commit.current:
+                raise ConcurrentControlModificationError(
+                    "The upload intent changed before the command could commit"
+                )
+            self._upload_intents[commit.updated.upload_id] = commit.updated
+            self._upload_receipts[receipt_key] = commit.receipt
+            return commit.receipt
+
+    def complete_upload(self, commit: UploadCompletionCommit) -> UploadReceipt:
+        with self._lock:
+            receipt = commit.intent.receipt
+            receipt_key = self._upload_receipt_key(receipt)
+            existing_receipt = self._upload_receipts.get(receipt_key)
+            if existing_receipt is not None:
+                if existing_receipt.request_fingerprint == receipt.request_fingerprint:
+                    return existing_receipt
+                raise IdempotencyConflictError(
+                    "The idempotency key was already used for another upload request"
+                )
+            current = commit.intent.current
+            assert current is not None
+            if self._upload_intents.get(current.upload_id) != current:
+                raise ConcurrentControlModificationError(
+                    "The upload intent changed before completion could commit"
+                )
+            if commit.job.job_id in self._jobs:
+                raise IdempotencyConflictError("The reserved job identifier already exists")
+            if (commit.job.job_id, commit.work_request.work_request_id) in self._work:
+                raise IdempotencyConflictError("The preparation work already exists")
+            self._upload_intents[current.upload_id] = commit.intent.updated
+            self._upload_receipts[receipt_key] = receipt
+            self._jobs[commit.job.job_id] = commit.job
+            self._sources[commit.job.job_id] = commit.source_artifact
+            self._events[commit.job.job_id].append(commit.event)
+            self._work[(commit.job.job_id, commit.work_request.work_request_id)] = (
+                commit.work_request
+            )
+            return receipt
+
     def get_review(self, job_id: str, review_version: int) -> ReviewContent:
         self.get_job(job_id)
         try:
@@ -921,9 +1105,10 @@ class InMemorySellerControlStore:
     def get_source_artifact(self, job_id: str) -> SourceArtifactRecord:
         self.get_job(job_id)
         try:
-            return self._sources[job_id]
+            source = self._sources[job_id]
         except KeyError as error:
             raise NotFoundError("The requested source artifact was not found") from error
+        return validate_source_artifact_authority(source)
 
     def get_artwork_analysis(self, job_id: str, analysis_id: str) -> ArtworkAnalysisRecord:
         self.get_job(job_id)
@@ -1474,5 +1659,14 @@ class InMemorySellerControlStore:
             receipt.owner_id,
             receipt.command_type,
             receipt.job_id,
+            receipt.idempotency_key_digest,
+        )
+
+    @staticmethod
+    def _upload_receipt_key(receipt: UploadReceipt) -> tuple[str, str, str, str]:
+        return (
+            receipt.owner_id,
+            receipt.command_type.value,
+            receipt.upload_id,
             receipt.idempotency_key_digest,
         )

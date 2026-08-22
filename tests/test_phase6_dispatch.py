@@ -29,27 +29,45 @@ from mr_lister.control.models import (
     WorkType,
 )
 from mr_lister.control.service import SellerControlService
+from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.control.store import InMemorySellerControlStore
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 OWNER_ID = "a" * 64
-SOURCE_FP = "d" * 64
+
+
+def _source_material(*, job_id: str, owner_id: str, created_at: datetime) -> dict[str, Any]:
+    return {
+        "job_id": job_id,
+        "owner_id": owner_id,
+        "bucket": "mr-lister-phase6-artifacts-test",
+        "object_key": (f"private/owners/{owner_id}/jobs/{job_id}/source/source.png"),
+        "version_id": "source-version-1",
+        "content_sha256": "e" * 64,
+        "size_bytes": 128,
+        "media_type": "image/png",
+        "product_profile_id": "profile_test",
+        "product_profile_version": 1,
+        "product_profile_fingerprint": "f" * 64,
+        "created_at": created_at,
+    }
+
+
+def _source_fingerprint(*, job_id: str, owner_id: str, created_at: datetime) -> str:
+    return source_artifact_fingerprint(
+        **_source_material(job_id=job_id, owner_id=owner_id, created_at=created_at)
+    )
 
 
 def source_for(job: ControlJobRecord) -> SourceArtifactRecord:
-    return SourceArtifactRecord(
+    material = _source_material(
         job_id=job.job_id,
         owner_id=job.owner_id,
-        fingerprint=SOURCE_FP,
-        bucket="mr-lister-phase6-artifacts-test",
-        object_key=(f"private/owners/{job.owner_id}/jobs/{job.job_id}/source/source.png"),
-        version_id="source-version-1",
-        content_sha256="e" * 64,
-        size_bytes=128,
-        product_profile_id="profile_test",
-        product_profile_version=1,
-        product_profile_fingerprint="f" * 64,
         created_at=job.created_at,
+    )
+    return SourceArtifactRecord(
+        fingerprint=source_artifact_fingerprint(**material),
+        **material,
     )
 
 
@@ -333,7 +351,11 @@ def test_dispatcher_uses_the_phase6_store_claim_contract_end_to_end() -> None:
         owner_id=OWNER_ID,
         job_id=work.job_id,
         state=ControlJobState.INTAKE_VALIDATED,
-        source_artifact_fingerprint=SOURCE_FP,
+        source_artifact_fingerprint=_source_fingerprint(
+            job_id=work.job_id,
+            owner_id=OWNER_ID,
+            created_at=NOW - timedelta(minutes=1),
+        ),
         event_sequence=1,
         active_work_request_id=work.work_request_id,
         created_at=NOW - timedelta(minutes=1),
@@ -391,7 +413,11 @@ def test_fast_worker_can_settle_claimed_work_before_start_acknowledgement() -> N
         owner_id=OWNER_ID,
         job_id=work.job_id,
         state=ControlJobState.INTAKE_VALIDATED,
-        source_artifact_fingerprint=SOURCE_FP,
+        source_artifact_fingerprint=_source_fingerprint(
+            job_id=work.job_id,
+            owner_id=OWNER_ID,
+            created_at=work.created_at,
+        ),
         event_sequence=1,
         active_work_request_id=work.work_request_id,
         created_at=work.created_at,

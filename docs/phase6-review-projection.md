@@ -70,11 +70,16 @@ backslashes, malformed escaping, suffix hosts, and deceptive authorities are rej
 stored mockup URL fails, the complete mockup set becomes unavailable and none of its URLs leave the
 projection.
 
-The original-artwork preview is a narrow port. A grant must bind the exact source fingerprint, use
-the fixed `/v1/jobs/{job_id}/artwork-preview?grant={opaque}` route on one configured HTTPS
-application origin, contain no storage coordinate, and expire within five minutes. Issuer failure
-or any binding/URL/expiry mismatch produces `preview unavailable` without revealing storage
-details. The AWS signer and authenticated preview route belong to Phase 6.4.
+The original-artwork preview is a narrow authenticated port. The projection exposes only the fixed
+`/v1/jobs/{job_id}/artwork-preview` route on one configured HTTPS application origin; it contains
+no bearer grant, query string, or storage coordinate. The Phase 6.4 query boundary authenticates
+the request, derives the owner from the JWT, checks job ownership before loading source authority,
+and presigns only the source's exact bucket, key, and `VersionId` for at most five minutes. It then
+returns a bodyless, non-cacheable `302` to that exact S3 GET, whose terminal response is also fixed
+to `Cache-Control: private, no-store, max-age=0`. Artwork bytes do not pass through API Gateway, and
+no KMS signing key or separately replayable preview grant is introduced. Any ownership,
+source-authority, signing, URL, or expiry mismatch produces a fixed unavailable/not-found result
+without revealing storage details.
 
 ## Verification
 
@@ -87,19 +92,23 @@ Accepted offline verification on 2026-08-22:
 - Ruff lint and format checks: passed;
 - `git diff --check`: passed.
 
-The projection tests cover the complete ready review, all machine/human/terminal action classes,
-retryable and terminal failures, exact economics staleness boundary and source/as-of evidence,
-cross-owner indistinguishability, canonical analysis/review/Strands/sync fingerprints, stale
-revision joins, hostile URLs, opaque preview grants, validation paths, authority mismatch, and
-recursive response-field leakage.
+The Phase 6.3 projection tests cover the complete ready review, all machine/human/terminal action
+classes, retryable and terminal failures, exact economics staleness boundary and source/as-of
+evidence, cross-owner indistinguishability, canonical analysis/review/Strands/sync fingerprints,
+stale revision joins, hostile URLs, preview-port binding validation, authority mismatch, and
+recursive response-field leakage. Phase 6.4 cloud-boundary coverage separately exercises the
+authenticated no-query endpoint, owner-first exact-version signing, hostile signer results, and
+bodyless redirect response.
 
 ## Deliberately open
 
-Phase 6.3 is the application read model, not the cloud API or interface. Phase 6 remains open until:
+Phase 6.3 is the application read model, not the deployed cloud API or interface. Phase 6 remains
+open until:
 
-- Phase 6.4 supplies Cognito ownership, direct private upload, and the concrete short-lived preview
-  route;
+- the Phase 6.4 Cognito, direct-upload, owner-scoped API, and exact-version preview adapters are
+  composed into the fail-closed Lambda shims, deployed, and proven live;
 - Phase 6.5 renders this projection as an accessible seller interface;
-- the `SCAFFOLD_ONLY` Phase 6 Lambda adapters are composed and deployed; and
+- the `SCAFFOLD_ONLY` marker remains in place until those runtime adapters and workers are composed;
+  and
 - live same-job acceptance proves upload through AgentCore/Strands, one unpublished product,
   consolidated review, and the human decision boundary.

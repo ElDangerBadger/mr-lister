@@ -43,6 +43,7 @@ from mr_lister.control.projection_models import (
     SectionReadiness,
     SellerAction,
 )
+from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.production.economics import (
     ProductCostEvidence,
     ProductVariantCostEvidence,
@@ -55,12 +56,31 @@ NOW = datetime(2026, 8, 22, 12, 0, tzinfo=UTC)
 OWNER = "a" * 64
 OTHER_OWNER = "b" * 64
 JOB_ID = "job_projection"
-SOURCE_FP = "1" * 64
 PAYLOAD_FP = "5" * 64
 PROFILE = ProductProfile.model_validate_json(
     Path("config/product_profiles/gildan_64000_swiftpod.json").read_text()
 )
 PROFILE_FP = canonical_fingerprint(PROFILE)
+
+
+def _source_material() -> dict[str, object]:
+    return {
+        "job_id": JOB_ID,
+        "owner_id": OWNER,
+        "bucket": "private-review-fixture",
+        "object_key": f"private/owners/{OWNER}/jobs/{JOB_ID}/source/source.png",
+        "version_id": "private-source-version",
+        "content_sha256": "8" * 64,
+        "size_bytes": 512,
+        "media_type": "image/png",
+        "product_profile_id": PROFILE.profile_id,
+        "product_profile_version": PROFILE.profile_version,
+        "product_profile_fingerprint": PROFILE_FP,
+        "created_at": NOW - timedelta(minutes=20),
+    }
+
+
+SOURCE_FP = source_artifact_fingerprint(**_source_material())
 VALID_TAGS = (
     "badger portrait",
     "woodland explorer",
@@ -166,10 +186,7 @@ class FakePreviewIssuer:
     def __init__(self) -> None:
         self.calls = 0
         self.grant = PreviewGrant(
-            url=(
-                "https://review.mr-lister.test/v1/jobs/job_projection/artwork-preview"
-                "?grant=opaque_preview_grant_12345"
-            ),
+            url="https://review.mr-lister.test/v1/jobs/job_projection/artwork-preview",
             expires_at=NOW + timedelta(minutes=5),
             source_artifact_fingerprint=SOURCE_FP,
         )
@@ -297,19 +314,10 @@ def _fixture() -> tuple[FakeProjectionStore, FakePreviewIssuer]:
         product_profile_fingerprint=PROFILE_FP,
         created_at=NOW - timedelta(minutes=15),
     )
+    source_material = _source_material()
     source = SourceArtifactRecord(
-        job_id=JOB_ID,
-        owner_id=OWNER,
-        fingerprint=SOURCE_FP,
-        bucket="private-review-fixture",
-        object_key=f"private/owners/{OWNER}/jobs/{JOB_ID}/source/source.png",
-        version_id="private-source-version",
-        content_sha256="8" * 64,
-        size_bytes=512,
-        product_profile_id=PROFILE.profile_id,
-        product_profile_version=PROFILE.profile_version,
-        product_profile_fingerprint=PROFILE_FP,
-        created_at=NOW - timedelta(minutes=20),
+        fingerprint=source_artifact_fingerprint(**source_material),
+        **source_material,
     )
     analysis = ArtworkAnalysisRecord(
         analysis_id="analysis_projection",
@@ -619,8 +627,7 @@ def test_invalid_preview_grant_never_exposes_a_storage_reference() -> None:
     (
         (42, NOW + timedelta(minutes=1)),
         (
-            "https://review.mr-lister.test/v1/jobs/job_projection/artwork-preview"
-            "?grant=opaque_preview_grant_12345",
+            "https://review.mr-lister.test/v1/jobs/job_projection/artwork-preview",
             "not-a-timestamp",
         ),
     ),

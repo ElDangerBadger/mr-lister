@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -32,8 +33,112 @@ def test_phase6_is_a_separate_required_configuration_sam_application() -> None:
     for name in ("AgentCoreRuntimeArn", "PrintifySecretArn"):
         assert "Default" not in parameters[name]
         assert "^$" not in parameters[name]["AllowedPattern"]
+    application_origin_pattern = parameters["ApplicationOrigin"]["AllowedPattern"]
+    assert re.fullmatch(application_origin_pattern, "https://seller.example.test")
+    assert not re.fullmatch(application_origin_pattern, "https://seller.example.test:8443")
+    assert not re.fullmatch(application_origin_pattern, "https://Seller.example.test")
     assert "phase4" not in json.dumps(template).lower()
     assert "phase5" not in json.dumps(template).lower()
+
+
+def test_identity_is_invite_only_totp_and_public_code_flow() -> None:
+    resources = load_template()["Resources"]
+    pool = resources["SellerUserPool"]
+    pool_properties = pool["Properties"]
+
+    assert pool["DeletionPolicy"] == "Retain"
+    assert pool["UpdateReplacePolicy"] == "Retain"
+    assert pool_properties["AdminCreateUserConfig"] == {"AllowAdminCreateUserOnly": True}
+    assert pool_properties["MfaConfiguration"] == "ON"
+    assert pool_properties["EnabledMfas"] == ["SOFTWARE_TOKEN_MFA"]
+    assert pool_properties["DeletionProtection"] == "ACTIVE"
+    assert pool_properties["UsernameAttributes"] == ["email"]
+    assert pool_properties["AutoVerifiedAttributes"] == ["email"]
+
+    group = resources["SellerUserPoolGroup"]["Properties"]
+    assert group == {
+        "Description": "Invite-only Mr Lister sellers",
+        "GroupName": "seller",
+        "Precedence": 0,
+        "UserPoolId": {"Ref": "SellerUserPool"},
+    }
+    resource_server = resources["SellerApiResourceServer"]["Properties"]
+    assert resource_server["Identifier"] == "mr-lister-api"
+    assert resource_server["Scopes"] == [
+        {
+            "ScopeName": "seller",
+            "ScopeDescription": "Operate only the authenticated seller's Mr Lister drafts",
+        }
+    ]
+
+    client = resources["SellerUserPoolClient"]
+    assert client["DependsOn"] == "SellerApiResourceServer"
+    client_properties = client["Properties"]
+    assert client_properties["GenerateSecret"] is False
+    assert client_properties["AllowedOAuthFlowsUserPoolClient"] is True
+    assert client_properties["AllowedOAuthFlows"] == ["code"]
+    assert client_properties["AllowedOAuthScopes"] == ["openid", "mr-lister-api/seller"]
+    assert client_properties["CallbackURLs"] == [{"Ref": "ApplicationCallbackUrl"}]
+    assert client_properties["LogoutURLs"] == [{"Ref": "ApplicationLogoutUrl"}]
+    assert client_properties["SupportedIdentityProviders"] == ["COGNITO"]
+    assert client_properties["AccessTokenValidity"] == 60
+    assert client_properties["IdTokenValidity"] == 60
+    assert client_properties["RefreshTokenValidity"] == 30
+    assert client_properties["TokenValidityUnits"] == {
+        "AccessToken": "minutes",
+        "IdToken": "minutes",
+        "RefreshToken": "days",
+    }
+    assert client_properties["EnableTokenRevocation"] is True
+    assert client_properties["PreventUserExistenceErrors"] == "ENABLED"
+    assert not any(
+        resource["Type"] == "AWS::Cognito::IdentityPool" for resource in resources.values()
+    )
+
+
+def test_http_api_uses_exact_jwt_scope_cors_and_minimal_access_logs() -> None:
+    resources = load_template()["Resources"]
+    api = resources["SellerHttpApi"]["Properties"]
+
+    assert api["StageName"] == "$default"
+    assert api["FailOnWarnings"] is True
+    assert api["DefinitionBody"]["paths"] == {}
+    assert api["Auth"] == {
+        "DefaultAuthorizer": "SellerJwtAuthorizer",
+        "Authorizers": {
+            "SellerJwtAuthorizer": {
+                "AuthorizationScopes": ["mr-lister-api/seller"],
+                "IdentitySource": "$request.header.Authorization",
+                "JwtConfiguration": {
+                    "issuer": {
+                        "Fn::Sub": (
+                            "https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${SellerUserPool}"
+                        )
+                    },
+                    "audience": [{"Ref": "SellerUserPoolClient"}],
+                },
+            }
+        },
+    }
+    assert api["CorsConfiguration"] == {
+        "AllowCredentials": False,
+        "AllowHeaders": ["Authorization", "Content-Type", "Idempotency-Key", "If-Match"],
+        "AllowMethods": ["GET", "POST", "PUT", "OPTIONS"],
+        "AllowOrigins": [{"Ref": "ApplicationOrigin"}],
+        "ExposeHeaders": ["ETag", "Retry-After", "X-Request-Id"],
+        "MaxAge": 300,
+    }
+    access_log = api["AccessLogSettings"]
+    assert access_log["DestinationArn"] == {"Fn::GetAtt": ["SellerApiAccessLogGroup", "Arn"]}
+    assert json.loads(access_log["Format"]) == {
+        "requestId": "$context.requestId",
+        "routeKey": "$context.routeKey",
+        "status": "$context.status",
+        "responseLength": "$context.responseLength",
+        "integrationLatency": "$context.integrationLatency",
+    }
+    assert "authoriz" not in access_log["Format"].lower()
+    assert "header" not in access_log["Format"].lower()
 
 
 def test_table_has_durable_due_work_topology() -> None:
@@ -47,6 +152,14 @@ def test_table_has_durable_due_work_topology() -> None:
         {"AttributeName": "PK", "KeyType": "HASH"},
         {"AttributeName": "SK", "KeyType": "RANGE"},
     ]
+    assert properties["AttributeDefinitions"] == [
+        {"AttributeName": "PK", "AttributeType": "S"},
+        {"AttributeName": "SK", "AttributeType": "S"},
+        {"AttributeName": "dispatch_pk", "AttributeType": "S"},
+        {"AttributeName": "dispatch_sk", "AttributeType": "S"},
+        {"AttributeName": "owner_jobs_pk", "AttributeType": "S"},
+        {"AttributeName": "owner_jobs_sk", "AttributeType": "S"},
+    ]
     assert properties["GlobalSecondaryIndexes"] == [
         {
             "IndexName": "DueWorkIndex",
@@ -55,7 +168,15 @@ def test_table_has_durable_due_work_topology() -> None:
                 {"AttributeName": "dispatch_sk", "KeyType": "RANGE"},
             ],
             "Projection": {"ProjectionType": "ALL"},
-        }
+        },
+        {
+            "IndexName": "OwnerJobsIndex",
+            "KeySchema": [
+                {"AttributeName": "owner_jobs_pk", "KeyType": "HASH"},
+                {"AttributeName": "owner_jobs_sk", "KeyType": "RANGE"},
+            ],
+            "Projection": {"ProjectionType": "ALL"},
+        },
     ]
     assert properties["StreamSpecification"] == {"StreamViewType": "KEYS_ONLY"}
     assert properties["PointInTimeRecoverySpecification"] == {"PointInTimeRecoveryEnabled": True}
@@ -89,29 +210,73 @@ def test_artifact_bucket_is_private_encrypted_versioned_and_tls_only() -> None:
                 "Id": "AbortIncompleteMultipartUploads",
                 "Status": "Enabled",
                 "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7},
-            }
+            },
+            {
+                "Id": "ExpireUnreferencedStagedArtwork",
+                "Status": "Enabled",
+                "TagFilters": [{"Key": "mr-lister-state", "Value": "staged"}],
+                "ExpirationInDays": 1,
+                "NoncurrentVersionExpiration": {"NoncurrentDays": 1},
+            },
         ]
     }
     assert all(properties["PublicAccessBlockConfiguration"].values())
     assert properties["OwnershipControls"] == {
         "Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]
     }
+    assert properties["CorsConfiguration"] == {
+        "CorsRules": [
+            {
+                "AllowedHeaders": [
+                    "content-type",
+                    "x-amz-checksum-sha256",
+                    "x-amz-server-side-encryption",
+                ],
+                "AllowedMethods": ["GET", "POST"],
+                "AllowedOrigins": [{"Ref": "ApplicationOrigin"}],
+                "ExposedHeaders": ["ETag", "x-amz-version-id"],
+                "MaxAge": 300,
+            }
+        ]
+    }
     statement = resources["PrivateArtifactBucketPolicy"]["Properties"]["PolicyDocument"][
         "Statement"
     ]
-    assert statement == [
-        {
-            "Sid": "DenyInsecureTransport",
-            "Effect": "Deny",
-            "Principal": "*",
-            "Action": "s3:*",
-            "Resource": [
-                {"Fn::GetAtt": ["PrivateArtifactBucket", "Arn"]},
-                {"Fn::Sub": "${PrivateArtifactBucket.Arn}/*"},
-            ],
-            "Condition": {"Bool": {"aws:SecureTransport": "false"}},
-        }
+    assert [item["Sid"] for item in statement] == [
+        "DenyInsecureTransport",
+        "DenyStaleBrowserUploadSignatures",
+        "DenyUnencryptedBrowserUploads",
     ]
+    assert statement[0] == {
+        "Sid": "DenyInsecureTransport",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": [
+            {"Fn::GetAtt": ["PrivateArtifactBucket", "Arn"]},
+            {"Fn::Sub": "${PrivateArtifactBucket.Arn}/*"},
+        ],
+        "Condition": {"Bool": {"aws:SecureTransport": "false"}},
+    }
+    upload_resource = {
+        "Fn::Sub": ("${PrivateArtifactBucket.Arn}/private/owners/*/jobs/*/source/source.png")
+    }
+    assert statement[1] == {
+        "Sid": "DenyStaleBrowserUploadSignatures",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:PutObject",
+        "Resource": upload_resource,
+        "Condition": {"NumericGreaterThan": {"s3:signatureAge": "300000"}},
+    }
+    assert statement[2] == {
+        "Sid": "DenyUnencryptedBrowserUploads",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:PutObject",
+        "Resource": upload_resource,
+        "Condition": {"StringNotEquals": {"s3:x-amz-server-side-encryption": "AES256"}},
+    }
 
 
 def test_exact_four_standard_machines_have_private_error_logs() -> None:
@@ -138,7 +303,7 @@ def test_exact_four_standard_machines_have_private_error_logs() -> None:
     log_groups = [
         resource for resource in resources.values() if resource["Type"] == "AWS::Logs::LogGroup"
     ]
-    assert len(log_groups) == 8
+    assert len(log_groups) == 12
     assert all(group["Properties"]["RetentionInDays"] == 14 for group in log_groups)
 
 
@@ -155,6 +320,9 @@ def test_functions_have_distinct_explicit_roles_and_scaffold_gate() -> None:
         "PreparationDispatchFunction",
         "ProviderDraftFunction",
         "SettlementFunction",
+        "UploadApiFunction",
+        "ReviewQueryApiFunction",
+        "SellerCommandApiFunction",
     }
     roles = {resource["Properties"]["Role"]["Fn::GetAtt"][0] for resource in functions.values()}
     assert roles == {
@@ -162,6 +330,9 @@ def test_functions_have_distinct_explicit_roles_and_scaffold_gate() -> None:
         "PreparationDispatchFunctionRole",
         "ProviderDraftFunctionRole",
         "SettlementFunctionRole",
+        "UploadApiFunctionRole",
+        "ReviewQueryApiFunctionRole",
+        "SellerCommandApiFunctionRole",
     }
     assert (
         template["Globals"]["Function"]["Environment"]["Variables"][
@@ -211,6 +382,85 @@ def test_iam_keeps_agentcore_secret_and_state_authority_separate() -> None:
     assert "secretsmanager" not in settlement
 
 
+def test_api_roles_are_capability_separated_and_have_no_direct_orchestration() -> None:
+    resources = load_template()["Resources"]
+    upload = serialized_policies(resources["UploadApiFunctionRole"])
+    query = serialized_policies(resources["ReviewQueryApiFunctionRole"])
+    command = serialized_policies(resources["SellerCommandApiFunctionRole"])
+
+    assert "OwnerJobsIndex" not in upload
+    assert "dynamodb:TransactWriteItems" in upload
+    assert '"Action": ["s3:PutObject", "s3:PutObjectTagging"]' in upload
+    assert '"Action": ["s3:GetObject", "s3:PutObjectVersionTagging"]' in upload
+    assert "s3:GetObjectVersion" not in upload
+    assert "s3:ListBucket" not in upload
+
+    assert "OwnerJobsIndex" in query
+    assert '"Action": ["dynamodb:GetItem", "dynamodb:Query"]' in query
+    assert '"Action": "s3:GetObjectVersion"' in query
+    assert "dynamodb:PutItem" not in query
+    assert "dynamodb:TransactWriteItems" not in query
+    assert "kms:" not in query
+
+    assert "dynamodb:TransactWriteItems" in command
+    assert "dynamodb:PutItem" in command
+    assert "s3:" not in command
+
+    for policy in (upload, query, command):
+        assert "states:" not in policy
+        assert "bedrock" not in policy
+        assert "secretsmanager" not in policy
+        assert "lambda:InvokeFunction" not in policy
+
+
+def test_exact_public_and_protected_http_routes_are_closed() -> None:
+    resources = load_template()["Resources"]
+    api_functions = {
+        name: resources[name]
+        for name in (
+            "UploadApiFunction",
+            "ReviewQueryApiFunction",
+            "SellerCommandApiFunction",
+        )
+    }
+    protected: dict[str, dict] = {}
+    public: dict[str, dict] = {}
+    for function in api_functions.values():
+        for event in function["Properties"]["Events"].values():
+            assert event["Type"] == "HttpApi"
+            properties = event["Properties"]
+            assert properties["ApiId"] == {"Ref": "SellerHttpApi"}
+            assert properties["PayloadFormatVersion"] == "2.0"
+            route_key = f"{properties['Method']} {properties['Path']}"
+            if properties["Auth"] == {"Authorizer": "NONE"}:
+                public[route_key] = properties
+            else:
+                assert properties["Auth"] == {
+                    "Authorizer": "SellerJwtAuthorizer",
+                    "AuthorizationScopes": ["mr-lister-api/seller"],
+                }
+                protected[route_key] = properties
+
+    assert set(public) == {"GET /health"}
+    assert set(protected) == {
+        "POST /v1/uploads",
+        "POST /v1/uploads/{upload_id}/authorize",
+        "POST /v1/uploads/{upload_id}/complete",
+        "POST /v1/uploads/{upload_id}/cancel",
+        "GET /v1/jobs",
+        "GET /v1/jobs/{job_id}",
+        "GET /v1/jobs/{job_id}/review",
+        "GET /v1/jobs/{job_id}/artwork-preview",
+        "PUT /v1/jobs/{job_id}/review/listing",
+        "POST /v1/jobs/{job_id}/economics/refresh",
+        "POST /v1/jobs/{job_id}/approve",
+        "POST /v1/jobs/{job_id}/cancel",
+        "POST /v1/jobs/{job_id}/retry",
+    }
+    assert all("owner" not in route.casefold() for route in protected)
+    assert all("report" not in route.casefold() for route in protected)
+
+
 def test_dispatcher_and_machine_routes_are_exactly_allowlisted() -> None:
     module_path = PHASE6 / "lambda" / "phase6_lambda.py"
     spec = importlib.util.spec_from_file_location("phase6_lambda", module_path)
@@ -239,6 +489,41 @@ def test_dispatcher_and_machine_routes_are_exactly_allowlisted() -> None:
     with pytest.raises(module.Phase6ScaffoldNotReady):
         module.dispatcher_handler({"work_type": "prepare"}, None)
 
+    assert module.UPLOAD_API_ROUTE_KEYS == {
+        "POST /v1/uploads",
+        "POST /v1/uploads/{upload_id}/authorize",
+        "POST /v1/uploads/{upload_id}/complete",
+        "POST /v1/uploads/{upload_id}/cancel",
+    }
+    assert module.REVIEW_QUERY_API_ROUTE_KEYS == {
+        "GET /v1/jobs",
+        "GET /v1/jobs/{job_id}",
+        "GET /v1/jobs/{job_id}/review",
+        "GET /v1/jobs/{job_id}/artwork-preview",
+    }
+    assert module.SELLER_COMMAND_API_ROUTE_KEYS == {
+        "PUT /v1/jobs/{job_id}/review/listing",
+        "POST /v1/jobs/{job_id}/economics/refresh",
+        "POST /v1/jobs/{job_id}/approve",
+        "POST /v1/jobs/{job_id}/cancel",
+        "POST /v1/jobs/{job_id}/retry",
+    }
+    with pytest.raises(module.Phase6ScaffoldNotReady):
+        module.upload_api_handler({"routeKey": "POST /v1/uploads"}, None)
+    with pytest.raises(module.Phase6ScaffoldNotReady):
+        module.review_query_api_handler({"routeKey": "GET /v1/jobs/{job_id}/review"}, None)
+    with pytest.raises(module.Phase6ScaffoldNotReady):
+        module.seller_command_api_handler({"routeKey": "POST /v1/jobs/{job_id}/approve"}, None)
+    with pytest.raises(ValueError, match="Unsupported Phase 6 API route"):
+        module.seller_command_api_handler({"routeKey": "POST /v1/jobs/job_1/export"}, None)
+
+    health = module.review_query_api_handler({"routeKey": "GET /health"}, None)
+    assert health == {
+        "statusCode": 503,
+        "headers": {"Cache-Control": "no-store", "Content-Type": "application/json"},
+        "body": '{"status":"scaffold_only"}',
+    }
+
 
 def test_no_forbidden_external_capability_is_present() -> None:
     deployment_text = "\n".join(
@@ -250,7 +535,6 @@ def test_no_forbidden_external_capability_is_present() -> None:
         "waitfortasktoken",
         "sendtasksuccess",
         "sendtaskfailure",
-        "callback",
         "publish",
         "fulfill",
         "createorder",

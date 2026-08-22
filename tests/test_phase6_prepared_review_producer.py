@@ -20,6 +20,7 @@ from mr_lister.contracts import (
 )
 from mr_lister.control.fingerprints import canonical_fingerprint
 from mr_lister.control.models import SourceArtifactRecord
+from mr_lister.control.source_artwork import source_artifact_fingerprint
 
 
 def _png(*, size: tuple[int, int] = (2, 2), alpha: tuple[int, ...]) -> bytes:
@@ -158,19 +159,23 @@ def _source(
     size_bytes: int | None = None,
     profile_fingerprint: str | None = None,
 ) -> SourceArtifactRecord:
+    material = {
+        "job_id": JOB_ID,
+        "owner_id": OWNER_ID,
+        "bucket": "mr-lister-private-sources",
+        "object_key": f"private/owners/{OWNER_ID}/jobs/{JOB_ID}/source/source.png",
+        "version_id": VERSION_ID,
+        "content_sha256": content_sha256 or sha256(content).hexdigest(),
+        "size_bytes": len(content) if size_bytes is None else size_bytes,
+        "media_type": "image/png",
+        "product_profile_id": profile.profile_id,
+        "product_profile_version": profile.profile_version,
+        "product_profile_fingerprint": (profile_fingerprint or canonical_fingerprint(profile)),
+        "created_at": datetime(2026, 8, 21, 9, 0, tzinfo=UTC),
+    }
     return SourceArtifactRecord(
-        job_id=JOB_ID,
-        owner_id=OWNER_ID,
-        fingerprint="f" * 64,
-        bucket="mr-lister-private-sources",
-        object_key=f"private/owners/{OWNER_ID}/jobs/{JOB_ID}/source/source.png",
-        version_id=VERSION_ID,
-        content_sha256=content_sha256 or sha256(content).hexdigest(),
-        size_bytes=len(content) if size_bytes is None else size_bytes,
-        product_profile_id=profile.profile_id,
-        product_profile_version=profile.profile_version,
-        product_profile_fingerprint=(profile_fingerprint or canonical_fingerprint(profile)),
-        created_at=datetime(2026, 8, 21, 9, 0, tzinfo=UTC),
+        **material,
+        fingerprint=source_artifact_fingerprint(**material),
     )
 
 
@@ -237,6 +242,24 @@ def test_exact_versioned_source_and_profile_produce_one_inspection_and_draft() -
     assert observation.product_profile_fingerprint == canonical_fingerprint(profile)
     assert observation.artwork_analysis == intelligence.analysis
     assert observation.listing == intelligence.listing
+
+
+def test_tampered_source_authority_is_rejected_before_s3_read() -> None:
+    profile = _profile()
+    source = _source(VALID_PNG, profile).model_copy(update={"fingerprint": "0" * 64})
+    s3 = RecordingS3(VALID_PNG)
+    producer, _, _, intelligence = _producer(
+        source=source,
+        s3=s3,
+        exact=ExactProfile(profile=profile, fingerprint=canonical_fingerprint(profile)),
+    )
+
+    with pytest.raises(PreparedReviewProducerError, match="authority is unavailable"):
+        producer.prepare_review(JOB_ID, WORK_ID)
+
+    assert s3.requests == []
+    assert intelligence.inspect_calls == []
+    assert intelligence.draft_calls == []
 
 
 @pytest.mark.parametrize("returned_version", [None, "different-version"])

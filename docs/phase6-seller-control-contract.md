@@ -106,9 +106,9 @@ The authenticated owner is derived from the JWT and is never accepted from a req
 | Command | Preconditions | Atomic application result | External side effect |
 | --- | --- | --- | --- |
 | Create upload intent | Authenticated seller; valid declared metadata; new owner-scoped idempotency key | Owned upload intent, reserved job ID, and exact S3 key; no job yet | Short-lived presigned upload only |
-| Reauthorize upload | Owned active empty intent; prior form expired | Same stable upload intent | New short-lived form for the same exact key |
-| Cancel upload | Owned unconsumed intent | Irreversible intent cancellation/expiry | Queued deletion of any staged object; no job or workflow |
-| Complete upload | Owned open intent; S3 object and version match key, checksum, size, type, and decoded constraints | Intent consumed; job and intake claim created with deterministic preparation execution identity | Start preparation once |
+| Reauthorize upload | Owned open intent; prior form expired | Same stable upload intent and exact object constraints | New short-lived form for the same exact key; no existence or bucket-list probe |
+| Cancel upload | Owned unconsumed intent | Irreversible intent cancellation | Any uploaded version remains `staged` for lifecycle expiry; no job or workflow |
+| Complete upload | Owned open intent; current S3 object and version match key, checksum, size, type, encryption, and decoded constraints | Intent consumed; job, pinned source, event, completion receipt, and pending `PREPARE` work created atomically | None inside the transaction; the durable dispatcher starts preparation later |
 | Save listing revision | `AWAITING_APPROVAL` or `NEEDS_REVISION`; exact review version and fingerprint | Immutable review N+1; prior version superseded; sync requested only if valid | One guarded initial POST when no product exists; otherwise bounded PUT of the same product |
 | Refresh economics | `AWAITING_APPROVAL`; exact review version/fingerprint; economics missing or stale | `PRICING_REFRESHING` and one refresh work request; no new listing review | Read current product/catalog costs and shipping, then store a new pricing snapshot |
 | Approve | `AWAITING_APPROVAL`; exact current version/fingerprint; validation passed; product synchronized; economics complete/current | Immutable approval decision and `APPROVED` | None |
@@ -276,8 +276,9 @@ creation.
 
 Phase 6.3 implements this as a strict owner-first, read-only application projection. The durable
 sync evidence now includes exact color/size/placement identity and structured mockup coverage, and
-the seller economics-refresh capability is backed by a real authority-checked command. The concrete
-authenticated API and preview signer remain Phase 6.4 work. See
+the seller economics-refresh capability is backed by a real authority-checked command. Phase 6.4
+adds the strict authenticated HTTP adapters and exact-version preview signer offline; their Lambda
+composition, deployment, and live acceptance remain open. See
 [`phase6-review-projection.md`](phase6-review-projection.md).
 
 Product/provider labels in this projection are deterministic renderings of the immutable profile
@@ -299,9 +300,11 @@ The review response contains only seller-facing, owner-authorized data:
 - estimated-proceeds snapshot and assumptions;
 - sanitized failure and recovery information.
 
-Outside the short-lived direct-upload form, the API never returns storage keys. It never returns
-task tokens, provider credentials, authorization headers, raw provider bodies, or controls outside
-the server-advertised capability set.
+The projection and JSON payloads never return storage coordinates. After authentication and the
+owner/source checks, the artwork-preview route may return one transient S3 `Location` header bound
+to the exact immutable version. The API never returns task tokens, provider credentials,
+authorization headers, raw provider bodies, or controls outside the server-advertised capability
+set.
 
 ## Commercial estimate
 
@@ -430,24 +433,51 @@ The server generates the exact source key:
 private/owners/{owner_id}/jobs/{job_id}/source/source.png
 ```
 
-Original filenames are display metadata and never become key segments. The private encrypted
-bucket has versioning enabled, public access blocked, bucket-owner-enforced ownership, TLS-only
-access, and no runtime `ListBucket`. A five-minute presigned POST fixes that key, `image/png`,
-checksum, server-side encryption, and a `1..5 MiB` content-length range; a bucket policy rejects a
-signature age beyond five minutes. The form necessarily contains this one exact opaque key and no
-arbitrary-key capability.
+Original filenames are display metadata and never become key segments. The private bucket uses S3
+managed encryption (`AES256`), versioning, blocked public access, bucket-owner-enforced ownership,
+TLS-only access, and no runtime `ListBucket`. A presigned POST valid for at most five minutes fixes
+the exact key, `image/png`, SHA-256 algorithm and checksum value, `AES256`, the
+`mr-lister-state=staged` object tag, and the exact declared byte count. The declared count must be
+within `1..5 MiB`; the form cannot upload a different size or arbitrary key. A bucket policy also
+rejects browser-upload signatures older than five minutes.
 
-Completion reads the object once, independently validates its bytes, checksum, dimensions,
-transparency, and visual content, and requires a non-null S3 `VersionId` before creating the job.
-Every worker and preview thereafter reads the pinned version, so a later overwrite cannot change
-the reviewed artifact.
+Reauthorization is allowed only after the prior form expires and preserves the same intent, key,
+checksum, declared size, media type, and encryption constraints. It deliberately does not probe
+whether the current object exists and needs neither `ListBucket` nor a separate existence method:
+reissuing the same exact form cannot broaden the write, and completion remains the sole operation
+that verifies and pins a `VersionId`.
 
-Abandoned upload intents and their objects expire after one day. Active, retryable, and `APPROVED`
-jobs retain their pinned source and operational records; `APPROVED` is not overall-terminal because
-Phase 7 still needs it. A reference-aware sweeper—not a blanket noncurrent-version rule—deletes the
-exact pinned source 30 days after an overall `CANCELLED` or `FAILED_TERMINAL` result and deletes
-operational records after 90 days. Application logs retain for 14 days. Provider mockup URLs are
-metadata, not copied into a public bucket.
+Completion reads only the current object at that exact key and independently validates the size,
+media type, S3 checksum, encryption, full PNG bytes, dimensions, and transparency. It requires a
+non-null S3 `VersionId`, tags that exact version `mr-lister-state=pinned`, and then performs one
+DynamoDB transaction that consumes the intent and creates the `JobRecord`, canonical
+`SourceArtifactRecord`, `UPLOAD_COMPLETED` event, stable completion receipt, and pending `PREPARE`
+work request. The dispatcher—not the upload request—starts the deterministic preparation execution.
+If cancellation or another completion wins the transaction race, an unreferenced version is
+retagged `staged`; a concurrently committed winner's referenced version remains pinned.
+
+Open and cancelled intent rows carry the original one-day `expires_at` and use DynamoDB TTL for
+eventual cleanup. Current and noncurrent artwork versions tagged `staged` use the bucket's
+tag-filtered one-day lifecycle; versions tagged `pinned` are excluded from that rule. Active,
+retryable, and `APPROVED` jobs retain their pinned source and operational records; `APPROVED` is not
+overall-terminal because Phase 7 still needs it. Before the scaffold may be marked deploy-ready, a
+reference-aware sweeper—not a blanket noncurrent-version rule—must be added to delete the exact
+pinned source 30 days after an overall `CANCELLED` or `FAILED_TERMINAL` result and delete operational
+records after 90 days. The Phase 6.4 offline slice does not claim that sweeper is already composed.
+Application logs retain for 14 days. Provider mockup URLs are metadata, not copied into a public
+bucket.
+
+### Artwork preview delivery
+
+The consolidated projection exposes only the authenticated application route
+`/v1/jobs/{job_id}/artwork-preview`, with no query grant. On each request, the review-query boundary
+derives the owner from the validated access token and checks job ownership before reading the
+canonical source record. It presigns an S3 `GetObject` only for that source's exact bucket, key, and
+`VersionId`, with `image/png` response type and an expiry of no more than five minutes. The presign
+fixes the terminal S3 response to `Cache-Control: private, no-store, max-age=0`; the API returns a
+bodyless `302` with the same private/no-store posture and no-referrer headers. It neither proxies
+artwork bytes through API Gateway nor uses KMS or a separately replayable bearer grant. A later
+overwrite therefore cannot change the reviewed or previewed artifact.
 
 Fixed-connection revocation is an administrator runbook: disable new intake/sync first, let
 in-flight writes settle or reconcile, revoke the PAT in Printify, remove the Secrets Manager value,
@@ -458,8 +488,8 @@ never deletes source artwork or provider products as a side effect.
 
 | Component | Required capabilities | Explicitly absent |
 | --- | --- | --- |
-| Upload API | Owner-scoped upload/job transactions, exact-key presigning, pinned-object verification, start exact preparation workflow | Secrets, AgentCore, Bedrock, Printify |
-| Review query API | Owner-scoped DynamoDB query/get and exact-version preview signing | Writes, workflow starts, secrets |
+| Upload API | Owner-scoped upload/job transactions, exact-key POST presigning, current-object verification, exact-version tag pinning | `ListBucket`, workflow starts, secrets, AgentCore, Bedrock, Printify |
+| Review query API | Owner-scoped DynamoDB query/get and exact-VersionId preview presigning | Writes, artwork-byte proxying, KMS, workflow starts, secrets |
 | Seller command API | Owner/version-conditional transactions and due-now nudges for its exact outbox records | Artwork bytes, secrets, AgentCore, provider calls, workflow starts |
 | Work dispatcher/sweeper | Claim due outbox records and start/describe deterministic executions in the exact Phase 6 state machines | Seller commands, S3, secrets, AgentCore, provider calls, business-state assignment |
 | Preparation dispatcher | Owner/job reads and exact AgentCore invocation | Artwork bytes, Printify secret, provider calls |
@@ -511,9 +541,10 @@ The initial versioned surface is:
 
 - `POST /v1/uploads` — create an owned upload intent and reserve a job ID;
 - `POST /v1/uploads/{upload_id}/authorize` — reissue upload authorization for an active intent;
-- `POST /v1/uploads/{upload_id}/complete` — validate/pin the object, create the job, and start
-  preparation;
-- `POST /v1/uploads/{upload_id}/cancel` — cancel the intent and queue staged-object cleanup;
+- `POST /v1/uploads/{upload_id}/complete` — validate/pin the object and atomically create the job,
+  source, event, receipt, and pending preparation work;
+- `POST /v1/uploads/{upload_id}/cancel` — cancel the intent; any uploaded `staged` version remains
+  subject to the one-day lifecycle;
 - `GET /v1/jobs` — retrieve the seller's current/recent jobs;
 - `GET /v1/jobs/{job_id}` — durable progress/result projection;
 - `GET /v1/jobs/{job_id}/review` — consolidated current review;
@@ -523,7 +554,8 @@ The initial versioned surface is:
 - `POST /v1/jobs/{job_id}/approve` — approve the exact current review;
 - `POST /v1/jobs/{job_id}/cancel` — request or complete cancellation;
 - `POST /v1/jobs/{job_id}/retry` — perform only an advertised recovery;
-- `GET /v1/jobs/{job_id}/artwork-preview` — authorize and issue a short-lived preview.
+- `GET /v1/jobs/{job_id}/artwork-preview` — owner-check and return a bodyless `302` to an exact-
+  version S3 URL valid for no more than five minutes.
 
 There is no deployed `/publish`, order, fulfillment, raw report, or arbitrary object route.
 

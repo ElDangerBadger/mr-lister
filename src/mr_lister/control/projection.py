@@ -53,6 +53,7 @@ from mr_lister.control.projection_models import (
     StrandsProvenanceProjection,
     VariantEconomicsProjection,
 )
+from mr_lister.control.source_artwork import validate_source_artifact_authority
 from mr_lister.review_profile import ExactReviewProductProfile
 from mr_lister.review_security import is_safe_mockup_url, is_safe_preview_url
 from mr_lister.workflow.validation import (
@@ -335,6 +336,12 @@ class SellerReviewProjectionService:
 
     def _source(self, job: ControlJobRecord) -> SourceArtifactRecord:
         source = self._store.get_source_artifact(job.job_id)
+        try:
+            validate_source_artifact_authority(source)
+        except ValueError:
+            raise ReviewProjectionUnavailableError(
+                "The consolidated review is temporarily unavailable"
+            ) from None
         if (
             source.job_id != job.job_id
             or source.owner_id != job.owner_id

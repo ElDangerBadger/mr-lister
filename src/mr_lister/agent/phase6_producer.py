@@ -10,19 +10,19 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from hashlib import sha256
-from io import BytesIO
 from typing import Protocol, cast
-
-from PIL import Image, UnidentifiedImageError
 
 from mr_lister.agent.phase6 import PreparedReviewObservation
 from mr_lister.contracts import ArtworkAnalysis, ListingIntelligence, ProductProfile
 from mr_lister.control.fingerprints import canonical_fingerprint
 from mr_lister.control.models import SourceArtifactRecord
-from mr_lister.workflow.errors import InvalidArtworkError
+from mr_lister.control.source_artwork import (
+    Phase6SourceArtworkError,
+    validate_source_artifact_authority,
+    verify_phase6_source_artwork,
+)
 from mr_lister.workflow.models import ArtworkInput
 from mr_lister.workflow.ports import IntelligencePort
-from mr_lister.workflow.validation import validate_artwork
 
 
 class PreparedReviewProducerError(Exception):
@@ -107,6 +107,7 @@ class PinnedSourcePreparedReviewProducer:
     def _source(self, job_id: str) -> SourceArtifactRecord:
         try:
             source = SourceArtifactRecord.model_validate(self._store.get_source_artifact(job_id))
+            validate_source_artifact_authority(source)
         except Exception:
             raise PreparedReviewProducerError("Pinned source authority is unavailable") from None
         if source.job_id != job_id:
@@ -163,24 +164,16 @@ class PinnedSourcePreparedReviewProducer:
         ):
             raise PreparedReviewProducerError("Pinned source integrity check failed")
         try:
-            artwork = validate_artwork(
+            verified = verify_phase6_source_artwork(
                 filename="source.png",
                 content_type=source.media_type,
                 content=content,
+                expected_sha256=source.content_sha256,
+                expected_size_bytes=source.size_bytes,
             )
-        except InvalidArtworkError:
+        except Phase6SourceArtworkError:
             raise PreparedReviewProducerError("Pinned source PNG is invalid") from None
-        try:
-            with Image.open(BytesIO(content)) as image:
-                alpha_minimum, alpha_maximum = image.convert("RGBA").getchannel("A").getextrema()
-                if image.width != image.height:
-                    raise PreparedReviewProducerError("Pinned source PNG is invalid")
-                if alpha_minimum == 255 or alpha_maximum == 0:
-                    raise PreparedReviewProducerError("Pinned source PNG is invalid")
-        except PreparedReviewProducerError:
-            raise
-        except (OSError, SyntaxError, UnidentifiedImageError):
-            raise PreparedReviewProducerError("Pinned source PNG is invalid") from None
+        artwork = verified.artwork
         if (
             artwork.content_sha256 != source.content_sha256
             or artwork.size_bytes != source.size_bytes

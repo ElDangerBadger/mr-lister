@@ -240,6 +240,24 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       SAM lint/build, Python package builds, Ruff lint/format, and `git diff --check` passed
     - Evidence: [`phase6-review-projection.md`](phase6-review-projection.md).
   - [ ] Phase 6.4 Cognito identity, private direct upload, and owner-scoped cloud API
+    - [x] Invite-only Cognito/JWT contract with claims-derived owner identity, exact protected route
+      allowlists, owner-first reads, safe errors, CORS, and privacy-safe logs
+    - [x] Exact-key `1..5 MiB` direct POST with checksum/size/type/AES256 constraints,
+      `staged`/`pinned` version tags, safe post-expiry reauthorization without `ListBucket`, and
+      DynamoDB/S3 one-day cleanup boundaries
+    - [x] Atomic upload completion creates the consumed intent, job, canonical source, event,
+      receipt, and pending `PREPARE` work; owner-indexed recent-job recovery avoids table scans
+    - [x] Authenticated owner-checked artwork-preview endpoint returns a bodyless, non-cacheable
+      `302` to an exact-`VersionId` S3 GET valid for at most five minutes, with no opaque grant,
+      KMS dependency, or API artwork-byte proxy
+    - [x] Offline owner-scoped upload, query, seller-command, preview, and SAM contracts implemented
+    - [x] Offline gate: 824 tests passed, including 614 Phase 6 tests; 11 live-Bedrock tests skipped;
+      SAM lint/build, Python wheel/source builds, compileall, Ruff lint/format, and
+      `git diff --check` passed
+    - [ ] Compose the tested adapters into the fail-closed Lambda handlers, remove
+      `SCAFFOLD_ONLY`, and deploy the Phase 6 stack
+    - [ ] Pass deployed cross-owner, upload-expiry, exact-version preview, concurrency, and same-job
+      Strands live acceptance; no Phase 6.4 live/deployment gate is claimed by the offline slice
   - [ ] Phase 6.5 accessible seller interface with refresh and conflict recovery
   - [ ] Phase 6.6 replay, concurrency, cross-owner, live-canary, and first-time-user acceptance
 - [ ] Phase 7 — Etsy publication through Printify

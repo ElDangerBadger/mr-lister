@@ -27,6 +27,7 @@ from mr_lister.control.models import (
     WorkRequestStatus,
     WorkType,
 )
+from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.control.store import (
     CommandCommit,
     InMemorySellerControlStore,
@@ -40,7 +41,36 @@ OTHER_OWNER = "f" * 64
 REVIEW_FP = "b" * 64
 REQUEST_FP = "c" * 64
 KEY_DIGEST = "d" * 64
-SOURCE_FP = "e" * 64
+
+
+def _source_material(*, job_id: str, owner_id: str, created_at: datetime) -> dict[str, object]:
+    return {
+        "job_id": job_id,
+        "owner_id": owner_id,
+        "bucket": "mr-lister-phase6-artifacts-test",
+        "object_key": f"private/owners/{owner_id}/jobs/{job_id}/source/source.png",
+        "version_id": "source-version-1",
+        "content_sha256": "1" * 64,
+        "size_bytes": 128,
+        "media_type": "image/png",
+        "product_profile_id": "profile_test",
+        "product_profile_version": 1,
+        "product_profile_fingerprint": "2" * 64,
+        "created_at": created_at,
+    }
+
+
+def _source_fingerprint(*, job_id: str, owner_id: str, created_at: datetime) -> str:
+    return source_artifact_fingerprint(
+        **_source_material(job_id=job_id, owner_id=owner_id, created_at=created_at)
+    )
+
+
+SOURCE_FP = _source_fingerprint(
+    job_id="job_phase6_store",
+    owner_id=OWNER,
+    created_at=NOW,
+)
 
 
 class _NoDynamoWrites:
@@ -102,37 +132,30 @@ def make_job(
 
 
 def make_source(job: ControlJobRecord) -> SourceArtifactRecord:
-    return SourceArtifactRecord(
-        job_id=job.job_id,
-        owner_id=job.owner_id,
-        fingerprint=SOURCE_FP,
-        bucket="mr-lister-phase6-artifacts-test",
-        object_key=(f"private/owners/{job.owner_id}/jobs/{job.job_id}/source/source.png"),
-        version_id="source-version-1",
-        content_sha256="1" * 64,
-        size_bytes=128,
-        product_profile_id="profile_test",
-        product_profile_version=1,
-        product_profile_fingerprint="2" * 64,
-        created_at=NOW,
-    )
+    material = _source_material(job_id=job.job_id, owner_id=job.owner_id, created_at=NOW)
+    return SourceArtifactRecord(fingerprint=source_artifact_fingerprint(**material), **material)
 
 
 def test_source_artifact_size_matches_phase6_upload_transport_boundary() -> None:
     job = make_job(active_work_request_id="work_prepare")
-    material = make_source(job).model_dump(exclude={"size_bytes"})
+    material = make_source(job).model_dump(exclude={"fingerprint", "size_bytes"})
+    maximum_material = {**material, "size_bytes": PHASE6_MAX_SOURCE_ARTWORK_BYTES}
 
     assert (
         SourceArtifactRecord(
-            **material,
-            size_bytes=PHASE6_MAX_SOURCE_ARTWORK_BYTES,
+            **maximum_material,
+            fingerprint=source_artifact_fingerprint(**maximum_material),
         ).size_bytes
         == PHASE6_MAX_SOURCE_ARTWORK_BYTES
     )
+    oversized_material = {
+        **material,
+        "size_bytes": PHASE6_MAX_SOURCE_ARTWORK_BYTES + 1,
+    }
     with pytest.raises(ValueError):
         SourceArtifactRecord(
-            **material,
-            size_bytes=PHASE6_MAX_SOURCE_ARTWORK_BYTES + 1,
+            **oversized_material,
+            fingerprint=source_artifact_fingerprint(**oversized_material),
         )
 
 
@@ -231,6 +254,110 @@ def create_seed_job(
         source_artifact=make_source(job),
     )
     return job, receipt, work
+
+
+def _create_owned_job(
+    store: InMemorySellerControlStore,
+    *,
+    owner_id: str,
+    job_id: str,
+    updated_at: datetime,
+) -> ControlJobRecord:
+    work_id = f"work_{job_id}"
+    job = ControlJobRecord(
+        owner_id=owner_id,
+        job_id=job_id,
+        state=ControlJobState.INTAKE_VALIDATED,
+        event_sequence=1,
+        source_artifact_fingerprint=_source_fingerprint(
+            job_id=job_id,
+            owner_id=owner_id,
+            created_at=updated_at,
+        ),
+        active_work_request_id=work_id,
+        created_at=updated_at,
+        updated_at=updated_at,
+    )
+    receipt = CommandReceipt(
+        receipt_id=f"receipt_{job_id}",
+        owner_id=owner_id,
+        job_id=job_id,
+        command_type="create_job",
+        idempotency_key_digest=(job_id.encode().hex() + "0" * 64)[:64],
+        request_fingerprint=(job_id.encode().hex() + "1" * 64)[:64],
+        response=make_response(job, work_id=work_id),
+        work_request_id=work_id,
+        created_at=updated_at,
+    )
+    work = WorkRequest(
+        work_request_id=work_id,
+        owner_id=owner_id,
+        job_id=job_id,
+        receipt_id=receipt.receipt_id,
+        work_type=WorkType.PREPARE,
+        input_fingerprint=work_input_fingerprint(
+            work_type=WorkType.PREPARE,
+            job_id=job_id,
+            work_request_id=work_id,
+        ),
+        execution_name=deterministic_execution_name(work_id),
+        next_dispatch_at=updated_at,
+        created_at=updated_at,
+        updated_at=updated_at,
+    )
+    material = _source_material(job_id=job_id, owner_id=owner_id, created_at=updated_at)
+    source = SourceArtifactRecord(
+        fingerprint=source_artifact_fingerprint(**material),
+        **material,
+    )
+    store.create_job(
+        job=job,
+        event=make_event(job),
+        receipt=receipt,
+        work_request=work,
+        source_artifact=source,
+    )
+    return job
+
+
+def test_owner_job_listing_is_recent_bounded_paginated_and_cross_owner_closed() -> None:
+    store = InMemorySellerControlStore()
+    oldest = _create_owned_job(
+        store,
+        owner_id=OWNER,
+        job_id="job_owner_oldest",
+        updated_at=NOW,
+    )
+    middle = _create_owned_job(
+        store,
+        owner_id=OWNER,
+        job_id="job_owner_middle",
+        updated_at=NOW + timedelta(minutes=1),
+    )
+    newest = _create_owned_job(
+        store,
+        owner_id=OWNER,
+        job_id="job_owner_newest",
+        updated_at=NOW + timedelta(minutes=2),
+    )
+    _create_owned_job(
+        store,
+        owner_id=OTHER_OWNER,
+        job_id="job_other_owner",
+        updated_at=NOW + timedelta(minutes=3),
+    )
+
+    first = store.list_jobs_for_owner(OWNER, limit=2)
+    assert first.jobs == (newest, middle)
+    assert first.next_cursor is not None
+    assert "job_owner_middle" not in first.next_cursor
+
+    second = store.list_jobs_for_owner(OWNER, limit=2, cursor=first.next_cursor)
+    assert second.jobs == (oldest,)
+    assert second.next_cursor is None
+
+    with pytest.raises(ValueError):
+        store.list_jobs_for_owner(OWNER, cursor="not-a-canonical-cursor")
 
 
 @pytest.mark.parametrize("adapter", ("memory", "dynamodb"))

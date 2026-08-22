@@ -28,6 +28,7 @@ from mr_lister.control.models import (
     WorkRequestStatus,
     WorkType,
 )
+from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.control.worker_commands import (
     BeginProviderUploadCommand,
     BeginProviderWriteCommand,
@@ -70,7 +71,6 @@ from mr_lister.production.printify_shipping import (
 
 NOW = datetime(2026, 8, 21, 12, tzinfo=UTC)
 OWNER = "a" * 64
-SOURCE_FP = "1" * 64
 REVIEW_1_FP = "2" * 64
 REVIEW_2_FP = "3" * 64
 SYNC_FP = "5" * 64
@@ -103,6 +103,26 @@ def _profile() -> ProductProfile:
 
 
 PROFILE_FP = canonical_fingerprint(_profile())
+
+
+def _source_material() -> dict[str, object]:
+    return {
+        "job_id": JOB_ID,
+        "owner_id": OWNER,
+        "bucket": "phase6-private",
+        "object_key": f"private/owners/{OWNER}/jobs/{JOB_ID}/source/source.png",
+        "version_id": "version_1",
+        "content_sha256": "8" * 64,
+        "size_bytes": 2048,
+        "media_type": "image/png",
+        "product_profile_id": "phase6_fixture",
+        "product_profile_version": 1,
+        "product_profile_fingerprint": PROFILE_FP,
+        "created_at": NOW,
+    }
+
+
+SOURCE_FP = source_artifact_fingerprint(**_source_material())
 
 
 def _resolved() -> PrintifyResolvedProfile:
@@ -147,19 +167,10 @@ def _review(version: int) -> ReviewContent:
 
 
 def _source() -> SourceArtifactRecord:
+    material = _source_material()
     return SourceArtifactRecord(
-        job_id=JOB_ID,
-        owner_id=OWNER,
-        fingerprint=SOURCE_FP,
-        bucket="phase6-private",
-        object_key=f"private/owners/{OWNER}/jobs/{JOB_ID}/source/source.png",
-        version_id="version_1",
-        content_sha256="8" * 64,
-        size_bytes=2048,
-        product_profile_id="phase6_fixture",
-        product_profile_version=1,
-        product_profile_fingerprint=PROFILE_FP,
-        created_at=NOW,
+        fingerprint=source_artifact_fingerprint(**material),
+        **material,
     )
 
 

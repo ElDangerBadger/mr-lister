@@ -31,7 +31,16 @@ from mr_lister.control.models import (
     WorkRequestStatus,
     WorkType,
 )
+from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.control.store import CommandCommit
+from mr_lister.control.upload_models import (
+    UploadCommandType,
+    UploadCompletionCommit,
+    UploadIntent,
+    UploadIntentCommit,
+    UploadIntentStatus,
+    UploadReceipt,
+)
 from mr_lister.control.worker_commands import (
     BeginProviderUploadCommand,
     BeginProviderWriteCommand,
@@ -52,7 +61,32 @@ from mr_lister.production.printify_shipping import parse_standard_us_shipping
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 OWNER = "a" * 64
 TABLE_NAME = "MrListerPhase6Control"
-SOURCE_FP = "e" * 64
+
+
+def _source_material(*, job_id: str, owner_id: str, created_at: datetime) -> dict[str, Any]:
+    return {
+        "job_id": job_id,
+        "owner_id": owner_id,
+        "bucket": "mr-lister-phase6-artifacts-test",
+        "object_key": (f"private/owners/{owner_id}/jobs/{job_id}/source/source.png"),
+        "version_id": "source-version-1",
+        "content_sha256": "f" * 64,
+        "size_bytes": 128,
+        "media_type": "image/png",
+        "product_profile_id": "profile_test",
+        "product_profile_version": 1,
+        "product_profile_fingerprint": "3" * 64,
+        "created_at": created_at,
+    }
+
+
+def _source_fingerprint(*, job_id: str, owner_id: str, created_at: datetime) -> str:
+    return source_artifact_fingerprint(
+        **_source_material(job_id=job_id, owner_id=owner_id, created_at=created_at)
+    )
+
+
+SOURCE_FP = _source_fingerprint(job_id="job_phase6_dynamo", owner_id=OWNER, created_at=NOW)
 
 
 def _client_error(code: str, operation: str) -> ClientError:
@@ -114,6 +148,31 @@ class MemoryLowLevelDynamoClient:
     def query(self, **request: Any) -> dict[str, Any]:
         self.query_requests.append(request)
         values = request["ExpressionAttributeValues"]
+        if request["IndexName"] == "OwnerJobsIndex":
+            owner_jobs_pk = values[":owner_jobs_pk"]["S"]
+            candidates = [
+                item
+                for item in self.items.values()
+                if item.get("owner_jobs_pk", {}).get("S") == owner_jobs_pk
+            ]
+            candidates.sort(
+                key=lambda item: item["owner_jobs_sk"]["S"],
+                reverse=not request["ScanIndexForward"],
+            )
+            start = 0
+            exclusive = request.get("ExclusiveStartKey")
+            if exclusive is not None:
+                key = (exclusive["PK"]["S"], exclusive["SK"]["S"])
+                matches = [index for index, item in enumerate(candidates) if self._key(item) == key]
+                start = matches[0] + 1 if matches else len(candidates)
+            selected = candidates[start : start + request["Limit"]]
+            response: dict[str, Any] = {"Items": selected}
+            if start + len(selected) < len(candidates):
+                response["LastEvaluatedKey"] = {
+                    name: selected[-1][name]
+                    for name in ("PK", "SK", "owner_jobs_pk", "owner_jobs_sk")
+                }
+            return response
         dispatch_pk = values[":dispatch_pk"]["S"]
         dispatch_sk = values[":dispatch_sk"]["S"]
         candidates = [
@@ -168,6 +227,14 @@ class MemoryLowLevelDynamoClient:
                 existing.get("work_status") == values[":pending"]
                 and existing.get("payload") == values[":expected_payload"]
             )
+        if ":upload_status" in values:
+            expected_attributes = {
+                "owner_id": values[":owner_id"],
+                "record_version": values[":record_version"],
+                "upload_status": values[":upload_status"],
+                "payload": values[":expected_payload"],
+            }
+            return all(existing.get(name) == value for name, value in expected_attributes.items())
         if "record_version = :record_version" in condition:
             expected_attributes = {
                 "contract_version": values[":contract_version"],
@@ -211,19 +278,14 @@ def make_job(
 
 
 def make_source(job: ControlJobRecord) -> SourceArtifactRecord:
-    return SourceArtifactRecord(
+    material = _source_material(
         job_id=job.job_id,
         owner_id=job.owner_id,
-        fingerprint=SOURCE_FP,
-        bucket="mr-lister-phase6-artifacts-test",
-        object_key=(f"private/owners/{job.owner_id}/jobs/{job.job_id}/source/source.png"),
-        version_id="source-version-1",
-        content_sha256="f" * 64,
-        size_bytes=128,
-        product_profile_id="profile_test",
-        product_profile_version=1,
-        product_profile_fingerprint="3" * 64,
-        created_at=NOW,
+        created_at=job.created_at,
+    )
+    return SourceArtifactRecord(
+        fingerprint=source_artifact_fingerprint(**material),
+        **material,
     )
 
 
@@ -465,6 +527,162 @@ def completed_concurrent_winner(claimed: WorkRequest) -> WorkRequest:
     )
 
 
+UPLOAD_ID = "upload_phase6_dynamo"
+UPLOAD_JOB_ID = "job_phase6_dynamo_upload"
+UPLOAD_WORK_ID = "work_phase6_dynamo_prepare"
+UPLOAD_BUCKET = "mr-lister-phase6-artifacts-test"
+UPLOAD_KEY = f"private/owners/{OWNER}/jobs/{UPLOAD_JOB_ID}/source/source.png"
+
+
+def make_upload_create_commit() -> UploadIntentCommit:
+    intent = UploadIntent(
+        owner_id=OWNER,
+        upload_id=UPLOAD_ID,
+        job_id=UPLOAD_JOB_ID,
+        filename="seller-art.png",
+        content_type="image/png",
+        content_sha256="b" * 64,
+        size_bytes=256,
+        bucket=UPLOAD_BUCKET,
+        object_key=UPLOAD_KEY,
+        product_profile_id="profile_test",
+        product_profile_version=1,
+        product_profile_fingerprint="c" * 64,
+        authorization_generation=1,
+        authorization_issued_at=NOW,
+        authorization_expires_at=NOW + timedelta(minutes=5),
+        intent_expires_at=NOW + timedelta(days=1),
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    receipt = UploadReceipt(
+        receipt_id="receipt_upload_create",
+        owner_id=OWNER,
+        upload_id=UPLOAD_ID,
+        job_id=UPLOAD_JOB_ID,
+        command_type=UploadCommandType.CREATE_UPLOAD,
+        idempotency_key_digest="d" * 64,
+        request_fingerprint="e" * 64,
+        status=UploadIntentStatus.OPEN,
+        record_version=0,
+        created_at=NOW,
+    )
+    return UploadIntentCommit(updated=intent, receipt=receipt)
+
+
+def make_upload_completion_commit(current: UploadIntent) -> UploadCompletionCommit:
+    completed_at = NOW + timedelta(minutes=1)
+    source_material = {
+        "job_id": current.job_id,
+        "owner_id": current.owner_id,
+        "bucket": current.bucket,
+        "object_key": current.object_key,
+        "version_id": "source-version-upload-1",
+        "content_sha256": current.content_sha256,
+        "size_bytes": current.size_bytes,
+        "media_type": current.content_type,
+        "product_profile_id": current.product_profile_id,
+        "product_profile_version": current.product_profile_version,
+        "product_profile_fingerprint": current.product_profile_fingerprint,
+        "created_at": completed_at,
+    }
+    source = SourceArtifactRecord(
+        fingerprint=source_artifact_fingerprint(**source_material),
+        **source_material,
+    )
+    receipt = UploadReceipt(
+        receipt_id="receipt_upload_complete",
+        owner_id=current.owner_id,
+        upload_id=current.upload_id,
+        job_id=current.job_id,
+        command_type=UploadCommandType.COMPLETE_UPLOAD,
+        idempotency_key_digest="f" * 64,
+        request_fingerprint="1" * 64,
+        status=UploadIntentStatus.COMPLETED,
+        record_version=current.record_version + 1,
+        work_request_id=UPLOAD_WORK_ID,
+        created_at=completed_at,
+    )
+    completed = UploadIntent.model_validate(
+        {
+            **current.model_dump(mode="python"),
+            "record_version": current.record_version + 1,
+            "status": UploadIntentStatus.COMPLETED,
+            "completed_at": completed_at,
+            "completed_source_artifact_fingerprint": source.fingerprint,
+            "completed_version_id": source.version_id,
+            "completion_receipt_id": receipt.receipt_id,
+            "updated_at": completed_at,
+        }
+    )
+    job = ControlJobRecord(
+        owner_id=current.owner_id,
+        job_id=current.job_id,
+        state=ControlJobState.INTAKE_VALIDATED,
+        event_sequence=1,
+        source_artifact_fingerprint=source.fingerprint,
+        active_work_request_id=UPLOAD_WORK_ID,
+        created_at=completed_at,
+        updated_at=completed_at,
+    )
+    event = DomainEvent(
+        job_id=current.job_id,
+        sequence=1,
+        name="UPLOAD_COMPLETED",
+        occurred_at=completed_at,
+    )
+    work = WorkRequest(
+        work_request_id=UPLOAD_WORK_ID,
+        owner_id=current.owner_id,
+        job_id=current.job_id,
+        receipt_id=receipt.receipt_id,
+        work_type=WorkType.PREPARE,
+        input_fingerprint=work_input_fingerprint(
+            work_type=WorkType.PREPARE,
+            job_id=current.job_id,
+            work_request_id=UPLOAD_WORK_ID,
+        ),
+        execution_name=deterministic_execution_name(UPLOAD_WORK_ID),
+        next_dispatch_at=completed_at,
+        created_at=completed_at,
+        updated_at=completed_at,
+    )
+    return UploadCompletionCommit(
+        intent=UploadIntentCommit(current=current, updated=completed, receipt=receipt),
+        job=job,
+        source_artifact=source,
+        event=event,
+        work_request=work,
+    )
+
+
+def make_upload_cancel_commit(current: UploadIntent) -> UploadIntentCommit:
+    cancelled_at = NOW + timedelta(seconds=30)
+    receipt = UploadReceipt(
+        receipt_id="receipt_upload_cancel",
+        owner_id=current.owner_id,
+        upload_id=current.upload_id,
+        job_id=current.job_id,
+        command_type=UploadCommandType.CANCEL_UPLOAD,
+        idempotency_key_digest="2" * 64,
+        request_fingerprint="3" * 64,
+        status=UploadIntentStatus.CANCELLED,
+        record_version=current.record_version + 1,
+        created_at=cancelled_at,
+    )
+    cancelled = UploadIntent.model_validate(
+        {
+            **current.model_dump(mode="python"),
+            "record_version": current.record_version + 1,
+            "status": UploadIntentStatus.CANCELLED,
+            "cancelled_at": cancelled_at,
+            "cancellation_receipt_id": receipt.receipt_id,
+            "updated_at": cancelled_at,
+        }
+    )
+    return UploadIntentCommit(current=current, updated=cancelled, receipt=receipt)
+
+
 def test_create_job_is_one_transaction_and_round_trips_from_a_fresh_store() -> None:
     client = MemoryLowLevelDynamoClient()
     store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
@@ -517,6 +735,237 @@ def test_owner_scoped_job_read_checks_raw_owner_before_payload_and_binds_partiti
     item["payload"] = {"S": job.model_copy(update={"job_id": "another_job"}).model_dump_json()}
     with pytest.raises(NotFoundError):
         store.get_job_for_owner(OWNER, job.job_id)
+
+
+def test_owner_jobs_index_is_bounded_recent_and_uses_an_opaque_cursor() -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    first, _receipt, _work = create_job_with_work(store)
+
+    second = first.model_copy(
+        update={
+            "job_id": "job_phase6_dynamo_second",
+            "active_work_request_id": "work_prepare_second",
+            "created_at": NOW + timedelta(minutes=1),
+            "updated_at": NOW + timedelta(minutes=1),
+            "source_artifact_fingerprint": _source_fingerprint(
+                job_id="job_phase6_dynamo_second",
+                owner_id=OWNER,
+                created_at=NOW + timedelta(minutes=1),
+            ),
+        }
+    )
+    second_receipt = make_receipt(
+        second,
+        receipt_id="receipt_create_second",
+        command_type="create_job",
+        key_digest="8" * 64,
+        request_fingerprint="9" * 64,
+        work_id="work_prepare_second",
+    )
+    second_work = make_work(second, second_receipt, due_at=second.updated_at)
+    second_source = make_source(second)
+    store.create_job(
+        job=second,
+        event=make_event(second, "JOB_CREATED"),
+        receipt=second_receipt,
+        work_request=second_work,
+        source_artifact=second_source,
+    )
+
+    page = store.list_jobs_for_owner(OWNER, limit=1)
+    assert page.jobs == (second,)
+    assert page.next_cursor is not None
+    assert second.job_id not in page.next_cursor
+    assert client.query_requests[-1]["IndexName"] == "OwnerJobsIndex"
+    assert client.query_requests[-1]["ScanIndexForward"] is False
+
+    following = store.list_jobs_for_owner(OWNER, limit=1, cursor=page.next_cursor)
+    assert following.jobs == (first,)
+    assert following.next_cursor is None
+
+
+def test_upload_intent_owner_read_rejects_raw_owner_before_parsing_payload() -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    creation = make_upload_create_commit()
+    store.commit_upload_intent(creation)
+    item = client.items[(f"UPLOAD#{UPLOAD_ID}", "META")]
+    item["payload"] = {"S": "{"}
+
+    with pytest.raises(NotFoundError):
+        store.get_upload_intent_for_owner("9" * 64, UPLOAD_ID)
+    with pytest.raises(ValidationError):
+        store.get_upload_intent_for_owner(OWNER, UPLOAD_ID)
+
+    item["payload"] = {
+        "S": creation.updated.model_copy(update={"upload_id": "upload_other"}).model_dump_json()
+    }
+    with pytest.raises(NotFoundError):
+        store.get_upload_intent_for_owner(OWNER, UPLOAD_ID)
+
+
+def test_upload_create_is_atomic_and_receipt_replay_is_fingerprint_bound() -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    creation = make_upload_create_commit()
+
+    assert store.commit_upload_intent(creation) == creation.receipt
+    request = client.transactions[-1]
+    assert len(request["ClientRequestToken"]) == 32
+    assert len(request["TransactItems"]) == 2
+    assert {
+        operation["Put"]["Item"]["entity_type"]["S"] for operation in request["TransactItems"]
+    } == {"UPLOAD_INTENT", "UPLOAD_RECEIPT"}
+    intent_item = next(
+        operation["Put"]["Item"]
+        for operation in request["TransactItems"]
+        if operation["Put"]["Item"]["entity_type"]["S"] == "UPLOAD_INTENT"
+    )
+    assert intent_item["expires_at"] == {
+        "N": str(int(creation.updated.intent_expires_at.timestamp()))
+    }
+    assert all(
+        operation["Put"]["ConditionExpression"] == "attribute_not_exists(PK)"
+        for operation in request["TransactItems"]
+    )
+
+    reconstructed = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    assert reconstructed.get_upload_intent_for_owner(OWNER, UPLOAD_ID) == creation.updated
+    assert (
+        reconstructed.resolve_upload_receipt(
+            OWNER,
+            UploadCommandType.CREATE_UPLOAD.value,
+            UPLOAD_ID,
+            creation.receipt.idempotency_key_digest,
+        )
+        == creation.receipt
+    )
+
+    assert store.commit_upload_intent(creation) == creation.receipt
+    changed = UploadIntentCommit(
+        updated=creation.updated,
+        receipt=creation.receipt.model_copy(update={"request_fingerprint": "4" * 64}),
+    )
+    with pytest.raises(IdempotencyConflictError, match="another upload request"):
+        store.commit_upload_intent(changed)
+
+
+def test_upload_completion_is_one_six_item_intent_cas_and_round_trips_graph() -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    creation = make_upload_create_commit()
+    store.commit_upload_intent(creation)
+    completion = make_upload_completion_commit(creation.updated)
+
+    assert store.complete_upload(completion) == completion.intent.receipt
+
+    request = client.transactions[-1]
+    assert len(request["ClientRequestToken"]) == 32
+    assert len(request["TransactItems"]) == 6
+    assert [
+        operation["Put"]["Item"]["entity_type"]["S"] for operation in request["TransactItems"]
+    ] == [
+        "UPLOAD_INTENT",
+        "CONTROL_JOB",
+        "SOURCE_ARTIFACT",
+        "DOMAIN_EVENT",
+        "UPLOAD_RECEIPT",
+        "WORK_REQUEST",
+    ]
+    intent_put = request["TransactItems"][0]["Put"]
+    assert "expires_at" not in intent_put["Item"]
+    assert intent_put["ConditionExpression"] == (
+        "owner_id = :owner_id AND record_version = :record_version AND "
+        "upload_status = :upload_status AND payload = :expected_payload"
+    )
+    assert intent_put["ExpressionAttributeValues"] == {
+        ":owner_id": {"S": OWNER},
+        ":record_version": {"N": "0"},
+        ":upload_status": {"S": UploadIntentStatus.OPEN.value},
+        ":expected_payload": {"S": creation.updated.model_dump_json()},
+    }
+    assert all(
+        operation["Put"]["ConditionExpression"] == "attribute_not_exists(PK)"
+        for operation in request["TransactItems"][1:]
+    )
+    job_item = request["TransactItems"][1]["Put"]["Item"]
+    assert job_item["owner_id"] == {"S": OWNER}
+    assert job_item["owner_jobs_pk"] == {"S": f"OWNER#{OWNER}"}
+    assert job_item["PK"] == {"S": f"JOB#{UPLOAD_JOB_ID}"}
+    assert request["TransactItems"][2]["Put"]["Item"]["SK"] == {"S": "SOURCE"}
+    assert request["TransactItems"][3]["Put"]["Item"]["SK"] == {"S": "EVENT#00000000000000000001"}
+    work_item = request["TransactItems"][5]["Put"]["Item"]
+    assert work_item["work_status"] == {"S": WorkRequestStatus.PENDING.value}
+    assert work_item["dispatch_pk"] == {"S": "WORK_DUE#0"}
+
+    reconstructed = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    assert reconstructed.get_upload_intent_for_owner(OWNER, UPLOAD_ID) == completion.intent.updated
+    assert reconstructed.get_job_for_owner(OWNER, UPLOAD_JOB_ID) == completion.job
+    assert reconstructed.get_source_artifact(UPLOAD_JOB_ID) == completion.source_artifact
+    event_item = client.items[(f"JOB#{UPLOAD_JOB_ID}", "EVENT#00000000000000000001")]
+    assert DomainEvent.model_validate_json(event_item["payload"]["S"]) == completion.event
+    assert reconstructed.get_work_request(UPLOAD_JOB_ID, UPLOAD_WORK_ID) == completion.work_request
+    assert (
+        reconstructed.resolve_upload_receipt(
+            OWNER,
+            UploadCommandType.COMPLETE_UPLOAD.value,
+            UPLOAD_ID,
+            completion.intent.receipt.idempotency_key_digest,
+        )
+        == completion.intent.receipt
+    )
+
+
+def test_upload_completion_replay_is_exact_and_changed_request_conflicts() -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    creation = make_upload_create_commit()
+    store.commit_upload_intent(creation)
+    completion = make_upload_completion_commit(creation.updated)
+    store.complete_upload(completion)
+
+    assert store.complete_upload(completion) == completion.intent.receipt
+    changed = completion.model_copy(
+        update={
+            "intent": completion.intent.model_copy(
+                update={
+                    "receipt": completion.intent.receipt.model_copy(
+                        update={"request_fingerprint": "5" * 64}
+                    )
+                }
+            )
+        }
+    )
+    with pytest.raises(IdempotencyConflictError, match="another upload request"):
+        store.complete_upload(changed)
+
+
+def test_cancelled_upload_wins_stale_completion_cas_without_partial_graph() -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    creation = make_upload_create_commit()
+    store.commit_upload_intent(creation)
+    completion = make_upload_completion_commit(creation.updated)
+    cancellation = make_upload_cancel_commit(creation.updated)
+    store.commit_upload_intent(cancellation)
+    keys_before = set(client.items)
+
+    with pytest.raises(ConcurrentControlModificationError, match="upload changed"):
+        store.complete_upload(completion)
+
+    assert set(client.items) == keys_before
+    assert store.get_upload_intent_for_owner(OWNER, UPLOAD_ID) == cancellation.updated
+    assert not any(key[0] == f"JOB#{UPLOAD_JOB_ID}" for key in client.items)
+    assert (
+        store.resolve_upload_receipt(
+            OWNER,
+            UploadCommandType.COMPLETE_UPLOAD.value,
+            UPLOAD_ID,
+            completion.intent.receipt.idempotency_key_digest,
+        )
+        is None
+    )
 
 
 def test_command_transaction_binds_job_cas_and_round_trips_immutable_review() -> None:

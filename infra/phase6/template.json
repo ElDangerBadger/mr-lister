@@ -1,7 +1,7 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
   "Transform": "AWS::Serverless-2016-10-31",
-  "Description": "Mr Lister Phase 6.2 durable seller-control scaffold",
+  "Description": "Mr Lister Phase 6.4 owner-scoped seller-control scaffold",
   "Parameters": {
     "EnvironmentName": {
       "Type": "String",
@@ -17,6 +17,21 @@
       "Type": "String",
       "AllowedPattern": "^arn:(aws|aws-us-gov|aws-cn):secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:mr-lister/[A-Za-z0-9/_-]+-[A-Za-z0-9]{6}$",
       "ConstraintDescription": "Supply one exact Secrets Manager ARN. A blank value is not accepted."
+    },
+    "ApplicationOrigin": {
+      "Type": "String",
+      "AllowedPattern": "^https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
+      "ConstraintDescription": "Supply the exact lowercase HTTPS application origin with no port, path, or wildcard."
+    },
+    "ApplicationCallbackUrl": {
+      "Type": "String",
+      "AllowedPattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[0-9]{1,5})?/[^?#]*$",
+      "ConstraintDescription": "Supply one exact HTTPS OAuth return URL."
+    },
+    "ApplicationLogoutUrl": {
+      "Type": "String",
+      "AllowedPattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[0-9]{1,5})?/[^?#]*$",
+      "ConstraintDescription": "Supply one exact HTTPS post-sign-out URL."
     }
   },
   "Globals": {
@@ -51,10 +66,30 @@
               "Id": "AbortIncompleteMultipartUploads",
               "Status": "Enabled",
               "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7}
+            },
+            {
+              "Id": "ExpireUnreferencedStagedArtwork",
+              "Status": "Enabled",
+              "TagFilters": [
+                {"Key": "mr-lister-state", "Value": "staged"}
+              ],
+              "ExpirationInDays": 1,
+              "NoncurrentVersionExpiration": {"NoncurrentDays": 1}
             }
           ]
         },
         "OwnershipControls": {"Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]},
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedHeaders": ["content-type", "x-amz-checksum-sha256", "x-amz-server-side-encryption"],
+              "AllowedMethods": ["GET", "POST"],
+              "AllowedOrigins": [{"Ref": "ApplicationOrigin"}],
+              "ExposedHeaders": ["ETag", "x-amz-version-id"],
+              "MaxAge": 300
+            }
+          ]
+        },
         "PublicAccessBlockConfiguration": {
           "BlockPublicAcls": true,
           "BlockPublicPolicy": true,
@@ -86,6 +121,22 @@
                 {"Fn::Sub": "${PrivateArtifactBucket.Arn}/*"}
               ],
               "Condition": {"Bool": {"aws:SecureTransport": "false"}}
+            },
+            {
+              "Sid": "DenyStaleBrowserUploadSignatures",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:PutObject",
+              "Resource": {"Fn::Sub": "${PrivateArtifactBucket.Arn}/private/owners/*/jobs/*/source/source.png"},
+              "Condition": {"NumericGreaterThan": {"s3:signatureAge": "300000"}}
+            },
+            {
+              "Sid": "DenyUnencryptedBrowserUploads",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:PutObject",
+              "Resource": {"Fn::Sub": "${PrivateArtifactBucket.Arn}/private/owners/*/jobs/*/source/source.png"},
+              "Condition": {"StringNotEquals": {"s3:x-amz-server-side-encryption": "AES256"}}
             }
           ]
         }
@@ -102,7 +153,9 @@
           {"AttributeName": "PK", "AttributeType": "S"},
           {"AttributeName": "SK", "AttributeType": "S"},
           {"AttributeName": "dispatch_pk", "AttributeType": "S"},
-          {"AttributeName": "dispatch_sk", "AttributeType": "S"}
+          {"AttributeName": "dispatch_sk", "AttributeType": "S"},
+          {"AttributeName": "owner_jobs_pk", "AttributeType": "S"},
+          {"AttributeName": "owner_jobs_sk", "AttributeType": "S"}
         ],
         "KeySchema": [
           {"AttributeName": "PK", "KeyType": "HASH"},
@@ -116,6 +169,14 @@
               {"AttributeName": "dispatch_sk", "KeyType": "RANGE"}
             ],
             "Projection": {"ProjectionType": "ALL"}
+          },
+          {
+            "IndexName": "OwnerJobsIndex",
+            "KeySchema": [
+              {"AttributeName": "owner_jobs_pk", "KeyType": "HASH"},
+              {"AttributeName": "owner_jobs_sk", "KeyType": "RANGE"}
+            ],
+            "Projection": {"ProjectionType": "ALL"}
           }
         ],
         "PointInTimeRecoverySpecification": {"PointInTimeRecoveryEnabled": true},
@@ -127,6 +188,140 @@
           {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
           {"Key": "DataClassification", "Value": "OperationalState"}
         ]
+      }
+    },
+
+    "SellerUserPool": {
+      "Type": "AWS::Cognito::UserPool",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "UserPoolName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-sellers"},
+        "AdminCreateUserConfig": {"AllowAdminCreateUserOnly": true},
+        "AutoVerifiedAttributes": ["email"],
+        "UsernameAttributes": ["email"],
+        "MfaConfiguration": "ON",
+        "EnabledMfas": ["SOFTWARE_TOKEN_MFA"],
+        "DeletionProtection": "ACTIVE",
+        "AccountRecoverySetting": {
+          "RecoveryMechanisms": [{"Name": "verified_email", "Priority": 1}]
+        },
+        "Policies": {
+          "PasswordPolicy": {
+            "MinimumLength": 14,
+            "RequireLowercase": true,
+            "RequireNumbers": true,
+            "RequireSymbols": true,
+            "RequireUppercase": true,
+            "TemporaryPasswordValidityDays": 7
+          }
+        },
+        "UserPoolTags": {
+          "Project": "MrLister",
+          "Environment": {"Ref": "EnvironmentName"},
+          "DataClassification": "SellerIdentity"
+        }
+      }
+    },
+    "SellerUserPoolGroup": {
+      "Type": "AWS::Cognito::UserPoolGroup",
+      "Properties": {
+        "Description": "Invite-only Mr Lister sellers",
+        "GroupName": "seller",
+        "Precedence": 0,
+        "UserPoolId": {"Ref": "SellerUserPool"}
+      }
+    },
+    "SellerApiResourceServer": {
+      "Type": "AWS::Cognito::UserPoolResourceServer",
+      "Properties": {
+        "Identifier": "mr-lister-api",
+        "Name": "Mr Lister seller API",
+        "Scopes": [
+          {
+            "ScopeName": "seller",
+            "ScopeDescription": "Operate only the authenticated seller's Mr Lister drafts"
+          }
+        ],
+        "UserPoolId": {"Ref": "SellerUserPool"}
+      }
+    },
+    "SellerUserPoolClient": {
+      "Type": "AWS::Cognito::UserPoolClient",
+      "DependsOn": "SellerApiResourceServer",
+      "Properties": {
+        "ClientName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-browser"},
+        "UserPoolId": {"Ref": "SellerUserPool"},
+        "GenerateSecret": false,
+        "AllowedOAuthFlowsUserPoolClient": true,
+        "AllowedOAuthFlows": ["code"],
+        "AllowedOAuthScopes": ["openid", "mr-lister-api/seller"],
+        "CallbackURLs": [{"Ref": "ApplicationCallbackUrl"}],
+        "LogoutURLs": [{"Ref": "ApplicationLogoutUrl"}],
+        "SupportedIdentityProviders": ["COGNITO"],
+        "AccessTokenValidity": 60,
+        "IdTokenValidity": 60,
+        "RefreshTokenValidity": 30,
+        "TokenValidityUnits": {
+          "AccessToken": "minutes",
+          "IdToken": "minutes",
+          "RefreshToken": "days"
+        },
+        "EnableTokenRevocation": true,
+        "PreventUserExistenceErrors": "ENABLED"
+      }
+    },
+    "SellerUserPoolDomain": {
+      "Type": "AWS::Cognito::UserPoolDomain",
+      "Properties": {
+        "Domain": {"Fn::Sub": "mr-lister-${EnvironmentName}-${AWS::AccountId}"},
+        "UserPoolId": {"Ref": "SellerUserPool"}
+      }
+    },
+    "SellerApiAccessLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {"Fn::Sub": "/aws/apigateway/mr-lister-phase6-${EnvironmentName}-seller-api"},
+        "RetentionInDays": 14
+      }
+    },
+    "SellerHttpApi": {
+      "Type": "AWS::Serverless::HttpApi",
+      "DependsOn": "SellerApiAccessLogGroup",
+      "Properties": {
+        "StageName": "$default",
+        "FailOnWarnings": true,
+        "DefinitionBody": {
+          "openapi": "3.0.1",
+          "info": {"title": "Mr Lister seller API", "version": "1.0"},
+          "paths": {}
+        },
+        "Auth": {
+          "DefaultAuthorizer": "SellerJwtAuthorizer",
+          "Authorizers": {
+            "SellerJwtAuthorizer": {
+              "AuthorizationScopes": ["mr-lister-api/seller"],
+              "IdentitySource": "$request.header.Authorization",
+              "JwtConfiguration": {
+                "issuer": {"Fn::Sub": "https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${SellerUserPool}"},
+                "audience": [{"Ref": "SellerUserPoolClient"}]
+              }
+            }
+          }
+        },
+        "CorsConfiguration": {
+          "AllowCredentials": false,
+          "AllowHeaders": ["Authorization", "Content-Type", "Idempotency-Key", "If-Match"],
+          "AllowMethods": ["GET", "POST", "PUT", "OPTIONS"],
+          "AllowOrigins": [{"Ref": "ApplicationOrigin"}],
+          "ExposeHeaders": ["ETag", "Retry-After", "X-Request-Id"],
+          "MaxAge": 300
+        },
+        "AccessLogSettings": {
+          "DestinationArn": {"Fn::GetAtt": ["SellerApiAccessLogGroup", "Arn"]},
+          "Format": "{\"requestId\":\"$context.requestId\",\"routeKey\":\"$context.routeKey\",\"status\":\"$context.status\",\"responseLength\":\"$context.responseLength\",\"integrationLatency\":\"$context.integrationLatency\"}"
+        },
+        "Tags": {"Project": "MrLister", "Environment": {"Ref": "EnvironmentName"}}
       }
     },
 
@@ -262,6 +457,108 @@
         ]
       }
     },
+    "UploadApiFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-upload-api-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [
+          {
+            "PolicyName": "OwnerScopedUploadIntakeOnly",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {"Sid": "WriteUploadApiLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::GetAtt": ["UploadApiLogGroup", "Arn"]}},
+                {
+                  "Sid": "CommitOwnerScopedUploadIntake",
+                  "Effect": "Allow",
+                  "Action": ["dynamodb:GetItem", "dynamodb:TransactWriteItems"],
+                  "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}
+                },
+                {
+                  "Sid": "AuthorizeExactOwnerJobUpload",
+                  "Effect": "Allow",
+                  "Action": ["s3:PutObject", "s3:PutObjectTagging"],
+                  "Resource": {"Fn::Sub": "${PrivateArtifactBucket.Arn}/private/owners/*/jobs/*/source/source.png"}
+                },
+                {
+                  "Sid": "VerifyAndPinExactUploadedVersion",
+                  "Effect": "Allow",
+                  "Action": ["s3:GetObject", "s3:PutObjectVersionTagging"],
+                  "Resource": {"Fn::Sub": "${PrivateArtifactBucket.Arn}/private/owners/*/jobs/*/source/source.png"}
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ReviewQueryApiFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-review-query-api-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ReadOwnerScopedReviewOnly",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {"Sid": "WriteReviewQueryLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::GetAtt": ["ReviewQueryApiLogGroup", "Arn"]}},
+                {
+                  "Sid": "ReadOwnerScopedReview",
+                  "Effect": "Allow",
+                  "Action": ["dynamodb:GetItem", "dynamodb:Query"],
+                  "Resource": [
+                    {"Fn::GetAtt": ["OperationalStateTable", "Arn"]},
+                    {"Fn::Sub": "${OperationalStateTable.Arn}/index/OwnerJobsIndex"}
+                  ]
+                },
+                {
+                  "Sid": "PresignExactPinnedPreviewVersion",
+                  "Effect": "Allow",
+                  "Action": "s3:GetObjectVersion",
+                  "Resource": {"Fn::Sub": "${PrivateArtifactBucket.Arn}/private/owners/*/jobs/*/source/source.png"}
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "SellerCommandApiFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-seller-command-api-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [
+          {
+            "PolicyName": "CommitApplicationOwnedSellerCommandsOnly",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {"Sid": "WriteSellerCommandLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::GetAtt": ["SellerCommandApiLogGroup", "Arn"]}},
+                {
+                  "Sid": "CommitOwnerVersionCheckedCommands",
+                  "Effect": "Allow",
+                  "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems"],
+                  "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
 
     "DispatcherFunction": {
       "Type": "AWS::Serverless::Function",
@@ -344,6 +641,123 @@
         "Timeout": 30
       }
     },
+    "UploadApiFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "UploadApiLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-upload-api"},
+        "CodeUri": "lambda/",
+        "Handler": "phase6_lambda.upload_api_handler",
+        "Role": {"Fn::GetAtt": ["UploadApiFunctionRole", "Arn"]},
+        "MemorySize": 512,
+        "Timeout": 30,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_COGNITO_ISSUER": {"Fn::Sub": "https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${SellerUserPool}"},
+            "MR_LISTER_COGNITO_CLIENT_ID": {"Ref": "SellerUserPoolClient"},
+            "MR_LISTER_APPLICATION_ORIGIN": {"Ref": "ApplicationOrigin"}
+          }
+        },
+        "Events": {
+          "CreateUpload": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/uploads", "Method": "POST", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          },
+          "AuthorizeUpload": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/uploads/{upload_id}/authorize", "Method": "POST", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          },
+          "CompleteUpload": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/uploads/{upload_id}/complete", "Method": "POST", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          },
+          "CancelUpload": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/uploads/{upload_id}/cancel", "Method": "POST", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          }
+        }
+      }
+    },
+    "ReviewQueryApiFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "ReviewQueryApiLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-review-query-api"},
+        "CodeUri": "lambda/",
+        "Handler": "phase6_lambda.review_query_api_handler",
+        "Role": {"Fn::GetAtt": ["ReviewQueryApiFunctionRole", "Arn"]},
+        "Timeout": 15,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_COGNITO_ISSUER": {"Fn::Sub": "https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${SellerUserPool}"},
+            "MR_LISTER_COGNITO_CLIENT_ID": {"Ref": "SellerUserPoolClient"},
+            "MR_LISTER_APPLICATION_ORIGIN": {"Ref": "ApplicationOrigin"}
+          }
+        },
+        "Events": {
+          "Health": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/health", "Method": "GET", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "NONE"}}
+          },
+          "ListJobs": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/jobs", "Method": "GET", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          },
+          "GetJob": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/jobs/{job_id}", "Method": "GET", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          },
+          "GetReview": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/jobs/{job_id}/review", "Method": "GET", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          },
+          "GetArtworkPreview": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/jobs/{job_id}/artwork-preview", "Method": "GET", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          }
+        }
+      }
+    },
+    "SellerCommandApiFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "SellerCommandApiLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-seller-command-api"},
+        "CodeUri": "lambda/",
+        "Handler": "phase6_lambda.seller_command_api_handler",
+        "Role": {"Fn::GetAtt": ["SellerCommandApiFunctionRole", "Arn"]},
+        "Timeout": 30,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_COGNITO_ISSUER": {"Fn::Sub": "https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${SellerUserPool}"},
+            "MR_LISTER_COGNITO_CLIENT_ID": {"Ref": "SellerUserPoolClient"},
+            "MR_LISTER_APPLICATION_ORIGIN": {"Ref": "ApplicationOrigin"}
+          }
+        },
+        "Events": {
+          "ReviseListing": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/jobs/{job_id}/review/listing", "Method": "PUT", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          },
+          "RefreshEconomics": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/jobs/{job_id}/economics/refresh", "Method": "POST", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          },
+          "ApproveReview": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/jobs/{job_id}/approve", "Method": "POST", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          },
+          "CancelJob": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/jobs/{job_id}/cancel", "Method": "POST", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          },
+          "RetryJob": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/jobs/{job_id}/retry", "Method": "POST", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          }
+        }
+      }
+    },
 
     "DispatcherLogGroup": {
       "Type": "AWS::Logs::LogGroup",
@@ -360,6 +774,18 @@
     "SettlementLogGroup": {
       "Type": "AWS::Logs::LogGroup",
       "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-settlement"}, "RetentionInDays": 14}
+    },
+    "UploadApiLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-upload-api"}, "RetentionInDays": 14}
+    },
+    "ReviewQueryApiLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-review-query-api"}, "RetentionInDays": 14}
+    },
+    "SellerCommandApiLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-seller-command-api"}, "RetentionInDays": 14}
     },
     "PrepareWorkflowLogGroup": {
       "Type": "AWS::Logs::LogGroup",
@@ -487,6 +913,10 @@
     },
     "StateTableName": {"Value": {"Ref": "OperationalStateTable"}},
     "ArtifactBucketName": {"Value": {"Ref": "PrivateArtifactBucket"}},
+    "SellerUserPoolId": {"Value": {"Ref": "SellerUserPool"}},
+    "SellerUserPoolClientId": {"Value": {"Ref": "SellerUserPoolClient"}},
+    "SellerSignInOrigin": {"Value": {"Fn::Sub": "https://${SellerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"}},
+    "SellerApiOrigin": {"Value": {"Fn::Sub": "https://${SellerHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}"}},
     "PrepareStateMachineArn": {"Value": {"Ref": "PrepareStateMachine"}},
     "SynchronizeProductStateMachineArn": {"Value": {"Ref": "SynchronizeProductStateMachine"}},
     "ReconcileProductStateMachineArn": {"Value": {"Ref": "ReconcileProductStateMachine"}},

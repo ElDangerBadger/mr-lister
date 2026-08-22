@@ -33,18 +33,12 @@ def test_exact_mockup_origin_with_query_is_accepted() -> None:
 
 def test_preview_requires_the_exact_configured_origin() -> None:
     assert is_safe_preview_url(
-        (
-            "https://review.mr-lister.test/v1/jobs/job_projection/artwork-preview"
-            "?grant=opaque_preview_grant_12345"
-        ),
+        "https://review.mr-lister.test/v1/jobs/job_projection/artwork-preview",
         exact_origin="https://review.mr-lister.test",
         job_id="job_projection",
     )
     assert not is_safe_preview_url(
-        (
-            "https://review.mr-lister.test.evil.test/v1/jobs/job_projection/artwork-preview"
-            "?grant=opaque_preview_grant_12345"
-        ),
+        ("https://review.mr-lister.test.evil.test/v1/jobs/job_projection/artwork-preview"),
         exact_origin="https://review.mr-lister.test",
         job_id="job_projection",
     )
@@ -55,20 +49,14 @@ def test_preview_requires_the_exact_configured_origin() -> None:
     (
         (
             "https://review.mr-lister.test/private/owners/owner/jobs/job_projection/"
-            "source/source.png?grant=opaque_preview_grant_12345"
+            "source/source.png"
         ),
         (
             "https://review.mr-lister.test/v1/jobs/job_projection/artwork-preview%2Fprivate"
-            "%2Fowners%2Fowner?grant=opaque_preview_grant_12345"
+            "%2Fowners%2Fowner"
         ),
-        (
-            "https://review.mr-lister.test/v1/jobs/job_projection/artwork-preview"
-            "?grant=private%2Fowners%2Fowner"
-        ),
-        (
-            "https://review.mr-lister.test/v1/jobs/another_job/artwork-preview"
-            "?grant=opaque_preview_grant_12345"
-        ),
+        ("https://review.mr-lister.test/v1/jobs/job_projection/artwork-preview?storage=private"),
+        ("https://review.mr-lister.test/v1/jobs/another_job/artwork-preview"),
     ),
 )
 def test_preview_rejects_storage_coordinates_and_wrong_job(value: str) -> None:

@@ -41,6 +41,7 @@ from mr_lister.control.models import (
     WorkType,
 )
 from mr_lister.control.service import SellerControlService
+from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.control.store import InMemorySellerControlStore
 from mr_lister.control.worker_commands import (
     BeginPreparationCommand,
@@ -69,7 +70,6 @@ from mr_lister.production.printify_shipping import parse_standard_us_shipping
 
 NOW = datetime(2026, 8, 21, 17, 0, tzinfo=UTC)
 OWNER = "a" * 64
-SOURCE_FP = "b" * 64
 PROFILE_FP = "c" * 64
 TARGET_FP = "d" * 64
 RESPONSE_FP = "e" * 64
@@ -77,6 +77,13 @@ UPDATED_TARGET_FP = "f" * 64
 IMAGE_ID = "printify_image_001"
 PRODUCT_ID = "printify_product_001"
 PREPARE_WORK_ID = "work_prepare_phase62"
+SOURCE_BUCKET = "mr-lister-phase6-artifacts-test"
+SOURCE_VERSION_ID = "version_phase62"
+SOURCE_CONTENT_SHA256 = "1" * 64
+SOURCE_SIZE_BYTES = 512
+SOURCE_MEDIA_TYPE = "image/png"
+SOURCE_PROFILE_ID = "gildan_5000_test"
+SOURCE_PROFILE_VERSION = 1
 
 VALID_TAGS = (
     "badger",
@@ -149,18 +156,36 @@ def _event(job: ControlJobRecord, name: str, *, at: datetime) -> DomainEvent:
     )
 
 
+def _source_fingerprint(*, job_id: str, owner_id: str, at: datetime) -> str:
+    return source_artifact_fingerprint(
+        job_id=job_id,
+        owner_id=owner_id,
+        bucket=SOURCE_BUCKET,
+        object_key=f"private/owners/{owner_id}/jobs/{job_id}/source/source.png",
+        version_id=SOURCE_VERSION_ID,
+        content_sha256=SOURCE_CONTENT_SHA256,
+        size_bytes=SOURCE_SIZE_BYTES,
+        media_type=SOURCE_MEDIA_TYPE,
+        product_profile_id=SOURCE_PROFILE_ID,
+        product_profile_version=SOURCE_PROFILE_VERSION,
+        product_profile_fingerprint=PROFILE_FP,
+        created_at=at,
+    )
+
+
 def _source(job: ControlJobRecord, *, at: datetime) -> SourceArtifactRecord:
     return SourceArtifactRecord(
         job_id=job.job_id,
         owner_id=job.owner_id,
-        fingerprint=SOURCE_FP,
-        bucket="mr-lister-phase6-artifacts-test",
+        fingerprint=_source_fingerprint(job_id=job.job_id, owner_id=job.owner_id, at=at),
+        bucket=SOURCE_BUCKET,
         object_key=f"private/owners/{job.owner_id}/jobs/{job.job_id}/source/source.png",
-        version_id="version_phase62",
-        content_sha256="1" * 64,
-        size_bytes=512,
-        product_profile_id="gildan_5000_test",
-        product_profile_version=1,
+        version_id=SOURCE_VERSION_ID,
+        content_sha256=SOURCE_CONTENT_SHA256,
+        size_bytes=SOURCE_SIZE_BYTES,
+        media_type=SOURCE_MEDIA_TYPE,
+        product_profile_id=SOURCE_PROFILE_ID,
+        product_profile_version=SOURCE_PROFILE_VERSION,
         product_profile_fingerprint=PROFILE_FP,
         created_at=at,
     )
@@ -234,12 +259,17 @@ def _seed_preparation(
 ) -> tuple[InMemorySellerControlStore, MutableClock, WorkerControlService, WorkRequest]:
     store = InMemorySellerControlStore()
     clock = MutableClock()
+    source_fingerprint = _source_fingerprint(
+        job_id=job_id,
+        owner_id=OWNER,
+        at=clock.value,
+    )
     job = ControlJobRecord(
         owner_id=OWNER,
         job_id=job_id,
         event_sequence=1,
         state=ControlJobState.INTAKE_VALIDATED,
-        source_artifact_fingerprint=SOURCE_FP,
+        source_artifact_fingerprint=source_fingerprint,
         active_work_request_id=PREPARE_WORK_ID,
         created_at=clock.value,
         updated_at=clock.value,
@@ -310,7 +340,7 @@ def _prepare_to_product_sync(
             job_id=job_id,
             work_request_id=prepare_work.work_request_id,
             expected_record_version=started.record_version,
-            source_artifact_fingerprint=SOURCE_FP,
+            source_artifact_fingerprint=store.get_source_artifact(job_id).fingerprint,
             artwork_analysis=_analysis(),
             listing=_listing(),
             product_profile_fingerprint=PROFILE_FP,
@@ -521,7 +551,7 @@ def test_upload_claim_is_durable_unique_and_checkpointed_before_product_write() 
                 job_id=checkpointed.job_id,
                 work_request_id=work.work_request_id,
                 expected_record_version=checkpointed.record_version,
-                source_artifact_fingerprint=SOURCE_FP,
+                source_artifact_fingerprint=source.fingerprint,
                 file_name=file_name,
             )
         )
@@ -653,12 +683,13 @@ def test_three_stage_prepare_checkpoints_are_atomic_and_exactly_replayable() -> 
     started = worker.begin_preparation(begin)
     assert worker.begin_preparation(begin) == started
     assert started.state is ControlJobState.ANALYZING_ARTWORK
+    source = store.get_source_artifact(started.job_id)
 
     prepared_command = RecordPreparedReviewCommand(
         job_id=started.job_id,
         work_request_id=work.work_request_id,
         expected_record_version=started.record_version,
-        source_artifact_fingerprint=SOURCE_FP,
+        source_artifact_fingerprint=source.fingerprint,
         artwork_analysis=_analysis(),
         listing=_listing(),
         product_profile_fingerprint=PROFILE_FP,
@@ -714,12 +745,13 @@ def test_agent_failure_after_review_resumes_decision_without_second_intelligence
             expected_record_version=0,
         )
     )
+    source = store.get_source_artifact(started.job_id)
     prepared = worker.record_prepared_review(
         RecordPreparedReviewCommand(
             job_id=started.job_id,
             work_request_id=work.work_request_id,
             expected_record_version=started.record_version,
-            source_artifact_fingerprint=SOURCE_FP,
+            source_artifact_fingerprint=source.fingerprint,
             artwork_analysis=_analysis(),
             listing=_listing(),
             product_profile_fingerprint=PROFILE_FP,
@@ -813,12 +845,13 @@ def test_agent_completion_rejects_forged_non_phase6_tool_evidence() -> None:
             expected_record_version=0,
         )
     )
+    source = store.get_source_artifact(started.job_id)
     prepared = worker.record_prepared_review(
         RecordPreparedReviewCommand(
             job_id=started.job_id,
             work_request_id=work.work_request_id,
             expected_record_version=started.record_version,
-            source_artifact_fingerprint=SOURCE_FP,
+            source_artifact_fingerprint=source.fingerprint,
             artwork_analysis=_analysis(),
             listing=_listing(),
             product_profile_fingerprint=PROFILE_FP,
@@ -857,12 +890,13 @@ def test_agent_completion_cannot_override_application_validation_route() -> None
             expected_record_version=0,
         )
     )
+    source = store.get_source_artifact(started.job_id)
     prepared = worker.record_prepared_review(
         RecordPreparedReviewCommand(
             job_id=started.job_id,
             work_request_id=work.work_request_id,
             expected_record_version=started.record_version,
-            source_artifact_fingerprint=SOURCE_FP,
+            source_artifact_fingerprint=source.fingerprint,
             artwork_analysis=_analysis(),
             listing=_listing(),
             product_profile_fingerprint=PROFILE_FP,

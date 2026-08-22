@@ -47,6 +47,7 @@ from mr_lister.control.models import (
     WorkType,
 )
 from mr_lister.control.service import SellerControlService
+from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.control.store import CommandCommit, InMemorySellerControlStore
 from mr_lister.control.worker_commands import (
     BeginProviderUploadCommand,
@@ -81,24 +82,32 @@ VALID_TAGS = (
     "wildlife design",
     "retro shirt",
 )
-SOURCE_FP = "7" * 64
+
+
+def _source_material(*, job_id: str, owner_id: str = OWNER) -> dict[str, object]:
+    return {
+        "job_id": job_id,
+        "owner_id": owner_id,
+        "bucket": "mr-lister-phase6-artifacts-test",
+        "object_key": f"private/owners/{owner_id}/jobs/{job_id}/source/source.png",
+        "version_id": "source-version-1",
+        "content_sha256": "8" * 64,
+        "size_bytes": 128,
+        "media_type": "image/png",
+        "product_profile_id": "profile_test",
+        "product_profile_version": 1,
+        "product_profile_fingerprint": "3" * 64,
+        "created_at": NOW,
+    }
+
+
+def _source_fingerprint(job_id: str, *, owner_id: str = OWNER) -> str:
+    return source_artifact_fingerprint(**_source_material(job_id=job_id, owner_id=owner_id))
 
 
 def _source(job: ControlJobRecord) -> SourceArtifactRecord:
-    return SourceArtifactRecord(
-        job_id=job.job_id,
-        owner_id=job.owner_id,
-        fingerprint=SOURCE_FP,
-        bucket="mr-lister-phase6-artifacts-test",
-        object_key=(f"private/owners/{job.owner_id}/jobs/{job.job_id}/source/source.png"),
-        version_id="source-version-1",
-        content_sha256="8" * 64,
-        size_bytes=128,
-        product_profile_id="profile_test",
-        product_profile_version=1,
-        product_profile_fingerprint="3" * 64,
-        created_at=NOW,
-    )
+    material = _source_material(job_id=job.job_id, owner_id=job.owner_id)
+    return SourceArtifactRecord(fingerprint=source_artifact_fingerprint(**material), **material)
 
 
 def _response(job: ControlJobRecord, work_id: str | None = None) -> CommandResponse:
@@ -198,7 +207,7 @@ def seed_product_syncing(
         job_id=job_id,
         event_sequence=1,
         state=ControlJobState.INTAKE_VALIDATED,
-        source_artifact_fingerprint=SOURCE_FP,
+        source_artifact_fingerprint=_source_fingerprint(job_id),
         active_work_request_id=prepare_work_id,
         created_at=NOW,
         updated_at=NOW,
@@ -907,7 +916,7 @@ def test_pre_review_cancellation_cancels_pending_work_without_review_reference()
         job_id="job_pre_review_cancel",
         event_sequence=1,
         state=ControlJobState.INTAKE_VALIDATED,
-        source_artifact_fingerprint=SOURCE_FP,
+        source_artifact_fingerprint=_source_fingerprint("job_pre_review_cancel"),
         active_work_request_id=work_id,
         created_at=NOW,
         updated_at=NOW,
@@ -1171,7 +1180,7 @@ def seed_dispatched_prepare(
         job_id=job_id,
         event_sequence=1,
         state=ControlJobState.INTAKE_VALIDATED,
-        source_artifact_fingerprint=SOURCE_FP,
+        source_artifact_fingerprint=_source_fingerprint(job_id),
         active_work_request_id=work_id,
         created_at=NOW,
         updated_at=NOW,

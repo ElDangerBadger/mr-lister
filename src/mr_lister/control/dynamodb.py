@@ -33,11 +33,23 @@ from mr_lister.control.models import (
     WorkRequest,
     WorkRequestStatus,
 )
+from mr_lister.control.source_artwork import validate_source_artifact_authority
 from mr_lister.control.store import (
     CommandCommit,
+    OwnerJobPage,
+    decode_owner_job_cursor,
+    encode_owner_job_cursor,
+    owner_job_sort_key,
     revalidate_work_request,
     validate_command_commit,
     validate_initial_job,
+)
+from mr_lister.control.upload_models import (
+    UploadCompletionCommit,
+    UploadIntent,
+    UploadIntentCommit,
+    UploadIntentStatus,
+    UploadReceipt,
 )
 
 
@@ -61,9 +73,18 @@ def _owner_pk(owner_id: str) -> str:
     return f"OWNER#{owner_id}"
 
 
+def _upload_pk(upload_id: str) -> str:
+    return f"UPLOAD#{upload_id}"
+
+
 def _receipt_sk(command_type: str, job_id: str, key_digest: str) -> str:
     material = f"{command_type}\0{job_id}\0{key_digest}".encode()
     return f"RECEIPT#{sha256(material).hexdigest()}"
+
+
+def _upload_receipt_sk(command_type: str, upload_id: str, key_digest: str) -> str:
+    material = f"UPLOAD\0{command_type}\0{upload_id}\0{key_digest}".encode()
+    return f"UPLOAD_RECEIPT#{sha256(material).hexdigest()}"
 
 
 def _payload(model: Any) -> str:
@@ -77,6 +98,8 @@ def _job_item(job: ControlJobRecord) -> dict[str, dict[str, Any]]:
         "entity_type": _s("CONTROL_JOB"),
         "contract_version": _s(job.contract_version),
         "owner_id": _s(job.owner_id),
+        "owner_jobs_pk": _s(_owner_pk(job.owner_id)),
+        "owner_jobs_sk": _s(owner_job_sort_key(job)),
         "state": _s(job.state.value),
         "record_version": _n(job.record_version),
         "event_sequence": _n(job.event_sequence),
@@ -139,6 +162,47 @@ def _receipt_item(receipt: CommandReceipt) -> dict[str, dict[str, Any]]:
     }
 
 
+def _upload_intent_item(intent: UploadIntent) -> dict[str, dict[str, Any]]:
+    item = {
+        "PK": _s(_upload_pk(intent.upload_id)),
+        "SK": _s("META"),
+        "entity_type": _s("UPLOAD_INTENT"),
+        "contract_version": _s(intent.contract_version),
+        "owner_id": _s(intent.owner_id),
+        "upload_status": _s(intent.status.value),
+        "record_version": _n(intent.record_version),
+        "payload": _s(_payload(intent)),
+    }
+    if intent.status in {
+        UploadIntentStatus.OPEN,
+        UploadIntentStatus.CANCELLED,
+        UploadIntentStatus.EXPIRED,
+    }:
+        item["expires_at"] = _n(int(intent.intent_expires_at.timestamp()))
+    return item
+
+
+def _upload_receipt_item(receipt: UploadReceipt) -> dict[str, dict[str, Any]]:
+    return {
+        "PK": _s(_owner_pk(receipt.owner_id)),
+        "SK": _s(
+            _upload_receipt_sk(
+                receipt.command_type.value,
+                receipt.upload_id,
+                receipt.idempotency_key_digest,
+            )
+        ),
+        "entity_type": _s("UPLOAD_RECEIPT"),
+        "contract_version": _s(receipt.contract_version),
+        "upload_id": _s(receipt.upload_id),
+        "job_id": _s(receipt.job_id),
+        "command_type": _s(receipt.command_type.value),
+        "key_digest": _s(receipt.idempotency_key_digest),
+        "request_fingerprint": _s(receipt.request_fingerprint),
+        "payload": _s(_payload(receipt)),
+    }
+
+
 class DynamoDBSellerControlStore:
     """Single-table adapter whose mutations mirror ``CommandCommit`` exactly."""
 
@@ -173,6 +237,181 @@ class DynamoDBSellerControlStore:
             raise NotFoundError("The requested job was not found")
         return job
 
+    def list_jobs_for_owner(
+        self,
+        owner_id: str,
+        *,
+        limit: int = 25,
+        cursor: str | None = None,
+    ) -> OwnerJobPage:
+        if not 1 <= limit <= 100:
+            raise ValueError("Owner job page limit must be between 1 and 100")
+        request: dict[str, Any] = {
+            "TableName": self._table_name,
+            "IndexName": "OwnerJobsIndex",
+            "KeyConditionExpression": "owner_jobs_pk = :owner_jobs_pk",
+            "ExpressionAttributeValues": {":owner_jobs_pk": _s(_owner_pk(owner_id))},
+            "ScanIndexForward": False,
+            "Limit": limit,
+        }
+        if cursor is not None:
+            sort_key, job_id = decode_owner_job_cursor(cursor)
+            request["ExclusiveStartKey"] = {
+                "PK": _s(_job_pk(job_id)),
+                "SK": _s("META"),
+                "owner_jobs_pk": _s(_owner_pk(owner_id)),
+                "owner_jobs_sk": _s(sort_key),
+            }
+        response = self._client.query(**request)
+        jobs: list[ControlJobRecord] = []
+        for item in response.get("Items", []):
+            payload = item.get("payload", {}).get("S")
+            if (
+                item.get("entity_type", {}).get("S") != "CONTROL_JOB"
+                or item.get("owner_id", {}).get("S") != owner_id
+                or item.get("owner_jobs_pk", {}).get("S") != _owner_pk(owner_id)
+                or not payload
+            ):
+                raise NotFoundError("The requested job page was not found")
+            job = ControlJobRecord.model_validate_json(payload)
+            if (
+                job.owner_id != owner_id
+                or item.get("PK", {}).get("S") != _job_pk(job.job_id)
+                or item.get("SK", {}).get("S") != "META"
+                or item.get("owner_jobs_sk", {}).get("S") != owner_job_sort_key(job)
+            ):
+                raise NotFoundError("The requested job page was not found")
+            jobs.append(job)
+        next_cursor = None
+        if response.get("LastEvaluatedKey") and jobs:
+            next_cursor = encode_owner_job_cursor(jobs[-1])
+        return OwnerJobPage(jobs=tuple(jobs), next_cursor=next_cursor)
+
+    def get_upload_intent_for_owner(self, owner_id: str, upload_id: str) -> UploadIntent:
+        item = self._get(_upload_pk(upload_id), "META")
+        if (
+            item is None
+            or item.get("entity_type", {}).get("S") != "UPLOAD_INTENT"
+            or item.get("owner_id", {}).get("S") != owner_id
+        ):
+            raise NotFoundError("The requested upload was not found")
+        payload = item.get("payload", {}).get("S")
+        if not payload:
+            raise NotFoundError("The requested upload was not found")
+        intent = UploadIntent.model_validate_json(payload)
+        if intent.owner_id != owner_id or intent.upload_id != upload_id:
+            raise NotFoundError("The requested upload was not found")
+        return intent
+
+    def resolve_upload_receipt(
+        self,
+        owner_id: str,
+        command_type: str,
+        upload_id: str,
+        key_digest: str,
+    ) -> UploadReceipt | None:
+        item = self._get(
+            _owner_pk(owner_id),
+            _upload_receipt_sk(command_type, upload_id, key_digest),
+        )
+        if item is None:
+            return None
+        payload = item.get("payload", {}).get("S")
+        if (
+            item.get("entity_type", {}).get("S") != "UPLOAD_RECEIPT"
+            or item.get("upload_id", {}).get("S") != upload_id
+            or item.get("command_type", {}).get("S") != command_type
+            or item.get("key_digest", {}).get("S") != key_digest
+            or not payload
+        ):
+            return None
+        receipt = UploadReceipt.model_validate_json(payload)
+        if receipt.owner_id != owner_id:
+            return None
+        return receipt
+
+    def commit_upload_intent(self, commit: UploadIntentCommit) -> UploadReceipt:
+        intent_put: dict[str, Any]
+        if commit.current is None:
+            intent_put = self._put_new(_upload_intent_item(commit.updated))
+        else:
+            current = commit.current
+            intent_put = {
+                "Put": {
+                    "TableName": self._table_name,
+                    "Item": _upload_intent_item(commit.updated),
+                    "ConditionExpression": (
+                        "owner_id = :owner_id AND record_version = :record_version AND "
+                        "upload_status = :upload_status AND payload = :expected_payload"
+                    ),
+                    "ExpressionAttributeValues": {
+                        ":owner_id": _s(current.owner_id),
+                        ":record_version": _n(current.record_version),
+                        ":upload_status": _s(current.status.value),
+                        ":expected_payload": _s(_payload(current)),
+                    },
+                }
+            }
+        try:
+            self._transact(
+                [intent_put, self._put_new(_upload_receipt_item(commit.receipt))],
+                commit.receipt.receipt_id,
+            )
+        except ClientError as error:
+            if self._is_transaction_replay_error(error):
+                return self._resolve_upload_after_cancel(commit.receipt)
+            raise
+        return commit.receipt
+
+    def complete_upload(self, commit: UploadCompletionCommit) -> UploadReceipt:
+        current = commit.intent.current
+        assert current is not None
+        updated_intent_put = {
+            "Put": {
+                "TableName": self._table_name,
+                "Item": _upload_intent_item(commit.intent.updated),
+                "ConditionExpression": (
+                    "owner_id = :owner_id AND record_version = :record_version AND "
+                    "upload_status = :upload_status AND payload = :expected_payload"
+                ),
+                "ExpressionAttributeValues": {
+                    ":owner_id": _s(current.owner_id),
+                    ":record_version": _n(current.record_version),
+                    ":upload_status": _s(current.status.value),
+                    ":expected_payload": _s(_payload(current)),
+                },
+            }
+        }
+        items = [
+            updated_intent_put,
+            self._put_new(_job_item(commit.job)),
+            self._put_new(
+                _record_item(
+                    job_id=commit.job.job_id,
+                    sort_key="SOURCE",
+                    entity_type="SOURCE_ARTIFACT",
+                    record=commit.source_artifact,
+                )
+            ),
+            self._put_new(
+                _record_item(
+                    job_id=commit.job.job_id,
+                    sort_key=f"EVENT#{commit.event.sequence:020d}",
+                    entity_type="DOMAIN_EVENT",
+                    record=commit.event,
+                )
+            ),
+            self._put_new(_upload_receipt_item(commit.intent.receipt)),
+            self._put_new(_work_item(commit.work_request)),
+        ]
+        try:
+            self._transact(items, commit.intent.receipt.receipt_id)
+        except ClientError as error:
+            if self._is_transaction_replay_error(error):
+                return self._resolve_upload_after_cancel(commit.intent.receipt)
+            raise
+        return commit.intent.receipt
+
     def get_review(self, job_id: str, review_version: int) -> ReviewContent:
         return self._get_record(
             job_id,
@@ -182,7 +421,8 @@ class DynamoDBSellerControlStore:
         )
 
     def get_source_artifact(self, job_id: str) -> SourceArtifactRecord:
-        return self._get_record(job_id, "SOURCE", SourceArtifactRecord, "source artifact")
+        source = self._get_record(job_id, "SOURCE", SourceArtifactRecord, "source artifact")
+        return validate_source_artifact_authority(source)
 
     def get_artwork_analysis(self, job_id: str, analysis_id: str) -> ArtworkAnalysisRecord:
         return self._get_record(
@@ -852,6 +1092,21 @@ class DynamoDBSellerControlStore:
         if existing is not None:
             raise IdempotencyConflictError("The idempotency key was used for another request")
         raise ConcurrentControlModificationError("The job could not be created atomically")
+
+    def _resolve_upload_after_cancel(self, receipt: UploadReceipt) -> UploadReceipt:
+        existing = self.resolve_upload_receipt(
+            receipt.owner_id,
+            receipt.command_type.value,
+            receipt.upload_id,
+            receipt.idempotency_key_digest,
+        )
+        if existing is not None and existing.request_fingerprint == receipt.request_fingerprint:
+            return existing
+        if existing is not None:
+            raise IdempotencyConflictError(
+                "The idempotency key was used for another upload request"
+            )
+        raise ConcurrentControlModificationError("The upload changed before it could commit")
 
     @staticmethod
     def _is_transaction_replay_error(error: ClientError) -> bool:
