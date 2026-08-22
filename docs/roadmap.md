@@ -53,11 +53,16 @@ integer-cent pricing, real unpublished product creation, and external-ID persist
 
 ## Phase 6: Review and approval interface
 
-Build upload, progress, consolidated artwork/listing/product review, supported edits,
-validation display, margin visibility, explicit approval, and clear result states.
+Correct the human-decision lifecycle, preserve one unpublished Printify product across revisions,
+add owner-scoped cloud upload and review APIs, and build upload, durable progress, consolidated
+artwork/listing/product review, supported edits, validation, estimated-proceeds visibility,
+explicit approval or cancellation, and clear result states.
 
-**Exit:** a new user can complete the workflow without documentation; every visible control
-works, explains why it is disabled, or is removed.
+**Exit:** an invited, authenticated first-time seller with a configured Printify connection can
+complete the supported PNG workflow without documentation and recover it after refresh. Every
+revision updates the same unpublished product; approval ends at `APPROVED`; cancellation needs no
+operator; and no Phase 6 path can publish, order, or fulfill. Every visible control works,
+explains why it is unavailable, or is removed.
 
 ## Phase 7: Etsy publication through Printify
 

@@ -181,10 +181,22 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     with correct sizing and top alignment. Both canary executions were subsequently stopped and
     verified `ABORTED`; their unpublished products and immutable workflow evidence were retained.
 - [ ] Phase 6 — Review and approval interface
-  - [ ] Upload, progress, consolidated review, and supported edits
-  - [ ] Validation and margin visibility
-  - [ ] Explicit approval and clear result states
-  - [ ] Usability acceptance without external documentation
+  - [x] Phase 6.0 product, state, security, commercial, and acceptance contracts frozen
+    - [x] Persisted application-state human pause and Phase 6/7 authority boundary
+    - [x] One-Printify-product-per-job revision policy
+    - [x] Invite-only, owner-scoped cloud review boundary
+    - [x] Supported input, seller journey, actions, API, accessibility, and non-goals specified
+    - Evidence: [`phase6-seller-control-contract.md`](phase6-seller-control-contract.md) and ADRs
+      [0009](architecture/0009-phase6-seller-control-boundary.md),
+      [0010](architecture/0010-one-printify-product-per-job.md), and
+      [0011](architecture/0011-owner-scoped-cloud-review-boundary.md).
+  - [ ] Phase 6.1 application-owned revise, approve, cancel, retry, and failure lifecycle
+  - [ ] Phase 6.2 same-product Printify synchronization and reconciliation
+  - [ ] Phase 6.3 consolidated artwork, listing, mockup, product, validation, and
+    estimated-proceeds projection
+  - [ ] Phase 6.4 Cognito identity, private direct upload, and owner-scoped cloud API
+  - [ ] Phase 6.5 accessible seller interface with refresh and conflict recovery
+  - [ ] Phase 6.6 replay, concurrency, cross-owner, live-canary, and first-time-user acceptance
 - [ ] Phase 7 — Etsy publication through Printify
   - [ ] Approval-version and publish guard verification
   - [ ] Channel publication and status polling

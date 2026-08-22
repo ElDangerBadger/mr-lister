@@ -25,8 +25,11 @@ the confidence of an assumption.
 | HP-004 | Sellers will pay for one-at-a-time automation before bulk features exist. | Pricing interviews or preorder test | Open |
 | HP-005 | Recommended tags are more useful than a seller's unaided first draft. | Blind qualitative evaluation | Open |
 
+Phase 6 can provide the first usability evidence for HP-001. Automated browser tests, developer
+canaries, and a successful live provider run do not validate seller trust by themselves; the
+hypothesis remains open until five moderated first-time-seller sessions are recorded.
+
 ## Claim policy
 
 Mr Lister may promise relevant, compliant listing assistance and operational time savings that
 the product can demonstrate. It must not guarantee search rank, traffic, conversion, or sales.
-

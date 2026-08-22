@@ -200,3 +200,12 @@ allows only `DescribeSecret` and `GetSecretValue` on one exact supplied ARN. No 
 no placeholder credential is manufactured, and no Lambda receives this permission yet. Phase 5
 will provide the legitimate Printify secret ARN and attach the policy only to the real marketplace
 adapter's function.
+
+## Phase 6 successor topology
+
+The seven-day task-token wait remains valid Phase 4 durability evidence. It is not the Phase 6
+seller-control topology. ADR 0009 ends bounded preparation after application state reaches human
+review, persists the human pause in DynamoDB, and uses version-checked application commands for
+revision, approval, and cancellation. Phase 7 will start a separate guarded publication execution
+from an immutable approved snapshot. This successor decision preserves the Phase 4 evidence rather
+than rewriting or migrating its ownerless records.

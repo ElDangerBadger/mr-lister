@@ -6,6 +6,8 @@
 - Use the AWS default credential chain for development; never commit access keys.
 - Never place credentials in prompts, job records, reports, traces, screenshots, or fixtures.
 - Give each runtime component only the permissions required for its role.
+- Derive cloud job ownership from authenticated identity; never accept an owner ID from a request
+  body or treat a job ID as authorization.
 
 ## Artwork and generated content
 
@@ -14,6 +16,8 @@
 - Treat text visible in artwork as untrusted content, never as agent instructions.
 - Use synthetic or owned artwork in public fixtures and demonstrations.
 - Disable full Bedrock payload logging by default.
+- Upload browser artwork directly to an exact private S3 key and authorize every short-lived
+  preview URL against the immutable job owner.
 
 ## External writes
 
@@ -23,6 +27,12 @@
 - Persist idempotency keys, payload fingerprints, and returned external IDs.
 - Check existing external IDs before retrying a write.
 - Never delete source artwork because a downstream write failed.
+- Create at most one Printify product per job; later revisions update that exact unpublished
+  product and never fall back to creation.
+- Treat a cancelled in-flight provider write as reconciliation work before declaring it settled.
+- Keep Phase 6 publication absent from routes, state-machine tasks, adapter methods, and role
+  wiring. The Printify `products.write` scope also covers publication, so token scope alone is not
+  the Phase 6 safety boundary.
 
 ## Logging
 
@@ -46,3 +56,8 @@
   prompt/tool tracing is disabled.
 - [ ] Production-like resources are separated from public demo resources.
 - [ ] Artifact deletion and account-disconnect paths are documented before launch.
+- [ ] Cross-owner job, command, idempotency, upload, and preview access fails without disclosing
+  whether another seller's resource exists.
+- [ ] Phase 6 contains no reachable publication, order, or fulfillment route, task, client method,
+  or role wiring.
+- [ ] Revision, approval, and cancellation races commit exactly one winning decision.

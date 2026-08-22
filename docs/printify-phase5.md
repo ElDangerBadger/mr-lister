@@ -107,3 +107,11 @@ retained. The short-lived bootstrap login used only for cancellation was then lo
 
 `orders.write` is intentionally absent. Phase 5 must be structurally unable to purchase or fulfill
 a physical product.
+
+## Phase 6 successor behavior
+
+The Phase 5 create canaries remain evidence of one guarded initial POST. Phase 6 revisions do not
+repeat product creation: ADR 0010 requires GET/PUT synchronization against the persisted
+unpublished product ID, GET-based reconciliation after ambiguous outcomes, and persistence of the
+mockup and cost fields that Phase 5 currently parses but does not project. Update failure never
+falls back to another product POST.
