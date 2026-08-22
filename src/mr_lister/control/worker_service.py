@@ -16,7 +16,11 @@ from mr_lister.control.errors import (
     InvalidControlStateError,
     WorkNotActiveError,
 )
-from mr_lister.control.fingerprints import canonical_fingerprint, command_request_fingerprint
+from mr_lister.control.fingerprints import (
+    agent_preparation_evidence_fingerprint,
+    canonical_fingerprint,
+    command_request_fingerprint,
+)
 from mr_lister.control.models import (
     AgentPreparationEvidence,
     ArtworkAnalysisRecord,
@@ -249,9 +253,27 @@ class WorkerControlService:
         if command.decision.next_action != expected_action:
             raise InvalidControlStateError("Agent decision does not match application validation")
         now = self._now()
-        evidence_material = command.model_dump(mode="json", exclude={"expected_record_version"})
-        evidence_fingerprint = canonical_fingerprint(evidence_material)
         evidence_id = self._record_id("agent", current.job_id, command.work_request_id)
+        decision_fingerprint = canonical_fingerprint(command.decision.model_dump(mode="json"))
+        evidence_fingerprint = agent_preparation_evidence_fingerprint(
+            evidence_id=evidence_id,
+            job_id=current.job_id,
+            work_request_id=work.work_request_id,
+            review_version=current.review_version,
+            correlation_id=command.correlation_id,
+            framework="strands-agents",
+            agent_id="mr-lister-preparation",
+            controller_model_id=command.controller_model_id,
+            tool_calls=command.tool_calls,
+            cycles=command.cycles,
+            input_tokens=command.input_tokens,
+            output_tokens=command.output_tokens,
+            total_tokens=command.total_tokens,
+            decision_fingerprint=decision_fingerprint,
+            requires_human_approval=True,
+            publication_authorized=False,
+            created_at=now,
+        )
         evidence = AgentPreparationEvidence(
             evidence_id=evidence_id,
             job_id=current.job_id,
@@ -266,7 +288,7 @@ class WorkerControlService:
             input_tokens=command.input_tokens,
             output_tokens=command.output_tokens,
             total_tokens=command.total_tokens,
-            decision_fingerprint=canonical_fingerprint(command.decision.model_dump(mode="json")),
+            decision_fingerprint=decision_fingerprint,
             fingerprint=evidence_fingerprint,
             created_at=now,
         )
@@ -1304,7 +1326,7 @@ class WorkerControlService:
             "image_id": observation.image_id,
             "payload_fingerprint": observation.request_fingerprint,
             "response_fingerprint": observation.response_fingerprint,
-            "mockup_urls": observation.mockup_urls,
+            "mockups": [item.model_dump(mode="json") for item in observation.mockups],
             "variants": [item.model_dump(mode="json") for item in observation.variants],
             "provider_locked": False,
             "provider_published": False,

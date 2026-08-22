@@ -29,6 +29,7 @@ from mr_lister.control.models import (
     ControlJobRecord,
     ControlJobState,
     DomainEvent,
+    ProductMockupEvidence,
     ProductVariantEvidence,
     ProviderCallPermitStatus,
     ProviderWriteOperation,
@@ -346,15 +347,27 @@ def _observation(
         image_id=image_id,
         request_fingerprint=request_fingerprint,
         response_fingerprint=response_fingerprint,
-        mockup_urls=("https://images-api.printify.com/mockup/front.png",),
+        mockups=(
+            ProductMockupEvidence(
+                url="https://images.printify.com/mockup/front.png",
+                position="front",
+                variant_ids=(101, 102),
+            ),
+        ),
         variants=(
             ProductVariantEvidence(
                 variant_id=101,
+                color="Black",
+                size="S",
+                placement_group_id="small",
                 retail_price_cents=2_999,
                 production_cost_cents=1_125,
             ),
             ProductVariantEvidence(
                 variant_id=102,
+                color="Black",
+                size="M",
+                placement_group_id="medium",
                 retail_price_cents=2_999,
                 production_cost_cents=1_275,
             ),
@@ -683,6 +696,7 @@ def test_three_stage_prepare_checkpoints_are_atomic_and_exactly_replayable() -> 
     assert next_work.review_version == 1
     assert evidence.framework == "strands-agents"
     assert evidence.tool_calls == ("record_prepared_review",)
+    assert evidence.fingerprint == evidence.authority_fingerprint
     assert [event.name for event in store.list_events(job.job_id)] == [
         "INTAKE_VALIDATED",
         "ARTWORK_ANALYSIS_STARTED",

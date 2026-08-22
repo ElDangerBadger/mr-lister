@@ -21,6 +21,7 @@ from urllib.request import HTTPRedirectHandler, OpenerDirector, Request, build_o
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from mr_lister.contracts import ListingIntelligence, ProductProfile
+from mr_lister.contracts.presentation import ProductMockupEvidence
 from mr_lister.control.fingerprints import canonical_fingerprint
 from mr_lister.control.models import PHASE6_MAX_SOURCE_ARTWORK_BYTES
 from mr_lister.production.printify import (
@@ -148,7 +149,7 @@ class DraftSynchronizationEvidence(_DraftModel):
     provider_locked: bool
     provider_published: bool
     variants: tuple[DraftVariantEconomics, ...] = Field(min_length=1)
-    mockup_urls: tuple[NonEmptyText, ...] = ()
+    mockups: tuple[ProductMockupEvidence, ...] = ()
 
     @model_validator(mode="after")
     def enabled_variants_are_unique(self) -> DraftSynchronizationEvidence:
@@ -801,7 +802,7 @@ class PrintifyDraftSynchronizer:
             )
         variant_economics = cls._variant_economics(product, draft)
         image_id = cls._canonical_image_id(draft)
-        mockup_urls = cls._mockup_urls(product)
+        mockups = cls._mockups(product, expected_variant_ids={item.id for item in draft.variants})
         provider_locked = cls._locked(product)
         provider_published = cls._published(product)
         response_fingerprint = canonical_fingerprint(
@@ -811,7 +812,7 @@ class PrintifyDraftSynchronizer:
                 "canonical_readback": {key: product[key] for key in canonical_payload},
                 "image_id": image_id,
                 "variants": [item.model_dump(mode="json") for item in variant_economics],
-                "mockup_urls": list(mockup_urls),
+                "mockups": [item.model_dump(mode="json") for item in mockups],
                 "provider_locked": provider_locked,
                 "provider_published": provider_published,
             }
@@ -825,7 +826,7 @@ class PrintifyDraftSynchronizer:
             provider_locked=provider_locked,
             provider_published=provider_published,
             variants=variant_economics,
-            mockup_urls=mockup_urls,
+            mockups=mockups,
         )
 
     @staticmethod
@@ -892,11 +893,13 @@ class PrintifyDraftSynchronizer:
         return next(iter(image_ids))
 
     @staticmethod
-    def _mockup_urls(product: dict[str, Any]) -> tuple[str, ...]:
+    def _mockups(
+        product: dict[str, Any], *, expected_variant_ids: set[int]
+    ) -> tuple[ProductMockupEvidence, ...]:
         images = product.get("images", [])
         if not isinstance(images, list):
             raise PrintifyCatalogMismatchError("Printify product mockups were malformed")
-        urls: list[str] = []
+        mockups: list[ProductMockupEvidence] = []
         for image in images:
             if not isinstance(image, dict):
                 raise PrintifyCatalogMismatchError("Printify product mockup was malformed")
@@ -905,26 +908,38 @@ class PrintifyDraftSynchronizer:
                 continue
             if not isinstance(source, str) or not source.strip():
                 raise PrintifyCatalogMismatchError("Printify product mockup URL was malformed")
+            position = image.get("position")
+            if position is not None and not isinstance(position, str):
+                raise PrintifyCatalogMismatchError("Printify product mockup position was malformed")
+            raw_variant_ids = image.get("variant_ids", [])
+            if not isinstance(raw_variant_ids, list) or any(
+                type(variant_id) is not int or variant_id <= 0 for variant_id in raw_variant_ids
+            ):
+                raise PrintifyCatalogMismatchError(
+                    "Printify product mockup variants were malformed"
+                )
+            variant_ids = tuple(raw_variant_ids)
+            if len(set(variant_ids)) != len(variant_ids) or not set(variant_ids).issubset(
+                expected_variant_ids
+            ):
+                raise PrintifyCatalogMismatchError(
+                    "Printify product mockup variants were malformed"
+                )
+            if any(mockup.url == source for mockup in mockups):
+                raise PrintifyCatalogMismatchError("Printify product repeated a mockup URL")
             try:
-                parsed = urlsplit(source)
-                port = parsed.port
+                mockups.append(
+                    ProductMockupEvidence(
+                        url=source,
+                        position=position,
+                        variant_ids=variant_ids,
+                    )
+                )
             except ValueError as error:
                 raise PrintifyCatalogMismatchError(
-                    "Printify product mockup URL was malformed"
+                    "Printify product mockup evidence was malformed"
                 ) from error
-            if (
-                parsed.scheme != "https"
-                or parsed.hostname != "images.printify.com"
-                or port is not None
-                or parsed.username is not None
-                or parsed.password is not None
-                or parsed.fragment
-            ):
-                raise PrintifyCatalogMismatchError("Printify product mockup URL was malformed")
-            if source in urls:
-                raise PrintifyCatalogMismatchError("Printify product repeated a mockup URL")
-            urls.append(source)
-        return tuple(urls)
+        return tuple(mockups)
 
     @staticmethod
     def _locked(product: dict[str, Any]) -> bool:

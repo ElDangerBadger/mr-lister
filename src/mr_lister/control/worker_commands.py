@@ -19,6 +19,7 @@ from mr_lister.control.models import (
     AgentToolName,
     ControlModel,
     Fingerprint,
+    ProductMockupEvidence,
     ProductVariantEvidence,
     ReconciliationOutcome,
     SafeId,
@@ -124,20 +125,23 @@ class ProductSyncObservation(ControlModel):
     image_id: SafeId
     request_fingerprint: Fingerprint
     response_fingerprint: Fingerprint
-    mockup_urls: tuple[str, ...] = ()
+    mockups: tuple[ProductMockupEvidence, ...] = ()
     variants: tuple[ProductVariantEvidence, ...] = Field(min_length=1)
     provider_locked: Literal[False] = False
     provider_published: Literal[False] = False
 
     @model_validator(mode="after")
     def projection_evidence_is_bounded(self) -> ProductSyncObservation:
-        if len(self.mockup_urls) > 20 or any(
-            not value or len(value) > 2_048 for value in self.mockup_urls
-        ):
+        if len(self.mockups) > 20:
             raise ValueError("Provider mockup evidence is outside its bounded contract")
+        mockup_urls = tuple(mockup.url for mockup in self.mockups)
+        if len(set(mockup_urls)) != len(mockup_urls):
+            raise ValueError("Provider mockup evidence must have unique URLs")
         variant_ids = tuple(variant.variant_id for variant in self.variants)
         if len(set(variant_ids)) != len(variant_ids):
             raise ValueError("Provider variant evidence must be unique")
+        if any(not set(mockup.variant_ids).issubset(set(variant_ids)) for mockup in self.mockups):
+            raise ValueError("Provider mockup evidence references unknown variants")
         return self
 
 

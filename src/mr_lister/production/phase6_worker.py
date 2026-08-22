@@ -378,7 +378,11 @@ class Phase6ProductMachineWorker:
                 product_id=permitted.product_id,
                 prior_draft=prior_draft,
             )
-            observation = self._observation(evidence=evidence, attempt=attempt)
+            observation = self._observation(
+                evidence=evidence,
+                attempt=attempt,
+                resolved=authority.resolved,
+            )
         except (PrintifyCreateOutcomeUnknown, PrintifyUpdateOutcomeUnknown):
             code = "PROVIDER_CONNECTION_LOST"
             return self._record_unknown(
@@ -546,7 +550,11 @@ class Phase6ProductMachineWorker:
                 if result.outcome is CreateReconciliationOutcome.ONE:
                     assert result.evidence is not None
                     outcome = ReconciliationOutcome.TARGET_MATCH
-                    product = self._observation(evidence=result.evidence, attempt=attempt)
+                    product = self._observation(
+                        evidence=result.evidence,
+                        attempt=attempt,
+                        resolved=authority.resolved,
+                    )
                 elif result.outcome is CreateReconciliationOutcome.ZERO:
                     outcome = ReconciliationOutcome.NO_MATCH
                     product = None
@@ -569,7 +577,11 @@ class Phase6ProductMachineWorker:
                 if result.outcome is UpdateReconciliationOutcome.APPLIED:
                     assert result.evidence is not None
                     outcome = ReconciliationOutcome.TARGET_MATCH
-                    product = self._observation(evidence=result.evidence, attempt=attempt)
+                    product = self._observation(
+                        evidence=result.evidence,
+                        attempt=attempt,
+                        resolved=authority.resolved,
+                    )
                 elif result.outcome is UpdateReconciliationOutcome.PRIOR_PAYLOAD:
                     outcome = ReconciliationOutcome.PRIOR_MATCH
                     product = None
@@ -742,7 +754,10 @@ class Phase6ProductMachineWorker:
 
     @staticmethod
     def _observation(
-        *, evidence: DraftSynchronizationEvidence, attempt: ProviderWriteAttempt
+        *,
+        evidence: DraftSynchronizationEvidence,
+        attempt: ProviderWriteAttempt,
+        resolved: PrintifyResolvedProfile,
     ) -> ProductSyncObservation:
         if evidence.request_fingerprint != attempt.target_payload_fingerprint:
             raise InvalidControlStateError("Provider evidence does not match the claimed target")
@@ -750,19 +765,36 @@ class Phase6ProductMachineWorker:
             raise InvalidControlStateError("Provider evidence changed the claimed image")
         if attempt.product_id is not None and evidence.product_id != attempt.product_id:
             raise InvalidControlStateError("Provider evidence changed immutable product identity")
+        evidence_by_id = {item.variant_id: item for item in evidence.variants}
+        resolved_by_id = {item.variant_id: item for item in resolved.variants}
+        if set(evidence_by_id) != set(resolved_by_id) or any(
+            evidence_by_id[variant_id].retail_price_cents
+            != resolved_by_id[variant_id].retail_price_cents
+            for variant_id in resolved_by_id
+        ):
+            raise InvalidControlStateError(
+                "Provider evidence changed the exact configured variant identity"
+            )
         return ProductSyncObservation(
             product_id=evidence.product_id,
             image_id=evidence.image_id,
             request_fingerprint=evidence.request_fingerprint,
             response_fingerprint=evidence.response_fingerprint,
-            mockup_urls=evidence.mockup_urls,
+            mockups=evidence.mockups,
             variants=tuple(
                 ProductVariantEvidence(
-                    variant_id=item.variant_id,
-                    retail_price_cents=item.retail_price_cents,
-                    production_cost_cents=item.production_cost_cents,
+                    variant_id=resolved_variant.variant_id,
+                    color=resolved_variant.color,
+                    size=resolved_variant.size,
+                    placement_group_id=resolved_variant.placement_group_id,
+                    retail_price_cents=evidence_by_id[
+                        resolved_variant.variant_id
+                    ].retail_price_cents,
+                    production_cost_cents=evidence_by_id[
+                        resolved_variant.variant_id
+                    ].production_cost_cents,
                 )
-                for item in evidence.variants
+                for resolved_variant in resolved.variants
             ),
             provider_locked=evidence.provider_locked,
             provider_published=evidence.provider_published,

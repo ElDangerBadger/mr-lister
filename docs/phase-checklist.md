@@ -226,8 +226,19 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [ ] Replace fail-closed `SCAFFOLD_ONLY` Lambda shims, deploy the Phase 6 runtime/stack, and pass
       same-job Strands plus one-unpublished-product live acceptance
     - Evidence: [`phase6-provider-integration.md`](phase6-provider-integration.md).
-  - [ ] Phase 6.3 consolidated artwork, listing, mockup, product, validation, and
-    estimated-proceeds projection
+  - [x] Phase 6.3 consolidated artwork, listing, mockup, product, validation, and
+    estimated-proceeds application projection
+    - [x] Owner-first read-only join across exact source, review, analysis, Strands, product,
+      representative mockup, pricing, and failure authority
+    - [x] Durable color/size/placement evidence for all 30 variants and product/provider labels
+      derived only from immutable profile authority
+    - [x] Closed seller capability matrix with real ETag-bound economics refresh and authoritative
+      approval gate for safe mockups plus fresh complete economics
+    - [x] Five-minute exact-origin artwork-preview port, hostile mockup URL fail-closed checks, and
+      recursive private-field leakage assertions
+    - [x] Offline gate: 638 tests passed, including 428 Phase 6 tests; 11 live-Bedrock tests skipped;
+      SAM lint/build, Python package builds, Ruff lint/format, and `git diff --check` passed
+    - Evidence: [`phase6-review-projection.md`](phase6-review-projection.md).
   - [ ] Phase 6.4 Cognito identity, private direct upload, and owner-scoped cloud API
   - [ ] Phase 6.5 accessible seller interface with refresh and conflict recovery
   - [ ] Phase 6.6 replay, concurrency, cross-owner, live-canary, and first-time-user acceptance

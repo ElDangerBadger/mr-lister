@@ -344,6 +344,7 @@ def validate_command_commit(commit: CommandCommit) -> None:
             evidence.job_id != updated.job_id
             or evidence.evidence_id != updated.agent_evidence_id
             or evidence.fingerprint != updated.agent_evidence_fingerprint
+            or evidence.fingerprint != evidence.authority_fingerprint
             or evidence.review_version != updated.review_version
         ):
             raise InvalidControlStateError("Agent preparation evidence does not match the job")

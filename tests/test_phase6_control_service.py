@@ -10,6 +10,7 @@ from mr_lister.control.commands import (
     CancelJobCommand,
     ListingRevision,
     RecordWorkerFailureCommand,
+    RefreshEconomicsCommand,
     RetryJobCommand,
     ReviseListingCommand,
     SettleCancellationCommand,
@@ -34,6 +35,7 @@ from mr_lister.control.models import (
     FailureRecord,
     PricingEvidenceRecord,
     PricingSnapshot,
+    ProductMockupEvidence,
     ProductSyncRecord,
     ProductVariantEvidence,
     RecoveryAction,
@@ -395,9 +397,19 @@ def seed_reviewable(
         payload_fingerprint="4" * 64,
         response_fingerprint="9" * 64,
         fingerprint="5" * 64,
+        mockups=(
+            ProductMockupEvidence(
+                url="https://images.printify.com/product_initial/front.jpg",
+                position="front",
+                variant_ids=(1000,),
+            ),
+        ),
         variants=(
             ProductVariantEvidence(
                 variant_id=1000,
+                color="Black",
+                size="S",
+                placement_group_id="small",
                 retail_price_cents=2999,
                 production_cost_cents=1200,
             ),
@@ -671,6 +683,100 @@ def test_approval_binds_exact_composite_authority_and_ends_without_work() -> Non
         )
 
 
+def test_approval_requires_at_least_one_reviewable_structured_mockup() -> None:
+    store = InMemorySellerControlStore()
+    job, review, sync, pricing = seed_reviewable(store)
+    store._product_syncs[(job.job_id, sync.sync_id)] = sync.model_copy(update={"mockups": ()})
+    command = ApproveReviewCommand(
+        job_id=job.job_id,
+        owner_id=OWNER,
+        expected_record_version=job.record_version,
+        expected_review_version=review.review_version,
+        expected_review_fingerprint=review.fingerprint,
+        expected_review_etag=current_etag(job, review, sync, pricing),
+        idempotency_key="approve-without-mockup",
+    )
+
+    with pytest.raises(InvalidControlStateError, match="reviewable product mockup"):
+        SellerControlService(store=store, clock=lambda: NOW).approve_review(command)
+
+    assert store.get_job(job.job_id) == job
+    assert store.list_review_decisions(job.job_id) == ()
+
+
+def test_approval_requires_the_complete_pricing_evidence_record() -> None:
+    store = InMemorySellerControlStore()
+    job, review, sync, pricing = seed_reviewable(store)
+    store._pricing_evidence.pop((job.job_id, pricing.snapshot_id))
+    command = ApproveReviewCommand(
+        job_id=job.job_id,
+        owner_id=OWNER,
+        expected_record_version=job.record_version,
+        expected_review_version=review.review_version,
+        expected_review_fingerprint=review.fingerprint,
+        expected_review_etag=current_etag(job, review, sync, pricing),
+        idempotency_key="approve-without-pricing-evidence",
+    )
+
+    with pytest.raises(EconomicsStaleError, match="Complete economics evidence"):
+        SellerControlService(store=store, clock=lambda: NOW).approve_review(command)
+
+    assert store.get_job(job.job_id) == job
+    assert store.list_review_decisions(job.job_id) == ()
+
+
+def test_approval_recomputes_complete_pricing_evidence_authority() -> None:
+    store = InMemorySellerControlStore()
+    job, review, sync, pricing = seed_reviewable(store)
+    evidence = store.get_pricing_evidence(job.job_id, pricing.snapshot_id)
+    changed_estimate = evidence.estimate.model_copy(
+        update={"fresh_until": evidence.estimate.fresh_until + timedelta(minutes=1)}
+    )
+    store._pricing_evidence[(job.job_id, pricing.snapshot_id)] = evidence.model_copy(
+        update={"estimate": changed_estimate}
+    )
+    command = ApproveReviewCommand(
+        job_id=job.job_id,
+        owner_id=OWNER,
+        expected_record_version=job.record_version,
+        expected_review_version=review.review_version,
+        expected_review_fingerprint=review.fingerprint,
+        expected_review_etag=current_etag(job, review, sync, pricing),
+        idempotency_key="approve-with-corrupt-pricing-evidence",
+    )
+
+    with pytest.raises(StaleReviewError, match="complete economics evidence"):
+        SellerControlService(store=store, clock=lambda: NOW).approve_review(command)
+
+    assert store.get_job(job.job_id) == job
+    assert store.list_review_decisions(job.job_id) == ()
+
+
+def test_approval_rejects_a_persisted_mockup_the_review_projection_would_hide() -> None:
+    store = InMemorySellerControlStore()
+    job, review, sync, pricing = seed_reviewable(store)
+    unsafe = sync.mockups[0].model_copy(
+        update={"url": "HTTPS://images.printify.com/mockup/front.png"}
+    )
+    corrupted = sync.model_copy(update={"mockups": (unsafe, *sync.mockups[1:])})
+    store._product_syncs[(job.job_id, sync.sync_id)] = corrupted
+    command = ApproveReviewCommand(
+        job_id=job.job_id,
+        owner_id=OWNER,
+        expected_record_version=job.record_version,
+        expected_review_version=review.review_version,
+        expected_review_fingerprint=review.fingerprint,
+        expected_review_etag=current_etag(job, review, sync, pricing),
+        idempotency_key="approve-with-hidden-mockup",
+    )
+
+    with pytest.raises(InvalidControlStateError, match="reviewable product mockup"):
+        SellerControlService(store=store, clock=lambda: NOW).approve_review(command)
+
+    assert store.get_job(job.job_id) == job
+    assert store.list_review_decisions(job.job_id) == ()
+
+
 def test_stale_etag_and_expired_economics_cannot_approve() -> None:
     store = InMemorySellerControlStore()
     job, review, sync, pricing = seed_reviewable(store, fresh_until=NOW)
@@ -693,6 +799,103 @@ def test_stale_etag_and_expired_economics_cannot_approve() -> None:
                 expected_review_etag=current_etag(job, review, sync, pricing),
             )
         )
+    assert store.get_job(job.job_id) == job
+
+
+def refresh_command(
+    job: ControlJobRecord,
+    review: ReviewContent,
+    sync: ProductSyncRecord,
+    pricing: PricingSnapshot | None,
+    *,
+    owner_id: str = OWNER,
+    key: str = "refresh-economics-key",
+) -> RefreshEconomicsCommand:
+    etag = review_etag(
+        job_id=job.job_id,
+        review_version=review.review_version,
+        review_fingerprint=review.fingerprint,
+        product_id=sync.product_id,
+        product_sync_fingerprint=sync.fingerprint,
+        pricing_snapshot_id=None if pricing is None else pricing.snapshot_id,
+        pricing_snapshot_fingerprint=None if pricing is None else pricing.fingerprint,
+    )
+    return RefreshEconomicsCommand(
+        job_id=job.job_id,
+        owner_id=owner_id,
+        expected_record_version=job.record_version,
+        expected_review_version=review.review_version,
+        expected_review_fingerprint=review.fingerprint,
+        expected_review_etag=etag,
+        idempotency_key=key,
+    )
+
+
+def test_stale_economics_refresh_is_atomic_idempotent_and_enqueues_exact_work() -> None:
+    store = InMemorySellerControlStore()
+    job, review, sync, pricing = seed_reviewable(store, fresh_until=NOW)
+    service = SellerControlService(store=store, clock=lambda: NOW)
+    command = refresh_command(job, review, sync, pricing)
+
+    first = service.refresh_economics(command)
+    replay = service.refresh_economics(command)
+
+    refreshed = store.get_job(job.job_id)
+    pending = tuple(
+        work
+        for work in store.list_work_requests(job.job_id)
+        if work.status is WorkRequestStatus.PENDING
+    )
+    assert replay == first
+    assert first.state is ControlJobState.PRICING_REFRESHING
+    assert first.work_request_id is not None
+    assert refreshed.pricing_snapshot_id is None
+    assert refreshed.pricing_snapshot_fingerprint is None
+    assert refreshed.active_work_request_id == first.work_request_id
+    assert tuple(work.work_request_id for work in pending) == (first.work_request_id,)
+    assert pending[0].work_type is WorkType.REFRESH_ECONOMICS
+    assert pending[0].review_version == review.review_version
+    assert store.get_pricing(job.job_id, pricing.snapshot_id) == pricing
+    assert store.list_events(job.job_id)[-1].name == "ECONOMICS_REFRESH_REQUESTED"
+
+
+def test_missing_pricing_pointer_can_refresh_without_fabricating_authority() -> None:
+    store = InMemorySellerControlStore()
+    job, review, sync, _pricing = seed_reviewable(store)
+    missing = ControlJobRecord.model_validate(
+        {
+            **job.model_dump(mode="python"),
+            "pricing_snapshot_id": None,
+            "pricing_snapshot_fingerprint": None,
+        }
+    )
+    store._jobs[job.job_id] = missing
+    service = SellerControlService(store=store, clock=lambda: NOW)
+
+    result = service.refresh_economics(refresh_command(missing, review, sync, None))
+
+    refreshed = store.get_job(job.job_id)
+    assert result.state is ControlJobState.PRICING_REFRESHING
+    assert refreshed.pricing_snapshot_id is None
+    assert refreshed.active_work_request_id == result.work_request_id
+
+
+def test_fresh_wrong_owner_or_stale_review_cannot_refresh_economics() -> None:
+    store = InMemorySellerControlStore()
+    job, review, sync, pricing = seed_reviewable(store)
+    service = SellerControlService(store=store, clock=lambda: NOW)
+
+    with pytest.raises(InvalidControlStateError, match="still fresh"):
+        service.refresh_economics(refresh_command(job, review, sync, pricing))
+    with pytest.raises(NotFoundError):
+        service.refresh_economics(
+            refresh_command(job, review, sync, pricing, owner_id=OTHER_OWNER, key="wrong-owner")
+        )
+    stale = refresh_command(job, review, sync, pricing, key="stale-review").model_copy(
+        update={"expected_review_etag": "f" * 64}
+    )
+    with pytest.raises(StaleReviewError):
+        service.refresh_economics(stale)
     assert store.get_job(job.job_id) == job
 
 
@@ -918,6 +1121,16 @@ def test_transient_reconciliation_failure_redrives_without_restoring_seller_acti
         WorkType.RECONCILE_PRODUCT
     )
 
+    with pytest.raises(InvalidControlStateError, match="cannot accept cancellation"):
+        service.cancel_job(
+            CancelJobCommand(
+                job_id=job.job_id,
+                owner_id=OWNER,
+                expected_record_version=persisted.record_version,
+                idempotency_key="second-cancel-must-not-reopen-intent",
+            )
+        )
+
 
 def test_dispatched_work_cancellation_intent_dominates_late_worker_settlement() -> None:
     store = InMemorySellerControlStore()
@@ -1084,6 +1297,34 @@ def test_retry_uses_only_the_persisted_failure_recovery_step() -> None:
     )
 
 
+def test_retry_revalidates_corrupt_persisted_recovery_authority() -> None:
+    store = InMemorySellerControlStore()
+    syncing, _review, work = seed_product_syncing(store)
+    service = SellerControlService(store=store, clock=lambda: NOW)
+    failed = service.record_worker_failure(
+        RecordWorkerFailureCommand(
+            job_id=syncing.job_id,
+            work_request_id=work.work_request_id,
+            expected_record_version=syncing.record_version,
+            code=WorkerFailureCode.PRODUCTION_UNAVAILABLE,
+        )
+    )
+    failure = store.list_failures(syncing.job_id)[0]
+    store._failures[(syncing.job_id, failure.failure_id)] = failure.model_copy(
+        update={"recovery_action": RecoveryAction.RETRY_PREPARATION}
+    )
+
+    with pytest.raises(RetryNotAllowedError, match="persisted failure"):
+        service.retry_job(
+            RetryJobCommand(
+                job_id=syncing.job_id,
+                owner_id=OWNER,
+                expected_record_version=failed.record_version,
+                idempotency_key="retry-corrupt-authority",
+            )
+        )
+
+
 def test_terminal_failure_is_sanitized_and_cannot_be_retried() -> None:
     store = InMemorySellerControlStore()
     syncing, _review, work = seed_product_syncing(store)
@@ -1147,18 +1388,19 @@ def test_failure_transition_requires_exact_record_and_closed_recovery_specificat
     with pytest.raises(InvalidControlStateError, match="immutable record"):
         store.commit_command(base)
 
-    mismatched = FailureRecord(
+    valid_failure = FailureRecord(
         failure_id="failure_exact",
         job_id=syncing.job_id,
         work_request_id=work.work_request_id,
         stage=syncing.state,
         code=WorkerFailureCode.PRODUCTION_UNAVAILABLE.value,
         retryable=True,
-        recovery_action=RecoveryAction.RETRY_PRICING,
-        resume_state=ControlJobState.ANALYZING_ARTWORK,
+        recovery_action=RecoveryAction.RETRY_PRODUCT_SYNC,
+        resume_state=ControlJobState.PRODUCT_DRAFT_SYNCING,
         work_type=WorkType.SYNCHRONIZE_PRODUCT,
         occurred_at=NOW,
     )
+    mismatched = valid_failure.model_copy(update={"recovery_action": RecoveryAction.RETRY_PRICING})
     with pytest.raises(InvalidControlStateError, match="recovery specification"):
         store.commit_command(
             CommandCommit(

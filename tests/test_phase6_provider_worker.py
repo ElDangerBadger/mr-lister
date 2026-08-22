@@ -11,6 +11,7 @@ from mr_lister.control.models import (
     CommandResponse,
     ControlJobRecord,
     ControlJobState,
+    ProductMockupEvidence,
     ProductSyncRecord,
     ProductVariantEvidence,
     ProviderCallPermit,
@@ -682,7 +683,13 @@ def _evidence(*, draft, product_id: str) -> DraftSynchronizationEvidence:
                 production_cost_cents=1100,
             ),
         ),
-        mockup_urls=("https://images.printify.com/product_1/front.jpg",),
+        mockups=(
+            ProductMockupEvidence(
+                url="https://images.printify.com/product_1/front.jpg",
+                position="front",
+                variant_ids=(1000,),
+            ),
+        ),
     )
 
 
@@ -706,6 +713,9 @@ def _prior_sync() -> tuple[ProductSyncRecord, str]:
         variants=(
             ProductVariantEvidence(
                 variant_id=1000,
+                color="Black",
+                size="S",
+                placement_group_id="small",
                 retail_price_cents=2999,
                 production_cost_cents=1100,
             ),
@@ -834,7 +844,14 @@ def test_initial_create_claims_then_consumes_one_shot_before_mutation() -> None:
     assert resources.upload_count == 1
     assert sync.mutations == [None]
     assert control.successes[0].observation.product_id == "product_1"
-    assert control.successes[0].observation.variants[0].production_cost_cents == 1100
+    variant = control.successes[0].observation.variants[0]
+    assert variant.production_cost_cents == 1100
+    assert (variant.color, variant.size, variant.placement_group_id) == (
+        "Black",
+        "S",
+        "small",
+    )
+    assert control.successes[0].observation.mockups[0].variant_ids == (1000,)
 
 
 def test_profile_cannot_claim_the_pinned_fingerprint_after_its_payload_changes() -> None:

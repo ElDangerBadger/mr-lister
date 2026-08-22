@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 from botocore.exceptions import ClientError
+from pydantic import ValidationError
 
 from mr_lister.control.dispatch import deterministic_execution_name, work_input_fingerprint
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
@@ -13,6 +14,7 @@ from mr_lister.control.errors import (
     ConcurrentControlModificationError,
     IdempotencyConflictError,
     InvalidControlStateError,
+    NotFoundError,
 )
 from mr_lister.control.models import (
     CommandReceipt,
@@ -498,6 +500,23 @@ def test_create_job_is_one_transaction_and_round_trips_from_a_fresh_store() -> N
         )
         == receipt
     )
+
+
+def test_owner_scoped_job_read_checks_raw_owner_before_payload_and_binds_partition() -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    job, _receipt, _work = create_job_with_work(store)
+    item = client.items[(f"JOB#{job.job_id}", "META")]
+    item["payload"] = {"S": "{"}
+
+    with pytest.raises(NotFoundError):
+        store.get_job_for_owner("b" * 64, job.job_id)
+    with pytest.raises(ValidationError):
+        store.get_job_for_owner(OWNER, job.job_id)
+
+    item["payload"] = {"S": job.model_copy(update={"job_id": "another_job"}).model_dump_json()}
+    with pytest.raises(NotFoundError):
+        store.get_job_for_owner(OWNER, job.job_id)
 
 
 def test_command_transaction_binds_job_cas_and_round_trips_immutable_review() -> None:
@@ -1073,6 +1092,9 @@ def test_pricing_settlement_writes_and_round_trips_snapshot_with_complete_eviden
                 variants=(
                     ProductVariantEvidence(
                         variant_id=1000,
+                        color="Black",
+                        size="S",
+                        placement_group_id="small",
                         retail_price_cents=2999,
                         production_cost_cents=1100,
                     ),

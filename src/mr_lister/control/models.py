@@ -9,7 +9,9 @@ from typing import Annotated, Literal
 from pydantic import Field, StringConstraints, model_validator
 
 from mr_lister.contracts import ArtworkAnalysis, ContractModel
+from mr_lister.contracts.presentation import ProductMockupEvidence
 from mr_lister.control.economics import EtsyUsStandardEstimate
+from mr_lister.control.fingerprints import agent_preparation_evidence_fingerprint
 
 CONTROL_CONTRACT_VERSION = "2.0.0"
 ControlContractVersion = Literal["2.0.0"]
@@ -464,6 +466,30 @@ class AgentPreparationEvidence(ControlModel):
             raise ValueError("Phase 6 evidence requires the exact Strands tool")
         return self
 
+    @property
+    def authority_fingerprint(self) -> str:
+        """Recompute the fingerprint from every persisted provenance field."""
+
+        return agent_preparation_evidence_fingerprint(
+            evidence_id=self.evidence_id,
+            job_id=self.job_id,
+            work_request_id=self.work_request_id,
+            review_version=self.review_version,
+            correlation_id=self.correlation_id,
+            framework=self.framework,
+            agent_id=self.agent_id,
+            controller_model_id=self.controller_model_id,
+            tool_calls=self.tool_calls,
+            cycles=self.cycles,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            total_tokens=self.total_tokens,
+            decision_fingerprint=self.decision_fingerprint,
+            requires_human_approval=self.requires_human_approval,
+            publication_authorized=self.publication_authorized,
+            created_at=self.created_at,
+        )
+
 
 class ProviderWriteAttempt(ControlModel):
     attempt_id: SafeId
@@ -582,6 +608,9 @@ class UploadReconciliationObservationRecord(ControlModel):
 
 class ProductVariantEvidence(ControlModel):
     variant_id: int = Field(gt=0)
+    color: NonEmptyText
+    size: NonEmptyText
+    placement_group_id: SafeId
     retail_price_cents: int = Field(gt=0)
     production_cost_cents: int = Field(ge=0)
 
@@ -606,7 +635,7 @@ class ProductSyncRecord(ControlModel):
     payload_fingerprint: Fingerprint
     response_fingerprint: Fingerprint
     fingerprint: Fingerprint
-    mockup_urls: tuple[NonEmptyText, ...] = ()
+    mockups: tuple[ProductMockupEvidence, ...] = ()
     variants: tuple[ProductVariantEvidence, ...] = Field(min_length=1)
     provider_locked: bool = False
     provider_published: bool = False
@@ -617,9 +646,43 @@ class ProductSyncRecord(ControlModel):
         variant_ids = tuple(variant.variant_id for variant in self.variants)
         if len(set(variant_ids)) != len(variant_ids):
             raise ValueError("Product synchronization variants must be unique")
+        color_size_pairs = tuple((variant.color, variant.size) for variant in self.variants)
+        if len(set(color_size_pairs)) != len(color_size_pairs):
+            raise ValueError("Product synchronization color and size pairs must be unique")
+        if len(self.mockups) > 20:
+            raise ValueError("Product synchronization mockup evidence is outside its bound")
+        mockup_urls = tuple(mockup.url for mockup in self.mockups)
+        if len(set(mockup_urls)) != len(mockup_urls):
+            raise ValueError("Product synchronization mockups must have unique URLs")
+        variant_id_set = set(variant_ids)
+        if any(not set(mockup.variant_ids).issubset(variant_id_set) for mockup in self.mockups):
+            raise ValueError("Product synchronization mockups reference unknown variants")
         if self.provider_locked or self.provider_published:
             raise ValueError("Only editable unpublished draft evidence can synchronize")
         return self
+
+    def representative_mockups(self, *, limit: int = 5) -> tuple[ProductMockupEvidence, ...]:
+        """Select a deterministic bounded set maximizing explicit variant coverage."""
+
+        if limit < 1 or limit > 5:
+            raise ValueError("Representative mockup limit must be between one and five")
+        remaining = list(self.mockups)
+        uncovered = {variant.variant_id for variant in self.variants}
+        selected: list[ProductMockupEvidence] = []
+        while remaining and len(selected) < limit:
+            chosen = min(
+                remaining,
+                key=lambda mockup: (
+                    -len(uncovered.intersection(mockup.variant_ids)),
+                    mockup.position != "front",
+                    mockup.position or "",
+                    mockup.url,
+                ),
+            )
+            selected.append(chosen)
+            uncovered.difference_update(chosen.variant_ids)
+            remaining.remove(chosen)
+        return tuple(selected)
 
 
 class PricingSnapshot(ControlModel):
@@ -715,7 +778,25 @@ class FailureRecord(ControlModel):
             raise ValueError("Retryable failures require one complete recovery specification")
         if not self.retryable and any(value is not None for value in recovery):
             raise ValueError("Terminal failures cannot advertise recovery")
+        if self.retryable and not self.recovery_binding_is_valid:
+            raise ValueError("Retryable failure authority does not match its stage")
         return self
+
+    @property
+    def recovery_binding_is_valid(self) -> bool:
+        if not self.retryable:
+            return (
+                self.recovery_action is None
+                and self.resume_state is None
+                and self.work_type is None
+            )
+        if self.recovery_action is None or self.resume_state is None or self.work_type is None:
+            return False
+        return (
+            CONTROL_RECOVERY_BINDINGS.get(self.recovery_action)
+            == (self.resume_state, self.work_type)
+            and CONTROL_NEW_WORK_BY_STATE.get(self.stage) is self.work_type
+        )
 
 
 class CommandResponse(ControlModel):

@@ -274,6 +274,17 @@ creation.
 
 ## Consolidated review projection
 
+Phase 6.3 implements this as a strict owner-first, read-only application projection. The durable
+sync evidence now includes exact color/size/placement identity and structured mockup coverage, and
+the seller economics-refresh capability is backed by a real authority-checked command. The concrete
+authenticated API and preview signer remain Phase 6.4 work. See
+[`phase6-review-projection.md`](phase6-review-projection.md).
+
+Product/provider labels in this projection are deterministic renderings of the immutable profile
+ID and print-provider ID. Friendly curated names are not a separate mutable file; introducing them
+later requires new versioned authority so an unchanged review ETag can never display changed
+approval context.
+
 The review response contains only seller-facing, owner-authorized data:
 
 - job ID, record version, review version, review fingerprint, display state, and named stage;

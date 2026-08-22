@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from datetime import datetime
 from hashlib import sha256
 from typing import Any
 
@@ -22,6 +23,51 @@ def command_request_fingerprint(*, command_type: str, payload: Mapping[str, Any]
     """Bind an idempotency receipt to its command type and complete request body."""
 
     return canonical_fingerprint({"command_type": command_type, "payload": dict(payload)})
+
+
+def agent_preparation_evidence_fingerprint(
+    *,
+    evidence_id: str,
+    job_id: str,
+    work_request_id: str,
+    review_version: int,
+    correlation_id: str,
+    framework: str,
+    agent_id: str,
+    controller_model_id: str,
+    tool_calls: tuple[str, ...],
+    cycles: int,
+    input_tokens: int,
+    output_tokens: int,
+    total_tokens: int,
+    decision_fingerprint: str,
+    requires_human_approval: bool,
+    publication_authorized: bool,
+    created_at: datetime,
+) -> str:
+    """Hash the complete persisted Strands evidence rather than an unavailable command body."""
+
+    return canonical_fingerprint(
+        {
+            "evidence_id": evidence_id,
+            "job_id": job_id,
+            "work_request_id": work_request_id,
+            "review_version": review_version,
+            "correlation_id": correlation_id,
+            "framework": framework,
+            "agent_id": agent_id,
+            "controller_model_id": controller_model_id,
+            "tool_calls": tool_calls,
+            "cycles": cycles,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "decision_fingerprint": decision_fingerprint,
+            "requires_human_approval": requires_human_approval,
+            "publication_authorized": publication_authorized,
+            "created_at": created_at.isoformat(),
+        }
+    )
 
 
 def review_etag(

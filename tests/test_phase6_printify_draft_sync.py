@@ -145,7 +145,13 @@ def provider_product(draft, *, product_id: str = "product_1", **updates: object)
         # Printify defaults ``visible`` true; it is not evidence of publication.
         "visible": True,
         "external": {},
-        "images": [{"src": f"https://images.printify.com/{product_id}/front.jpg"}],
+        "images": [
+            {
+                "src": f"https://images.printify.com/{product_id}/front.jpg",
+                "position": "front",
+                "variant_ids": [variant.id for variant in draft.variants],
+            }
+        ],
     }
     for index, variant in enumerate(product["variants"]):
         variant["cost"] = 1100 + index
@@ -202,7 +208,11 @@ def test_first_authorized_sync_posts_exactly_once_and_returns_evidence(listing) 
     assert evidence.enabled_variant_economics[0].variant_id == 1000
     assert evidence.enabled_variant_economics[0].retail_price_cents == 2999
     assert evidence.enabled_variant_economics[0].production_cost_cents == 1100
-    assert evidence.mockup_urls == ("https://images.printify.com/product_1/front.jpg",)
+    assert tuple(mockup.url for mockup in evidence.mockups) == (
+        "https://images.printify.com/product_1/front.jpg",
+    )
+    assert evidence.mockups[0].position == "front"
+    assert evidence.mockups[0].variant_ids == (1000,)
     assert [call["method"] for call in transport.calls] == ["POST", "GET"]
     assert json.loads(transport.calls[0]["body"]) == draft.provider_payload()
     assert not transport.expected
@@ -697,6 +707,29 @@ def test_mockup_evidence_requires_exact_printify_image_host(listing) -> None:
                 "GET",
                 "/v1/shops/42/products/product_1.json",
                 payload=off_host,
+            ),
+        ]
+    )
+
+    with pytest.raises(PrintifyCreateOutcomeUnknown, match="reconcile"):
+        sync.synchronize(job_id="job_phase6_sync", draft=draft, product_id=None)
+
+
+def test_mockup_evidence_rejects_variant_identity_outside_exact_draft(listing) -> None:
+    draft = canonical_draft(listing)
+    wrong_variant = provider_product(draft)
+    wrong_variant["images"][0]["variant_ids"] = [9999]
+    sync, _transport, _client = synchronizer(
+        [
+            ExpectedRequest(
+                "POST",
+                "/v1/shops/42/products.json",
+                payload=wrong_variant,
+            ),
+            ExpectedRequest(
+                "GET",
+                "/v1/shops/42/products/product_1.json",
+                payload=wrong_variant,
             ),
         ]
     )

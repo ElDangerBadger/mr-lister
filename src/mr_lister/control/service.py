@@ -19,6 +19,7 @@ from mr_lister.control.commands import (
     CancelJobCommand,
     CommandType,
     RecordWorkerFailureCommand,
+    RefreshEconomicsCommand,
     RetryJobCommand,
     ReviseListingCommand,
     SettleCancellationCommand,
@@ -33,6 +34,7 @@ from mr_lister.control.errors import (
     EconomicsStaleError,
     IdempotencyConflictError,
     InvalidControlStateError,
+    NotFoundError,
     RetryNotAllowedError,
     StaleReviewError,
     WorkNotActiveError,
@@ -66,6 +68,7 @@ from mr_lister.control.models import (
     WorkType,
 )
 from mr_lister.control.store import CommandCommit, SellerControlStore
+from mr_lister.review_security import is_safe_mockup_url
 from mr_lister.workflow.validation import validate_listing
 
 
@@ -293,6 +296,7 @@ class SellerControlService:
             raise InvalidControlStateError("An invalid review cannot be approved")
         if sync is None or pricing is None:
             raise EconomicsStaleError("Current product and economics evidence is required")
+        self._require_complete_pricing_evidence(current, sync, pricing)
         if (
             current.synchronized_review_version != current.review_version
             or sync.review_version != current.review_version
@@ -301,11 +305,19 @@ class SellerControlService:
             or pricing.review_version != current.review_version
             or pricing.product_sync_fingerprint != sync.fingerprint
             or current.pricing_snapshot_fingerprint != pricing.fingerprint
+            or current.provider_outcome_unconfirmed
+            or current.upload_outcome_unconfirmed
         ):
             raise StaleReviewError("The synchronized review authority is stale")
         if sync.provider_locked or sync.provider_published:
             raise InvalidControlStateError(
                 "The provider product is not an editable unpublished draft"
+            )
+        if not sync.representative_mockups(limit=1) or any(
+            not is_safe_mockup_url(item.url) for item in sync.mockups
+        ):
+            raise InvalidControlStateError(
+                "Approval requires at least one reviewable product mockup"
             )
         now = self._now()
         if now >= pricing.fresh_until:
@@ -364,6 +376,106 @@ class SellerControlService:
             )
         ).response
 
+    def refresh_economics(self, command: RefreshEconomicsCommand) -> CommandResponse:
+        """Request one owner-authorized refresh for missing or expired proceeds evidence."""
+
+        command_type = CommandType.REFRESH_ECONOMICS.value
+        request_fingerprint = self._seller_request_fingerprint(command_type, command)
+        replay = self._resolve_seller_replay(command_type, command, request_fingerprint)
+        if replay is not None:
+            return replay
+
+        current = self.store.get_job_for_owner(command.owner_id, command.job_id)
+        self._require_record_version(current, command.expected_record_version)
+        if current.state is not ControlJobState.AWAITING_APPROVAL:
+            raise InvalidControlStateError("The job cannot refresh economics in its current state")
+        review, sync, pricing, current_etag = self._review_basis(current)
+        self._require_review_authority(
+            current,
+            review,
+            expected_version=command.expected_review_version,
+            expected_fingerprint=command.expected_review_fingerprint,
+            expected_etag=command.expected_review_etag,
+            current_etag=current_etag,
+        )
+        if not review.validation_passed or not current.review_validated:
+            raise InvalidControlStateError("Invalid review economics cannot be refreshed")
+        if (
+            sync is None
+            or current.synchronized_review_version != current.review_version
+            or sync.review_version != current.review_version
+            or current.product_id != sync.product_id
+            or current.product_sync_fingerprint != sync.fingerprint
+            or sync.provider_locked
+            or sync.provider_published
+            or current.provider_outcome_unconfirmed
+            or current.upload_outcome_unconfirmed
+        ):
+            raise StaleReviewError(
+                "Economics refresh requires the exact current unpublished product draft"
+            )
+        if pricing is not None and (
+            pricing.review_version != current.review_version
+            or pricing.product_sync_fingerprint != sync.fingerprint
+            or current.pricing_snapshot_fingerprint != pricing.fingerprint
+        ):
+            raise StaleReviewError("The existing economics evidence is not current")
+
+        now = self._now()
+        if pricing is not None and now < pricing.fresh_until:
+            raise InvalidControlStateError("The current economics evidence is still fresh")
+
+        receipt_id = self._receipt_id(
+            command.owner_id,
+            command_type,
+            command.job_id,
+            idempotency_key_digest(command.idempotency_key),
+        )
+        work_id = self._record_id("work", receipt_id, WorkType.REFRESH_ECONOMICS.value)
+        work = self._work_request(
+            owner_id=current.owner_id,
+            job_id=current.job_id,
+            receipt_id=receipt_id,
+            work_request_id=work_id,
+            work_type=WorkType.REFRESH_ECONOMICS,
+            review_version=current.review_version,
+            now=now,
+        )
+        updated = self._job_update(
+            current,
+            **{
+                "state": ControlJobState.PRICING_REFRESHING,
+                "record_version": current.record_version + 1,
+                "event_sequence": current.event_sequence + 1,
+                "pricing_snapshot_id": None,
+                "pricing_snapshot_fingerprint": None,
+                "active_work_request_id": work_id,
+                "failure_id": None,
+                "updated_at": now,
+            },
+        )
+        response = self._response(updated, work_id=work_id)
+        receipt = self._receipt(
+            receipt_id=receipt_id,
+            owner_id=current.owner_id,
+            job_id=current.job_id,
+            command_type=command_type,
+            key_digest=idempotency_key_digest(command.idempotency_key),
+            request_fingerprint=request_fingerprint,
+            response=response,
+            work_id=work_id,
+            now=now,
+        )
+        return self._commit_or_replay(
+            CommandCommit(
+                current=current,
+                updated=updated,
+                event=self._event(updated, "ECONOMICS_REFRESH_REQUESTED", now),
+                receipt=receipt,
+                work_request=work,
+            )
+        ).response
+
     def cancel_job(self, command: CancelJobCommand) -> CommandResponse:
         command_type = CommandType.CANCEL_JOB.value
         request_fingerprint = self._seller_request_fingerprint(command_type, command)
@@ -376,6 +488,7 @@ class SellerControlService:
         if (
             current.state in CONTROL_TERMINAL_STATES
             or current.state is ControlJobState.CANCEL_REQUESTED
+            or current.cancellation_requested_at is not None
         ):
             raise InvalidControlStateError("The job cannot accept cancellation")
         now = self._now()
@@ -508,7 +621,10 @@ class SellerControlService:
             raise RetryNotAllowedError("The job has no advertised recovery action")
         failure = self.store.get_failure(current.job_id, current.failure_id)
         if (
-            not failure.retryable
+            failure.job_id != current.job_id
+            or failure.failure_id != current.failure_id
+            or not failure.retryable
+            or not failure.recovery_binding_is_valid
             or failure.resume_state is None
             or failure.work_type is None
             or failure.recovery_action is None
@@ -913,6 +1029,44 @@ class SellerControlService:
         )
         return review, sync, pricing, etag
 
+    def _require_complete_pricing_evidence(
+        self,
+        job: ControlJobRecord,
+        sync: ProductSyncRecord,
+        pricing: PricingSnapshot,
+    ) -> None:
+        try:
+            evidence = self.store.get_pricing_evidence(job.job_id, pricing.snapshot_id)
+        except (NotFoundError, ValidationError):
+            raise EconomicsStaleError(
+                "Complete economics evidence is required before approval"
+            ) from None
+        estimate = evidence.estimate
+        sync_variants = {item.variant_id: item for item in sync.variants}
+        estimate_variants = {item.variant_id: item for item in estimate.variants}
+        if (
+            evidence.job_id != job.job_id
+            or evidence.snapshot_id != pricing.snapshot_id
+            or evidence.review_version != pricing.review_version
+            or evidence.review_version != job.review_version
+            or evidence.product_sync_fingerprint != sync.fingerprint
+            or evidence.product_sync_fingerprint != pricing.product_sync_fingerprint
+            or evidence.fingerprint != pricing.fingerprint
+            or evidence.fingerprint != estimate.fingerprint
+            or evidence.created_at != pricing.created_at
+            or estimate.product_sync_fingerprint != sync.fingerprint
+            or estimate.calculated_at != pricing.created_at
+            or estimate.fresh_until != pricing.fresh_until
+            or set(sync_variants) != set(estimate_variants)
+            or any(
+                estimate_variants[variant_id].retail_price_cents != variant.retail_price_cents
+                or estimate_variants[variant_id].production_cost_cents
+                != variant.production_cost_cents
+                for variant_id, variant in sync_variants.items()
+            )
+        ):
+            raise StaleReviewError("The complete economics evidence is not current")
+
     @staticmethod
     def _require_record_version(job: ControlJobRecord, expected: int) -> None:
         if job.record_version != expected:
@@ -941,7 +1095,13 @@ class SellerControlService:
     def _resolve_seller_replay(
         self,
         command_type: str,
-        command: ReviseListingCommand | ApproveReviewCommand | CancelJobCommand | RetryJobCommand,
+        command: (
+            ReviseListingCommand
+            | ApproveReviewCommand
+            | RefreshEconomicsCommand
+            | CancelJobCommand
+            | RetryJobCommand
+        ),
         request_fingerprint: str,
     ) -> CommandResponse | None:
         return self._resolve_replay(

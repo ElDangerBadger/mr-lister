@@ -148,13 +148,28 @@ class DynamoDBSellerControlStore:
 
     def get_job(self, job_id: str) -> ControlJobRecord:
         item = self._get(_job_pk(job_id), "META")
-        if item is None:
+        payload = None if item is None else item.get("payload", {}).get("S")
+        if item is None or item.get("entity_type", {}).get("S") != "CONTROL_JOB" or not payload:
             raise NotFoundError("The requested job was not found")
-        return ControlJobRecord.model_validate_json(item["payload"]["S"])
+        job = ControlJobRecord.model_validate_json(payload)
+        stored_owner = item.get("owner_id", {}).get("S")
+        if job.job_id != job_id or stored_owner != job.owner_id:
+            raise NotFoundError("The requested job was not found")
+        return job
 
     def get_job_for_owner(self, owner_id: str, job_id: str) -> ControlJobRecord:
-        job = self.get_job(job_id)
-        if job.owner_id != owner_id:
+        item = self._get(_job_pk(job_id), "META")
+        if (
+            item is None
+            or item.get("entity_type", {}).get("S") != "CONTROL_JOB"
+            or item.get("owner_id", {}).get("S") != owner_id
+        ):
+            raise NotFoundError("The requested job was not found")
+        payload = item.get("payload", {}).get("S")
+        if not payload:
+            raise NotFoundError("The requested job was not found")
+        job = ControlJobRecord.model_validate_json(payload)
+        if job.job_id != job_id or job.owner_id != owner_id:
             raise NotFoundError("The requested job was not found")
         return job
 

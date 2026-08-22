@@ -20,6 +20,7 @@ OwnerId = Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")]
 class CommandType(StrEnum):
     REVISE_LISTING = "revise_listing"
     APPROVE_REVIEW = "approve_review"
+    REFRESH_ECONOMICS = "refresh_economics"
     CANCEL_JOB = "cancel_job"
     RETRY_JOB = "retry_job"
 
@@ -54,6 +55,10 @@ class ReviseListingCommand(ReviewSensitiveCommand):
 
 class ApproveReviewCommand(ReviewSensitiveCommand):
     pass
+
+
+class RefreshEconomicsCommand(ReviewSensitiveCommand):
+    """Refresh the exact current review's missing or expired proceeds evidence."""
 
 
 class CancelJobCommand(SellerCommand):

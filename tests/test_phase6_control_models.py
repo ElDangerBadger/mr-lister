@@ -13,6 +13,9 @@ from mr_lister.control.models import (
     CancellationDecisionRecord,
     ControlJobRecord,
     ControlJobState,
+    ProductMockupEvidence,
+    ProductSyncRecord,
+    ProductVariantEvidence,
     WorkRequest,
     WorkRequestStatus,
     WorkType,
@@ -168,3 +171,127 @@ def test_work_request_requires_a_coherent_dispatch_lease() -> None:
         }
     )
     assert claimed.claim_id == "claim_1"
+
+
+@pytest.mark.parametrize(
+    "url",
+    (
+        "http://images.printify.com/product/front.jpg",
+        "//images.printify.com/product/front.jpg",
+        "https://images-api.printify.com/product/front.jpg",
+        "https://images.printify.com.evil.test/product/front.jpg",
+        "https://images.printify.com@evil.test/product/front.jpg",
+        "https://images.printify.com:443/product/front.jpg",
+        "https://IMAGES.PRINTIFY.COM/product/front.jpg",
+        "https://images.printify.com/product/front.jpg#fragment",
+        "https://images.printify.com/product\\front.jpg",
+        "https://images.printify.com/product/%broken.jpg",
+        "https://images.printify.com/product/front.jpg\n",
+    ),
+)
+def test_product_mockup_evidence_rejects_ambiguous_or_hostile_urls(url: str) -> None:
+    with pytest.raises(ValidationError, match="mockup URL"):
+        ProductMockupEvidence(url=url, position="front", variant_ids=(101,))
+
+
+def test_product_sync_selects_deterministic_variant_covering_mockups() -> None:
+    variants = (
+        ProductVariantEvidence(
+            variant_id=101,
+            color="Black",
+            size="S",
+            placement_group_id="small",
+            retail_price_cents=2999,
+            production_cost_cents=1100,
+        ),
+        ProductVariantEvidence(
+            variant_id=102,
+            color="Navy",
+            size="M",
+            placement_group_id="medium",
+            retail_price_cents=2999,
+            production_cost_cents=1200,
+        ),
+    )
+    mockups = (
+        ProductMockupEvidence(
+            url="https://images.printify.com/product/side.jpg",
+            position="side",
+            variant_ids=(101,),
+        ),
+        ProductMockupEvidence(
+            url="https://images.printify.com/product/front-navy.jpg",
+            position="front",
+            variant_ids=(102,),
+        ),
+        ProductMockupEvidence(
+            url="https://images.printify.com/product/front-all.jpg?quality=90",
+            position="front",
+            variant_ids=(101, 102),
+        ),
+    )
+    sync = ProductSyncRecord(
+        sync_id="sync_projection",
+        job_id="job_phase6_models",
+        review_version=1,
+        product_id="product_projection",
+        image_id="image_projection",
+        payload_fingerprint="c" * 64,
+        response_fingerprint="d" * 64,
+        fingerprint="e" * 64,
+        mockups=tuple(reversed(mockups)),
+        variants=variants,
+        synchronized_at=NOW,
+    )
+
+    selected = sync.representative_mockups(limit=2)
+
+    assert tuple(mockup.url for mockup in selected) == (
+        "https://images.printify.com/product/front-all.jpg?quality=90",
+        "https://images.printify.com/product/front-navy.jpg",
+    )
+    assert selected == sync.model_copy(update={"mockups": mockups}).representative_mockups(limit=2)
+
+
+def test_product_sync_rejects_duplicate_labels_and_unknown_mockup_variants() -> None:
+    variant = ProductVariantEvidence(
+        variant_id=101,
+        color="Black",
+        size="S",
+        placement_group_id="small",
+        retail_price_cents=2999,
+        production_cost_cents=1100,
+    )
+    base = {
+        "sync_id": "sync_projection",
+        "job_id": "job_phase6_models",
+        "review_version": 1,
+        "product_id": "product_projection",
+        "image_id": "image_projection",
+        "payload_fingerprint": "c" * 64,
+        "response_fingerprint": "d" * 64,
+        "fingerprint": "e" * 64,
+        "variants": (variant,),
+        "synchronized_at": NOW,
+    }
+
+    with pytest.raises(ValidationError, match="unknown variants"):
+        ProductSyncRecord(
+            **base,
+            mockups=(
+                ProductMockupEvidence(
+                    url="https://images.printify.com/product/front.jpg",
+                    variant_ids=(999,),
+                ),
+            ),
+        )
+    with pytest.raises(ValidationError, match="color and size pairs"):
+        ProductSyncRecord(
+            **{
+                **base,
+                "variants": (
+                    variant,
+                    variant.model_copy(update={"variant_id": 102}),
+                ),
+            }
+        )
