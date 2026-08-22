@@ -32,17 +32,34 @@ from mr_lister.control.models import (
     ControlJobState,
     DomainEvent,
     FailureRecord,
+    PricingEvidenceRecord,
     PricingSnapshot,
     ProductSyncRecord,
+    ProductVariantEvidence,
     RecoveryAction,
     ReviewActor,
     ReviewContent,
+    SourceArtifactRecord,
     WorkRequest,
     WorkRequestStatus,
     WorkType,
 )
 from mr_lister.control.service import SellerControlService
 from mr_lister.control.store import CommandCommit, InMemorySellerControlStore
+from mr_lister.control.worker_commands import (
+    BeginProviderUploadCommand,
+    BeginProviderWriteCommand,
+    RecordProductWriteOutcomeUnknownCommand,
+    RecordProviderUploadSuccessCommand,
+    UploadedArtworkObservation,
+)
+from mr_lister.control.worker_service import WorkerControlService
+from mr_lister.production.economics import (
+    ProductCostEvidence,
+    ProductVariantCostEvidence,
+    estimate_etsy_us_standard_proceeds,
+)
+from mr_lister.production.printify_shipping import parse_standard_us_shipping
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 OWNER = "a" * 64
@@ -62,6 +79,24 @@ VALID_TAGS = (
     "wildlife design",
     "retro shirt",
 )
+SOURCE_FP = "7" * 64
+
+
+def _source(job: ControlJobRecord) -> SourceArtifactRecord:
+    return SourceArtifactRecord(
+        job_id=job.job_id,
+        owner_id=job.owner_id,
+        fingerprint=SOURCE_FP,
+        bucket="mr-lister-phase6-artifacts-test",
+        object_key=(f"private/owners/{job.owner_id}/jobs/{job.job_id}/source/source.png"),
+        version_id="source-version-1",
+        content_sha256="8" * 64,
+        size_bytes=128,
+        product_profile_id="profile_test",
+        product_profile_version=1,
+        product_profile_fingerprint="3" * 64,
+        created_at=NOW,
+    )
 
 
 def _response(job: ControlJobRecord, work_id: str | None = None) -> CommandResponse:
@@ -161,6 +196,7 @@ def seed_product_syncing(
         job_id=job_id,
         event_sequence=1,
         state=ControlJobState.INTAKE_VALIDATED,
+        source_artifact_fingerprint=SOURCE_FP,
         active_work_request_id=prepare_work_id,
         created_at=NOW,
         updated_at=NOW,
@@ -182,6 +218,7 @@ def seed_product_syncing(
         event=_event(initial, "SETUP_CREATED"),
         receipt=prepare_receipt,
         work_request=prepare_work,
+        source_artifact=_source(initial),
     )
     claimed_prepare = store.claim_work(
         job_id,
@@ -354,18 +391,80 @@ def seed_reviewable(
         job_id=syncing.job_id,
         review_version=1,
         product_id="product_initial",
+        image_id="image_initial",
         payload_fingerprint="4" * 64,
+        response_fingerprint="9" * 64,
         fingerprint="5" * 64,
+        variants=(
+            ProductVariantEvidence(
+                variant_id=1000,
+                retail_price_cents=2999,
+                production_cost_cents=1200,
+            ),
+        ),
         synchronized_at=NOW,
+    )
+    desired_fresh_until = fresh_until or NOW + timedelta(hours=24)
+    observed_at = desired_fresh_until - timedelta(hours=24)
+    calculated_at = min(NOW, desired_fresh_until - timedelta(microseconds=1))
+    product_costs = ProductCostEvidence(
+        product_sync_fingerprint=sync.fingerprint,
+        observed_at=observed_at,
+        variants=(
+            ProductVariantCostEvidence(
+                variant_id=1000,
+                retail_price_cents=2999,
+                production_cost_cents=1200,
+            ),
+        ),
+    )
+    shipping = parse_standard_us_shipping(
+        {
+            "data": [
+                {
+                    "type": "variant_shipping_standard_us",
+                    "id": "1000",
+                    "attributes": {
+                        "shippingType": "standard",
+                        "country": {"code": "US"},
+                        "variantId": 1000,
+                        "shippingPlanId": "standard-us",
+                        "handlingTime": {"from": 2, "to": 5},
+                        "shippingCost": {
+                            "firstItem": {"amount": 399, "currency": "USD"},
+                            "additionalItems": {"amount": 200, "currency": "USD"},
+                        },
+                    },
+                }
+            ]
+        },
+        blueprint_id=145,
+        print_provider_id=39,
+        expected_variant_ids=(1000,),
+        observed_at=observed_at,
+    )
+    estimate = estimate_etsy_us_standard_proceeds(
+        product_costs=product_costs,
+        shipping=shipping,
+        calculated_at=calculated_at,
     )
     pricing = PricingSnapshot(
         snapshot_id="pricing_initial",
         job_id=syncing.job_id,
         review_version=1,
         product_sync_fingerprint=sync.fingerprint,
-        fingerprint="6" * 64,
-        fresh_until=fresh_until or NOW + timedelta(hours=24),
-        created_at=NOW - timedelta(hours=1),
+        fingerprint=estimate.fingerprint,
+        fresh_until=estimate.fresh_until,
+        created_at=estimate.calculated_at,
+    )
+    pricing_evidence = PricingEvidenceRecord(
+        snapshot_id=pricing.snapshot_id,
+        job_id=pricing.job_id,
+        review_version=pricing.review_version,
+        product_sync_fingerprint=pricing.product_sync_fingerprint,
+        fingerprint=pricing.fingerprint,
+        estimate=estimate,
+        created_at=pricing.created_at,
     )
     updated = ControlJobRecord.model_validate(
         {
@@ -374,6 +473,7 @@ def seed_reviewable(
             "record_version": syncing.record_version + 1,
             "event_sequence": syncing.event_sequence + 1,
             "product_id": sync.product_id,
+            "provider_payload_fingerprint": sync.payload_fingerprint,
             "product_sync_id": sync.sync_id,
             "synchronized_review_version": 1,
             "product_sync_fingerprint": sync.fingerprint,
@@ -397,6 +497,7 @@ def seed_reviewable(
             event=_event(updated, "REVIEW_READY"),
             receipt=receipt,
             product_sync=sync,
+            pricing_evidence=pricing_evidence,
             pricing_snapshot=pricing,
             work_update=(work, completed),
         )
@@ -460,6 +561,13 @@ def test_valid_revision_atomically_creates_review_decision_receipt_and_one_sync_
     assert first.state is ControlJobState.PRODUCT_DRAFT_SYNCING
     assert first.review_version == 2
     assert store.get_review(job.job_id, 2).validation_passed is True
+    revised_job = store.get_job(job.job_id)
+    assert revised_job.product_id == job.product_id
+    assert revised_job.product_sync_id == sync.sync_id
+    assert revised_job.synchronized_review_version == sync.review_version
+    assert revised_job.product_sync_fingerprint == sync.fingerprint
+    assert revised_job.provider_payload_fingerprint == sync.payload_fingerprint
+    assert revised_job.pricing_snapshot_id is None
     assert len(store.list_review_decisions(job.job_id)) == 1
     pending = [
         item
@@ -596,6 +704,7 @@ def test_pre_review_cancellation_cancels_pending_work_without_review_reference()
         job_id="job_pre_review_cancel",
         event_sequence=1,
         state=ControlJobState.INTAKE_VALIDATED,
+        source_artifact_fingerprint=SOURCE_FP,
         active_work_request_id=work_id,
         created_at=NOW,
         updated_at=NOW,
@@ -622,6 +731,7 @@ def test_pre_review_cancellation_cancels_pending_work_without_review_reference()
         event=_event(initial, "INTAKE_COMPLETED"),
         receipt=receipt,
         work_request=work,
+        source_artifact=_source(initial),
     )
 
     result = SellerControlService(store=store, clock=lambda: NOW).cancel_job(
@@ -668,12 +778,70 @@ def seed_reconciliation(
         store,
         job_id="job_reconciliation",
     )
-    response = SellerControlService(store=store, clock=lambda: NOW).record_worker_failure(
-        RecordWorkerFailureCommand(
+    worker = WorkerControlService(store=store, clock=lambda: NOW)
+    target_fingerprint = "4" * 64
+    correlation_digest = sha256(f"mr-lister:provider-draft:{syncing.job_id}".encode()).hexdigest()[
+        :24
+    ]
+    source = store.get_source_artifact(syncing.job_id)
+    file_name = worker.upload_file_name(syncing.job_id, source.content_sha256)
+    worker.begin_provider_upload(
+        BeginProviderUploadCommand(
             job_id=syncing.job_id,
             work_request_id=sync_work.work_request_id,
             expected_record_version=syncing.record_version,
-            code=WorkerFailureCode.PRODUCT_CREATE_OUTCOME_UNKNOWN,
+            source_artifact_fingerprint=source.fingerprint,
+            file_name=file_name,
+        )
+    )
+    upload_claim = store.get_job(syncing.job_id)
+    upload_attempt_id = upload_claim.provider_upload_attempt_id or ""
+    assert (
+        worker.authorize_provider_upload(job_id=syncing.job_id, attempt_id=upload_attempt_id)
+        is not None
+    )
+    worker.record_provider_upload_success(
+        RecordProviderUploadSuccessCommand(
+            job_id=syncing.job_id,
+            work_request_id=sync_work.work_request_id,
+            expected_record_version=upload_claim.record_version,
+            attempt_id=upload_attempt_id,
+            observation=UploadedArtworkObservation(
+                image_id="image_reconciliation_seed",
+                file_name=file_name,
+                width=3021,
+                height=3927,
+                size_bytes=source.size_bytes,
+            ),
+        )
+    )
+    syncing = store.get_job(syncing.job_id)
+    worker.begin_provider_write(
+        BeginProviderWriteCommand(
+            job_id=syncing.job_id,
+            work_request_id=sync_work.work_request_id,
+            expected_record_version=syncing.record_version,
+            image_id="image_reconciliation_seed",
+            target_payload_fingerprint=target_fingerprint,
+            correlation_token=f"ml-{correlation_digest}",
+        )
+    )
+    claimed_write = store.get_job(syncing.job_id)
+    attempt_id = claimed_write.provider_write_attempt_id or ""
+    assert (
+        worker.authorize_provider_call(
+            job_id=syncing.job_id,
+            attempt_id=attempt_id,
+        )
+        is not None
+    )
+    response = worker.record_product_write_outcome_unknown(
+        RecordProductWriteOutcomeUnknownCommand(
+            job_id=syncing.job_id,
+            work_request_id=sync_work.work_request_id,
+            expected_record_version=claimed_write.record_version,
+            attempt_id=attempt_id,
+            code="PROVIDER_TIMEOUT",
         )
     )
     assert response.work_request_id is not None
@@ -769,7 +937,6 @@ def test_dispatched_work_cancellation_intent_dominates_late_worker_settlement() 
             job_id=syncing.job_id,
             work_request_id=work.work_request_id,
             expected_record_version=cancelling.record_version,
-            provider_outcome_known=True,
         )
     )
 
@@ -791,6 +958,7 @@ def seed_dispatched_prepare(
         job_id=job_id,
         event_sequence=1,
         state=ControlJobState.INTAKE_VALIDATED,
+        source_artifact_fingerprint=SOURCE_FP,
         active_work_request_id=work_id,
         created_at=NOW,
         updated_at=NOW,
@@ -808,6 +976,7 @@ def seed_dispatched_prepare(
         event=_event(job, "INTAKE_COMPLETED"),
         receipt=receipt,
         work_request=work,
+        source_artifact=_source(job),
     )
     claimed = store.claim_work(
         job_id,
@@ -877,7 +1046,6 @@ def test_non_product_cancellation_settlement_never_schedules_reconciliation() ->
             job_id=job.job_id,
             work_request_id=work.work_request_id,
             expected_record_version=cancelling.record_version,
-            provider_outcome_known=False,
         )
     )
 

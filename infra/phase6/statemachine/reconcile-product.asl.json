@@ -1,0 +1,55 @@
+{
+  "Comment": "Phase 6 bounded product reconciliation execution",
+  "TimeoutSeconds": 900,
+  "StartAt": "ReadProviderDraftEvidence",
+  "States": {
+    "ReadProviderDraftEvidence": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ProviderDraftFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id",
+          "work_request_id.$": "$.work_request_id",
+          "operation": "reconcile_product"
+        }
+      },
+      "ResultSelector": {"payload.$": "$.Payload"},
+      "ResultPath": "$.worker_result",
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.worker_error", "Next": "SettleReconciliationFailure"}],
+      "Next": "SettleReconciliationSuccess"
+    },
+    "SettleReconciliationSuccess": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${SettlementFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id",
+          "work_request_id.$": "$.work_request_id",
+          "work_type": "reconcile_product",
+          "worker_result.$": "$.worker_result.payload"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Retry": [{"ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2}],
+      "End": true
+    },
+    "SettleReconciliationFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${SettlementFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id",
+          "work_request_id.$": "$.work_request_id",
+          "work_type": "reconcile_product",
+          "worker_error_code.$": "$.worker_error.Error"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Retry": [{"ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2}],
+      "End": true
+    }
+  }
+}

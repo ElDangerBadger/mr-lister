@@ -38,15 +38,16 @@ not the recovery mechanism.
 The Phase 6 interface accepts:
 
 - one seller-owned file whose basename ends in `.png` and whose declared type is `image/png`;
-- `1..25 MiB` of fully decodable PNG bytes with a valid signature, IHDR, and checksum;
+- `1..5 MiB` of fully decodable PNG bytes with a valid signature, IHDR, and checksum;
 - equal width and height for the calibrated square-placement path;
 - each dimension in `1..20,000` pixels and at most 100,000,000 decoded pixels;
 - an alpha range whose minimum is below 255 and maximum is above zero—at least one transparent
   pixel and at least one visible pixel.
 
-The browser uploads directly to a private S3 key. The API does not proxy artwork bytes. Files above
-Printify's bounded base64 path use the existing HTTPS URL-upload capability backed by a short-lived,
-single-object S3 URL. The 25 MiB promise cannot ship until that deployed path passes a live test.
+The browser uploads directly to a private S3 key. The API does not proxy artwork bytes. Phase 6
+then uploads the exact pinned version through Printify's bounded base64 path. Files above 5 MiB are
+deferred until a short-lived URL implementation binds the exact S3 bucket, key, and `VersionId`
+and passes a live test; arbitrary artwork URLs are never accepted.
 
 SVG remains a planned input type, not a Phase 6 control. Supporting it requires a separately
 bounded PNG inspection rendition while preserving the SVG as the production artifact. Non-square
@@ -264,7 +265,10 @@ No match remains `RECONCILIATION_REQUIRED` only until a persisted deadline, then
 explicit unresolved result defined above. The one POST may therefore produce zero or one product,
 but never authorizes a second POST for that job.
 
-An ambiguous PUT is reconciled by GET and canonical-field comparison before retry. There is no POST
+An ambiguous PUT is reconciled by GET and canonical-field comparison before retry. Only the exact
+prior canonical payload may authorize one exact same-product PUT retry. That attempt inherits the
+root write's persisted reconciliation deadline and increments an immutable retry count; an expired
+deadline or second ambiguous PUT ends terminally without another mutation. There is no POST
 fallback. Fake adapters count POST and PUT separately so an offline test cannot conceal duplicate
 creation.
 
@@ -418,7 +422,7 @@ private/owners/{owner_id}/jobs/{job_id}/source/source.png
 Original filenames are display metadata and never become key segments. The private encrypted
 bucket has versioning enabled, public access blocked, bucket-owner-enforced ownership, TLS-only
 access, and no runtime `ListBucket`. A five-minute presigned POST fixes that key, `image/png`,
-checksum, server-side encryption, and a `1..25 MiB` content-length range; a bucket policy rejects a
+checksum, server-side encryption, and a `1..5 MiB` content-length range; a bucket policy rejects a
 signature age beyond five minutes. The form necessarily contains this one exact opaque key and no
 arbitrary-key capability.
 
@@ -534,8 +538,8 @@ Phase 6 cannot close until all of the following are evidenced:
       runtime, returns a strict structured decision, and emits a sanitized correlation joined to
       the consolidated review; an unavailable runtime fails closed with no non-Strands fallback.
 - [ ] A valid upload survives refresh and reaches consolidated review.
-- [ ] The deployed 25 MiB URL-upload route is proven, or the advertised limit is reduced to the
-      largest end-to-end proven value before release.
+- [ ] The deployed path proves the advertised 5 MiB maximum end to end; any future larger-file URL
+      path must bind the exact S3 `VersionId` and pass a separate live acceptance test.
 - [ ] Duplicate clicks and network retries create one job and at most one Printify product;
       ambiguous initial-create tests cover both zero-product and one-product outcomes without a
       second POST.

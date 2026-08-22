@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import Any
 
 import pytest
@@ -19,17 +20,37 @@ from mr_lister.control.models import (
     ControlJobRecord,
     ControlJobState,
     DomainEvent,
+    ProductVariantEvidence,
+    ProviderCallPermitStatus,
     ReviewActor,
     ReviewContent,
+    SourceArtifactRecord,
     WorkRequest,
     WorkRequestStatus,
     WorkType,
 )
 from mr_lister.control.store import CommandCommit
+from mr_lister.control.worker_commands import (
+    BeginProviderUploadCommand,
+    BeginProviderWriteCommand,
+    ProductSyncObservation,
+    RecordPricingSuccessCommand,
+    RecordProductSyncSuccessCommand,
+    RecordProviderUploadSuccessCommand,
+    UploadedArtworkObservation,
+)
+from mr_lister.control.worker_service import WorkerControlService
+from mr_lister.production.economics import (
+    ProductCostEvidence,
+    ProductVariantCostEvidence,
+    estimate_etsy_us_standard_proceeds,
+)
+from mr_lister.production.printify_shipping import parse_standard_us_shipping
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 OWNER = "a" * 64
 TABLE_NAME = "MrListerPhase6Control"
+SOURCE_FP = "e" * 64
 
 
 def _client_error(code: str, operation: str) -> ClientError:
@@ -57,11 +78,31 @@ class MemoryLowLevelDynamoClient:
     def transact_write_items(self, **request: Any) -> None:
         self.transactions.append(request)
         operations = request["TransactItems"]
-        if any(not self._condition_holds(operation["Put"]) for operation in operations):
+        if any(not self._transaction_condition_holds(operation) for operation in operations):
             raise _client_error("TransactionCanceledException", "TransactWriteItems")
         for operation in operations:
+            if "Put" not in operation:
+                continue
             item = operation["Put"]["Item"]
             self.items[self._key(item)] = item
+
+    def _transaction_condition_holds(self, operation: dict[str, Any]) -> bool:
+        if "Put" in operation:
+            return self._condition_holds(operation["Put"])
+        if "ConditionCheck" not in operation:
+            raise AssertionError(f"Unsupported fake transaction operation: {operation}")
+        check = operation["ConditionCheck"]
+        key = check["Key"]
+        existing = self.items.get((key["PK"]["S"], key["SK"]["S"]))
+        if existing is None:
+            return False
+        condition = check.get("ConditionExpression")
+        values = check.get("ExpressionAttributeValues", {})
+        if condition == "payload = :expected_job":
+            return existing.get("payload") == values[":expected_job"]
+        if condition == "payload = :expected_work":
+            return existing.get("payload") == values[":expected_work"]
+        raise AssertionError(f"Unsupported fake condition check: {condition}")
 
     def get_item(self, **request: Any) -> dict[str, Any]:
         key = request["Key"]
@@ -157,12 +198,30 @@ def make_job(
         record_version=record_version,
         event_sequence=event_sequence,
         state=state,
+        source_artifact_fingerprint=SOURCE_FP,
         review_version=review_version,
         review_fingerprint=review_fingerprint,
         review_validated=review_validated,
         active_work_request_id=active_work_request_id,
         created_at=NOW,
         updated_at=updated_at,
+    )
+
+
+def make_source(job: ControlJobRecord) -> SourceArtifactRecord:
+    return SourceArtifactRecord(
+        job_id=job.job_id,
+        owner_id=job.owner_id,
+        fingerprint=SOURCE_FP,
+        bucket="mr-lister-phase6-artifacts-test",
+        object_key=(f"private/owners/{job.owner_id}/jobs/{job.job_id}/source/source.png"),
+        version_id="source-version-1",
+        content_sha256="f" * 64,
+        size_bytes=128,
+        product_profile_id="profile_test",
+        product_profile_version=1,
+        product_profile_fingerprint="3" * 64,
+        created_at=NOW,
     )
 
 
@@ -249,6 +308,7 @@ def create_job_with_work(
         event=make_event(job, "JOB_CREATED"),
         receipt=receipt,
         work_request=work,
+        source_artifact=make_source(job),
     )
     return job, receipt, work
 
@@ -410,17 +470,24 @@ def test_create_job_is_one_transaction_and_round_trips_from_a_fresh_store() -> N
 
     request = client.transactions[0]
     assert len(request["ClientRequestToken"]) == 32
-    assert len(request["TransactItems"]) == 4
+    assert len(request["TransactItems"]) == 5
     assert all(
         operation["Put"]["ConditionExpression"] == "attribute_not_exists(PK)"
         for operation in request["TransactItems"]
     )
     assert {
         operation["Put"]["Item"]["entity_type"]["S"] for operation in request["TransactItems"]
-    } == {"CONTROL_JOB", "DOMAIN_EVENT", "COMMAND_RECEIPT", "WORK_REQUEST"}
+    } == {
+        "CONTROL_JOB",
+        "DOMAIN_EVENT",
+        "COMMAND_RECEIPT",
+        "SOURCE_ARTIFACT",
+        "WORK_REQUEST",
+    }
 
     reconstructed = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
     assert reconstructed.get_job(job.job_id) == job
+    assert reconstructed.get_source_artifact(job.job_id) == make_source(job)
     assert reconstructed.get_work_request(job.job_id, work.work_request_id) == work
     assert (
         reconstructed.resolve_receipt(
@@ -797,3 +864,316 @@ def test_defer_returns_completed_when_worker_wins_payload_cas() -> None:
 
     assert result == completed
     assert store.get_work_request(job.job_id, work.work_request_id) == completed
+
+
+def seed_provider_permit(
+    store: DynamoDBSellerControlStore,
+    *,
+    dispatch_sync_work: bool,
+) -> tuple[ControlJobRecord, WorkRequest, str]:
+    initial, _receipt, prepare_work = create_job_with_work(store)
+    drafted = advance_to_listing_drafted(store, initial)
+    dispatched_prepare = dispatch_initial_work(store, drafted, prepare_work)
+    listing_commit = make_listing_commit(drafted, active_work=dispatched_prepare)
+    store.commit_command(listing_commit)
+    assert listing_commit.work_request is not None
+    syncing = listing_commit.updated
+    sync_work = listing_commit.work_request
+    claimed = store.claim_work(
+        syncing.job_id,
+        sync_work.work_request_id,
+        now=NOW + timedelta(seconds=1),
+        claim_id="claim_product_sync",
+        lease_expires_at=NOW + timedelta(minutes=2),
+    )
+    assert claimed is not None
+    active = claimed
+    if dispatch_sync_work:
+        active = store.mark_work_dispatched(
+            syncing.job_id,
+            sync_work.work_request_id,
+            claim_id="claim_product_sync",
+            execution_arn=(
+                "arn:aws:states:us-west-2:123456789012:execution:mr-lister-sync:provider-permit"
+            ),
+            now=NOW + timedelta(seconds=1),
+        )
+    correlation = sha256(f"mr-lister:provider-draft:{syncing.job_id}".encode()).hexdigest()[:24]
+    worker = WorkerControlService(
+        store=store,
+        clock=lambda: NOW + timedelta(seconds=2),
+    )
+    source = store.get_source_artifact(syncing.job_id)
+    file_name = worker.upload_file_name(syncing.job_id, source.content_sha256)
+    worker.begin_provider_upload(
+        BeginProviderUploadCommand(
+            job_id=syncing.job_id,
+            work_request_id=active.work_request_id,
+            expected_record_version=syncing.record_version,
+            source_artifact_fingerprint=source.fingerprint,
+            file_name=file_name,
+        )
+    )
+    upload_claim = store.get_job(syncing.job_id)
+    upload_attempt_id = upload_claim.provider_upload_attempt_id or ""
+    assert (
+        worker.authorize_provider_upload(job_id=syncing.job_id, attempt_id=upload_attempt_id)
+        is not None
+    )
+    worker.record_provider_upload_success(
+        RecordProviderUploadSuccessCommand(
+            job_id=syncing.job_id,
+            work_request_id=active.work_request_id,
+            expected_record_version=upload_claim.record_version,
+            attempt_id=upload_attempt_id,
+            observation=UploadedArtworkObservation(
+                image_id="printify_image_dynamo",
+                file_name=file_name,
+                width=3021,
+                height=3927,
+                size_bytes=source.size_bytes,
+            ),
+        )
+    )
+    uploading = store.get_job(syncing.job_id)
+    worker.begin_provider_write(
+        BeginProviderWriteCommand(
+            job_id=syncing.job_id,
+            work_request_id=active.work_request_id,
+            expected_record_version=uploading.record_version,
+            image_id="printify_image_dynamo",
+            target_payload_fingerprint="d" * 64,
+            correlation_token=f"ml-{correlation}",
+        )
+    )
+    claimed_job = store.get_job(syncing.job_id)
+    assert claimed_job.provider_write_attempt_id is not None
+    return claimed_job, active, claimed_job.provider_write_attempt_id
+
+
+@pytest.mark.parametrize("dispatch_sync_work", (False, True))
+def test_provider_permit_transaction_consumes_for_exact_claimed_or_dispatched_work(
+    dispatch_sync_work: bool,
+) -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    job, work, attempt_id = seed_provider_permit(
+        store,
+        dispatch_sync_work=dispatch_sync_work,
+    )
+
+    consumed = store.consume_provider_call_permit(
+        job,
+        work,
+        attempt_id,
+        now=NOW + timedelta(seconds=3),
+    )
+
+    assert consumed is not None
+    assert consumed.status is ProviderCallPermitStatus.CONSUMED
+    assert consumed.consumed_work_request_id == work.work_request_id
+    request = client.transactions[-1]
+    assert len(request["TransactItems"]) == 3
+    job_check = request["TransactItems"][0]["ConditionCheck"]
+    work_check = request["TransactItems"][1]["ConditionCheck"]
+    permit_put = request["TransactItems"][2]["Put"]
+    assert job_check["Key"] == {
+        "PK": {"S": f"JOB#{job.job_id}"},
+        "SK": {"S": "META"},
+    }
+    assert job_check["ExpressionAttributeValues"][":expected_job"] == {"S": job.model_dump_json()}
+    assert work_check["Key"] == {
+        "PK": {"S": f"JOB#{job.job_id}"},
+        "SK": {"S": f"WORK#{work.work_request_id}"},
+    }
+    assert work_check["ExpressionAttributeValues"][":expected_work"] == {
+        "S": work.model_dump_json()
+    }
+    assert permit_put["ConditionExpression"] == "payload = :expected_payload"
+    assert (
+        store.consume_provider_call_permit(
+            job,
+            work,
+            attempt_id,
+            now=NOW + timedelta(seconds=4),
+        )
+        is None
+    )
+
+
+def test_provider_permit_transaction_rejects_stale_active_work_payload() -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    job, claimed, attempt_id = seed_provider_permit(
+        store,
+        dispatch_sync_work=False,
+    )
+    assert claimed.claim_id is not None
+    dispatched = store.mark_work_dispatched(
+        job.job_id,
+        claimed.work_request_id,
+        claim_id=claimed.claim_id,
+        execution_arn=(
+            "arn:aws:states:us-west-2:123456789012:execution:mr-lister-sync:work-cas-winner"
+        ),
+        now=NOW + timedelta(seconds=3),
+    )
+
+    assert (
+        store.consume_provider_call_permit(
+            job,
+            claimed,
+            attempt_id,
+            now=NOW + timedelta(seconds=4),
+        )
+        is None
+    )
+    assert (
+        store.get_provider_call_permit(job.job_id, attempt_id).status
+        is ProviderCallPermitStatus.AVAILABLE
+    )
+    assert (
+        store.consume_provider_call_permit(
+            job,
+            dispatched,
+            attempt_id,
+            now=NOW + timedelta(seconds=4),
+        )
+        is not None
+    )
+
+
+def test_pricing_settlement_writes_and_round_trips_snapshot_with_complete_evidence() -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    claimed_job, sync_work, attempt_id = seed_provider_permit(
+        store,
+        dispatch_sync_work=True,
+    )
+    sync_clock = NOW + timedelta(seconds=5)
+    worker = WorkerControlService(store=store, clock=lambda: sync_clock)
+    assert (
+        worker.authorize_provider_call(
+            job_id=claimed_job.job_id,
+            attempt_id=attempt_id,
+        )
+        is not None
+    )
+    worker.record_product_sync_success(
+        RecordProductSyncSuccessCommand(
+            job_id=claimed_job.job_id,
+            work_request_id=sync_work.work_request_id,
+            expected_record_version=claimed_job.record_version,
+            attempt_id=attempt_id,
+            observation=ProductSyncObservation(
+                product_id="printify_product_dynamo",
+                image_id="printify_image_dynamo",
+                request_fingerprint="d" * 64,
+                response_fingerprint="9" * 64,
+                variants=(
+                    ProductVariantEvidence(
+                        variant_id=1000,
+                        retail_price_cents=2999,
+                        production_cost_cents=1100,
+                    ),
+                ),
+            ),
+        )
+    )
+    pricing_job = store.get_job(claimed_job.job_id)
+    sync = store.get_product_sync(pricing_job.job_id, pricing_job.product_sync_id or "")
+    pricing_work = store.get_work_request(
+        pricing_job.job_id, pricing_job.active_work_request_id or ""
+    )
+    claimed_pricing = store.claim_work(
+        pricing_job.job_id,
+        pricing_work.work_request_id,
+        now=sync_clock,
+        claim_id="claim_pricing",
+        lease_expires_at=sync_clock + timedelta(minutes=1),
+    )
+    assert claimed_pricing is not None
+    observed_at = sync_clock + timedelta(seconds=1)
+    calculated_at = observed_at + timedelta(seconds=1)
+    product_costs = ProductCostEvidence(
+        product_sync_fingerprint=sync.fingerprint,
+        observed_at=observed_at,
+        variants=(
+            ProductVariantCostEvidence(
+                variant_id=1000,
+                retail_price_cents=2999,
+                production_cost_cents=1175,
+            ),
+        ),
+    )
+    shipping = parse_standard_us_shipping(
+        {
+            "data": [
+                {
+                    "type": "variant_shipping_standard_us",
+                    "id": "1000",
+                    "attributes": {
+                        "shippingType": "standard",
+                        "country": {"code": "US"},
+                        "variantId": 1000,
+                        "shippingPlanId": "standard-us",
+                        "handlingTime": {"from": 2, "to": 5},
+                        "shippingCost": {
+                            "firstItem": {"amount": 399, "currency": "USD"},
+                            "additionalItems": {"amount": 200, "currency": "USD"},
+                        },
+                    },
+                }
+            ]
+        },
+        blueprint_id=145,
+        print_provider_id=39,
+        expected_variant_ids=(1000,),
+        observed_at=observed_at,
+    )
+    estimate = estimate_etsy_us_standard_proceeds(
+        product_costs=product_costs,
+        shipping=shipping,
+        calculated_at=calculated_at,
+    )
+    settlement_worker = WorkerControlService(store=store, clock=lambda: calculated_at)
+
+    completed = settlement_worker.record_pricing_success(
+        RecordPricingSuccessCommand(
+            job_id=pricing_job.job_id,
+            work_request_id=claimed_pricing.work_request_id,
+            expected_record_version=pricing_job.record_version,
+            estimate=estimate,
+        )
+    )
+
+    assert completed.state is ControlJobState.AWAITING_APPROVAL
+    transaction = client.transactions[-1]
+    entity_types = {
+        operation["Put"]["Item"]["entity_type"]["S"]
+        for operation in transaction["TransactItems"]
+        if "Put" in operation
+    }
+    assert "PRICING_SNAPSHOT" in entity_types
+    assert "PRICING_EVIDENCE" in entity_types
+    sort_keys = {
+        operation["Put"]["Item"]["SK"]["S"]
+        for operation in transaction["TransactItems"]
+        if "Put" in operation
+    }
+    settled = store.get_job(pricing_job.job_id)
+    snapshot_id = settled.pricing_snapshot_id or ""
+    assert f"PRICING#{snapshot_id}" in sort_keys
+    assert f"PRICING_EVIDENCE#{snapshot_id}" in sort_keys
+
+    reconstructed = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    snapshot = reconstructed.get_pricing(settled.job_id, snapshot_id)
+    evidence = reconstructed.get_pricing_evidence(settled.job_id, snapshot_id)
+    assert snapshot.fingerprint == evidence.fingerprint == estimate.fingerprint
+    assert evidence.estimate == estimate
+    assert evidence.estimate.variants[0].production_cost_cents == 1175
+    assert evidence.estimate.variants[0].estimated_proceeds_cents == 1095
+    assert (
+        reconstructed.get_work_request(settled.job_id, claimed_pricing.work_request_id).status
+        is WorkRequestStatus.COMPLETED
+    )

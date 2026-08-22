@@ -23,6 +23,7 @@ from mr_lister.control.models import (
     ControlJobRecord,
     ControlJobState,
     DomainEvent,
+    SourceArtifactRecord,
     WorkRequest,
     WorkRequestStatus,
     WorkType,
@@ -32,6 +33,24 @@ from mr_lister.control.store import InMemorySellerControlStore
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 OWNER_ID = "a" * 64
+SOURCE_FP = "d" * 64
+
+
+def source_for(job: ControlJobRecord) -> SourceArtifactRecord:
+    return SourceArtifactRecord(
+        job_id=job.job_id,
+        owner_id=job.owner_id,
+        fingerprint=SOURCE_FP,
+        bucket="mr-lister-phase6-artifacts-test",
+        object_key=(f"private/owners/{job.owner_id}/jobs/{job.job_id}/source/source.png"),
+        version_id="source-version-1",
+        content_sha256="e" * 64,
+        size_bytes=128,
+        product_profile_id="profile_test",
+        product_profile_version=1,
+        product_profile_fingerprint="f" * 64,
+        created_at=job.created_at,
+    )
 
 
 def state_machine_arns() -> dict[WorkType, str]:
@@ -314,6 +333,7 @@ def test_dispatcher_uses_the_phase6_store_claim_contract_end_to_end() -> None:
         owner_id=OWNER_ID,
         job_id=work.job_id,
         state=ControlJobState.INTAKE_VALIDATED,
+        source_artifact_fingerprint=SOURCE_FP,
         event_sequence=1,
         active_work_request_id=work.work_request_id,
         created_at=NOW - timedelta(minutes=1),
@@ -347,6 +367,7 @@ def test_dispatcher_uses_the_phase6_store_claim_contract_end_to_end() -> None:
         ),
         receipt=receipt,
         work_request=work,
+        source_artifact=source_for(job),
     )
     step_functions = RecordingStepFunctions()
 
@@ -370,6 +391,7 @@ def test_fast_worker_can_settle_claimed_work_before_start_acknowledgement() -> N
         owner_id=OWNER_ID,
         job_id=work.job_id,
         state=ControlJobState.INTAKE_VALIDATED,
+        source_artifact_fingerprint=SOURCE_FP,
         event_sequence=1,
         active_work_request_id=work.work_request_id,
         created_at=work.created_at,
@@ -403,6 +425,7 @@ def test_fast_worker_can_settle_claimed_work_before_start_acknowledgement() -> N
         ),
         receipt=receipt,
         work_request=work,
+        source_artifact=source_for(job),
     )
     service = SellerControlService(store=store, clock=lambda: NOW)
 

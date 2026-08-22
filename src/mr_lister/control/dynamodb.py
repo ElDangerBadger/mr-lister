@@ -14,13 +14,22 @@ from mr_lister.control.errors import (
     NotFoundError,
 )
 from mr_lister.control.models import (
+    AgentPreparationEvidence,
+    ArtworkAnalysisRecord,
     CommandReceipt,
     ControlJobRecord,
     DomainEvent,
     FailureRecord,
+    PricingEvidenceRecord,
     PricingSnapshot,
     ProductSyncRecord,
+    ProviderCallPermit,
+    ProviderCallPermitStatus,
+    ProviderUploadAttempt,
+    ProviderWriteAttempt,
     ReviewContent,
+    SourceArtifactRecord,
+    UploadedArtworkRecord,
     WorkRequest,
     WorkRequestStatus,
 )
@@ -157,9 +166,44 @@ class DynamoDBSellerControlStore:
             "review",
         )
 
+    def get_source_artifact(self, job_id: str) -> SourceArtifactRecord:
+        return self._get_record(job_id, "SOURCE", SourceArtifactRecord, "source artifact")
+
+    def get_artwork_analysis(self, job_id: str, analysis_id: str) -> ArtworkAnalysisRecord:
+        return self._get_record(
+            job_id,
+            f"ARTWORK_ANALYSIS#{analysis_id}",
+            ArtworkAnalysisRecord,
+            "artwork analysis",
+        )
+
+    def get_agent_evidence(self, job_id: str, evidence_id: str) -> AgentPreparationEvidence:
+        return self._get_record(
+            job_id,
+            f"AGENT_EVIDENCE#{evidence_id}",
+            AgentPreparationEvidence,
+            "agent preparation evidence",
+        )
+
     def get_product_sync(self, job_id: str, sync_id: str) -> ProductSyncRecord:
         return self._get_record(
             job_id, f"PRODUCT_SYNC#{sync_id}", ProductSyncRecord, "product synchronization"
+        )
+
+    def get_provider_upload_attempt(self, job_id: str, attempt_id: str) -> ProviderUploadAttempt:
+        return self._get_record(
+            job_id,
+            f"PROVIDER_UPLOAD_ATTEMPT#{attempt_id}",
+            ProviderUploadAttempt,
+            "provider upload attempt",
+        )
+
+    def get_uploaded_artwork(self, job_id: str, upload_id: str) -> UploadedArtworkRecord:
+        return self._get_record(
+            job_id,
+            f"UPLOADED_ARTWORK#{upload_id}",
+            UploadedArtworkRecord,
+            "uploaded artwork",
         )
 
     def get_pricing(self, job_id: str, snapshot_id: str) -> PricingSnapshot:
@@ -167,8 +211,110 @@ class DynamoDBSellerControlStore:
             job_id, f"PRICING#{snapshot_id}", PricingSnapshot, "pricing snapshot"
         )
 
+    def get_pricing_evidence(self, job_id: str, snapshot_id: str) -> PricingEvidenceRecord:
+        return self._get_record(
+            job_id,
+            f"PRICING_EVIDENCE#{snapshot_id}",
+            PricingEvidenceRecord,
+            "pricing evidence",
+        )
+
     def get_failure(self, job_id: str, failure_id: str) -> FailureRecord:
         return self._get_record(job_id, f"FAILURE#{failure_id}", FailureRecord, "failure")
+
+    def get_provider_write_attempt(self, job_id: str, attempt_id: str) -> ProviderWriteAttempt:
+        return self._get_record(
+            job_id,
+            f"PROVIDER_ATTEMPT#{attempt_id}",
+            ProviderWriteAttempt,
+            "provider write attempt",
+        )
+
+    def get_provider_call_permit(self, job_id: str, attempt_id: str) -> ProviderCallPermit:
+        return self._get_record(
+            job_id,
+            f"PROVIDER_PERMIT#{attempt_id}",
+            ProviderCallPermit,
+            "provider call permit",
+        )
+
+    def consume_provider_call_permit(
+        self,
+        job: ControlJobRecord,
+        work: WorkRequest,
+        attempt_id: str,
+        *,
+        now: datetime,
+    ) -> ProviderCallPermit | None:
+        if (
+            job.active_work_request_id != work.work_request_id
+            or work.job_id != job.job_id
+            or work.status not in {WorkRequestStatus.CLAIMED, WorkRequestStatus.DISPATCHED}
+        ):
+            return None
+        current = self.get_provider_call_permit(job.job_id, attempt_id)
+        if current.status is not ProviderCallPermitStatus.AVAILABLE:
+            return None
+        consumed = ProviderCallPermit.model_validate(
+            {
+                **current.model_dump(mode="python"),
+                "status": ProviderCallPermitStatus.CONSUMED,
+                "consumed_at": now,
+                "consumed_work_request_id": work.work_request_id,
+            }
+        )
+        try:
+            self._client.transact_write_items(
+                TransactItems=[
+                    {
+                        "ConditionCheck": {
+                            "TableName": self._table_name,
+                            "Key": {"PK": _s(_job_pk(job.job_id)), "SK": _s("META")},
+                            "ConditionExpression": "payload = :expected_job",
+                            "ExpressionAttributeValues": {":expected_job": _s(_payload(job))},
+                        }
+                    },
+                    {
+                        "ConditionCheck": {
+                            "TableName": self._table_name,
+                            "Key": {
+                                "PK": _s(_job_pk(job.job_id)),
+                                "SK": _s(f"WORK#{work.work_request_id}"),
+                            },
+                            "ConditionExpression": "payload = :expected_work",
+                            "ExpressionAttributeValues": {":expected_work": _s(_payload(work))},
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self._table_name,
+                            "Item": _record_item(
+                                job_id=job.job_id,
+                                sort_key=f"PROVIDER_PERMIT#{attempt_id}",
+                                entity_type="PROVIDER_CALL_PERMIT",
+                                record=consumed,
+                            ),
+                            "ConditionExpression": "payload = :expected_payload",
+                            "ExpressionAttributeValues": {
+                                ":expected_payload": _s(_payload(current))
+                            },
+                        }
+                    },
+                ],
+                ClientRequestToken=sha256(
+                    (
+                        f"consume:{job.job_id}:{attempt_id}:{job.record_version}:{_payload(work)}"
+                    ).encode()
+                ).hexdigest()[:32],
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") in {
+                "TransactionCanceledException",
+                "IdempotentParameterMismatchException",
+            }:
+                return None
+            raise
+        return consumed
 
     def get_work_request(self, job_id: str, work_request_id: str) -> WorkRequest:
         return self._get_record(job_id, f"WORK#{work_request_id}", WorkRequest, "work request")
@@ -189,8 +335,10 @@ class DynamoDBSellerControlStore:
         event: DomainEvent,
         receipt: CommandReceipt,
         work_request: WorkRequest | None = None,
+        source_artifact: SourceArtifactRecord | None = None,
     ) -> CommandReceipt:
-        validate_initial_job(job, event, receipt, work_request)
+        validate_initial_job(job, event, receipt, work_request, source_artifact)
+        assert source_artifact is not None
         items = [
             self._put_new(_job_item(job)),
             self._put_new(
@@ -202,6 +350,14 @@ class DynamoDBSellerControlStore:
                 )
             ),
             self._put_new(_receipt_item(receipt)),
+            self._put_new(
+                _record_item(
+                    job_id=job.job_id,
+                    sort_key="SOURCE",
+                    entity_type="SOURCE_ARTIFACT",
+                    record=source_artifact,
+                )
+            ),
         ]
         if work_request is not None:
             items.append(self._put_new(_work_item(work_request)))
@@ -252,11 +408,46 @@ class DynamoDBSellerControlStore:
             ),
             self._put_new(_receipt_item(commit.receipt)),
         ]
+        if commit.provider_write_retry_basis is not None:
+            retry_basis = commit.provider_write_retry_basis
+            items.append(
+                {
+                    "ConditionCheck": {
+                        "TableName": self._table_name,
+                        "Key": {
+                            "PK": _s(_job_pk(commit.updated.job_id)),
+                            "SK": _s(f"PROVIDER_ATTEMPT#{retry_basis.attempt_id}"),
+                        },
+                        "ConditionExpression": "payload = :expected_retry_basis",
+                        "ExpressionAttributeValues": {
+                            ":expected_retry_basis": _s(_payload(retry_basis))
+                        },
+                    }
+                }
+            )
         records: tuple[tuple[Any, str, str], ...] = (
             (
                 commit.review,
                 f"REVIEW#{commit.review.review_version:020d}" if commit.review else "",
                 "REVIEW",
+            ),
+            (
+                commit.artwork_analysis,
+                (
+                    f"ARTWORK_ANALYSIS#{commit.artwork_analysis.analysis_id}"
+                    if commit.artwork_analysis
+                    else ""
+                ),
+                "ARTWORK_ANALYSIS",
+            ),
+            (
+                commit.agent_evidence,
+                (
+                    f"AGENT_EVIDENCE#{commit.agent_evidence.evidence_id}"
+                    if commit.agent_evidence
+                    else ""
+                ),
+                "AGENT_PREPARATION_EVIDENCE",
             ),
             (
                 commit.review_decision,
@@ -276,9 +467,73 @@ class DynamoDBSellerControlStore:
                 "PRODUCT_SYNC",
             ),
             (
+                commit.provider_upload_attempt,
+                (
+                    f"PROVIDER_UPLOAD_ATTEMPT#{commit.provider_upload_attempt.attempt_id}"
+                    if commit.provider_upload_attempt
+                    else ""
+                ),
+                "PROVIDER_UPLOAD_ATTEMPT",
+            ),
+            (
+                commit.uploaded_artwork,
+                (
+                    f"UPLOADED_ARTWORK#{commit.uploaded_artwork.upload_id}"
+                    if commit.uploaded_artwork
+                    else ""
+                ),
+                "UPLOADED_ARTWORK",
+            ),
+            (
+                commit.provider_write_attempt,
+                (
+                    f"PROVIDER_ATTEMPT#{commit.provider_write_attempt.attempt_id}"
+                    if commit.provider_write_attempt
+                    else ""
+                ),
+                "PROVIDER_WRITE_ATTEMPT",
+            ),
+            (
+                commit.provider_call_permit,
+                (
+                    f"PROVIDER_PERMIT#{commit.provider_call_permit.attempt_id}"
+                    if commit.provider_call_permit
+                    else ""
+                ),
+                "PROVIDER_CALL_PERMIT",
+            ),
+            (
+                commit.reconciliation_observation,
+                (
+                    f"RECONCILIATION#{commit.reconciliation_observation.observation_id}"
+                    if commit.reconciliation_observation
+                    else ""
+                ),
+                "RECONCILIATION_OBSERVATION",
+            ),
+            (
+                commit.upload_reconciliation_observation,
+                (
+                    "UPLOAD_RECONCILIATION#"
+                    f"{commit.upload_reconciliation_observation.observation_id}"
+                    if commit.upload_reconciliation_observation
+                    else ""
+                ),
+                "UPLOAD_RECONCILIATION_OBSERVATION",
+            ),
+            (
                 commit.pricing_snapshot,
                 f"PRICING#{commit.pricing_snapshot.snapshot_id}" if commit.pricing_snapshot else "",
                 "PRICING_SNAPSHOT",
+            ),
+            (
+                commit.pricing_evidence,
+                (
+                    f"PRICING_EVIDENCE#{commit.pricing_evidence.snapshot_id}"
+                    if commit.pricing_evidence
+                    else ""
+                ),
+                "PRICING_EVIDENCE",
             ),
             (
                 commit.failure,
@@ -309,6 +564,25 @@ class DynamoDBSellerControlStore:
                         "Item": _work_item(changed),
                         "ConditionExpression": "payload = :expected_payload",
                         "ExpressionAttributeValues": {":expected_payload": _s(_payload(expected))},
+                    }
+                }
+            )
+        if commit.provider_call_permit_update is not None:
+            expected_permit, retired_permit = commit.provider_call_permit_update
+            items.append(
+                {
+                    "Put": {
+                        "TableName": self._table_name,
+                        "Item": _record_item(
+                            job_id=retired_permit.job_id,
+                            sort_key=f"PROVIDER_PERMIT#{retired_permit.attempt_id}",
+                            entity_type="PROVIDER_CALL_PERMIT",
+                            record=retired_permit,
+                        ),
+                        "ConditionExpression": "payload = :expected_payload",
+                        "ExpressionAttributeValues": {
+                            ":expected_payload": _s(_payload(expected_permit))
+                        },
                     }
                 }
             )

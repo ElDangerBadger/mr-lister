@@ -40,14 +40,19 @@ approval, cancellation, idempotency, and irreversible marketplace actions.
 | Four genuine, job-scoped Strands `@tool` functions | [`src/mr_lister/agent/tools.py`](src/mr_lister/agent/tools.py) |
 | Official AgentCore SDK entry point and Bedrock controller | [`src/mr_lister/agent/agentcore_sdk.py`](src/mr_lister/agent/agentcore_sdk.py) |
 | Credential-free execution of the actual Strands loop | [`tests/test_strands_real_loop.py`](tests/test_strands_real_loop.py) |
+| Durable Phase 6 single-tool Strands runtime and exact AgentCore bridge | [`src/mr_lister/agent/phase6.py`](src/mr_lister/agent/phase6.py), [`src/mr_lister/control/agentcore.py`](src/mr_lister/control/agentcore.py) |
+| Credential-free Phase 6 checkpoint, tool, correlation, and resume proof | [`tests/test_phase6_strands_runtime.py`](tests/test_phase6_strands_runtime.py), [`tests/test_phase6_agentcore_bridge.py`](tests/test_phase6_agentcore_bridge.py) |
 | Deployed AgentCore canary and tool-selection results | [`docs/phase3-controller-evaluation.md`](docs/phase3-controller-evaluation.md) |
 | Requirement-to-code/test/demo traceability | [`docs/strands-submission-evidence.md`](docs/strands-submission-evidence.md) |
 
-The Phase 3 runtime was deployed and live-tested as a synthetic, non-publishing canary.
-The Phase 6 production integration is intentionally still an open acceptance gate: the submitted
-seller flow will not be called end-to-end until its durable `PREPARE` work invokes this exact
-Strands runtime fail-closed and emits correlated public-safe evidence. That distinction is tracked
-explicitly in the [phase checklist](docs/phase-checklist.md).
+The Phase 3 runtime was deployed and live-tested as a synthetic, non-publishing canary. Phase 6.2
+now contains the offline durable `PREPARE` bridge, genuine single-tool Strands runtime, and exact
+same-job evidence contract. Its new SAM application is intentionally `SCAFFOLD_ONLY`; the seller
+production integration is still an open acceptance gate. The path will not be called deployed end
+to end until real Lambda composition adapters invoke that runtime fail-closed and an approved live
+canary emits correlated public-safe evidence. That distinction is tracked explicitly in the
+[phase checklist](docs/phase-checklist.md) and
+[Phase 6.2 evidence](docs/phase6-provider-integration.md).
 
 ### Verify Strands locally in 60 seconds
 
@@ -57,7 +62,9 @@ python -m pytest -q \
   tests/test_strands_setup.py \
   tests/test_strands_real_loop.py \
   tests/test_agent_tools.py \
-  tests/test_agentcore_sdk.py
+  tests/test_agentcore_sdk.py \
+  tests/test_phase6_strands_runtime.py \
+  tests/test_phase6_agentcore_bridge.py
 ```
 
 ## Target submission architecture
@@ -72,7 +79,7 @@ flowchart TD
     subgraph SL["Core Strands agentic loop"]
         SA["Strands Agent<br/>reason → act → observe"]
         CM["Bedrock controller model"]
-        JT["Job-scoped Strands @tools<br/>prepare · inspect · validate · revise"]
+        JT["Job-scoped Phase 6 Strands @tool<br/>record_prepared_review"]
         SR["Structured PreparationDecision"]
         SA <--> CM
         SA <--> JT

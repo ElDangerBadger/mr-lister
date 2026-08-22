@@ -32,7 +32,8 @@ One Mr Lister job owns at most one Printify product:
    The job is never allowed a second POST.
 5. An ambiguous PUT enters reconciliation; a GET and canonical comparison determine whether the
    update completed before any retry. Only the same product at the exact prior canonical payload
-   may retry the same idempotent PUT; a missing or conflicting product fails terminally.
+   may retry the same idempotent PUT once. The retry inherits the root attempt's persisted deadline;
+   a second ambiguity, expired deadline, missing product, or conflict fails terminally.
 6. Provider synchronization is recorded separately from immutable review content and binds the
    product ID, review version, payload fingerprint, result fingerprint, mockups, costs, provider
    status, and timestamp.

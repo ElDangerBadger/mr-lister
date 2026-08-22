@@ -21,17 +21,29 @@ from mr_lister.control.fingerprints import review_etag
 from mr_lister.control.models import (
     CONTROL_NEW_WORK_BY_STATE,
     CONTROL_RECOVERY_BINDINGS,
+    AgentPreparationEvidence,
+    ArtworkAnalysisRecord,
     CancellationDecisionRecord,
     CommandReceipt,
     ControlJobRecord,
     ControlJobState,
     DomainEvent,
     FailureRecord,
+    PricingEvidenceRecord,
     PricingSnapshot,
     ProductSyncRecord,
+    ProviderCallPermit,
+    ProviderCallPermitStatus,
+    ProviderUploadAttempt,
+    ProviderWriteAttempt,
+    ProviderWriteOperation,
+    ReconciliationObservationRecord,
     ReviewContent,
     ReviewDecision,
     ReviewDecisionRecord,
+    SourceArtifactRecord,
+    UploadedArtworkRecord,
+    UploadReconciliationObservationRecord,
     WorkRequest,
     WorkRequestStatus,
     WorkType,
@@ -68,9 +80,20 @@ class CommandCommit:
     event: DomainEvent
     receipt: CommandReceipt
     review: ReviewContent | None = None
+    artwork_analysis: ArtworkAnalysisRecord | None = None
+    agent_evidence: AgentPreparationEvidence | None = None
     review_decision: ReviewDecisionRecord | None = None
     cancellation_decision: CancellationDecisionRecord | None = None
     product_sync: ProductSyncRecord | None = None
+    provider_upload_attempt: ProviderUploadAttempt | None = None
+    uploaded_artwork: UploadedArtworkRecord | None = None
+    provider_write_attempt: ProviderWriteAttempt | None = None
+    provider_write_retry_basis: ProviderWriteAttempt | None = None
+    provider_call_permit: ProviderCallPermit | None = None
+    provider_call_permit_update: tuple[ProviderCallPermit, ProviderCallPermit] | None = None
+    reconciliation_observation: ReconciliationObservationRecord | None = None
+    upload_reconciliation_observation: UploadReconciliationObservationRecord | None = None
+    pricing_evidence: PricingEvidenceRecord | None = None
     pricing_snapshot: PricingSnapshot | None = None
     failure: FailureRecord | None = None
     work_request: WorkRequest | None = None
@@ -122,6 +145,7 @@ def validate_initial_job(
     event: DomainEvent,
     receipt: CommandReceipt,
     work: WorkRequest | None,
+    source_artifact: SourceArtifactRecord | None,
 ) -> None:
     """Restrict job creation to the upload-completion intake transaction."""
 
@@ -133,18 +157,36 @@ def validate_initial_job(
         job.review_version != 0
         or job.review_fingerprint is not None
         or job.review_validated
+        or job.artwork_analysis_id is not None
+        or job.agent_evidence_id is not None
         or job.product_id is not None
+        or job.provider_payload_fingerprint is not None
         or job.product_sync_id is not None
         or job.pricing_snapshot_id is not None
         or job.approval_fingerprint is not None
         or job.failure_id is not None
+        or job.provider_upload_attempt_id is not None
+        or job.uploaded_artwork_id is not None
+        or job.uploaded_image_id is not None
+        or job.uploaded_artwork_fingerprint is not None
+        or job.provider_write_attempt_id is not None
+        or job.product_create_attempt_id is not None
         or job.cancellation_requested_at is not None
         or job.provider_outcome_unconfirmed
+        or job.upload_outcome_unconfirmed
         or job.updated_at != job.created_at
     ):
         raise InvalidControlStateError("A new intake job must begin with pristine authority")
     if work is None:
         raise InvalidControlStateError("INTAKE_VALIDATED requires its preparation work")
+    if source_artifact is None:
+        raise InvalidControlStateError("INTAKE_VALIDATED requires its pinned source artifact")
+    if (
+        source_artifact.job_id != job.job_id
+        or source_artifact.owner_id != job.owner_id
+        or job.source_artifact_fingerprint != source_artifact.fingerprint
+    ):
+        raise InvalidControlStateError("The initial source artifact does not match the job")
     if work.work_type is not WorkType.PREPARE or work.review_version is not None:
         raise InvalidControlStateError("Initial work type must be unbound PREPARE work")
     if (
@@ -171,6 +213,38 @@ def validate_command_commit(commit: CommandCommit) -> None:
 
     current = commit.current
     updated = commit.updated
+    retired_permit_attempt_id = None
+    if commit.provider_call_permit_update is not None:
+        if commit.provider_call_permit is not None:
+            raise InvalidControlStateError(
+                "A command cannot create and retire a provider permit together"
+            )
+        expected_permit, retired_permit = commit.provider_call_permit_update
+        unchanged_identity = (
+            expected_permit.attempt_id == retired_permit.attempt_id
+            and expected_permit.job_id == retired_permit.job_id == current.job_id
+            and expected_permit.work_request_id == retired_permit.work_request_id
+            and expected_permit.created_at == retired_permit.created_at
+        )
+        if (
+            not unchanged_identity
+            or expected_permit.status is not ProviderCallPermitStatus.AVAILABLE
+            or retired_permit.status is not ProviderCallPermitStatus.RETIRED
+            or retired_permit.retired_at is None
+            or retired_permit.consumed_at is not None
+            or retired_permit.consumed_work_request_id is not None
+            or updated.state is not ControlJobState.CANCELLED
+            or updated.cancellation_requested_at is None
+            or expected_permit.attempt_id
+            not in {
+                current.provider_upload_attempt_id,
+                current.provider_write_attempt_id,
+            }
+        ):
+            raise InvalidControlStateError(
+                "Cancellation permit retirement does not match durable provider authority"
+            )
+        retired_permit_attempt_id = expected_permit.attempt_id
     if updated.job_id != current.job_id or updated.owner_id != current.owner_id:
         raise InvalidControlStateError("A command cannot change job identity or ownership")
     if updated.record_version != current.record_version + 1:
@@ -179,6 +253,8 @@ def validate_command_commit(commit: CommandCommit) -> None:
         raise InvalidControlStateError("A command must increment event_sequence exactly once")
     if updated.created_at != current.created_at:
         raise InvalidControlStateError("A command cannot change job creation time")
+    if updated.source_artifact_fingerprint != current.source_artifact_fingerprint:
+        raise InvalidControlStateError("A command cannot change pinned source authority")
     if updated.updated_at < current.updated_at:
         raise InvalidControlStateError("A command cannot move job time backwards")
     if not can_control_transition(current.state, updated.state):
@@ -236,6 +312,51 @@ def validate_command_commit(commit: CommandCommit) -> None:
     ):
         raise InvalidControlStateError("Review authority changed without an immutable review")
 
+    current_analysis = (current.artwork_analysis_id, current.artwork_analysis_fingerprint)
+    updated_analysis = (updated.artwork_analysis_id, updated.artwork_analysis_fingerprint)
+    if current_analysis != updated_analysis:
+        analysis = commit.artwork_analysis
+        if analysis is None:
+            raise InvalidControlStateError("Artwork analysis authority requires immutable proof")
+        if (
+            analysis.job_id != updated.job_id
+            or analysis.analysis_id != updated.artwork_analysis_id
+            or analysis.fingerprint != updated.artwork_analysis_fingerprint
+            or analysis.source_artifact_fingerprint != updated.source_artifact_fingerprint
+        ):
+            raise InvalidControlStateError("Artwork analysis proof does not match the job")
+        if (
+            current.state is not ControlJobState.ANALYZING_ARTWORK
+            or commit.review is None
+            or analysis.work_request_id != current.active_work_request_id
+        ):
+            raise InvalidControlStateError("Artwork analysis must checkpoint active preparation")
+    elif commit.artwork_analysis is not None:
+        raise InvalidControlStateError("Artwork analysis proof must advance job authority")
+
+    current_agent = (current.agent_evidence_id, current.agent_evidence_fingerprint)
+    updated_agent = (updated.agent_evidence_id, updated.agent_evidence_fingerprint)
+    if current_agent != updated_agent:
+        evidence = commit.agent_evidence
+        if evidence is None:
+            raise InvalidControlStateError("Agent evidence authority requires immutable proof")
+        if (
+            evidence.job_id != updated.job_id
+            or evidence.evidence_id != updated.agent_evidence_id
+            or evidence.fingerprint != updated.agent_evidence_fingerprint
+            or evidence.review_version != updated.review_version
+        ):
+            raise InvalidControlStateError("Agent preparation evidence does not match the job")
+        if (
+            current.state is not ControlJobState.LISTING_DRAFTED
+            or commit.work_update is None
+            or evidence.work_request_id != commit.work_update[0].work_request_id
+            or commit.work_update[0].work_type is not WorkType.PREPARE
+        ):
+            raise InvalidControlStateError("Agent evidence must settle exact preparation work")
+    elif commit.agent_evidence is not None:
+        raise InvalidControlStateError("Agent evidence proof must advance job authority")
+
     if commit.review_decision is not None:
         decision = commit.review_decision
         if (
@@ -283,6 +404,169 @@ def validate_command_commit(commit: CommandCommit) -> None:
         and commit.product_sync is None
     ):
         raise InvalidControlStateError("The first provider product requires synchronization proof")
+    new_upload_attempt = current.provider_upload_attempt_id != updated.provider_upload_attempt_id
+    if new_upload_attempt:
+        attempt = commit.provider_upload_attempt
+        if current.provider_upload_attempt_id is not None:
+            raise InvalidControlStateError("A job may claim its artwork upload only once")
+        if (
+            attempt is None
+            or attempt.job_id != updated.job_id
+            or attempt.attempt_id != updated.provider_upload_attempt_id
+            or attempt.work_request_id != updated.active_work_request_id
+            or attempt.source_artifact_fingerprint != updated.source_artifact_fingerprint
+            or current.uploaded_artwork_id is not None
+            or current.state is not ControlJobState.PRODUCT_DRAFT_SYNCING
+            or not updated.upload_outcome_unconfirmed
+            or updated.provider_outcome_unconfirmed
+        ):
+            raise InvalidControlStateError("Provider upload attempt does not match job authority")
+        permit = commit.provider_call_permit
+        if (
+            permit is None
+            or permit.attempt_id != attempt.attempt_id
+            or permit.job_id != attempt.job_id
+            or permit.work_request_id != attempt.work_request_id
+            or permit.status is not ProviderCallPermitStatus.AVAILABLE
+            or permit.consumed_at is not None
+            or permit.consumed_work_request_id is not None
+        ):
+            raise InvalidControlStateError("Provider upload requires a pristine one-shot permit")
+    elif commit.provider_upload_attempt is not None:
+        raise InvalidControlStateError("Provider upload proof must advance attempt authority")
+
+    current_upload_authority = (
+        current.uploaded_artwork_id,
+        current.uploaded_image_id,
+        current.uploaded_artwork_fingerprint,
+    )
+    updated_upload_authority = (
+        updated.uploaded_artwork_id,
+        updated.uploaded_image_id,
+        updated.uploaded_artwork_fingerprint,
+    )
+    if current_upload_authority != updated_upload_authority:
+        upload = commit.uploaded_artwork
+        if any(value is not None for value in current_upload_authority):
+            raise InvalidControlStateError("Confirmed uploaded artwork is immutable for the job")
+        if (
+            upload is None
+            or upload.job_id != updated.job_id
+            or upload.attempt_id != updated.provider_upload_attempt_id
+            or upload.upload_id != updated.uploaded_artwork_id
+            or upload.image_id != updated.uploaded_image_id
+            or upload.fingerprint != updated.uploaded_artwork_fingerprint
+            or upload.source_artifact_fingerprint != updated.source_artifact_fingerprint
+            or updated.upload_outcome_unconfirmed
+            or updated.provider_outcome_unconfirmed
+        ):
+            raise InvalidControlStateError("Uploaded artwork proof does not match the job")
+    elif commit.uploaded_artwork is not None:
+        raise InvalidControlStateError("Uploaded artwork proof must advance job authority")
+
+    if updated.upload_outcome_unconfirmed and updated.provider_outcome_unconfirmed:
+        raise InvalidControlStateError("Upload and product-write uncertainty cannot overlap")
+    if (
+        not current.upload_outcome_unconfirmed
+        and updated.upload_outcome_unconfirmed
+        and not new_upload_attempt
+    ):
+        raise InvalidControlStateError("Only a new upload claim can establish upload uncertainty")
+    if (
+        current.upload_outcome_unconfirmed
+        and not updated.upload_outcome_unconfirmed
+        and commit.uploaded_artwork is None
+        and retired_permit_attempt_id != current.provider_upload_attempt_id
+    ):
+        raise InvalidControlStateError(
+            "Only confirmed upload evidence can clear upload uncertainty"
+        )
+    if (
+        current.provider_outcome_unconfirmed
+        and not updated.provider_outcome_unconfirmed
+        and commit.product_sync is None
+        and commit.reconciliation_observation is None
+        and retired_permit_attempt_id != current.provider_write_attempt_id
+    ):
+        raise InvalidControlStateError(
+            "Only provider evidence or permit retirement can clear product uncertainty"
+        )
+    if current.product_create_attempt_id is not None and (
+        updated.product_create_attempt_id != current.product_create_attempt_id
+    ):
+        raise InvalidControlStateError("A job cannot replace or clear its initial create claim")
+    if current.provider_write_attempt_id != updated.provider_write_attempt_id:
+        attempt = commit.provider_write_attempt
+        if attempt is None:
+            raise InvalidControlStateError("Provider write authority requires an immutable attempt")
+        if (
+            attempt.job_id != updated.job_id
+            or attempt.attempt_id != updated.provider_write_attempt_id
+            or attempt.work_request_id != updated.active_work_request_id
+            or attempt.review_version != updated.review_version
+            or attempt.image_id != updated.uploaded_image_id
+        ):
+            raise InvalidControlStateError("Provider write attempt does not match the job")
+        if attempt.operation.value == "create":
+            if current.product_create_attempt_id is not None:
+                raise InvalidControlStateError("A job may claim its initial product create once")
+            if updated.product_create_attempt_id != attempt.attempt_id:
+                raise InvalidControlStateError("The initial create claim is not persisted")
+        elif updated.product_create_attempt_id != current.product_create_attempt_id:
+            raise InvalidControlStateError("An update cannot change initial create authority")
+        retry_basis = commit.provider_write_retry_basis
+        if attempt.exact_retry_count == 0:
+            if retry_basis is not None:
+                raise InvalidControlStateError("A first provider write cannot carry retry proof")
+        elif (
+            retry_basis is None
+            or retry_basis.attempt_id != current.provider_write_attempt_id
+            or retry_basis.operation is not ProviderWriteOperation.UPDATE
+            or attempt.operation is not ProviderWriteOperation.UPDATE
+            or attempt.exact_retry_count != retry_basis.exact_retry_count + 1
+            or attempt.job_id != retry_basis.job_id
+            or attempt.review_version != retry_basis.review_version
+            or attempt.product_id != retry_basis.product_id
+            or attempt.image_id != retry_basis.image_id
+            or attempt.target_payload_fingerprint != retry_basis.target_payload_fingerprint
+            or attempt.prior_payload_fingerprint != retry_basis.prior_payload_fingerprint
+            or attempt.correlation_token != retry_basis.correlation_token
+            or attempt.reconciliation_deadline != retry_basis.reconciliation_deadline
+        ):
+            raise InvalidControlStateError(
+                "An exact provider update retry must inherit immutable attempt authority"
+            )
+        permit = commit.provider_call_permit
+        if (
+            permit is None
+            or permit.attempt_id != attempt.attempt_id
+            or permit.job_id != attempt.job_id
+            or permit.work_request_id != attempt.work_request_id
+            or permit.status is not ProviderCallPermitStatus.AVAILABLE
+            or permit.consumed_at is not None
+            or permit.consumed_work_request_id is not None
+        ):
+            raise InvalidControlStateError("Provider write requires a pristine one-shot permit")
+        if (
+            (attempt.operation.value == "create") != (current.product_id is None)
+            or attempt.product_id != current.product_id
+            or attempt.prior_payload_fingerprint != current.provider_payload_fingerprint
+            or not updated.provider_outcome_unconfirmed
+            or updated.upload_outcome_unconfirmed
+        ):
+            raise InvalidControlStateError("Provider write operation does not match job authority")
+    elif commit.provider_write_attempt is not None:
+        raise InvalidControlStateError("Provider write proof must advance attempt authority")
+    elif commit.provider_write_retry_basis is not None:
+        raise InvalidControlStateError("Provider retry proof requires a new write attempt")
+    elif commit.provider_call_permit is not None and not new_upload_attempt:
+        raise InvalidControlStateError("A provider permit requires a new write attempt")
+    if (
+        current.product_create_attempt_id is None
+        and updated.product_create_attempt_id is not None
+        and commit.provider_write_attempt is None
+    ):
+        raise InvalidControlStateError("Initial create authority requires an immutable attempt")
     current_sync_authority = (
         current.product_sync_id,
         current.synchronized_review_version,
@@ -313,18 +597,56 @@ def validate_command_commit(commit: CommandCommit) -> None:
             or updated.product_id != sync.product_id
             or updated.synchronized_review_version != sync.review_version
             or updated.product_sync_fingerprint != sync.fingerprint
+            or updated.provider_payload_fingerprint != sync.payload_fingerprint
         ):
             raise InvalidControlStateError("The product synchronization does not match the job")
+    elif updated.provider_payload_fingerprint != current.provider_payload_fingerprint:
+        raise InvalidControlStateError("Provider payload authority requires synchronization proof")
+    if commit.reconciliation_observation is not None:
+        observation = commit.reconciliation_observation
+        if (
+            observation.job_id != updated.job_id
+            or observation.attempt_id != current.provider_write_attempt_id
+            or commit.work_update is None
+            or observation.work_request_id != commit.work_update[0].work_request_id
+        ):
+            raise InvalidControlStateError("Reconciliation evidence does not bind exact work")
+    if commit.upload_reconciliation_observation is not None:
+        observation = commit.upload_reconciliation_observation
+        if (
+            observation.job_id != updated.job_id
+            or observation.attempt_id != current.provider_upload_attempt_id
+            or commit.work_update is None
+            or observation.work_request_id != commit.work_update[0].work_request_id
+        ):
+            raise InvalidControlStateError(
+                "Upload reconciliation evidence does not bind exact work"
+            )
+    if (commit.pricing_snapshot is None) != (commit.pricing_evidence is None):
+        raise InvalidControlStateError(
+            "Pricing authority requires both its snapshot and complete evidence"
+        )
     if commit.pricing_snapshot is not None:
         pricing = commit.pricing_snapshot
+        evidence = commit.pricing_evidence
+        assert evidence is not None
         if (
             pricing.job_id != updated.job_id
             or updated.pricing_snapshot_id != pricing.snapshot_id
             or updated.pricing_snapshot_fingerprint != pricing.fingerprint
             or pricing.review_version != updated.review_version
             or pricing.product_sync_fingerprint != updated.product_sync_fingerprint
+            or evidence.snapshot_id != pricing.snapshot_id
+            or evidence.job_id != pricing.job_id
+            or evidence.review_version != pricing.review_version
+            or evidence.product_sync_fingerprint != pricing.product_sync_fingerprint
+            or evidence.fingerprint != pricing.fingerprint
+            or evidence.created_at != pricing.created_at
+            or evidence.estimate.fresh_until != pricing.fresh_until
         ):
-            raise InvalidControlStateError("The pricing snapshot does not match the job")
+            raise InvalidControlStateError(
+                "The pricing snapshot and complete evidence do not match the job"
+            )
     current_pricing_authority = (
         current.pricing_snapshot_id,
         current.pricing_snapshot_fingerprint,
@@ -485,11 +807,38 @@ class SellerControlStore(Protocol):
 
     def get_review(self, job_id: str, review_version: int) -> ReviewContent: ...
 
+    def get_source_artifact(self, job_id: str) -> SourceArtifactRecord: ...
+
+    def get_artwork_analysis(self, job_id: str, analysis_id: str) -> ArtworkAnalysisRecord: ...
+
+    def get_agent_evidence(self, job_id: str, evidence_id: str) -> AgentPreparationEvidence: ...
+
     def get_product_sync(self, job_id: str, sync_id: str) -> ProductSyncRecord: ...
+
+    def get_provider_upload_attempt(
+        self, job_id: str, attempt_id: str
+    ) -> ProviderUploadAttempt: ...
+
+    def get_uploaded_artwork(self, job_id: str, upload_id: str) -> UploadedArtworkRecord: ...
 
     def get_pricing(self, job_id: str, snapshot_id: str) -> PricingSnapshot: ...
 
+    def get_pricing_evidence(self, job_id: str, snapshot_id: str) -> PricingEvidenceRecord: ...
+
     def get_failure(self, job_id: str, failure_id: str) -> FailureRecord: ...
+
+    def get_provider_write_attempt(self, job_id: str, attempt_id: str) -> ProviderWriteAttempt: ...
+
+    def get_provider_call_permit(self, job_id: str, attempt_id: str) -> ProviderCallPermit: ...
+
+    def consume_provider_call_permit(
+        self,
+        job: ControlJobRecord,
+        work: WorkRequest,
+        attempt_id: str,
+        *,
+        now: datetime,
+    ) -> ProviderCallPermit | None: ...
 
     def get_work_request(self, job_id: str, work_request_id: str) -> WorkRequest: ...
 
@@ -504,6 +853,7 @@ class SellerControlStore(Protocol):
         event: DomainEvent,
         receipt: CommandReceipt,
         work_request: WorkRequest | None = None,
+        source_artifact: SourceArtifactRecord | None = None,
     ) -> CommandReceipt: ...
 
     def commit_command(self, commit: CommandCommit) -> CommandReceipt: ...
@@ -519,11 +869,25 @@ class InMemorySellerControlStore:
     def __init__(self) -> None:
         self._lock = RLock()
         self._jobs: dict[str, ControlJobRecord] = {}
+        self._sources: dict[str, SourceArtifactRecord] = {}
+        self._artwork_analyses: dict[tuple[str, str], ArtworkAnalysisRecord] = {}
+        self._agent_evidence: dict[tuple[str, str], AgentPreparationEvidence] = {}
         self._reviews: dict[tuple[str, int], ReviewContent] = {}
         self._review_decisions: dict[str, ReviewDecisionRecord] = {}
         self._cancellation_decisions: dict[str, CancellationDecisionRecord] = {}
         self._product_syncs: dict[tuple[str, str], ProductSyncRecord] = {}
+        self._provider_upload_attempts: dict[tuple[str, str], ProviderUploadAttempt] = {}
+        self._uploaded_artwork: dict[tuple[str, str], UploadedArtworkRecord] = {}
+        self._provider_write_attempts: dict[tuple[str, str], ProviderWriteAttempt] = {}
+        self._provider_call_permits: dict[tuple[str, str], ProviderCallPermit] = {}
+        self._reconciliation_observations: dict[
+            tuple[str, str], ReconciliationObservationRecord
+        ] = {}
+        self._upload_reconciliation_observations: dict[
+            tuple[str, str], UploadReconciliationObservationRecord
+        ] = {}
         self._pricing: dict[tuple[str, str], PricingSnapshot] = {}
+        self._pricing_evidence: dict[tuple[str, str], PricingEvidenceRecord] = {}
         self._failures: dict[tuple[str, str], FailureRecord] = {}
         self._work: dict[tuple[str, str], WorkRequest] = {}
         self._events: dict[str, list[DomainEvent]] = defaultdict(list)
@@ -553,12 +917,47 @@ class InMemorySellerControlStore:
         except KeyError as error:
             raise NotFoundError("The requested review was not found") from error
 
+    def get_source_artifact(self, job_id: str) -> SourceArtifactRecord:
+        self.get_job(job_id)
+        try:
+            return self._sources[job_id]
+        except KeyError as error:
+            raise NotFoundError("The requested source artifact was not found") from error
+
+    def get_artwork_analysis(self, job_id: str, analysis_id: str) -> ArtworkAnalysisRecord:
+        self.get_job(job_id)
+        try:
+            return self._artwork_analyses[(job_id, analysis_id)]
+        except KeyError as error:
+            raise NotFoundError("The requested artwork analysis was not found") from error
+
+    def get_agent_evidence(self, job_id: str, evidence_id: str) -> AgentPreparationEvidence:
+        self.get_job(job_id)
+        try:
+            return self._agent_evidence[(job_id, evidence_id)]
+        except KeyError as error:
+            raise NotFoundError("The requested agent evidence was not found") from error
+
     def get_product_sync(self, job_id: str, sync_id: str) -> ProductSyncRecord:
         self.get_job(job_id)
         try:
             return self._product_syncs[(job_id, sync_id)]
         except KeyError as error:
             raise NotFoundError("The requested product synchronization was not found") from error
+
+    def get_provider_upload_attempt(self, job_id: str, attempt_id: str) -> ProviderUploadAttempt:
+        self.get_job(job_id)
+        try:
+            return self._provider_upload_attempts[(job_id, attempt_id)]
+        except KeyError as error:
+            raise NotFoundError("The requested provider upload attempt was not found") from error
+
+    def get_uploaded_artwork(self, job_id: str, upload_id: str) -> UploadedArtworkRecord:
+        self.get_job(job_id)
+        try:
+            return self._uploaded_artwork[(job_id, upload_id)]
+        except KeyError as error:
+            raise NotFoundError("The requested uploaded artwork was not found") from error
 
     def get_pricing(self, job_id: str, snapshot_id: str) -> PricingSnapshot:
         self.get_job(job_id)
@@ -567,12 +966,63 @@ class InMemorySellerControlStore:
         except KeyError as error:
             raise NotFoundError("The requested pricing snapshot was not found") from error
 
+    def get_pricing_evidence(self, job_id: str, snapshot_id: str) -> PricingEvidenceRecord:
+        self.get_job(job_id)
+        try:
+            return self._pricing_evidence[(job_id, snapshot_id)]
+        except KeyError as error:
+            raise NotFoundError("The requested pricing evidence was not found") from error
+
     def get_failure(self, job_id: str, failure_id: str) -> FailureRecord:
         self.get_job(job_id)
         try:
             return self._failures[(job_id, failure_id)]
         except KeyError as error:
             raise NotFoundError("The requested failure was not found") from error
+
+    def get_provider_write_attempt(self, job_id: str, attempt_id: str) -> ProviderWriteAttempt:
+        self.get_job(job_id)
+        try:
+            return self._provider_write_attempts[(job_id, attempt_id)]
+        except KeyError as error:
+            raise NotFoundError("The requested provider write attempt was not found") from error
+
+    def get_provider_call_permit(self, job_id: str, attempt_id: str) -> ProviderCallPermit:
+        self.get_job(job_id)
+        try:
+            return self._provider_call_permits[(job_id, attempt_id)]
+        except KeyError as error:
+            raise NotFoundError("The requested provider call permit was not found") from error
+
+    def consume_provider_call_permit(
+        self,
+        job: ControlJobRecord,
+        work: WorkRequest,
+        attempt_id: str,
+        *,
+        now: datetime,
+    ) -> ProviderCallPermit | None:
+        with self._lock:
+            if (
+                self._jobs.get(job.job_id) != job
+                or self._work.get((job.job_id, work.work_request_id)) != work
+                or job.active_work_request_id != work.work_request_id
+                or work.status not in {WorkRequestStatus.CLAIMED, WorkRequestStatus.DISPATCHED}
+            ):
+                return None
+            permit = self.get_provider_call_permit(job.job_id, attempt_id)
+            if permit.status is not ProviderCallPermitStatus.AVAILABLE:
+                return None
+            consumed = ProviderCallPermit.model_validate(
+                {
+                    **permit.model_dump(mode="python"),
+                    "status": ProviderCallPermitStatus.CONSUMED,
+                    "consumed_at": now,
+                    "consumed_work_request_id": work.work_request_id,
+                }
+            )
+            self._provider_call_permits[(job.job_id, attempt_id)] = consumed
+            return consumed
 
     def get_work_request(self, job_id: str, work_request_id: str) -> WorkRequest:
         self.get_job(job_id)
@@ -594,9 +1044,10 @@ class InMemorySellerControlStore:
         event: DomainEvent,
         receipt: CommandReceipt,
         work_request: WorkRequest | None = None,
+        source_artifact: SourceArtifactRecord | None = None,
     ) -> CommandReceipt:
         with self._lock:
-            validate_initial_job(job, event, receipt, work_request)
+            validate_initial_job(job, event, receipt, work_request, source_artifact)
             key = self._receipt_key(receipt)
             existing_receipt = self._receipts.get(key)
             if existing_receipt is not None:
@@ -611,6 +1062,8 @@ class InMemorySellerControlStore:
                 if (job.job_id, work_request.work_request_id) in self._work:
                     raise IdempotencyConflictError("The work request already exists")
             self._jobs[job.job_id] = job
+            assert source_artifact is not None
+            self._sources[job.job_id] = source_artifact
             self._events[job.job_id].append(event)
             self._receipts[key] = receipt
             if work_request is not None:
@@ -633,11 +1086,36 @@ class InMemorySellerControlStore:
                 raise ConcurrentControlModificationError(
                     "The job changed before the command could commit"
                 )
+            if commit.provider_write_retry_basis is not None:
+                retry_basis = commit.provider_write_retry_basis
+                if (
+                    self._provider_write_attempts.get(
+                        (commit.current.job_id, retry_basis.attempt_id)
+                    )
+                    != retry_basis
+                ):
+                    raise ConcurrentControlModificationError(
+                        "The provider retry basis changed before the command could commit"
+                    )
 
             immutable_keys: list[tuple[object, object]] = []
             if commit.review is not None:
                 immutable_keys.append(
                     (self._reviews, (commit.updated.job_id, commit.review.review_version))
+                )
+            if commit.artwork_analysis is not None:
+                immutable_keys.append(
+                    (
+                        self._artwork_analyses,
+                        (commit.updated.job_id, commit.artwork_analysis.analysis_id),
+                    )
+                )
+            if commit.agent_evidence is not None:
+                immutable_keys.append(
+                    (
+                        self._agent_evidence,
+                        (commit.updated.job_id, commit.agent_evidence.evidence_id),
+                    )
                 )
             if commit.review_decision is not None:
                 immutable_keys.append((self._review_decisions, commit.review_decision.decision_id))
@@ -649,9 +1127,64 @@ class InMemorySellerControlStore:
                 immutable_keys.append(
                     (self._product_syncs, (commit.updated.job_id, commit.product_sync.sync_id))
                 )
+            if commit.provider_upload_attempt is not None:
+                immutable_keys.append(
+                    (
+                        self._provider_upload_attempts,
+                        (commit.updated.job_id, commit.provider_upload_attempt.attempt_id),
+                    )
+                )
+            if commit.uploaded_artwork is not None:
+                immutable_keys.append(
+                    (
+                        self._uploaded_artwork,
+                        (commit.updated.job_id, commit.uploaded_artwork.upload_id),
+                    )
+                )
+            if commit.provider_write_attempt is not None:
+                immutable_keys.append(
+                    (
+                        self._provider_write_attempts,
+                        (commit.updated.job_id, commit.provider_write_attempt.attempt_id),
+                    )
+                )
+            if commit.provider_call_permit is not None:
+                immutable_keys.append(
+                    (
+                        self._provider_call_permits,
+                        (commit.updated.job_id, commit.provider_call_permit.attempt_id),
+                    )
+                )
+            if commit.reconciliation_observation is not None:
+                immutable_keys.append(
+                    (
+                        self._reconciliation_observations,
+                        (
+                            commit.updated.job_id,
+                            commit.reconciliation_observation.observation_id,
+                        ),
+                    )
+                )
+            if commit.upload_reconciliation_observation is not None:
+                immutable_keys.append(
+                    (
+                        self._upload_reconciliation_observations,
+                        (
+                            commit.updated.job_id,
+                            commit.upload_reconciliation_observation.observation_id,
+                        ),
+                    )
+                )
             if commit.pricing_snapshot is not None:
                 immutable_keys.append(
                     (self._pricing, (commit.updated.job_id, commit.pricing_snapshot.snapshot_id))
+                )
+            if commit.pricing_evidence is not None:
+                immutable_keys.append(
+                    (
+                        self._pricing_evidence,
+                        (commit.updated.job_id, commit.pricing_evidence.snapshot_id),
+                    )
                 )
             if commit.failure is not None:
                 immutable_keys.append(
@@ -669,12 +1202,31 @@ class InMemorySellerControlStore:
                     raise ConcurrentControlModificationError(
                         "The work request changed before the command could commit"
                     )
+            if commit.provider_call_permit_update is not None:
+                expected_permit, _retired_permit = commit.provider_call_permit_update
+                if (
+                    self._provider_call_permits.get(
+                        (expected_permit.job_id, expected_permit.attempt_id)
+                    )
+                    != expected_permit
+                ):
+                    raise ConcurrentControlModificationError(
+                        "The provider call permit changed before cancellation could commit"
+                    )
 
             self._jobs[commit.updated.job_id] = commit.updated
             self._events[commit.updated.job_id].append(commit.event)
             self._receipts[receipt_key] = commit.receipt
             if commit.review is not None:
                 self._reviews[(commit.updated.job_id, commit.review.review_version)] = commit.review
+            if commit.artwork_analysis is not None:
+                self._artwork_analyses[
+                    (commit.updated.job_id, commit.artwork_analysis.analysis_id)
+                ] = commit.artwork_analysis
+            if commit.agent_evidence is not None:
+                self._agent_evidence[(commit.updated.job_id, commit.agent_evidence.evidence_id)] = (
+                    commit.agent_evidence
+                )
             if commit.review_decision is not None:
                 self._review_decisions[commit.review_decision.decision_id] = commit.review_decision
             if commit.cancellation_decision is not None:
@@ -685,10 +1237,49 @@ class InMemorySellerControlStore:
                 self._product_syncs[(commit.updated.job_id, commit.product_sync.sync_id)] = (
                     commit.product_sync
                 )
+            if commit.provider_upload_attempt is not None:
+                self._provider_upload_attempts[
+                    (commit.updated.job_id, commit.provider_upload_attempt.attempt_id)
+                ] = commit.provider_upload_attempt
+            if commit.uploaded_artwork is not None:
+                self._uploaded_artwork[
+                    (commit.updated.job_id, commit.uploaded_artwork.upload_id)
+                ] = commit.uploaded_artwork
+            if commit.provider_write_attempt is not None:
+                self._provider_write_attempts[
+                    (commit.updated.job_id, commit.provider_write_attempt.attempt_id)
+                ] = commit.provider_write_attempt
+            if commit.provider_call_permit is not None:
+                self._provider_call_permits[
+                    (commit.updated.job_id, commit.provider_call_permit.attempt_id)
+                ] = commit.provider_call_permit
+            if commit.provider_call_permit_update is not None:
+                _expected_permit, retired_permit = commit.provider_call_permit_update
+                self._provider_call_permits[(retired_permit.job_id, retired_permit.attempt_id)] = (
+                    retired_permit
+                )
+            if commit.reconciliation_observation is not None:
+                self._reconciliation_observations[
+                    (
+                        commit.updated.job_id,
+                        commit.reconciliation_observation.observation_id,
+                    )
+                ] = commit.reconciliation_observation
+            if commit.upload_reconciliation_observation is not None:
+                self._upload_reconciliation_observations[
+                    (
+                        commit.updated.job_id,
+                        commit.upload_reconciliation_observation.observation_id,
+                    )
+                ] = commit.upload_reconciliation_observation
             if commit.pricing_snapshot is not None:
                 self._pricing[(commit.updated.job_id, commit.pricing_snapshot.snapshot_id)] = (
                     commit.pricing_snapshot
                 )
+            if commit.pricing_evidence is not None:
+                self._pricing_evidence[
+                    (commit.updated.job_id, commit.pricing_evidence.snapshot_id)
+                ] = commit.pricing_evidence
             if commit.failure is not None:
                 self._failures[(commit.updated.job_id, commit.failure.failure_id)] = commit.failure
             if commit.work_request is not None:

@@ -1,0 +1,54 @@
+{
+  "Comment": "Phase 6 bounded PREPARE execution",
+  "TimeoutSeconds": 900,
+  "StartAt": "RunPreparationDispatcher",
+  "States": {
+    "RunPreparationDispatcher": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${PreparationDispatchFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id",
+          "work_request_id.$": "$.work_request_id"
+        }
+      },
+      "ResultSelector": {"payload.$": "$.Payload"},
+      "ResultPath": "$.worker_result",
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.worker_error", "Next": "SettlePreparationFailure"}],
+      "Next": "SettlePreparationSuccess"
+    },
+    "SettlePreparationSuccess": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${SettlementFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id",
+          "work_request_id.$": "$.work_request_id",
+          "work_type": "prepare",
+          "worker_result.$": "$.worker_result.payload"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Retry": [{"ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2}],
+      "End": true
+    },
+    "SettlePreparationFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${SettlementFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id",
+          "work_request_id.$": "$.work_request_id",
+          "work_type": "prepare",
+          "worker_error_code.$": "$.worker_error.Error"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Retry": [{"ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2}],
+      "End": true
+    }
+  }
+}

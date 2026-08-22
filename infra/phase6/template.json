@@ -1,0 +1,495 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Transform": "AWS::Serverless-2016-10-31",
+  "Description": "Mr Lister Phase 6.2 durable seller-control scaffold",
+  "Parameters": {
+    "EnvironmentName": {
+      "Type": "String",
+      "Default": "dev",
+      "AllowedPattern": "^[a-z][a-z0-9-]{1,15}$"
+    },
+    "AgentCoreRuntimeArn": {
+      "Type": "String",
+      "AllowedPattern": "^arn:(aws|aws-us-gov|aws-cn):bedrock-agentcore:[a-z0-9-]+:[0-9]{12}:runtime/[A-Za-z0-9_-]+$",
+      "ConstraintDescription": "Supply one exact AgentCore runtime ARN. A blank value is not accepted."
+    },
+    "PrintifySecretArn": {
+      "Type": "String",
+      "AllowedPattern": "^arn:(aws|aws-us-gov|aws-cn):secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:mr-lister/[A-Za-z0-9/_-]+-[A-Za-z0-9]{6}$",
+      "ConstraintDescription": "Supply one exact Secrets Manager ARN. A blank value is not accepted."
+    }
+  },
+  "Globals": {
+    "Function": {
+      "Runtime": "python3.12",
+      "Architectures": ["arm64"],
+      "MemorySize": 256,
+      "Environment": {
+        "Variables": {
+          "MR_LISTER_PHASE6_SCAFFOLD_ONLY": "true",
+          "MR_LISTER_STATE_TABLE": {"Ref": "OperationalStateTable"},
+          "MR_LISTER_ARTIFACT_BUCKET": {"Ref": "PrivateArtifactBucket"}
+        }
+      }
+    }
+  },
+  "Resources": {
+    "PrivateArtifactBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {"Fn::Sub": "mr-lister-phase6-artifacts-${EnvironmentName}-${AWS::AccountId}-${AWS::Region}"},
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {"ServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "AbortIncompleteMultipartUploads",
+              "Status": "Enabled",
+              "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7}
+            }
+          ]
+        },
+        "OwnershipControls": {"Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]},
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "VersioningConfiguration": {"Status": "Enabled"},
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "DataClassification", "Value": "PrivateArtwork"}
+        ]
+      }
+    },
+    "PrivateArtifactBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {"Ref": "PrivateArtifactBucket"},
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {"Fn::GetAtt": ["PrivateArtifactBucket", "Arn"]},
+                {"Fn::Sub": "${PrivateArtifactBucket.Arn}/*"}
+              ],
+              "Condition": {"Bool": {"aws:SecureTransport": "false"}}
+            }
+          ]
+        }
+      }
+    },
+    "OperationalStateTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "TableName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}"},
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [
+          {"AttributeName": "PK", "AttributeType": "S"},
+          {"AttributeName": "SK", "AttributeType": "S"},
+          {"AttributeName": "dispatch_pk", "AttributeType": "S"},
+          {"AttributeName": "dispatch_sk", "AttributeType": "S"}
+        ],
+        "KeySchema": [
+          {"AttributeName": "PK", "KeyType": "HASH"},
+          {"AttributeName": "SK", "KeyType": "RANGE"}
+        ],
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "DueWorkIndex",
+            "KeySchema": [
+              {"AttributeName": "dispatch_pk", "KeyType": "HASH"},
+              {"AttributeName": "dispatch_sk", "KeyType": "RANGE"}
+            ],
+            "Projection": {"ProjectionType": "ALL"}
+          }
+        ],
+        "PointInTimeRecoverySpecification": {"PointInTimeRecoveryEnabled": true},
+        "SSESpecification": {"SSEEnabled": true},
+        "StreamSpecification": {"StreamViewType": "KEYS_ONLY"},
+        "TimeToLiveSpecification": {"AttributeName": "expires_at", "Enabled": true},
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "DataClassification", "Value": "OperationalState"}
+        ]
+      }
+    },
+
+    "DispatcherFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-dispatcher-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [
+          {
+            "PolicyName": "DispatchExactWorkTypes",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "WriteDispatcherLogs",
+                  "Effect": "Allow",
+                  "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                  "Resource": {"Fn::GetAtt": ["DispatcherLogGroup", "Arn"]}
+                },
+                {
+                  "Sid": "ReadOperationalStream",
+                  "Effect": "Allow",
+                  "Action": ["dynamodb:DescribeStream", "dynamodb:GetRecords", "dynamodb:GetShardIterator", "dynamodb:ListStreams"],
+                  "Resource": {"Fn::GetAtt": ["OperationalStateTable", "StreamArn"]}
+                },
+                {
+                  "Sid": "ClaimAndAcknowledgeDueWork",
+                  "Effect": "Allow",
+                  "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems"],
+                  "Resource": [
+                    {"Fn::GetAtt": ["OperationalStateTable", "Arn"]},
+                    {"Fn::Sub": "${OperationalStateTable.Arn}/index/DueWorkIndex"}
+                  ]
+                },
+                {
+                  "Sid": "StartOnlyPhase6Machines",
+                  "Effect": "Allow",
+                  "Action": "states:StartExecution",
+                  "Resource": [
+                    {"Ref": "PrepareStateMachine"},
+                    {"Ref": "SynchronizeProductStateMachine"},
+                    {"Ref": "ReconcileProductStateMachine"},
+                    {"Ref": "RefreshEconomicsStateMachine"}
+                  ]
+                },
+                {
+                  "Sid": "VerifyOnlyPhase6Executions",
+                  "Effect": "Allow",
+                  "Action": "states:DescribeExecution",
+                  "Resource": [
+                    {"Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:mr-lister-phase6-${EnvironmentName}-prepare:*"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:mr-lister-phase6-${EnvironmentName}-synchronize-product:*"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:mr-lister-phase6-${EnvironmentName}-reconcile-product:*"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:mr-lister-phase6-${EnvironmentName}-refresh-economics:*"}
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PreparationDispatchFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-preparation-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [
+          {
+            "PolicyName": "PrepareOnly",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {"Sid": "WritePreparationLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::GetAtt": ["PreparationDispatchLogGroup", "Arn"]}},
+                {"Sid": "VerifyPreparationAuthority", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:Query"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}},
+                {"Sid": "InvokeConfiguredStrandsRuntime", "Effect": "Allow", "Action": "bedrock-agentcore:InvokeAgentRuntime", "Resource": {"Ref": "AgentCoreRuntimeArn"}}
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ProviderDraftFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-provider-draft-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ProviderDraftOnly",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {"Sid": "WriteProviderLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::GetAtt": ["ProviderDraftLogGroup", "Arn"]}},
+                {"Sid": "ReadAndCommitProviderEvidence", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:TransactWriteItems"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}},
+                {"Sid": "ReadPinnedArtworkForProvider", "Effect": "Allow", "Action": "s3:GetObjectVersion", "Resource": {"Fn::Sub": "${PrivateArtifactBucket.Arn}/private/owners/*/jobs/*/source/source.png"}},
+                {"Sid": "ReadExactProviderCredential", "Effect": "Allow", "Action": ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"], "Resource": {"Ref": "PrintifySecretArn"}}
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "SettlementFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-settlement-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [
+          {
+            "PolicyName": "SettleApplicationStateOnly",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {"Sid": "WriteSettlementLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::GetAtt": ["SettlementLogGroup", "Arn"]}},
+                {"Sid": "ReadAndCommitSettlement", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:TransactWriteItems"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}}
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "DispatcherFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "DispatcherLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-dispatcher"},
+        "CodeUri": "lambda/",
+        "Handler": "phase6_lambda.dispatcher_handler",
+        "Role": {"Fn::GetAtt": ["DispatcherFunctionRole", "Arn"]},
+        "Timeout": 30,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_PREPARE_MACHINE_ARN": {"Ref": "PrepareStateMachine"},
+            "MR_LISTER_SYNCHRONIZE_PRODUCT_MACHINE_ARN": {"Ref": "SynchronizeProductStateMachine"},
+            "MR_LISTER_RECONCILE_PRODUCT_MACHINE_ARN": {"Ref": "ReconcileProductStateMachine"},
+            "MR_LISTER_REFRESH_ECONOMICS_MACHINE_ARN": {"Ref": "RefreshEconomicsStateMachine"}
+          }
+        },
+        "Events": {
+          "OperationalStateChanges": {
+            "Type": "DynamoDB",
+            "Properties": {
+              "Stream": {"Fn::GetAtt": ["OperationalStateTable", "StreamArn"]},
+              "StartingPosition": "LATEST",
+              "BatchSize": 25,
+              "BisectBatchOnFunctionError": true,
+              "MaximumRetryAttempts": 3,
+              "FilterCriteria": {
+                "Filters": [
+                  {
+                    "Pattern": "{\"dynamodb\":{\"Keys\":{\"SK\":{\"S\":[{\"prefix\":\"WORK#\"}]}}}}"
+                  }
+                ]
+              }
+            }
+          },
+          "DueWorkSweep": {
+            "Type": "Schedule",
+            "Properties": {
+              "Schedule": "rate(1 minute)",
+              "Enabled": true,
+              "Input": "{\"source\":\"due-work-sweeper\"}"
+            }
+          }
+        }
+      }
+    },
+    "PreparationDispatchFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "PreparationDispatchLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-preparation-dispatch"},
+        "CodeUri": "lambda/",
+        "Handler": "phase6_lambda.preparation_dispatch_handler",
+        "Role": {"Fn::GetAtt": ["PreparationDispatchFunctionRole", "Arn"]},
+        "Timeout": 600,
+        "Environment": {"Variables": {"MR_LISTER_AGENTCORE_RUNTIME_ARN": {"Ref": "AgentCoreRuntimeArn"}}}
+      }
+    },
+    "ProviderDraftFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "ProviderDraftLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-provider-draft"},
+        "CodeUri": "lambda/",
+        "Handler": "phase6_lambda.provider_draft_handler",
+        "Role": {"Fn::GetAtt": ["ProviderDraftFunctionRole", "Arn"]},
+        "Timeout": 600,
+        "Environment": {"Variables": {"MR_LISTER_PRINTIFY_SECRET_ARN": {"Ref": "PrintifySecretArn"}}}
+      }
+    },
+    "SettlementFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "SettlementLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-settlement"},
+        "CodeUri": "lambda/",
+        "Handler": "phase6_lambda.settlement_handler",
+        "Role": {"Fn::GetAtt": ["SettlementFunctionRole", "Arn"]},
+        "Timeout": 30
+      }
+    },
+
+    "DispatcherLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-dispatcher"}, "RetentionInDays": 14}
+    },
+    "PreparationDispatchLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-preparation-dispatch"}, "RetentionInDays": 14}
+    },
+    "ProviderDraftLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-provider-draft"}, "RetentionInDays": 14}
+    },
+    "SettlementLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-settlement"}, "RetentionInDays": 14}
+    },
+    "PrepareWorkflowLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/vendedlogs/states/mr-lister-phase6-${EnvironmentName}-prepare"}, "RetentionInDays": 14}
+    },
+    "SynchronizeProductWorkflowLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/vendedlogs/states/mr-lister-phase6-${EnvironmentName}-synchronize-product"}, "RetentionInDays": 14}
+    },
+    "ReconcileProductWorkflowLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/vendedlogs/states/mr-lister-phase6-${EnvironmentName}-reconcile-product"}, "RetentionInDays": 14}
+    },
+    "RefreshEconomicsWorkflowLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/vendedlogs/states/mr-lister-phase6-${EnvironmentName}-refresh-economics"}, "RetentionInDays": 14}
+    },
+
+    "PrepareStateMachineRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-prepare-machine-role"},
+        "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "states.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+        "Policies": [{"PolicyName": "InvokePrepareAndSettlement", "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+          {"Effect": "Allow", "Action": "lambda:InvokeFunction", "Resource": [{"Fn::GetAtt": ["PreparationDispatchFunction", "Arn"]}, {"Fn::GetAtt": ["SettlementFunction", "Arn"]}]},
+          {"Effect": "Allow", "Action": ["logs:CreateLogDelivery", "logs:GetLogDelivery", "logs:UpdateLogDelivery", "logs:DeleteLogDelivery", "logs:ListLogDeliveries", "logs:PutResourcePolicy", "logs:DescribeResourcePolicies", "logs:DescribeLogGroups"], "Resource": "*"}
+        ]}}]
+      }
+    },
+    "SynchronizeProductStateMachineRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-synchronize-machine-role"},
+        "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "states.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+        "Policies": [{"PolicyName": "InvokeProviderAndSettlement", "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+          {"Effect": "Allow", "Action": "lambda:InvokeFunction", "Resource": [{"Fn::GetAtt": ["ProviderDraftFunction", "Arn"]}, {"Fn::GetAtt": ["SettlementFunction", "Arn"]}]},
+          {"Effect": "Allow", "Action": ["logs:CreateLogDelivery", "logs:GetLogDelivery", "logs:UpdateLogDelivery", "logs:DeleteLogDelivery", "logs:ListLogDeliveries", "logs:PutResourcePolicy", "logs:DescribeResourcePolicies", "logs:DescribeLogGroups"], "Resource": "*"}
+        ]}}]
+      }
+    },
+    "ReconcileProductStateMachineRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-reconcile-machine-role"},
+        "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "states.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+        "Policies": [{"PolicyName": "InvokeProviderAndSettlement", "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+          {"Effect": "Allow", "Action": "lambda:InvokeFunction", "Resource": [{"Fn::GetAtt": ["ProviderDraftFunction", "Arn"]}, {"Fn::GetAtt": ["SettlementFunction", "Arn"]}]},
+          {"Effect": "Allow", "Action": ["logs:CreateLogDelivery", "logs:GetLogDelivery", "logs:UpdateLogDelivery", "logs:DeleteLogDelivery", "logs:ListLogDeliveries", "logs:PutResourcePolicy", "logs:DescribeResourcePolicies", "logs:DescribeLogGroups"], "Resource": "*"}
+        ]}}]
+      }
+    },
+    "RefreshEconomicsStateMachineRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-economics-machine-role"},
+        "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "states.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+        "Policies": [{"PolicyName": "InvokeSettlement", "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+          {"Effect": "Allow", "Action": "lambda:InvokeFunction", "Resource": [{"Fn::GetAtt": ["ProviderDraftFunction", "Arn"]}, {"Fn::GetAtt": ["SettlementFunction", "Arn"]}]},
+          {"Effect": "Allow", "Action": ["logs:CreateLogDelivery", "logs:GetLogDelivery", "logs:UpdateLogDelivery", "logs:DeleteLogDelivery", "logs:ListLogDeliveries", "logs:PutResourcePolicy", "logs:DescribeResourcePolicies", "logs:DescribeLogGroups"], "Resource": "*"}
+        ]}}]
+      }
+    },
+
+    "PrepareStateMachine": {
+      "Type": "AWS::Serverless::StateMachine",
+      "Properties": {
+        "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-prepare"},
+        "Type": "STANDARD",
+        "DefinitionUri": "statemachine/prepare.asl.json",
+        "DefinitionSubstitutions": {
+          "PreparationDispatchFunctionArn": {"Fn::GetAtt": ["PreparationDispatchFunction", "Arn"]},
+          "SettlementFunctionArn": {"Fn::GetAtt": ["SettlementFunction", "Arn"]}
+        },
+        "Role": {"Fn::GetAtt": ["PrepareStateMachineRole", "Arn"]},
+        "Logging": {"Destinations": [{"CloudWatchLogsLogGroup": {"LogGroupArn": {"Fn::GetAtt": ["PrepareWorkflowLogGroup", "Arn"]}}}], "IncludeExecutionData": false, "Level": "ERROR"}
+      }
+    },
+    "SynchronizeProductStateMachine": {
+      "Type": "AWS::Serverless::StateMachine",
+      "Properties": {
+        "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-synchronize-product"},
+        "Type": "STANDARD",
+        "DefinitionUri": "statemachine/synchronize-product.asl.json",
+        "DefinitionSubstitutions": {
+          "ProviderDraftFunctionArn": {"Fn::GetAtt": ["ProviderDraftFunction", "Arn"]},
+          "SettlementFunctionArn": {"Fn::GetAtt": ["SettlementFunction", "Arn"]}
+        },
+        "Role": {"Fn::GetAtt": ["SynchronizeProductStateMachineRole", "Arn"]},
+        "Logging": {"Destinations": [{"CloudWatchLogsLogGroup": {"LogGroupArn": {"Fn::GetAtt": ["SynchronizeProductWorkflowLogGroup", "Arn"]}}}], "IncludeExecutionData": false, "Level": "ERROR"}
+      }
+    },
+    "ReconcileProductStateMachine": {
+      "Type": "AWS::Serverless::StateMachine",
+      "Properties": {
+        "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-reconcile-product"},
+        "Type": "STANDARD",
+        "DefinitionUri": "statemachine/reconcile-product.asl.json",
+        "DefinitionSubstitutions": {
+          "ProviderDraftFunctionArn": {"Fn::GetAtt": ["ProviderDraftFunction", "Arn"]},
+          "SettlementFunctionArn": {"Fn::GetAtt": ["SettlementFunction", "Arn"]}
+        },
+        "Role": {"Fn::GetAtt": ["ReconcileProductStateMachineRole", "Arn"]},
+        "Logging": {"Destinations": [{"CloudWatchLogsLogGroup": {"LogGroupArn": {"Fn::GetAtt": ["ReconcileProductWorkflowLogGroup", "Arn"]}}}], "IncludeExecutionData": false, "Level": "ERROR"}
+      }
+    },
+    "RefreshEconomicsStateMachine": {
+      "Type": "AWS::Serverless::StateMachine",
+      "Properties": {
+        "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-refresh-economics"},
+        "Type": "STANDARD",
+        "DefinitionUri": "statemachine/refresh-economics.asl.json",
+        "DefinitionSubstitutions": {
+          "ProviderDraftFunctionArn": {"Fn::GetAtt": ["ProviderDraftFunction", "Arn"]},
+          "SettlementFunctionArn": {"Fn::GetAtt": ["SettlementFunction", "Arn"]}
+        },
+        "Role": {"Fn::GetAtt": ["RefreshEconomicsStateMachineRole", "Arn"]},
+        "Logging": {"Destinations": [{"CloudWatchLogsLogGroup": {"LogGroupArn": {"Fn::GetAtt": ["RefreshEconomicsWorkflowLogGroup", "Arn"]}}}], "IncludeExecutionData": false, "Level": "ERROR"}
+      }
+    }
+  },
+  "Outputs": {
+    "DeploymentReadiness": {
+      "Description": "This stack is an infrastructure scaffold until the Phase 6 package handlers replace the fail-closed shims.",
+      "Value": "SCAFFOLD_ONLY"
+    },
+    "StateTableName": {"Value": {"Ref": "OperationalStateTable"}},
+    "ArtifactBucketName": {"Value": {"Ref": "PrivateArtifactBucket"}},
+    "PrepareStateMachineArn": {"Value": {"Ref": "PrepareStateMachine"}},
+    "SynchronizeProductStateMachineArn": {"Value": {"Ref": "SynchronizeProductStateMachine"}},
+    "ReconcileProductStateMachineArn": {"Value": {"Ref": "ReconcileProductStateMachine"}},
+    "RefreshEconomicsStateMachineArn": {"Value": {"Ref": "RefreshEconomicsStateMachine"}}
+  }
+}

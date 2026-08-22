@@ -13,6 +13,7 @@ from mr_lister.control.errors import (
 )
 from mr_lister.control.models import (
     CONTROL_NEW_WORK_BY_STATE,
+    PHASE6_MAX_SOURCE_ARTWORK_BYTES,
     CancellationDecisionRecord,
     CommandReceipt,
     CommandResponse,
@@ -21,6 +22,7 @@ from mr_lister.control.models import (
     DomainEvent,
     ReviewActor,
     ReviewContent,
+    SourceArtifactRecord,
     WorkRequest,
     WorkRequestStatus,
     WorkType,
@@ -38,6 +40,7 @@ OTHER_OWNER = "f" * 64
 REVIEW_FP = "b" * 64
 REQUEST_FP = "c" * 64
 KEY_DIGEST = "d" * 64
+SOURCE_FP = "e" * 64
 
 
 class _NoDynamoWrites:
@@ -91,10 +94,46 @@ def make_job(
         job_id="job_phase6_store",
         state=state,
         event_sequence=event_sequence,
+        source_artifact_fingerprint=SOURCE_FP,
         active_work_request_id=active_work_request_id,
         created_at=NOW,
         updated_at=NOW,
     )
+
+
+def make_source(job: ControlJobRecord) -> SourceArtifactRecord:
+    return SourceArtifactRecord(
+        job_id=job.job_id,
+        owner_id=job.owner_id,
+        fingerprint=SOURCE_FP,
+        bucket="mr-lister-phase6-artifacts-test",
+        object_key=(f"private/owners/{job.owner_id}/jobs/{job.job_id}/source/source.png"),
+        version_id="source-version-1",
+        content_sha256="1" * 64,
+        size_bytes=128,
+        product_profile_id="profile_test",
+        product_profile_version=1,
+        product_profile_fingerprint="2" * 64,
+        created_at=NOW,
+    )
+
+
+def test_source_artifact_size_matches_phase6_upload_transport_boundary() -> None:
+    job = make_job(active_work_request_id="work_prepare")
+    material = make_source(job).model_dump(exclude={"size_bytes"})
+
+    assert (
+        SourceArtifactRecord(
+            **material,
+            size_bytes=PHASE6_MAX_SOURCE_ARTWORK_BYTES,
+        ).size_bytes
+        == PHASE6_MAX_SOURCE_ARTWORK_BYTES
+    )
+    with pytest.raises(ValueError):
+        SourceArtifactRecord(
+            **material,
+            size_bytes=PHASE6_MAX_SOURCE_ARTWORK_BYTES + 1,
+        )
 
 
 def make_response(job: ControlJobRecord, *, work_id: str | None = None) -> CommandResponse:
@@ -184,7 +223,13 @@ def create_seed_job(
         work_id=work_id,
     )
     work = None if work_due is None else make_work(job, receipt, due=work_due)
-    store.create_job(job=job, event=make_event(job), receipt=receipt, work_request=work)
+    store.create_job(
+        job=job,
+        event=make_event(job),
+        receipt=receipt,
+        work_request=work,
+        source_artifact=make_source(job),
+    )
     return job, receipt, work
 
 
@@ -273,6 +318,7 @@ def test_create_job_exact_replay_returns_receipt_and_changed_request_conflicts()
             event=make_event(job),
             receipt=receipt,
             work_request=work,
+            source_artifact=make_source(job),
         )
         == receipt
     )
@@ -285,6 +331,7 @@ def test_create_job_exact_replay_returns_receipt_and_changed_request_conflicts()
             event=make_event(job),
             receipt=changed,
             work_request=work,
+            source_artifact=make_source(job),
         )
 
 
@@ -316,6 +363,7 @@ def test_create_job_rejects_work_for_the_wrong_machine() -> None:
             event=make_event(job),
             receipt=receipt,
             work_request=wrong_work,
+            source_artifact=make_source(job),
         )
 
 
@@ -346,6 +394,7 @@ def test_create_job_rejects_non_pristine_outbox_work(updates: dict[str, object])
             event=make_event(job),
             receipt=receipt,
             work_request=non_pristine,
+            source_artifact=make_source(job),
         )
 
     with pytest.raises(NotFoundError):

@@ -197,9 +197,8 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [x] Deterministic allowlisted dispatcher with fast-worker and ambiguous-start recovery
     - [x] Terminal approval, cancellation dominance, closed retry policy, and one-product authority
     - Evidence: [`phase6-lifecycle-implementation.md`](phase6-lifecycle-implementation.md), 100
-      focused Phase 6 tests, and the full offline suite passing 306 tests with 11 explicitly gated
-      live-Bedrock tests skipped. No provider, deployment, publication, order, or fulfillment call
-      ran in this slice.
+      focused Phase 6.1 tests. No provider, deployment, publication, order, or fulfillment call ran
+      in that slice.
   - [ ] Required Strands production and submission path (blocking Phase 6 exit)
     - [x] Real `strands.Agent`, four job-scoped `@tool` functions, bounded structured output, and
       deployed AgentCore synthetic canary
@@ -212,6 +211,21 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [ ] End-to-end acceptance proves upload -> Strands model/tool loop -> structured preparation
       decision -> staged listing -> human decision gate
   - [ ] Phase 6.2 same-product Printify synchronization and reconciliation
+    - [x] Pinned-source producer and checkpointed real-Strands preparation path with exact
+      AgentCore response/correlation contracts and no non-Strands fallback
+    - [x] One-shot, source-bound upload with exact GET readback, revision reuse, permit retirement,
+      and bounded GET-only ambiguity recovery
+    - [x] Exactly one initial product POST, later same-ID PUT, exact-prior drift guard, exact final
+      readback, and bounded reconciliation without blind mutation retry
+    - [x] Read-only current-cost and standard-U.S. shipping retrieval with immutable
+      `etsy-us-standard-v1` per-variant proceeds evidence
+    - [x] Separately named Phase 6 SAM topology, least-capability role assertions, keys-only filtered
+      dispatch stream, four Standard machines, SAM lint, and SAM build
+    - [x] Offline gate: 557 tests passed, including 347 Phase 6 tests; 11 explicitly gated live
+      Bedrock tests skipped; Ruff lint/format and `git diff --check` passed
+    - [ ] Replace fail-closed `SCAFFOLD_ONLY` Lambda shims, deploy the Phase 6 runtime/stack, and pass
+      same-job Strands plus one-unpublished-product live acceptance
+    - Evidence: [`phase6-provider-integration.md`](phase6-provider-integration.md).
   - [ ] Phase 6.3 consolidated artwork, listing, mockup, product, validation, and
     estimated-proceeds projection
   - [ ] Phase 6.4 Cognito identity, private direct upload, and owner-scoped cloud API

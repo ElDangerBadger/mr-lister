@@ -8,10 +8,12 @@ from typing import Annotated, Literal
 
 from pydantic import Field, StringConstraints, model_validator
 
-from mr_lister.contracts import ContractModel
+from mr_lister.contracts import ArtworkAnalysis, ContractModel
+from mr_lister.control.economics import EtsyUsStandardEstimate
 
 CONTROL_CONTRACT_VERSION = "2.0.0"
 ControlContractVersion = Literal["2.0.0"]
+PHASE6_MAX_SOURCE_ARTWORK_BYTES = 5 * 1024 * 1024
 
 SafeId = Annotated[
     str,
@@ -83,7 +85,9 @@ CONTROL_ALLOWED_TRANSITIONS: dict[ControlJobState, frozenset[ControlJobState]] =
     ),
     ControlJobState.PRODUCT_DRAFT_SYNCING: frozenset(
         {
+            ControlJobState.PRODUCT_DRAFT_SYNCING,
             ControlJobState.AWAITING_APPROVAL,
+            ControlJobState.PRICING_REFRESHING,
             ControlJobState.RECONCILIATION_REQUIRED,
             ControlJobState.CANCEL_REQUESTED,
             ControlJobState.CANCELLED,
@@ -114,6 +118,7 @@ CONTROL_ALLOWED_TRANSITIONS: dict[ControlJobState, frozenset[ControlJobState]] =
             ControlJobState.RECONCILIATION_REQUIRED,
             ControlJobState.PRODUCT_DRAFT_SYNCING,
             ControlJobState.AWAITING_APPROVAL,
+            ControlJobState.PRICING_REFRESHING,
             ControlJobState.CANCEL_REQUESTED,
             ControlJobState.CANCELLED,
             ControlJobState.FAILED_TERMINAL,
@@ -122,6 +127,7 @@ CONTROL_ALLOWED_TRANSITIONS: dict[ControlJobState, frozenset[ControlJobState]] =
     ControlJobState.FAILED_RETRYABLE: frozenset(
         {
             ControlJobState.ANALYZING_ARTWORK,
+            ControlJobState.LISTING_DRAFTED,
             ControlJobState.PRODUCT_DRAFT_SYNCING,
             ControlJobState.PRICING_REFRESHING,
             ControlJobState.RECONCILIATION_REQUIRED,
@@ -172,9 +178,31 @@ class WorkRequestStatus(StrEnum):
 
 class RecoveryAction(StrEnum):
     RETRY_PREPARATION = "retry_preparation"
+    RETRY_AGENT_DECISION = "retry_agent_decision"
     RETRY_PRODUCT_SYNC = "retry_product_sync"
     RETRY_RECONCILIATION = "retry_reconciliation"
     RETRY_PRICING = "retry_pricing"
+
+
+class ProviderWriteOperation(StrEnum):
+    CREATE = "create"
+    UPDATE = "update"
+
+
+class ProviderCallPermitStatus(StrEnum):
+    AVAILABLE = "available"
+    CONSUMED = "consumed"
+    RETIRED = "retired"
+
+
+class ReconciliationOutcome(StrEnum):
+    TARGET_MATCH = "target_match"
+    PRIOR_MATCH = "prior_match"
+    NO_MATCH = "no_match"
+    MISSING = "missing"
+    MULTIPLE_MATCHES = "multiple_matches"
+    CONFLICT = "conflict"
+    UNAVAILABLE = "unavailable"
 
 
 CONTROL_NEW_WORK_BY_STATE: dict[ControlJobState, WorkType] = {
@@ -189,6 +217,10 @@ CONTROL_NEW_WORK_BY_STATE: dict[ControlJobState, WorkType] = {
 CONTROL_RECOVERY_BINDINGS: dict[RecoveryAction, tuple[ControlJobState, WorkType]] = {
     RecoveryAction.RETRY_PREPARATION: (
         ControlJobState.ANALYZING_ARTWORK,
+        WorkType.PREPARE,
+    ),
+    RecoveryAction.RETRY_AGENT_DECISION: (
+        ControlJobState.LISTING_DRAFTED,
         WorkType.PREPARE,
     ),
     RecoveryAction.RETRY_PRODUCT_SYNC: (
@@ -215,7 +247,13 @@ class ControlJobRecord(ControlModel):
     review_version: int = Field(default=0, ge=0)
     review_fingerprint: Fingerprint | None = None
     review_validated: bool = False
+    source_artifact_fingerprint: Fingerprint | None = None
+    artwork_analysis_id: SafeId | None = None
+    artwork_analysis_fingerprint: Fingerprint | None = None
+    agent_evidence_id: SafeId | None = None
+    agent_evidence_fingerprint: Fingerprint | None = None
     product_id: SafeId | None = None
+    provider_payload_fingerprint: Fingerprint | None = None
     product_sync_id: SafeId | None = None
     synchronized_review_version: int | None = Field(default=None, ge=1)
     product_sync_fingerprint: Fingerprint | None = None
@@ -225,9 +263,16 @@ class ControlJobRecord(ControlModel):
     approved_review_fingerprint: Fingerprint | None = None
     approval_fingerprint: Fingerprint | None = None
     active_work_request_id: SafeId | None = None
+    provider_upload_attempt_id: SafeId | None = None
+    uploaded_artwork_id: SafeId | None = None
+    uploaded_image_id: SafeId | None = None
+    uploaded_artwork_fingerprint: Fingerprint | None = None
+    provider_write_attempt_id: SafeId | None = None
+    product_create_attempt_id: SafeId | None = None
     failure_id: SafeId | None = None
     cancellation_requested_at: datetime | None = None
     provider_outcome_unconfirmed: bool = False
+    upload_outcome_unconfirmed: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -237,6 +282,33 @@ class ControlJobRecord(ControlModel):
             raise ValueError("updated_at cannot precede created_at")
         if (self.review_version == 0) != (self.review_fingerprint is None):
             raise ValueError("Review version zero must have no review fingerprint")
+        analysis_fields = (self.artwork_analysis_id, self.artwork_analysis_fingerprint)
+        if any(value is not None for value in analysis_fields) and not all(
+            value is not None for value in analysis_fields
+        ):
+            raise ValueError("Artwork analysis authority fields are all-or-none")
+        agent_fields = (self.agent_evidence_id, self.agent_evidence_fingerprint)
+        if any(value is not None for value in agent_fields) and not all(
+            value is not None for value in agent_fields
+        ):
+            raise ValueError("Agent evidence authority fields are all-or-none")
+        upload_fields = (
+            self.uploaded_artwork_id,
+            self.uploaded_image_id,
+            self.uploaded_artwork_fingerprint,
+        )
+        if any(value is not None for value in upload_fields) and not all(
+            value is not None for value in upload_fields
+        ):
+            raise ValueError("Uploaded artwork authority fields are all-or-none")
+        if self.uploaded_artwork_id is not None and self.provider_upload_attempt_id is None:
+            raise ValueError("Uploaded artwork requires its immutable upload attempt")
+        if self.upload_outcome_unconfirmed and self.uploaded_artwork_id is not None:
+            raise ValueError("An unconfirmed upload cannot already have confirmed authority")
+        if self.upload_outcome_unconfirmed and self.provider_upload_attempt_id is None:
+            raise ValueError("Upload uncertainty requires an immutable upload attempt")
+        if self.upload_outcome_unconfirmed and self.provider_outcome_unconfirmed:
+            raise ValueError("Upload and product-write uncertainty are mutually exclusive")
         sync_fields = (
             self.product_sync_id,
             self.synchronized_review_version,
@@ -324,16 +396,230 @@ class ReviewContent(ControlModel):
         return self
 
 
+class SourceArtifactRecord(ControlModel):
+    """Pinned, owner-scoped source used by the durable preparation runtime."""
+
+    job_id: SafeId
+    owner_id: OwnerId
+    fingerprint: Fingerprint
+    bucket: NonEmptyText
+    object_key: NonEmptyText
+    version_id: NonEmptyText
+    content_sha256: Fingerprint
+    size_bytes: int = Field(gt=0, le=PHASE6_MAX_SOURCE_ARTWORK_BYTES)
+    media_type: Literal["image/png"] = "image/png"
+    product_profile_id: SafeId
+    product_profile_version: int = Field(ge=1)
+    product_profile_fingerprint: Fingerprint
+    created_at: datetime
+
+    @model_validator(mode="after")
+    def object_key_is_scoped_to_exact_owner_and_job(self) -> SourceArtifactRecord:
+        expected = f"private/owners/{self.owner_id}/jobs/{self.job_id}/source/source.png"
+        if self.object_key != expected:
+            raise ValueError("Source artifact key must bind the exact owner and job")
+        return self
+
+
+class ArtworkAnalysisRecord(ControlModel):
+    analysis_id: SafeId
+    job_id: SafeId
+    work_request_id: SafeId
+    source_artifact_fingerprint: Fingerprint
+    fingerprint: Fingerprint
+    analysis: ArtworkAnalysis
+    created_at: datetime
+
+
+AgentToolName = Literal["record_prepared_review"]
+
+
+class AgentPreparationEvidence(ControlModel):
+    evidence_id: SafeId
+    job_id: SafeId
+    work_request_id: SafeId
+    review_version: int = Field(ge=1)
+    correlation_id: Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{24}$")]
+    framework: Literal["strands-agents"]
+    agent_id: Literal["mr-lister-preparation"]
+    controller_model_id: NonEmptyText
+    tool_calls: tuple[AgentToolName, ...] = Field(min_length=1)
+    cycles: int = Field(ge=1, le=4)
+    input_tokens: int = Field(ge=0, le=12_000)
+    output_tokens: int = Field(ge=0, le=2_500)
+    total_tokens: int = Field(ge=0, le=12_000)
+    decision_fingerprint: Fingerprint
+    fingerprint: Fingerprint
+    requires_human_approval: Literal[True] = True
+    publication_authorized: Literal[False] = False
+    created_at: datetime
+
+    @model_validator(mode="after")
+    def token_totals_and_tools_are_coherent(self) -> AgentPreparationEvidence:
+        if self.total_tokens != self.input_tokens + self.output_tokens:
+            raise ValueError("Agent token total must equal input plus output")
+        if len(set(self.tool_calls)) != len(self.tool_calls):
+            raise ValueError("Agent tool evidence cannot repeat tool names")
+        if self.tool_calls != ("record_prepared_review",):
+            raise ValueError("Phase 6 evidence requires the exact Strands tool")
+        return self
+
+
+class ProviderWriteAttempt(ControlModel):
+    attempt_id: SafeId
+    job_id: SafeId
+    work_request_id: SafeId
+    review_version: int = Field(ge=1)
+    operation: ProviderWriteOperation
+    product_id: SafeId | None = None
+    image_id: SafeId
+    target_payload_fingerprint: Fingerprint
+    prior_payload_fingerprint: Fingerprint | None = None
+    correlation_token: Annotated[str, StringConstraints(pattern=r"^ml-[a-f0-9]{24}$")]
+    exact_retry_count: int = Field(default=0, ge=0, le=1)
+    reconciliation_deadline: datetime
+    started_at: datetime
+
+    @model_validator(mode="after")
+    def operation_authority_is_coherent(self) -> ProviderWriteAttempt:
+        if self.reconciliation_deadline <= self.started_at:
+            raise ValueError("Provider reconciliation deadline must follow the write start")
+        if self.operation is ProviderWriteOperation.CREATE:
+            if (
+                self.product_id is not None
+                or self.prior_payload_fingerprint is not None
+                or self.exact_retry_count != 0
+            ):
+                raise ValueError("Initial create cannot carry prior product authority")
+        elif self.product_id is None or self.prior_payload_fingerprint is None:
+            raise ValueError("Provider update must bind the exact prior product payload")
+        return self
+
+
+class ProviderUploadAttempt(ControlModel):
+    """Immutable authority for the only provider artwork POST allowed for a job."""
+
+    attempt_id: SafeId
+    job_id: SafeId
+    work_request_id: SafeId
+    source_artifact_fingerprint: Fingerprint
+    file_name: Annotated[
+        str,
+        StringConstraints(pattern=r"^mr-lister-[a-f0-9]{24}-[a-f0-9]{16}\.png$"),
+    ]
+    reconciliation_deadline: datetime
+    started_at: datetime
+
+    @model_validator(mode="after")
+    def deadline_follows_start(self) -> ProviderUploadAttempt:
+        if self.reconciliation_deadline <= self.started_at:
+            raise ValueError("Upload reconciliation deadline must follow the upload start")
+        return self
+
+
+class ProviderCallPermit(ControlModel):
+    """One-shot authorization consumed immediately before an external mutation."""
+
+    attempt_id: SafeId
+    job_id: SafeId
+    work_request_id: SafeId
+    status: ProviderCallPermitStatus = ProviderCallPermitStatus.AVAILABLE
+    created_at: datetime
+    consumed_at: datetime | None = None
+    consumed_work_request_id: SafeId | None = None
+    retired_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def consumption_time_matches_status(self) -> ProviderCallPermit:
+        consumed = self.status is ProviderCallPermitStatus.CONSUMED
+        retired = self.status is ProviderCallPermitStatus.RETIRED
+        if consumed != (self.consumed_at is not None and self.consumed_work_request_id is not None):
+            raise ValueError("Consumed provider call permits require time and active work proof")
+        if not consumed and (
+            self.consumed_at is not None or self.consumed_work_request_id is not None
+        ):
+            raise ValueError("Unconsumed provider call permits cannot carry consumption proof")
+        if retired != (self.retired_at is not None):
+            raise ValueError("Retired provider call permits require retirement time proof")
+        if consumed and self.retired_at is not None:
+            raise ValueError("Consumed provider call permits cannot also be retired")
+        if self.consumed_at is not None and self.consumed_at < self.created_at:
+            raise ValueError("Provider call permit cannot be consumed before creation")
+        if self.retired_at is not None and self.retired_at < self.created_at:
+            raise ValueError("Provider call permit cannot be retired before creation")
+        return self
+
+
+class UploadedArtworkRecord(ControlModel):
+    """Confirmed provider image authority, reused for every revision of one job."""
+
+    upload_id: SafeId
+    attempt_id: SafeId
+    job_id: SafeId
+    source_artifact_fingerprint: Fingerprint
+    image_id: SafeId
+    file_name: Annotated[
+        str,
+        StringConstraints(pattern=r"^mr-lister-[a-f0-9]{24}-[a-f0-9]{16}\.png$"),
+    ]
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+    size_bytes: int = Field(gt=0, le=PHASE6_MAX_SOURCE_ARTWORK_BYTES)
+    mime_type: Literal["image/png"] = "image/png"
+    fingerprint: Fingerprint
+    confirmed_at: datetime
+
+
+class UploadReconciliationObservationRecord(ControlModel):
+    observation_id: SafeId
+    job_id: SafeId
+    work_request_id: SafeId
+    attempt_id: SafeId
+    outcome: ReconciliationOutcome
+    observed_image_id: SafeId | None = None
+    observed_at: datetime
+
+
+class ProductVariantEvidence(ControlModel):
+    variant_id: int = Field(gt=0)
+    retail_price_cents: int = Field(gt=0)
+    production_cost_cents: int = Field(ge=0)
+
+
+class ReconciliationObservationRecord(ControlModel):
+    observation_id: SafeId
+    job_id: SafeId
+    work_request_id: SafeId
+    attempt_id: SafeId
+    outcome: ReconciliationOutcome
+    observed_product_id: SafeId | None = None
+    observed_payload_fingerprint: Fingerprint | None = None
+    observed_at: datetime
+
+
 class ProductSyncRecord(ControlModel):
     sync_id: SafeId
     job_id: SafeId
     review_version: int = Field(ge=1)
     product_id: SafeId
+    image_id: SafeId
     payload_fingerprint: Fingerprint
+    response_fingerprint: Fingerprint
     fingerprint: Fingerprint
+    mockup_urls: tuple[NonEmptyText, ...] = ()
+    variants: tuple[ProductVariantEvidence, ...] = Field(min_length=1)
     provider_locked: bool = False
     provider_published: bool = False
     synchronized_at: datetime
+
+    @model_validator(mode="after")
+    def variant_evidence_is_unique(self) -> ProductSyncRecord:
+        variant_ids = tuple(variant.variant_id for variant in self.variants)
+        if len(set(variant_ids)) != len(variant_ids):
+            raise ValueError("Product synchronization variants must be unique")
+        if self.provider_locked or self.provider_published:
+            raise ValueError("Only editable unpublished draft evidence can synchronize")
+        return self
 
 
 class PricingSnapshot(ControlModel):
@@ -350,6 +636,28 @@ class PricingSnapshot(ControlModel):
     def expiry_follows_creation(self) -> PricingSnapshot:
         if self.fresh_until <= self.created_at:
             raise ValueError("Pricing freshness must end after snapshot creation")
+        return self
+
+
+class PricingEvidenceRecord(ControlModel):
+    """Immutable, complete proceeds evidence paired one-to-one with a pricing snapshot."""
+
+    snapshot_id: SafeId
+    job_id: SafeId
+    review_version: int = Field(ge=1)
+    product_sync_fingerprint: Fingerprint
+    fingerprint: Fingerprint
+    estimate: EtsyUsStandardEstimate
+    created_at: datetime
+
+    @model_validator(mode="after")
+    def estimate_matches_record_authority(self) -> PricingEvidenceRecord:
+        if self.product_sync_fingerprint != self.estimate.product_sync_fingerprint:
+            raise ValueError("Pricing evidence changed product synchronization authority")
+        if self.fingerprint != self.estimate.fingerprint:
+            raise ValueError("Pricing evidence fingerprint must cover the complete estimate")
+        if self.created_at != self.estimate.calculated_at:
+            raise ValueError("Pricing evidence creation time must match its calculation")
         return self
 
 

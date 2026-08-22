@@ -1,0 +1,55 @@
+{
+  "Comment": "Phase 6 bounded same-product synchronization execution",
+  "TimeoutSeconds": 900,
+  "StartAt": "RunProviderDraftWorker",
+  "States": {
+    "RunProviderDraftWorker": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ProviderDraftFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id",
+          "work_request_id.$": "$.work_request_id",
+          "operation": "synchronize_product"
+        }
+      },
+      "ResultSelector": {"payload.$": "$.Payload"},
+      "ResultPath": "$.worker_result",
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.worker_error", "Next": "SettleProductSyncFailure"}],
+      "Next": "SettleProductSyncSuccess"
+    },
+    "SettleProductSyncSuccess": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${SettlementFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id",
+          "work_request_id.$": "$.work_request_id",
+          "work_type": "synchronize_product",
+          "worker_result.$": "$.worker_result.payload"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Retry": [{"ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2}],
+      "End": true
+    },
+    "SettleProductSyncFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${SettlementFunctionArn}",
+        "Payload": {
+          "job_id.$": "$.job_id",
+          "work_request_id.$": "$.work_request_id",
+          "work_type": "synchronize_product",
+          "worker_error_code.$": "$.worker_error.Error"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Retry": [{"ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2}],
+      "End": true
+    }
+  }
+}

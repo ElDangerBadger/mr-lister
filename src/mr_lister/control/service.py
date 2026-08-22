@@ -54,6 +54,8 @@ from mr_lister.control.models import (
     FailureRecord,
     PricingSnapshot,
     ProductSyncRecord,
+    ProviderCallPermit,
+    ProviderCallPermitStatus,
     RecoveryAction,
     ReviewActor,
     ReviewContent,
@@ -105,6 +107,12 @@ _RETRYABLE_FAILURES: Mapping[tuple[WorkType, WorkerFailureCode], _FailurePolicy]
         WorkType.REFRESH_ECONOMICS,
     ),
 }
+
+_RETRY_AGENT_DECISION_FAILURE = _FailurePolicy(
+    RecoveryAction.RETRY_AGENT_DECISION,
+    ControlJobState.LISTING_DRAFTED,
+    WorkType.PREPARE,
+)
 
 _PRODUCT_WRITE_WORK = frozenset({WorkType.SYNCHRONIZE_PRODUCT, WorkType.RECONCILE_PRODUCT})
 
@@ -216,11 +224,8 @@ class SellerControlService:
                 "review_version": next_version,
                 "review_fingerprint": next_review.fingerprint,
                 "review_validated": validation.passed,
-                # The provider product survives, but prior sync/economics no longer authorize
-                # the new review.
-                "product_sync_id": None,
-                "synchronized_review_version": None,
-                "product_sync_fingerprint": None,
+                # The prior synchronization no longer authorizes this new review, but remains
+                # the immutable provider basis needed to reconstruct and reconcile the PUT.
                 "pricing_snapshot_id": None,
                 "pricing_snapshot_fingerprint": None,
                 "approved_review_version": None,
@@ -402,6 +407,17 @@ class SellerControlService:
                 raise InvalidControlStateError("The job references work that is no longer active")
         active = existing_work is not None and not cancelled_pending_work
         target = ControlJobState.CANCEL_REQUESTED if active else ControlJobState.CANCELLED
+        permit_update = None
+        if target is ControlJobState.CANCELLED:
+            reconciliation_required, permit_update = self._cancellation_reconciliation_authority(
+                current,
+                existing_work,
+                now=now,
+            )
+            if reconciliation_required:
+                raise InvalidControlStateError(
+                    "Consumed provider uncertainty requires active reconciliation"
+                )
         receipt_id = self._receipt_id(
             command.owner_id,
             command_type,
@@ -420,6 +436,16 @@ class SellerControlService:
                     else None
                 ),
                 "cancellation_requested_at": now,
+                "provider_outcome_unconfirmed": (
+                    current.provider_outcome_unconfirmed
+                    if target is ControlJobState.CANCEL_REQUESTED
+                    else False
+                ),
+                "upload_outcome_unconfirmed": (
+                    current.upload_outcome_unconfirmed
+                    if target is ControlJobState.CANCEL_REQUESTED
+                    else False
+                ),
                 "updated_at": now,
             },
         )
@@ -460,6 +486,7 @@ class SellerControlService:
                 ),
                 receipt=receipt,
                 cancellation_decision=cancellation,
+                provider_call_permit_update=permit_update,
                 work_update=work_update,
             )
         ).response
@@ -561,10 +588,9 @@ class SellerControlService:
         now = self._now()
         receipt_id = self._receipt_id(current.owner_id, command_type, current.job_id, key_digest)
         failure_code = command.code
-        if (
-            command.code is WorkerFailureCode.PRODUCT_CREATE_OUTCOME_UNKNOWN
-            and expected_work.work_type not in _PRODUCT_WRITE_WORK
-        ):
+        if command.code is WorkerFailureCode.PRODUCT_CREATE_OUTCOME_UNKNOWN:
+            # Ambiguous mutations require the dedicated Phase 6.2 attempt + consumed-permit
+            # evidence boundary. This generic failure command is only safe before a mutation.
             failure_code = WorkerFailureCode.UNCLASSIFIED_FAILURE
         settled_work = self._work_update(
             expected_work,
@@ -578,15 +604,20 @@ class SellerControlService:
         )
 
         cancellation_dominates = current.cancellation_requested_at is not None
-        unknown_outcome = (
-            failure_code is WorkerFailureCode.PRODUCT_CREATE_OUTCOME_UNKNOWN
-            and expected_work.work_type in _PRODUCT_WRITE_WORK
-        )
+        unknown_outcome = self._consumed_provider_uncertainty(current, expected_work)
         reconciliation_transient = (
             expected_work.work_type is WorkType.RECONCILE_PRODUCT
             and failure_code is WorkerFailureCode.PRODUCTION_UNAVAILABLE
         )
         policy = _RETRYABLE_FAILURES.get((expected_work.work_type, failure_code))
+        if (
+            policy is not None
+            and expected_work.work_type is WorkType.PREPARE
+            and current.state is ControlJobState.LISTING_DRAFTED
+        ):
+            # The expensive intelligence checkpoint is already immutable. A controller or
+            # AgentCore failure here resumes the decision step and must never repay inference.
+            policy = _RETRY_AGENT_DECISION_FAILURE
         failure = None
         new_work = None
         work_id = None
@@ -633,6 +664,18 @@ class SellerControlService:
                 occurred_at=now,
             )
 
+        permit_update = None
+        if target is ControlJobState.CANCELLED:
+            reconciliation_required, permit_update = self._cancellation_reconciliation_authority(
+                current,
+                expected_work,
+                now=now,
+            )
+            if reconciliation_required:
+                raise InvalidControlStateError(
+                    "Consumed provider uncertainty requires reconciliation"
+                )
+
         updated = self._job_update(
             current,
             **{
@@ -642,8 +685,15 @@ class SellerControlService:
                 "active_work_request_id": work_id,
                 "failure_id": None if failure is None else failure.failure_id,
                 "provider_outcome_unconfirmed": (
-                    current.provider_outcome_unconfirmed
+                    False
+                    if target is ControlJobState.CANCELLED
+                    else current.provider_outcome_unconfirmed
                     or (cancellation_dominates and unknown_outcome)
+                ),
+                "upload_outcome_unconfirmed": (
+                    False
+                    if target is ControlJobState.CANCELLED
+                    else current.upload_outcome_unconfirmed
                 ),
                 "updated_at": now,
             },
@@ -667,10 +717,39 @@ class SellerControlService:
                 event=self._event(updated, "WORK_FAILED", now),
                 receipt=receipt,
                 failure=failure,
+                provider_call_permit_update=permit_update,
                 work_request=new_work,
                 work_update=(expected_work, settled_work),
             )
         ).response
+
+    def _consumed_provider_uncertainty(
+        self,
+        current: ControlJobRecord,
+        work: WorkRequest,
+    ) -> bool:
+        """Derive mutation ambiguity from the one-shot permit, never from a caller flag."""
+
+        if work.work_type is not WorkType.SYNCHRONIZE_PRODUCT:
+            return False
+        if current.upload_outcome_unconfirmed:
+            attempt_id = current.provider_upload_attempt_id
+        elif current.provider_outcome_unconfirmed:
+            attempt_id = current.provider_write_attempt_id
+        else:
+            return False
+        if attempt_id is None:
+            raise InvalidControlStateError(
+                "Provider uncertainty has no immutable attempt authority"
+            )
+        permit = self.store.get_provider_call_permit(current.job_id, attempt_id)
+        if permit.status is not ProviderCallPermitStatus.CONSUMED:
+            return False
+        if permit.consumed_work_request_id != work.work_request_id:
+            raise InvalidControlStateError(
+                "Consumed provider uncertainty does not bind the failing work"
+            )
+        return True
 
     def settle_cancellation(self, command: SettleCancellationCommand) -> CommandResponse:
         current = self.store.get_job(command.job_id)
@@ -709,7 +788,12 @@ class SellerControlService:
         new_work = None
         work_id = None
         target = ControlJobState.CANCELLED
-        if not command.provider_outcome_known and expected_work.work_type in _PRODUCT_WRITE_WORK:
+        reconciliation_required, permit_update = self._cancellation_reconciliation_authority(
+            current,
+            expected_work,
+            now=now,
+        )
+        if reconciliation_required:
             target = ControlJobState.RECONCILIATION_REQUIRED
             work_id = self._record_id("work", receipt_id, WorkType.RECONCILE_PRODUCT.value)
             new_work = self._work_request(
@@ -729,8 +813,10 @@ class SellerControlService:
                 "event_sequence": current.event_sequence + 1,
                 "active_work_request_id": work_id,
                 "provider_outcome_unconfirmed": (
-                    not command.provider_outcome_known
-                    and expected_work.work_type in _PRODUCT_WRITE_WORK
+                    current.provider_outcome_unconfirmed and reconciliation_required
+                ),
+                "upload_outcome_unconfirmed": (
+                    current.upload_outcome_unconfirmed and reconciliation_required
                 ),
                 "updated_at": now,
             },
@@ -753,10 +839,50 @@ class SellerControlService:
                 updated=updated,
                 event=self._event(updated, "CANCELLATION_SETTLED", now),
                 receipt=receipt,
+                provider_call_permit_update=permit_update,
                 work_request=new_work,
                 work_update=(expected_work, settled_work),
             )
         ).response
+
+    def _cancellation_reconciliation_authority(
+        self,
+        current: ControlJobRecord,
+        work: WorkRequest | None,
+        *,
+        now: datetime,
+    ) -> tuple[bool, tuple[ProviderCallPermit, ProviderCallPermit] | None]:
+        if work is not None and work.work_type not in _PRODUCT_WRITE_WORK:
+            return False, None
+        if current.upload_outcome_unconfirmed:
+            attempt_id = current.provider_upload_attempt_id
+        elif current.provider_outcome_unconfirmed:
+            attempt_id = current.provider_write_attempt_id
+        else:
+            return False, None
+        if attempt_id is None:
+            raise InvalidControlStateError(
+                "Provider uncertainty has no immutable attempt authority"
+            )
+        permit = self.store.get_provider_call_permit(current.job_id, attempt_id)
+        if permit.job_id != current.job_id or permit.attempt_id != attempt_id:
+            raise InvalidControlStateError(
+                "Provider uncertainty does not match its one-shot permit"
+            )
+        if permit.status is ProviderCallPermitStatus.CONSUMED:
+            return True, None
+        if permit.status is ProviderCallPermitStatus.RETIRED:
+            raise InvalidControlStateError(
+                "Retired provider authority cannot remain marked uncertain"
+            )
+        retired = ProviderCallPermit.model_validate(
+            {
+                **permit.model_dump(mode="python"),
+                "status": ProviderCallPermitStatus.RETIRED,
+                "retired_at": now,
+            }
+        )
+        return False, (permit, retired)
 
     def _review_basis(
         self, job: ControlJobRecord

@@ -53,6 +53,9 @@ round trips, full-payload CAS, outbox due/claim/defer/dispatch operations, fast-
 start races, owner isolation, sanitized failures, and a package-wide prohibition on Phase 6
 publication/provider-call surfaces.
 
-Phase 6.2 remains responsible for the actual same-product Printify PUT/readback workers,
-reconciliation deadlines, and their Standard Step Functions definitions. Phase 6.1 only persists
-and dispatches their bounded intent.
+Phase 6.2 now implements the offline same-product PUT/readback workers, one-shot upload and write
+permits, bounded GET-only reconciliation, immutable economics evidence, checkpointed Strands
+preparation bridge, and four Standard Step Functions definitions. Phase 6.1 remains the authority
+foundation beneath that work. The complete Phase 6.2 evidence and the deliberately open cloud
+deployment gate are recorded in
+[`phase6-provider-integration.md`](phase6-provider-integration.md).

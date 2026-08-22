@@ -88,9 +88,8 @@ class RecordWorkerFailureCommand(ControlModel):
 
 
 class SettleCancellationCommand(ControlModel):
-    """Settle late work without permitting a normal success transition."""
+    """Settle late work; durable attempt evidence determines whether reconciliation is required."""
 
     job_id: SafeId
     work_request_id: SafeId
     expected_record_version: int = Field(ge=0)
-    provider_outcome_known: bool
