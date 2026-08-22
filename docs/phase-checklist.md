@@ -190,7 +190,16 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       [0009](architecture/0009-phase6-seller-control-boundary.md),
       [0010](architecture/0010-one-printify-product-per-job.md), and
       [0011](architecture/0011-owner-scoped-cloud-review-boundary.md).
-  - [ ] Phase 6.1 application-owned revise, approve, cancel, retry, and failure lifecycle
+  - [x] Phase 6.1 application-owned revise, approve, cancel, retry, and failure lifecycle
+    - [x] Isolated `2.0.0` lifecycle, command, immutable-evidence, and safe-error contracts
+    - [x] Atomic Job CAS, event, receipt, decision/evidence, and outbox command boundary
+    - [x] In-memory authority oracle and full-payload-CAS DynamoDB adapter parity
+    - [x] Deterministic allowlisted dispatcher with fast-worker and ambiguous-start recovery
+    - [x] Terminal approval, cancellation dominance, closed retry policy, and one-product authority
+    - Evidence: [`phase6-lifecycle-implementation.md`](phase6-lifecycle-implementation.md), 100
+      focused Phase 6 tests, and the full offline suite passing 306 tests with 11 explicitly gated
+      live-Bedrock tests skipped. No provider, deployment, publication, order, or fulfillment call
+      ran in this slice.
   - [ ] Phase 6.2 same-product Printify synchronization and reconciliation
   - [ ] Phase 6.3 consolidated artwork, listing, mockup, product, validation, and
     estimated-proceeds projection
