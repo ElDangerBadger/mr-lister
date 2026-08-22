@@ -5,7 +5,12 @@ from base64 import b64decode
 import pytest
 from pydantic import ValidationError
 
-from mr_lister.agent.contracts import PreparationDecision, PreparationRequest
+from mr_lister.agent.contracts import (
+    AGENT_FRAMEWORK,
+    PREPARATION_AGENT_ID,
+    PreparationDecision,
+    PreparationRequest,
+)
 from mr_lister.agent.observability import InMemoryAgentAuditSink
 from mr_lister.agent.runtime import (
     AGENT_INVOCATION_LIMITS,
@@ -55,6 +60,9 @@ def test_review_mode_has_no_revision_approval_or_publish_capability(workflow) ->
     assert all("approve" not in name and "publish" not in name for name in agent.tool_names)
     assert request.job_id not in agent.trace_attributes.values()
     assert request.session_id not in agent.trace_attributes.values()
+    assert agent.agent_id == PREPARATION_AGENT_ID
+    assert agent.trace_attributes["mr_lister.framework"] == AGENT_FRAMEWORK
+    assert agent.trace_attributes["mr_lister.agent_id"] == PREPARATION_AGENT_ID
 
 
 def test_revise_mode_adds_only_the_revision_capability(workflow) -> None:
@@ -246,6 +254,8 @@ def test_runner_applies_bounded_turn_and_token_limits(workflow, monkeypatch) -> 
     assert decision.next_action == "human_review"
     assert len(audit.records) == 1
     assert audit.records[0].status == "succeeded"
+    assert audit.records[0].framework == AGENT_FRAMEWORK
+    assert audit.records[0].agent_id == PREPARATION_AGENT_ID
     assert audit.records[0].tool_calls == ("inspect_staged_review",)
     assert audit.records[0].total_tokens == 120
     assert job.job_id not in audit.records[0].model_dump_json()

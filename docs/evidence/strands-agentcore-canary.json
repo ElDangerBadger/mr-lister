@@ -1,0 +1,38 @@
+{
+  "agent_id": "mr-lister-preparation",
+  "controller_model": "us.amazon.nova-2-lite-v1:0",
+  "cycles": 3,
+  "deployment": "Amazon Bedrock AgentCore Runtime version 2",
+  "evidence_kind": "sanitized_composite_historical_canary_and_current_source_contract",
+  "evidence_version": "1.0",
+  "framework": "strands-agents",
+  "input_tokens": 4942,
+  "mode": "review",
+  "metadata_provenance": {
+    "agent_id": "current source contract and credential-free local test; redeployed canary pending",
+    "framework": "current source contract and credential-free local test; redeployed canary pending",
+    "tested_strands_agents_version": "credential-free local environment"
+  },
+  "next_action": "human_review",
+  "output_tokens": 195,
+  "production_adapter": "fake",
+  "publication_authorized": false,
+  "region": "us-west-2",
+  "requires_human_approval": true,
+  "result": "succeeded",
+  "sanitization": {
+    "account_id_included": false,
+    "artwork_included": false,
+    "job_id_included": false,
+    "prompt_included": false,
+    "provider_payload_included": false,
+    "session_id_included": false
+  },
+  "source": "docs/phase3-controller-evaluation.md",
+  "tested_strands_agents_version": "1.52.0",
+  "tool_calls": [
+    "inspect_staged_review",
+    "validate_staged_listing"
+  ],
+  "total_tokens": 5137
+}

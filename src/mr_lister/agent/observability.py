@@ -10,10 +10,18 @@ from typing import IO, Literal, Protocol
 
 from pydantic import Field
 
+from mr_lister.agent.contracts import (
+    AGENT_FRAMEWORK,
+    PREPARATION_AGENT_ID,
+    AgentFramework,
+    PreparationAgentId,
+)
 from mr_lister.contracts import ContractModel
 
 
 class AgentAuditRecord(ContractModel):
+    framework: AgentFramework = AGENT_FRAMEWORK
+    agent_id: PreparationAgentId = PREPARATION_AGENT_ID
     correlation_id: str = Field(pattern=r"^[a-f0-9]{24}$")
     mode: Literal["prepare", "review", "revise"]
     status: Literal["succeeded", "failed"]

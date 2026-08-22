@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from mr_lister.agent.contracts import PreparationDecision, PreparationRequest
+from mr_lister.agent.contracts import (
+    AGENT_FRAMEWORK,
+    PREPARATION_AGENT_ID,
+    PreparationDecision,
+    PreparationRequest,
+)
 from mr_lister.agent.http import create_agentcore_app
 from mr_lister.agent.runtime import AgentExecutionError
 
@@ -41,6 +46,8 @@ def test_agentcore_http_contract_exposes_ping_and_invocations() -> None:
     assert ping.json() == {"status": "Healthy"}
     assert response.status_code == 200
     assert response.json()["status"] == "success"
+    assert response.json()["framework"] == AGENT_FRAMEWORK
+    assert response.json()["agent_id"] == PREPARATION_AGENT_ID
     assert response.json()["decision"]["requires_human_approval"] is True
     assert response.json()["decision"]["publication_authorized"] is False
     assert runner.requests == [

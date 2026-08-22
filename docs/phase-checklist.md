@@ -200,6 +200,17 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       focused Phase 6 tests, and the full offline suite passing 306 tests with 11 explicitly gated
       live-Bedrock tests skipped. No provider, deployment, publication, order, or fulfillment call
       ran in this slice.
+  - [ ] Required Strands production and submission path (blocking Phase 6 exit)
+    - [x] Real `strands.Agent`, four job-scoped `@tool` functions, bounded structured output, and
+      deployed AgentCore synthetic canary
+    - [x] Public architecture loop, evidence map, sanitized canary summary, and explicit
+      `strands-agents` runtime/audit identity
+    - [ ] Durable `PREPARE` work invokes the exact AgentCore Strands runtime fail-closed, with no
+      direct non-Strands preparation fallback in the submission deployment
+    - [ ] Strands response/audit correlation is joined to the same owner-scoped job displayed in
+      consolidated seller review
+    - [ ] End-to-end acceptance proves upload -> Strands model/tool loop -> structured preparation
+      decision -> staged listing -> human decision gate
   - [ ] Phase 6.2 same-product Printify synchronization and reconciliation
   - [ ] Phase 6.3 consolidated artwork, listing, mockup, product, validation, and
     estimated-proceeds projection
@@ -214,4 +225,9 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
 - [ ] Phase 8 — Hardening, evaluation, and submission
   - [ ] Security, failure-mode, privacy, and cost review
   - [ ] Evaluation evidence and demo rehearsal
-  - [ ] Architecture, setup, disclosure, and submission materials
+  - [x] Public README callout, core Strands loop diagram, code/test traceability map, and sanitized
+    AgentCore canary summary
+  - [ ] Devpost description contains **How Mr Lister Uses Strands Agents** and links the evidence map
+  - [ ] Demo names Strands in the first 30 seconds and shows the same job's sanitized tool trace,
+    structured response, staged listing, and human gate
+  - [ ] Architecture, setup, disclosure, and remaining submission materials

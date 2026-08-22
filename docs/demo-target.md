@@ -11,6 +11,8 @@ against a stable target.
 - SwiftPOD print provider
 - Five verified colors and six verified sizes (30 variants)
 - One Etsy shop connected through Printify
+- One bounded Strands Agents SDK preparation loop on AgentCore: controller model, job-scoped
+  tools, reasoning, and strict structured response
 - One consolidated human review
 - Explicit approval before publication
 - Publication verification and immutable run report
@@ -36,3 +38,12 @@ and print-canvas dimensions.
 
 No Phase 0 code connects to AWS, Bedrock, Printify, or Etsy. Synthetic identifiers used by
 fixtures are clearly non-live and cannot authorize publication.
+
+## Submission proof
+
+The recorded demo must identify Strands in the first 30 seconds, show this same seller job enter
+the AgentCore Strands preparation loop, and display a sanitized response or audit containing the
+fixed framework and agent identity, cycles, selected tools, and structured next action. It must
+then show the resulting staged listing at the application-owned human gate. Model reasoning is
+not publication authority; the seller's explicit approval and deterministic lifecycle remain
+visibly separate.

@@ -3,7 +3,11 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from mr_lister.agent.agentcore_sdk import create_agentcore_sdk_app
-from mr_lister.agent.contracts import PreparationDecision
+from mr_lister.agent.contracts import (
+    AGENT_FRAMEWORK,
+    PREPARATION_AGENT_ID,
+    PreparationDecision,
+)
 
 
 class RecordingRunner:
@@ -40,6 +44,8 @@ def test_official_agentcore_sdk_boundary_preserves_authority_contract() -> None:
     )
 
     assert response.status_code == 200
+    assert response.json()["framework"] == AGENT_FRAMEWORK
+    assert response.json()["agent_id"] == PREPARATION_AGENT_ID
     assert response.json()["decision"]["requires_human_approval"] is True
     assert response.json()["decision"]["publication_authorized"] is False
     assert runner.requests[0].session_id == "session_sdk_1"

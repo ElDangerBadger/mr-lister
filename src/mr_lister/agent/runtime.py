@@ -10,7 +10,12 @@ from strands import Agent
 from strands.models.model import Model
 from strands.types.agent import Limits
 
-from mr_lister.agent.contracts import PreparationDecision, PreparationRequest
+from mr_lister.agent.contracts import (
+    AGENT_FRAMEWORK,
+    PREPARATION_AGENT_ID,
+    PreparationDecision,
+    PreparationRequest,
+)
 from mr_lister.agent.observability import (
     AgentAuditRecord,
     AgentAuditSink,
@@ -63,10 +68,12 @@ def build_preparation_agent(
         system_prompt=AGENT_SYSTEM_PROMPT,
         structured_output_model=PreparationDecision,
         callback_handler=None,
-        agent_id="mr-lister-preparation",
+        agent_id=PREPARATION_AGENT_ID,
         name="Mr Lister Preparation Agent",
         description="Reviews and revises one staged listing without approval or publish authority.",
         trace_attributes={
+            "mr_lister.framework": AGENT_FRAMEWORK,
+            "mr_lister.agent_id": PREPARATION_AGENT_ID,
             "mr_lister.phase": "3",
             "mr_lister.mode": request.mode,
             "mr_lister.correlation_id": request_correlation_id,

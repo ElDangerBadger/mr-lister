@@ -15,6 +15,8 @@ from pydantic import ValidationError
 from strands.models import BedrockModel
 
 from mr_lister.agent.contracts import (
+    AGENT_FRAMEWORK,
+    PREPARATION_AGENT_ID,
     AgentCoreInvocation,
     AgentCoreResponse,
     PreparationDecision,
@@ -63,7 +65,11 @@ def create_agentcore_sdk_app(runner: PreparationRunner) -> BedrockAgentCoreApp:
                 mode=invocation.mode,
                 instruction=invocation.instruction,
             )
-            return AgentCoreResponse(decision=runner(request)).model_dump(mode="json")
+            return AgentCoreResponse(
+                framework=AGENT_FRAMEWORK,
+                agent_id=PREPARATION_AGENT_ID,
+                decision=runner(request),
+            ).model_dump(mode="json")
         except ValidationError:
             return _sanitized_error(
                 422,

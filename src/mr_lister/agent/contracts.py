@@ -13,6 +13,11 @@ SafeIdentifier = Annotated[
     StringConstraints(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$"),
 ]
 
+AGENT_FRAMEWORK = "strands-agents"
+PREPARATION_AGENT_ID = "mr-lister-preparation"
+AgentFramework = Literal["strands-agents"]
+PreparationAgentId = Literal["mr-lister-preparation"]
+
 
 class PreparationRequest(ContractModel):
     """Trusted application envelope supplied to the Strands preparation agent."""
@@ -45,4 +50,6 @@ class AgentCoreResponse(ContractModel):
     """Non-streaming response returned through the AgentCore HTTP contract."""
 
     status: Literal["success"] = "success"
+    framework: AgentFramework
+    agent_id: PreparationAgentId
     decision: PreparationDecision

@@ -14,6 +14,7 @@ the confidence of an assumption.
 | PF-004 | Printify can create real products and publish them to a connected Etsy channel. | Live canary runs | Validated |
 | PF-005 | Batch processing can isolate a failed item and continue with the next. | Multi-item workflow runs | Validated |
 | PF-006 | Product placement can be represented as a reusable calibrated profile. | Apparel calibration runs | Validated |
+| PF-007 | A real Strands Agent can select job-scoped preparation tools, observe their results, and return a bounded structured human-review decision without approval or publication authority. | Credential-free real-SDK loop test and deployed AgentCore canary | Validated |
 
 ## Open product hypotheses
 

@@ -62,7 +62,10 @@ explicit approval or cancellation, and clear result states.
 complete the supported PNG workflow without documentation and recover it after refresh. Every
 revision updates the same unpublished product; approval ends at `APPROVED`; cancellation needs no
 operator; and no Phase 6 path can publish, order, or fulfill. Every visible control works,
-explains why it is unavailable, or is removed.
+explains why it is unavailable, or is removed. The same seller job's durable `PREPARE` request
+must pass fail-closed through the deployed AgentCore Strands runtime, produce a correlated
+structured decision and sanitized audit, and have no direct non-Strands preparation fallback in
+the submission deployment.
 
 ## Phase 7: Etsy publication through Printify
 
@@ -79,7 +82,10 @@ evaluation; document deployment and costs; finalize the architecture diagram, de
 recording, public README, and submission materials.
 
 **Exit:** a clean deployment repeatedly demonstrates artwork upload through verified
-publication with no exposed credentials, dead controls, or unexplained manual steps.
+publication with no exposed credentials, dead controls, or unexplained manual steps. The public
+README, architecture, evidence map, Devpost description, and demo independently identify Strands
+as the core agent loop, and the recorded end-to-end run joins Strands tool evidence to the same
+seller job that reaches human review and guarded publication.
 
 ## Outside the hackathon vertical slice
 

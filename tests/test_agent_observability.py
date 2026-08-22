@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from mr_lister.agent.contracts import AGENT_FRAMEWORK, PREPARATION_AGENT_ID
 from mr_lister.agent.observability import AgentAuditRecord, LoggingAgentAuditSink
 
 
@@ -27,3 +28,5 @@ def test_logging_sink_emits_only_the_sanitized_contract(capsys) -> None:
     assert "provider" not in rendered
     payload = json.loads(rendered.split("agent_audit=", 1)[1].strip())
     assert payload == record.model_dump(mode="json")
+    assert payload["framework"] == AGENT_FRAMEWORK
+    assert payload["agent_id"] == PREPARATION_AGENT_ID

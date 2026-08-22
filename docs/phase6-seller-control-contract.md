@@ -460,6 +460,11 @@ Bedrock intelligence adapter. Its role can read only pinned source objects and o
 results, not AWS credentials, S3 authorization, or arbitrary object access. Product upload/create/
 update runs only afterward in the separate draft-sync worker.
 
+This is mandatory in the submission deployment: `PREPARE` fails closed if the exact AgentCore
+Strands runtime is unavailable. It cannot bypass the runtime or fall back to a direct model,
+deterministic preparation implementation, or another non-Strands path. Application code and
+DynamoDB remain authoritative for every state transition before and after the agent call.
+
 Phase 6 deploys into separately named `mr-lister-phase6-*` application resources and a new table;
 Phase 4/5 data remains read-only evidence. One administrator-side bootstrap update creates the
 Phase 6 CloudFormation execution role and developer deployment policy. All normal packaging,
@@ -525,6 +530,9 @@ There is no deployed `/publish`, order, fulfillment, raw report, or arbitrary ob
 
 Phase 6 cannot close until all of the following are evidenced:
 
+- [ ] The same owner-scoped job's durable `PREPARE` work invokes the exact AgentCore Strands
+      runtime, returns a strict structured decision, and emits a sanitized correlation joined to
+      the consolidated review; an unavailable runtime fails closed with no non-Strands fallback.
 - [ ] A valid upload survives refresh and reaches consolidated review.
 - [ ] The deployed 25 MiB URL-upload route is proven, or the advertised limit is reduced to the
       largest end-to-end proven value before release.

@@ -31,6 +31,10 @@ it therefore never inspected or validated the staged job.
 
 The immutable, sanitized run artifact is retained privately under
 `.mr_lister_private/phase3-controller/` and is excluded from Git.
+The public, account-free summary is committed as
+[`evidence/strands-agentcore-canary.json`](evidence/strands-agentcore-canary.json), with code,
+test, runtime, and demo traceability in
+[`strands-submission-evidence.md`](strands-submission-evidence.md).
 
 ## Deployed AgentCore acceptance
 
@@ -46,6 +50,12 @@ response, or exception text. Full AWS vended request-payload capture was used on
 diagnosis, then removed. A final zero-model-cost invalid-envelope check produced only the expected
 standard runtime status and no vended payload event. The sanitized standard runtime stream is the
 accepted operational record.
+
+Current source response and application-audit contracts require the framework
+`strands-agents` and agent `mr-lister-preparation`. Those fields were added after this accepted
+Phase 3 canary, so they are source and local-test evidence until a new deployment records them.
+The Phase 6 checklist also blocks any end-to-end claim until durable seller `PREPARE` work routes
+through this exact runtime and the same-job correlation is proven.
 
 ## Limitations
 

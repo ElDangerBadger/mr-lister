@@ -6,6 +6,14 @@ Mr Lister turns finished artwork into a configured, validated, reviewable print-
 listing. It combines bounded AI judgment with deterministic marketplace and publishing
 safeguards.
 
+> [!IMPORTANT]
+> **Mr Lister is built with the Strands Agents SDK.** Strands runs the bounded preparation agent
+> loop—controller model, job-scoped tools, reasoning, and structured response—inside Amazon
+> Bedrock AgentCore. It is not an unused dependency or a label around a direct model call. Start
+> with [the agent construction](src/mr_lister/agent/runtime.py),
+> [the real `@tool` implementations](src/mr_lister/agent/tools.py), and the
+> [judge-facing evidence map](docs/strands-submission-evidence.md).
+
 The initial product path is deliberately narrow:
 
 > One artwork file -> one calibrated apparel product -> one reviewed listing -> one approved
@@ -18,19 +26,68 @@ choose product settings, place designs, set prices, draft copy, build tags, vali
 publish, and verify. Mr Lister turns that repeated operational work into a guided approval
 flow while keeping the seller in control of publication.
 
-## Architecture
+## Built with Strands Agents SDK
+
+The real SDK path instantiates `strands.Agent`, selects a capability-scoped tool set for one
+trusted job, applies bounded turn/token limits, invokes the Strands loop, and validates its
+structured `PreparationDecision`. The agent can prepare, inspect, validate, explain, and propose
+revisions. Application code—not the model or agent—remains authoritative for lifecycle state,
+approval, cancellation, idempotency, and irreversible marketplace actions.
+
+| Proof | Public location |
+| --- | --- |
+| `strands.Agent` construction, limits, invocation, and structured output | [`src/mr_lister/agent/runtime.py`](src/mr_lister/agent/runtime.py) |
+| Four genuine, job-scoped Strands `@tool` functions | [`src/mr_lister/agent/tools.py`](src/mr_lister/agent/tools.py) |
+| Official AgentCore SDK entry point and Bedrock controller | [`src/mr_lister/agent/agentcore_sdk.py`](src/mr_lister/agent/agentcore_sdk.py) |
+| Credential-free execution of the actual Strands loop | [`tests/test_strands_real_loop.py`](tests/test_strands_real_loop.py) |
+| Deployed AgentCore canary and tool-selection results | [`docs/phase3-controller-evaluation.md`](docs/phase3-controller-evaluation.md) |
+| Requirement-to-code/test/demo traceability | [`docs/strands-submission-evidence.md`](docs/strands-submission-evidence.md) |
+
+The Phase 3 runtime was deployed and live-tested as a synthetic, non-publishing canary.
+The Phase 6 production integration is intentionally still an open acceptance gate: the submitted
+seller flow will not be called end-to-end until its durable `PREPARE` work invokes this exact
+Strands runtime fail-closed and emits correlated public-safe evidence. That distinction is tracked
+explicitly in the [phase checklist](docs/phase-checklist.md).
+
+### Verify Strands locally in 60 seconds
+
+```bash
+source .venv/bin/activate
+python -m pytest -q \
+  tests/test_strands_setup.py \
+  tests/test_strands_real_loop.py \
+  tests/test_agent_tools.py \
+  tests/test_agentcore_sdk.py
+```
+
+## Target submission architecture
 
 ```mermaid
 flowchart TD
     U["Seller"] --> UI["Review interface"]
-    UI --> A["Strands agent on AgentCore"]
-    A --> B["Amazon Bedrock intelligence"]
-    A --> F["Deterministic listing factory"]
-    F --> S["S3 and DynamoDB"]
-    F --> P["Printify"]
-    P --> E["Connected Etsy shop"]
+    UI --> API["Owner-scoped API"]
+    API --> SF["Durable application workflow"]
+    SF -.->|Required Phase 6 PREPARE gate| AC["Amazon Bedrock AgentCore Runtime"]
+
+    subgraph SL["Core Strands agentic loop"]
+        SA["Strands Agent<br/>reason → act → observe"]
+        CM["Bedrock controller model"]
+        JT["Job-scoped Strands @tools<br/>prepare · inspect · validate · revise"]
+        SR["Structured PreparationDecision"]
+        SA <--> CM
+        SA <--> JT
+        SA --> SR
+    end
+
+    AC --> SA
+    JT --> F["Application-owned lifecycle and validation"]
+    F --> S["Private S3 and DynamoDB"]
+    F --> BI["Bedrock artwork/listing intelligence"]
+    SF --> DS["Draft-sync worker"]
+    DS --> P["Printify unpublished product"]
     UI --> G["Human approval gate"]
     G --> F
+    P -.->|Phase 7 only after approval| E["Connected Etsy shop"]
 ```
 
 The model may interpret artwork, draft listing text, and explain revisions. It may not set

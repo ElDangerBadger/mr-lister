@@ -7,6 +7,7 @@ from datetime import timedelta
 import pytest
 from botocore.exceptions import ClientError
 
+from mr_lister.agent.contracts import AGENT_FRAMEWORK, PREPARATION_AGENT_ID
 from mr_lister.contracts import JobState
 from mr_lister.durable.handlers import (
     Phase4Services,
@@ -58,31 +59,44 @@ class AgentCoreBody:
 
 
 class PreparingAgentCore:
-    def __init__(self, workflow, *, malformed: bool = False) -> None:
+    def __init__(
+        self,
+        workflow,
+        *,
+        malformed: bool = False,
+        identity: str = "valid",
+    ) -> None:
         self.workflow = workflow
         self.malformed = malformed
+        self.identity = identity
         self.requests: list[dict[str, object]] = []
 
     def invoke_agent_runtime(self, **request: object) -> dict[str, object]:
         self.requests.append(request)
         payload = json.loads(request["payload"])
         self.workflow.prepare(payload["job_id"])
-        content = (
-            b'{"not":"the response contract"}'
-            if self.malformed
-            else json.dumps(
-                {
-                    "status": "success",
-                    "decision": {
-                        "summary": "The staged listing is ready for review.",
-                        "recommendation": "Review the draft before approval.",
-                        "next_action": "human_review",
-                        "requires_human_approval": True,
-                        "publication_authorized": False,
-                    },
-                }
-            ).encode()
-        )
+        if self.malformed:
+            content = b'{"not":"the response contract"}'
+        else:
+            response = {
+                "status": "success",
+                "framework": AGENT_FRAMEWORK,
+                "agent_id": PREPARATION_AGENT_ID,
+                "decision": {
+                    "summary": "The staged listing is ready for review.",
+                    "recommendation": "Review the draft before approval.",
+                    "next_action": "human_review",
+                    "requires_human_approval": True,
+                    "publication_authorized": False,
+                },
+            }
+            if self.identity == "missing":
+                response.pop("framework")
+                response.pop("agent_id")
+            elif self.identity == "wrong":
+                response["framework"] = "not-strands"
+                response["agent_id"] = "not-mr-lister"
+            content = json.dumps(response).encode()
         return {"statusCode": 200, "response": AgentCoreBody(content)}
 
 
@@ -210,6 +224,29 @@ def test_prepare_handler_rejects_malformed_agentcore_output_without_echo(workflo
 
     assert rejected.value.__cause__ is None
     assert "not" not in str(rejected.value)
+
+
+@pytest.mark.parametrize("identity", ["missing", "wrong"])
+def test_prepare_handler_rejects_unproven_agent_identity(workflow, identity: str) -> None:
+    intake = workflow.intake(
+        filename="geometric_badger.png",
+        content_type="image/png",
+        content=SYNTHETIC_PNG,
+        idempotency_key=f"phase4-agentcore-identity-{identity}",
+        profile_id="synthetic_gildan_5000",
+    )
+    services = Phase4Services(
+        workflow=workflow,
+        step_functions=RecordingStepFunctions(),
+        agentcore=PreparingAgentCore(workflow, identity=identity),
+        agentcore_runtime_arn="arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/test",
+    )
+
+    with pytest.raises(TerminalWorkflowCommand, match="outside its contract") as rejected:
+        prepare_handler({"job_id": intake.job_id}, None, _services=services)
+
+    assert rejected.value.__cause__ is None
+    assert identity not in str(rejected.value)
 
 
 def test_approval_callback_replay_is_harmless(workflow) -> None:

@@ -10,6 +10,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from mr_lister.agent.contracts import (
+    AGENT_FRAMEWORK,
+    PREPARATION_AGENT_ID,
     AgentCoreInvocation,
     AgentCoreResponse,
     PreparationDecision,
@@ -72,6 +74,10 @@ def create_agentcore_app(runner: PreparationRunner) -> FastAPI:
             mode=invocation.mode,
             instruction=invocation.instruction,
         )
-        return AgentCoreResponse(decision=runner(request))
+        return AgentCoreResponse(
+            framework=AGENT_FRAMEWORK,
+            agent_id=PREPARATION_AGENT_ID,
+            decision=runner(request),
+        )
 
     return application
