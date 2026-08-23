@@ -1,7 +1,7 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
   "Transform": "AWS::Serverless-2016-10-31",
-  "Description": "Mr Lister Phase 6.5 owner-scoped seller-control and private web-edge scaffold",
+  "Description": "Mr Lister Phase 6.6 owner-scoped seller-control and private web-edge scaffold",
   "Parameters": {
     "EnvironmentName": {
       "Type": "String",
@@ -657,6 +657,78 @@
       }
     },
 
+    "SourceVersionRetentionFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-source-retention-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ReconcilePrivateSourceVersionRetentionOnly",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "WriteSourceRetentionLogs",
+                  "Effect": "Allow",
+                  "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                  "Resource": {"Fn::GetAtt": ["SourceVersionRetentionLogGroup", "Arn"]}
+                },
+                {
+                  "Sid": "ListExactPrivateSourcePrefixVersions",
+                  "Effect": "Allow",
+                  "Action": "s3:ListBucketVersions",
+                  "Resource": {"Fn::GetAtt": ["PrivateArtifactBucket", "Arn"]},
+                  "Condition": {
+                    "StringEquals": {"s3:prefix": "private/owners/"},
+                    "NumericLessThanEquals": {"s3:max-keys": "1000"}
+                  }
+                },
+                {
+                  "Sid": "ReconcileExactPrivateSourceVersionTags",
+                  "Effect": "Allow",
+                  "Action": ["s3:GetObjectVersionTagging", "s3:PutObjectVersionTagging"],
+                  "Resource": {"Fn::Sub": "${PrivateArtifactBucket.Arn}/private/owners/*/jobs/*/source/source.png"}
+                },
+                {
+                  "Sid": "StrongReadJobSourceAuthority",
+                  "Effect": "Allow",
+                  "Action": "dynamodb:TransactGetItems",
+                  "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]},
+                  "Condition": {
+                    "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*"]},
+                    "Null": {"dynamodb:LeadingKeys": "false"}
+                  }
+                },
+                {
+                  "Sid": "ReadSourceRetentionCheckpoint",
+                  "Effect": "Allow",
+                  "Action": "dynamodb:GetItem",
+                  "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]},
+                  "Condition": {
+                    "ForAllValues:StringEquals": {"dynamodb:LeadingKeys": ["SYSTEM#SOURCE_VERSION_RETENTION"]},
+                    "Null": {"dynamodb:LeadingKeys": "false"}
+                  }
+                },
+                {
+                  "Sid": "WriteSourceRetentionCheckpoint",
+                  "Effect": "Allow",
+                  "Action": "dynamodb:PutItem",
+                  "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]},
+                  "Condition": {
+                    "ForAllValues:StringEquals": {"dynamodb:LeadingKeys": ["SYSTEM#SOURCE_VERSION_RETENTION"]},
+                    "Null": {"dynamodb:LeadingKeys": "false"}
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
     "DispatcherFunctionRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
@@ -892,6 +964,37 @@
       }
     },
 
+    "SourceVersionRetentionFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "SourceVersionRetentionLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-source-retention"},
+        "CodeUri": "lambda/",
+        "Handler": "phase6_lambda.source_version_retention_handler",
+        "Role": {"Fn::GetAtt": ["SourceVersionRetentionFunctionRole", "Arn"]},
+        "ReservedConcurrentExecutions": 1,
+        "Timeout": 300,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_ENVIRONMENT": {"Ref": "EnvironmentName"},
+            "MR_LISTER_AWS_ACCOUNT_ID": {"Ref": "AWS::AccountId"}
+          }
+        },
+        "Events": {
+          "SourceVersionRetentionSweep": {
+            "Type": "Schedule",
+            "Properties": {
+              "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-source-retention"},
+              "Description": "Bounded reference-aware private source version retention sweep",
+              "Schedule": "rate(15 minutes)",
+              "Enabled": true,
+              "Input": "{\"contract_version\":\"1.0.0\",\"source\":\"source-version-retention-sweeper\"}",
+              "RetryPolicy": {"MaximumEventAgeInSeconds": 3600, "MaximumRetryAttempts": 2}
+            }
+          }
+        }
+      }
+    },
     "DispatcherFunction": {
       "Type": "AWS::Serverless::Function",
       "DependsOn": "DispatcherLogGroup",
@@ -1095,6 +1198,10 @@
       }
     },
 
+    "SourceVersionRetentionLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-source-retention"}, "RetentionInDays": 14}
+    },
     "DispatcherLogGroup": {
       "Type": "AWS::Logs::LogGroup",
       "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-dispatcher"}, "RetentionInDays": 14}

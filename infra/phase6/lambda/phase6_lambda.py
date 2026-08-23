@@ -1,14 +1,16 @@
-"""Fail-closed import surface for the Phase 6.4 infrastructure scaffold.
+"""Fail-closed import surface for the Phase 6 infrastructure package.
 
-These handlers deliberately cannot execute application work.  Replacing them
-with adapters over ``mr_lister.control`` is a deployment prerequisite; the
-template advertises that state through its ``SCAFFOLD_ONLY`` output and
-environment marker.
+The checked SAM template keeps ``MR_LISTER_PHASE6_SCAFFOLD_ONLY=true`` and every
+handler therefore remains inert.  A release package may switch the marker to the
+exact string ``false`` only after it includes the tested :mod:`mr_lister` production
+composition and closes the deployment gates.  Any missing, malformed, or differently
+cased marker fails closed.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 
@@ -56,38 +58,69 @@ HEALTH_ROUTE_KEY = "GET /health"
 
 
 def dispatcher_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
-    """Expose only the frozen four-type dispatch map, then fail closed."""
+    """Expose only the frozen four-type dispatch map and gated production adapter."""
 
     work_type = event.get("work_type")
     if isinstance(work_type, str) and work_type not in WORK_TYPE_STATE_MACHINE_ENV:
         raise ValueError("Unsupported Phase 6 work type")
-    return _not_ready("dispatcher")
+    return _delegate("dispatcher_handler", event, _context, component="dispatcher")
 
 
-def preparation_dispatch_handler(_event: dict[str, Any], _context: Any) -> dict[str, Any]:
-    return _not_ready("preparation_dispatch")
+def preparation_dispatch_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    return _delegate(
+        "preparation_dispatch_handler",
+        event,
+        context,
+        component="preparation_dispatch",
+    )
 
 
-def provider_draft_handler(_event: dict[str, Any], _context: Any) -> dict[str, Any]:
-    return _not_ready("provider_draft")
+def provider_draft_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    return _delegate("provider_draft_handler", event, context, component="provider_draft")
 
 
-def settlement_handler(_event: dict[str, Any], _context: Any) -> dict[str, Any]:
-    return _not_ready("settlement")
+def settlement_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    return _delegate("settlement_handler", event, context, component="settlement")
+
+
+def source_version_retention_handler(
+    event: dict[str, Any],
+    context: Any,
+) -> dict[str, Any]:
+    """Run only the gated, reference-aware exact-version retention adapter."""
+
+    if not _production_enabled():
+        return _not_ready("source_version_retention")
+    try:
+        from mr_lister.cloud.phase6_retention_entrypoint import (
+            source_version_retention_handler as handler,
+        )
+    except Exception:
+        raise Phase6ScaffoldNotReady(
+            "Phase 6 production component 'source_version_retention' is unavailable"
+        ) from None
+    return handler(event, context)
 
 
 def upload_api_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     """Fail closed on the exact upload-intake route set until its adapter exists."""
 
     _require_route(event, UPLOAD_API_ROUTE_KEYS)
-    return _not_ready("upload_api")
+    return _delegate("upload_api_handler", event, _context, component="upload_api")
 
 
 def review_query_api_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
-    """Expose only an information-minimal health result; all seller reads fail closed."""
+    """Expose an information-minimal scaffold health result or the gated read adapter."""
 
     route_key = event.get("routeKey")
     if route_key == HEALTH_ROUTE_KEY:
+        if _production_enabled():
+            return _delegate(
+                "review_query_api_handler",
+                event,
+                _context,
+                component="review_query_api",
+            )
         return {
             "statusCode": 503,
             "headers": {
@@ -97,14 +130,24 @@ def review_query_api_handler(event: dict[str, Any], _context: Any) -> dict[str, 
             "body": json.dumps({"status": "scaffold_only"}, separators=(",", ":")),
         }
     _require_route(event, REVIEW_QUERY_API_ROUTE_KEYS)
-    return _not_ready("review_query_api")
+    return _delegate(
+        "review_query_api_handler",
+        event,
+        _context,
+        component="review_query_api",
+    )
 
 
 def seller_command_api_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     """Fail closed on the exact seller-command route set until its adapter exists."""
 
     _require_route(event, SELLER_COMMAND_API_ROUTE_KEYS)
-    return _not_ready("seller_command_api")
+    return _delegate(
+        "seller_command_api_handler",
+        event,
+        _context,
+        component="seller_command_api",
+    )
 
 
 def _require_route(event: dict[str, Any], allowed: frozenset[str]) -> None:
@@ -117,6 +160,31 @@ def _not_ready(component: str) -> dict[str, Any]:
     raise Phase6ScaffoldNotReady(
         f"Phase 6 infrastructure component {component!r} has no deployed application adapter"
     )
+
+
+def _production_enabled() -> bool:
+    return os.environ.get("MR_LISTER_PHASE6_SCAFFOLD_ONLY") == "false"
+
+
+def _delegate(
+    handler_name: str,
+    event: dict[str, Any],
+    context: Any,
+    *,
+    component: str,
+) -> dict[str, Any]:
+    if not _production_enabled():
+        return _not_ready(component)
+    try:
+        from mr_lister.cloud import phase6_entrypoints
+
+        handler = getattr(phase6_entrypoints, handler_name)
+    except Exception:
+        # A partial or drifted release package is never allowed to fall back to scaffold logic.
+        raise Phase6ScaffoldNotReady(
+            f"Phase 6 production component {component!r} is unavailable"
+        ) from None
+    return handler(event, context)
 
 
 __all__ = [
@@ -132,5 +200,6 @@ __all__ = [
     "review_query_api_handler",
     "seller_command_api_handler",
     "settlement_handler",
+    "source_version_retention_handler",
     "upload_api_handler",
 ]

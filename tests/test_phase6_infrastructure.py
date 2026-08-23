@@ -309,7 +309,7 @@ def test_exact_four_standard_machines_have_private_error_logs() -> None:
     log_groups = [
         resource for resource in resources.values() if resource["Type"] == "AWS::Logs::LogGroup"
     ]
-    assert len(log_groups) == 12
+    assert len(log_groups) == 13
     assert all(group["Properties"]["RetentionInDays"] == 14 for group in log_groups)
 
 
@@ -322,6 +322,7 @@ def test_functions_have_distinct_explicit_roles_and_scaffold_gate() -> None:
         if resource["Type"] == "AWS::Serverless::Function"
     }
     assert set(functions) == {
+        "SourceVersionRetentionFunction",
         "DispatcherFunction",
         "PreparationDispatchFunction",
         "ProviderDraftFunction",
@@ -332,6 +333,7 @@ def test_functions_have_distinct_explicit_roles_and_scaffold_gate() -> None:
     }
     roles = {resource["Properties"]["Role"]["Fn::GetAtt"][0] for resource in functions.values()}
     assert roles == {
+        "SourceVersionRetentionFunctionRole",
         "DispatcherFunctionRole",
         "PreparationDispatchFunctionRole",
         "ProviderDraftFunctionRole",
@@ -351,6 +353,7 @@ def test_functions_have_distinct_explicit_roles_and_scaffold_gate() -> None:
     assert functions["PreparationDispatchFunction"]["Properties"]["Timeout"] == 600
     assert functions["ProviderDraftFunction"]["Properties"]["Timeout"] == 600
     assert functions["SettlementFunction"]["Properties"]["Timeout"] == 30
+    assert functions["SourceVersionRetentionFunction"]["Properties"]["Timeout"] == 300
 
 
 def test_iam_keeps_agentcore_secret_and_state_authority_separate() -> None:

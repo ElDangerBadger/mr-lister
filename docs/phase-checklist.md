@@ -304,17 +304,23 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       pagination, bounded durable checkpoints, trusted inventory time, and recent-pin preservation
     - [x] Verify one exact final browser bundle in Chromium, Firefox, and WebKit with a shared
       SHA-256 authority, a sanitized report, and credential-free per-engine trace evidence
-    - [ ] Add the evidence-set/artifact verifier that closes prerequisites, record counts,
+    - [x] Add the evidence-set/artifact verifier that closes prerequisites, record counts,
       cross-record run/job bindings, and on-disk artifact digests
-    - [ ] Add concrete retention AWS adapters/schedule/IAM plus 90-day operational-record cleanup
-    - [ ] Package and wire dispatcher, preparation, provider, settlement, and API handlers; add a
-      separately deployed Phase 6 AgentCore runtime that visibly runs Strands over pinned Gemma
-    - [ ] Add stuck-execution recovery, alarms, release/deploy tooling, and Linux ARM64 artifact
-      inspection; only then remove `SCAFFOLD_ONLY`
+    - [x] Add concrete exact-prefix retention AWS adapters, bounded schedule, checkpoint, and
+      least-capability IAM without object-byte read or delete authority
+    - [ ] Add the separate 90-day terminal operational-record cleanup boundary
+    - [x] Implement role-separated dispatcher, preparation, provider, settlement, API, and
+      retention composition roots; add a dedicated Phase 6 AgentCore source entrypoint that
+      visibly runs Strands over pinned Gemma; and generate reproducible narrow source manifests
+    - [ ] Bind source manifests and an immutable AgentCore runtime version into release authority,
+      produce and inspect Linux ARM64 dependency artifacts, wire them into SAM/AgentCore deploy
+      configuration, and deploy the composed handlers
+    - [ ] Add stuck-execution recovery, alarms, and release/deploy tooling; only then remove
+      `SCAFFOLD_ONLY`
     - [ ] Run explicitly authorized deployed non-destructive, double-gated unpublished Printify,
       and moderated first-time-seller acceptance and attach sanitized evidence
-    - Evidence: 1,068 full Python tests passed with 11 gated live-Bedrock skips; 692 Phase 6 and
-      151 Phase 6.6 tests passed; the 62-test web gate, tri-engine exact-bundle harness, Ruff,
+    - Evidence: 1,239 full Python tests passed with 11 gated live-Bedrock skips; 692 Phase 6 and
+      322 Phase 6.6 tests passed; the 62-test web gate, tri-engine exact-bundle harness, Ruff,
       formatting, compileall, both contract drift checks, npm audit, SAM lint/build, and diff
       hygiene passed. Details: [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
 - [ ] Phase 7 — Etsy publication through Printify

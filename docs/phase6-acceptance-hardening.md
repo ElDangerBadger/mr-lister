@@ -1,8 +1,9 @@
 # Phase 6.6 acceptance hardening contract
 
 Phase 6.6 freezes how acceptance is partitioned and what may be retained as evidence. The offline
-exact-bundle browser matrix has passed locally; this document does not claim that a deployment,
-provider canary, evidence-set closure, or moderated session has passed.
+exact-bundle browser matrix and the evidence-set verifier have passed locally; this document does
+not claim that a deployment, deployed evidence-set closure, provider canary, or moderated session
+has passed.
 
 The source manifest is
 [`contracts/acceptance/phase6.6.manifest.json`](../contracts/acceptance/phase6.6.manifest.json).
@@ -78,11 +79,19 @@ image, owner, token, header, body, and query values have no representation in th
 
 ## Offline implementation checkpoint
 
-The Phase 6.6 offline slice includes the frozen evidence contract and drift gate, forced three-way
-revise/approve/cancel concurrency, exact idempotent replay and changed-body conflict tests, all
-protected-route foreign/unknown equivalence checks, fresh owner-bound Printify secret resolution,
-exact-version source verification, and role-isolated API composition roots. None of those roots is
-wired into the fail-closed SAM handlers yet.
+The Phase 6.6 offline slice includes the frozen evidence contract and drift gate, an artifact-backed
+evidence-set closure oracle, forced three-way revise/approve/cancel concurrency, exact idempotent
+replay and changed-body conflict tests, all protected-route foreign/unknown equivalence checks,
+fresh owner-bound Printify secret resolution, exact-version source verification, and role-isolated
+API, dispatcher, preparation, provider, settlement, and retention composition roots. The
+preparation root is a dedicated Phase 6 AgentCore entrypoint: Strands remains the controller and
+the pinned Gemma configuration remains the image-review and listing-intelligence worker.
+
+Reproducible narrow source manifests are generated separately for the ordinary Lambda and Phase 6
+AgentCore runtime surfaces. Their import tests prove that the Lambda source bundle excludes
+Strands, AgentCore, and legacy publication surfaces, while the AgentCore source bundle excludes
+provider and cloud capabilities. These are source-boundary inputs, not Linux ARM64 dependency
+artifacts and not proof that the checked SAM `CodeUri` deploys the application package.
 
 The deterministic production bundle with digest
 `c6115a4d8f3d4fec88ce9b640d760dff1599db43fe3cba10b3962a8eda16aad2` passed the same
@@ -93,13 +102,14 @@ unpublished boundary, exact listing validation/tag count, one-shot approval with
 focus, tab recovery, route-response isolation, offline/hidden polling suppression and resumption,
 forced colors, reduced motion, and 360-CSS-pixel reflow, with zero provider transport attempts.
 
-The reference-aware source-retention core is also implemented without object-byte or deletion
-authority. It traverses lifecycle delete-marker pages, keeps its durable cursor history below the
-DynamoDB item ceiling, binds application time to the inventory adapter's trusted S3 observation
-time, and never releases a recent pre-commit pin within the two-day safety window. It still needs
-the concrete exact-prefix S3 tag inventory, strong DynamoDB authority/checkpoint adapters,
-scheduled least-capability Lambda, and the separate 90-day operational-record cleanup before a
-deployment can claim the retention gate.
+The reference-aware source-retention core and its exact-prefix AWS adapters are implemented without
+object-byte or deletion authority. It traverses lifecycle delete-marker pages, keeps its durable
+cursor history below the DynamoDB item ceiling, binds application time to the inventory adapter's
+trusted S3 observation time, and never releases a recent pre-commit pin within the two-day safety
+window. The SAM template includes a bounded schedule, singleton concurrency, durable checkpoint,
+strong DynamoDB authority reads, and least-capability version-tag IAM. The current scaffold marker
+still prevents that handler from executing in AWS. A separate 90-day terminal operational-record
+cleanup boundary is also required before deployment can claim the full retention gate.
 
 ## Frozen gate order
 
@@ -122,22 +132,22 @@ Run the focused credential-free contract gate with:
 
 ```shell
 .venv/bin/python -m pytest -q tests/test_phase66_acceptance_contract.py
+.venv/bin/python -m pytest -q tests/test_phase66_evidence_set.py tests/test_phase66_source_bundles.py
 .venv/bin/python tools/export_phase66_acceptance_contract.py --check
 .venv/bin/ruff check src/mr_lister/acceptance tests/test_phase66_acceptance_contract.py
 .venv/bin/ruff format --check src/mr_lister/acceptance tests/test_phase66_acceptance_contract.py tools/export_phase66_acceptance_contract.py
 .venv/bin/python -m tools.phase66_browser.run_gate
 ```
 
-At this checkpoint, the full Python suite passes 1,068 tests with 11 explicitly gated live-Bedrock
-skips; the Phase 6 and Phase 6.6 subsets pass 692 and 151 tests respectively. The web gate passes
+At this checkpoint, the full Python suite passes 1,239 tests with 11 explicitly gated live-Bedrock
+skips; the Phase 6 and Phase 6.6 subsets pass 692 and 322 tests respectively. The web gate passes
 62 tests, lint, strict typecheck, production build, and release-artifact checks. SAM lint/build,
 Ruff lint/format, `compileall`, both contract drift checks, `npm audit`, and `git diff --check` pass.
 
 The Python contract/offline tests prove deterministic manifest drift detection, strict
-discriminated evidence classes,
-closed structural JSON Schema objects, mandatory runtime semantic validation, digest-only
-authority references, provider double-gate/count rules,
-moderated-session isolation, and recursive rejection of raw authority fields. They invoke no AWS,
-Bedrock, AgentCore, Cognito, S3, Printify, publication, order, or fulfillment capability. The
-separate browser command launches only local engines against the credential-free fixture server;
-it makes no AWS or provider request.
+discriminated evidence classes, closed structural JSON Schema objects, mandatory runtime semantic
+validation, digest-only authority references, artifact confinement and rehashing, provider
+double-gate/count rules, moderated-session isolation, and recursive rejection of raw authority
+fields. They invoke no AWS, Bedrock, AgentCore, Cognito, S3, Printify, publication, order, or
+fulfillment capability. The separate browser command launches only local engines against the
+credential-free fixture server; it makes no AWS or provider request.

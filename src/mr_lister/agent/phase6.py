@@ -32,7 +32,7 @@ from mr_lister.agent.observability import (
     NoOpAgentAuditSink,
 )
 from mr_lister.agent.phase6_contracts import Phase6AgentCoreResponse
-from mr_lister.agent.runtime import (
+from mr_lister.agent.runtime_contracts import (
     AGENT_INVOCATION_LIMITS,
     AgentExecutionError,
     correlation_id,
