@@ -34,6 +34,27 @@ EXPECTED_PHASE6_WORK_TYPES = {
     "refresh_economics",
 }
 
+PHASE72_EXECUTION_ORACLE_FILES = {
+    "execution_commands.py",
+    "execution_fingerprints.py",
+    "execution_models.py",
+    "execution_service.py",
+    "execution_store.py",
+}
+
+EXPECTED_OFFLINE_PUBLICATION_FILES = {
+    "__init__.py",
+    "commands.py",
+    "contract.py",
+    "dynamodb.py",
+    "errors.py",
+    "fingerprints.py",
+    "models.py",
+    "provider_boundary.py",
+    "service.py",
+    "store.py",
+} | PHASE72_EXECUTION_ORACLE_FILES
+
 
 def _imports(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -252,38 +273,79 @@ def test_phase6_source_bundles_exclude_publication(tmp_path: Path) -> None:
         manifest = json.loads((bundle_root / "source-manifest.json").read_text(encoding="utf-8"))
         paths = {record["path"] for record in manifest["files"]}
         assert not any("publication" in Path(path).parts for path in paths)
+        for source_path in bundle_root.rglob("*.py"):
+            assert not any(
+                module == "mr_lister.publication" or module.startswith("mr_lister.publication.")
+                for module in _imports(source_path)
+            ), source_path.relative_to(bundle_root)
 
 
-def test_publication_request_runtime_is_not_composed() -> None:
+def test_phase72_offline_publication_runtime_is_not_composed() -> None:
     publication_files = {path.name for path in PUBLICATION_ROOT.glob("*.py")}
-    assert publication_files <= {
-        "__init__.py",
-        "commands.py",
-        "contract.py",
-        "dynamodb.py",
-        "errors.py",
-        "fingerprints.py",
-        "models.py",
-        "service.py",
-        "store.py",
-    }
+    assert publication_files == EXPECTED_OFFLINE_PUBLICATION_FILES
     assert set(publication_exports) == {
         "PHASE7_PUBLICATION_CONTRACT_VERSION",
         "PublicationState",
         "phase7_publication_contract",
         "phase7_publication_contract_digest",
     }
+    assert _imports(PUBLICATION_ROOT / "__init__.py") == {"mr_lister.publication.contract"}
 
     runtime_paths = [
         ROOT / "agentcore_phase6_runtime.py",
         PHASE6_LAMBDA,
-        *(ROOT / "src" / "mr_lister" / "agent").glob("*.py"),
-        *(ROOT / "src" / "mr_lister" / "cloud").glob("*.py"),
-        *(ROOT / "src" / "mr_lister" / "production").glob("*.py"),
-        ROOT / "src" / "mr_lister" / "control" / "dispatch.py",
+        *(
+            path
+            for path in (ROOT / "src" / "mr_lister").rglob("*.py")
+            if PUBLICATION_ROOT not in path.parents
+        ),
     ]
     for path in runtime_paths:
         assert not any(
             module == "mr_lister.publication" or module.startswith("mr_lister.publication.")
             for module in _imports(path)
         ), path.relative_to(ROOT)
+
+
+def test_phase72_execution_oracle_has_no_provider_or_runtime_capability() -> None:
+    forbidden_imports = {
+        "boto3",
+        "botocore",
+        "httpx",
+        "requests",
+        "urllib",
+        "mr_lister.agent",
+        "mr_lister.cloud",
+        "mr_lister.intelligence",
+        "mr_lister.production",
+        "mr_lister.publication.provider_boundary",
+        "mr_lister.workflow",
+    }
+
+    for filename in PHASE72_EXECUTION_ORACLE_FILES:
+        imports = _imports(PUBLICATION_ROOT / filename)
+        assert not any(
+            module == forbidden or module.startswith(f"{forbidden}.")
+            for module in imports
+            for forbidden in forbidden_imports
+        ), filename
+
+
+def test_phase72_provider_boundary_owns_transport_but_not_execution_commands() -> None:
+    imports = _imports(PUBLICATION_ROOT / "provider_boundary.py")
+
+    assert any(module == "urllib" or module.startswith("urllib.") for module in imports)
+    assert not {
+        "mr_lister.publication.execution_commands",
+        "mr_lister.publication.execution_service",
+    }.intersection(imports)
+    assert not any(
+        module == runtime or module.startswith(f"{runtime}.")
+        for module in imports
+        for runtime in {
+            "mr_lister.agent",
+            "mr_lister.cloud",
+            "mr_lister.production",
+            "mr_lister.workflow",
+        }
+    )

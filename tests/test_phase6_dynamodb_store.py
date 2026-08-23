@@ -268,6 +268,16 @@ def store_as_legacy_job_payload(
     stored = json.loads(item["payload"]["S"])
     assert stored.pop("approval_decision_id") is None
     assert stored.pop("publication_aggregate_id") is None
+    for field_name in (
+        "publication_terminal_state",
+        "publication_terminal_at",
+        "publication_source_release_eligible_at",
+        "publication_operational_expires_at",
+        "publication_report_id",
+        "publication_result_id",
+        "publication_terminal_summary_fingerprint",
+    ):
+        assert field_name not in stored
     legacy_payload = json.dumps(stored, separators=(",", ":"))
     item["payload"] = {"S": legacy_payload}
     return legacy_payload
@@ -1103,6 +1113,9 @@ def test_legacy_raw_job_payload_round_trips_and_completes_legal_command_cas() ->
     reloaded = store.get_job(initial.job_id)
     assert reloaded.approval_decision_id is None
     assert reloaded.publication_aggregate_id is None
+    assert reloaded.publication_terminal_state is None
+    assert reloaded.publication_terminal_at is None
+    assert reloaded.publication_terminal_summary_fingerprint is None
     assert reloaded.model_dump_json() == legacy_payload
 
     drafted = advance_to_listing_drafted(store, reloaded)

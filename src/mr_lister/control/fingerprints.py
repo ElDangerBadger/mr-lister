@@ -73,6 +73,35 @@ def command_request_fingerprint(*, command_type: str, payload: Mapping[str, Any]
     return canonical_fingerprint({"command_type": command_type, "payload": dict(payload)})
 
 
+def publication_terminal_summary_fingerprint(
+    *,
+    aggregate_id: str,
+    terminal_state: str,
+    terminal_at: datetime,
+    source_release_eligible_at: datetime,
+    operational_expires_at: datetime,
+    report_id: str,
+    result_id: str | None,
+) -> str:
+    """Bind the primitive-only terminal publication summary retained by a Phase 6 job.
+
+    This helper deliberately owns no publication state machine or capability.  The separate
+    publication domain may call it, while the control package remains independent of Phase 7.
+    """
+
+    return canonical_fingerprint(
+        {
+            "aggregate_id": aggregate_id,
+            "terminal_state": terminal_state,
+            "terminal_at": terminal_at.isoformat(),
+            "source_release_eligible_at": source_release_eligible_at.isoformat(),
+            "operational_expires_at": operational_expires_at.isoformat(),
+            "report_id": report_id,
+            "result_id": result_id,
+        }
+    )
+
+
 def agent_preparation_evidence_fingerprint(
     *,
     evidence_id: str,

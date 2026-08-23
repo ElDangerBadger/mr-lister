@@ -339,6 +339,21 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
   - [x] Phase 7.1 offline request authority: strict immutable snapshot/attempt/permit/work/event/
     receipt records, receipt-first idempotency, one separate aggregate, and the exact atomic
     14-action DynamoDB request transaction; publication remains uncomposed and disabled
+  - [x] Phase 7.2 offline/uncomposed checkpoint: provider-free one-shot execution models, store,
+    and service plus an isolated sealed three-route Printify boundary form an offline oracle only,
+    not a runnable or activatable publication path. Shared evidence DTOs and their fingerprints are
+    capability-free and caller-computable, so they do not prove provider provenance; package
+    exports and Phase 6 bundles, API, UI, SAM, IAM, and state machines remain publication-free,
+    publication stays disabled, and no live provider call ran
+  - [ ] Phase 7.3 durable provider-evidence staging/coordinator: only the sealed boundary may stage
+    a claim-, authority-, kind-, and fingerprint-bound observation, either through provider-worker-
+    only provenance or an outer coordinator; seller/API paths must never call execution record
+    commands directly, and each staged binding is consumed at most once
+  - [ ] Phase 7.3 trusted negative-evidence classifier: immediate
+    `DEFINITIVE_PREFLIGHT_FAILURE` retirement remains deliberately inert until a provider-bound
+    structured negative-evidence DTO exists. In 7.2, failed or missing preflight remains requested
+    until the fixed pre-call deadline, then retires as `PRE_CALL_DEADLINE_EXPIRED`; no bare
+    caller-supplied retirement reason is callable
   - [ ] Approval-version and publish guard verification
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports
