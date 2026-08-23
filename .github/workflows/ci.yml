@@ -28,6 +28,8 @@ jobs:
         run: python tools/export_phase65_browser_contracts.py --check
       - name: Phase 6.6 acceptance contract drift
         run: python tools/export_phase66_acceptance_contract.py --check
+      - name: Phase 7 publication contract drift
+        run: python tools/export_phase7_publication_contract.py --check
       - name: Test
         run: pytest
       - name: Build

@@ -8,7 +8,7 @@ from pathlib import Path
 from mr_lister.publication.contract import phase7_publication_contract_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "contracts" / "publication" / "phase7.0.json"
+OUTPUT = ROOT / "contracts" / "publication" / "phase7.0.1.json"
 
 
 def main() -> int:

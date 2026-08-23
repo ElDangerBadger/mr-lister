@@ -328,8 +328,9 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       formatting, compileall, both contract drift checks, npm audit, SAM lint/build, and diff
       hygiene passed. Details: [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
 - [ ] Phase 7 — Etsy publication through Printify
-  - [x] Freeze the publication-disabled one-shot authority, state graph, exact provider route,
-    GET-only reconciliation, verified safe-link, notification, retention, and activation contract
+  - [x] Freeze publication-disabled contract 7.0.1: separate aggregate authority, complete
+    one-shot permit semantics, positive-proof-only GET reconciliation, verified safe link,
+    notification, terminal-settlement retention, and three-scope activation
     ([ADR 0013](architecture/0013-one-shot-verified-channel-publication.md),
     [detailed contract](phase7-publication-contract.md))
   - [ ] Approval-version and publish guard verification
