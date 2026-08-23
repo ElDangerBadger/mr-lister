@@ -24,7 +24,7 @@ from mr_lister.control.errors import (
     RetryNotAllowedError,
     StaleReviewError,
 )
-from mr_lister.control.fingerprints import review_etag
+from mr_lister.control.fingerprints import product_sync_record_fingerprint, review_etag
 from mr_lister.control.models import (
     CancellationDecisionRecord,
     CommandReceipt,
@@ -395,6 +395,8 @@ def seed_reviewable(
     store: InMemorySellerControlStore,
     *,
     fresh_until: datetime | None = None,
+    mockups: tuple[ProductMockupEvidence, ...] | None = None,
+    printify_shop_id: int | None = 42,
 ) -> tuple[ControlJobRecord, ReviewContent, ProductSyncRecord, PricingSnapshot]:
     syncing, review, work = seed_product_syncing(store)
     sync = ProductSyncRecord(
@@ -402,16 +404,21 @@ def seed_reviewable(
         job_id=syncing.job_id,
         review_version=1,
         product_id="product_initial",
+        printify_shop_id=printify_shop_id,
         image_id="image_initial",
         payload_fingerprint="4" * 64,
         response_fingerprint="9" * 64,
         fingerprint="5" * 64,
         mockups=(
-            ProductMockupEvidence(
-                url="https://images.printify.com/product_initial/front.jpg",
-                position="front",
-                variant_ids=(1000,),
-            ),
+            mockups
+            if mockups is not None
+            else (
+                ProductMockupEvidence(
+                    url="https://images.printify.com/product_initial/front.jpg",
+                    position="front",
+                    variant_ids=(1000,),
+                ),
+            )
         ),
         variants=(
             ProductVariantEvidence(
@@ -425,6 +432,7 @@ def seed_reviewable(
         ),
         synchronized_at=NOW,
     )
+    sync = sync.model_copy(update={"fingerprint": product_sync_record_fingerprint(sync)})
     desired_fresh_until = fresh_until or NOW + timedelta(hours=24)
     observed_at = desired_fresh_until - timedelta(hours=24)
     calculated_at = min(NOW, desired_fresh_until - timedelta(microseconds=1))
@@ -511,18 +519,28 @@ def seed_reviewable(
             "updated_at": NOW,
         }
     )
-    store.commit_command(
-        CommandCommit(
-            current=syncing,
-            updated=updated,
-            event=_event(updated, "REVIEW_READY"),
-            receipt=receipt,
-            product_sync=sync,
-            pricing_evidence=pricing_evidence,
-            pricing_snapshot=pricing,
-            work_update=(work, completed),
-        )
+    event = _event(updated, "REVIEW_READY")
+    commit = CommandCommit(
+        current=syncing,
+        updated=updated,
+        event=event,
+        receipt=receipt,
+        product_sync=sync,
+        pricing_evidence=pricing_evidence,
+        pricing_snapshot=pricing,
+        work_update=(work, completed),
     )
+    if printify_shop_id is None:
+        # Reconstruct a valid historical row without reopening the current write boundary.
+        store._jobs[updated.job_id] = updated
+        store._events[updated.job_id].append(event)
+        store._receipts[store._receipt_key(receipt)] = receipt
+        store._product_syncs[(updated.job_id, sync.sync_id)] = sync
+        store._pricing_evidence[(updated.job_id, pricing.snapshot_id)] = pricing_evidence
+        store._pricing[(updated.job_id, pricing.snapshot_id)] = pricing
+        store._work[(completed.job_id, completed.work_request_id)] = completed
+    else:
+        store.commit_command(commit)
     return updated, review, sync, pricing
 
 
@@ -680,7 +698,10 @@ def test_approval_binds_exact_composite_authority_and_ends_without_work() -> Non
     assert result.state is ControlJobState.APPROVED
     assert result.work_request_id is None
     assert approved.approval_fingerprint == etag
-    assert store.list_review_decisions(job.job_id)[0].approval_fingerprint == etag
+    decision = store.list_review_decisions(job.job_id)[0]
+    assert decision.approval_fingerprint == etag
+    assert approved.approval_decision_id == decision.decision_id
+    assert store.get_review_decision(job.job_id, decision.decision_id) == decision
     with pytest.raises(InvalidControlStateError):
         service.cancel_job(
             CancelJobCommand(
@@ -692,10 +713,27 @@ def test_approval_binds_exact_composite_authority_and_ends_without_work() -> Non
         )
 
 
+def test_approval_fails_closed_for_legacy_sync_without_shop_authority() -> None:
+    store = InMemorySellerControlStore()
+    job, review, sync, pricing = seed_reviewable(store, printify_shop_id=None)
+
+    with pytest.raises(StaleReviewError, match="synchronized review authority is stale"):
+        SellerControlService(store=store, clock=lambda: NOW).approve_review(
+            ApproveReviewCommand(
+                job_id=job.job_id,
+                owner_id=OWNER,
+                expected_record_version=job.record_version,
+                expected_review_version=review.review_version,
+                expected_review_fingerprint=review.fingerprint,
+                expected_review_etag=current_etag(job, review, sync, pricing),
+                idempotency_key="approve-legacy-sync",
+            )
+        )
+
+
 def test_approval_requires_at_least_one_reviewable_structured_mockup() -> None:
     store = InMemorySellerControlStore()
-    job, review, sync, pricing = seed_reviewable(store)
-    store._product_syncs[(job.job_id, sync.sync_id)] = sync.model_copy(update={"mockups": ()})
+    job, review, sync, pricing = seed_reviewable(store, mockups=())
     command = ApproveReviewCommand(
         job_id=job.job_id,
         owner_id=OWNER,
@@ -761,7 +799,7 @@ def test_approval_recomputes_complete_pricing_evidence_authority() -> None:
     assert store.list_review_decisions(job.job_id) == ()
 
 
-def test_approval_rejects_a_persisted_mockup_the_review_projection_would_hide() -> None:
+def test_approval_rejects_a_corrupted_persisted_mockup_before_projection() -> None:
     store = InMemorySellerControlStore()
     job, review, sync, pricing = seed_reviewable(store)
     unsafe = sync.mockups[0].model_copy(
@@ -779,7 +817,7 @@ def test_approval_rejects_a_persisted_mockup_the_review_projection_would_hide() 
         idempotency_key="approve-with-hidden-mockup",
     )
 
-    with pytest.raises(InvalidControlStateError, match="reviewable product mockup"):
+    with pytest.raises(StaleReviewError, match="synchronized review authority is stale"):
         SellerControlService(store=store, clock=lambda: NOW).approve_review(command)
 
     assert store.get_job(job.job_id) == job

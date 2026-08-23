@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, StrictInt, model_validator
 
 from mr_lister.agent.contracts import PreparationDecision
 from mr_lister.contracts import ArtworkAnalysis, ListingIntelligence
@@ -123,6 +123,7 @@ class RecordUploadReconciliationObservationCommand(WorkerCommand):
 class ProductSyncObservation(ControlModel):
     product_id: SafeId
     image_id: SafeId
+    printify_shop_id: StrictInt = Field(gt=0)
     request_fingerprint: Fingerprint
     response_fingerprint: Fingerprint
     mockups: tuple[ProductMockupEvidence, ...] = ()

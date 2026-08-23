@@ -19,6 +19,54 @@ def canonical_fingerprint(value: BaseModel | Mapping[str, Any]) -> str:
     return sha256(encoded).hexdigest()
 
 
+_PRODUCT_SYNC_FINGERPRINT_FIELDS = frozenset(
+    {
+        "job_id",
+        "review_version",
+        "product_id",
+        "image_id",
+        "payload_fingerprint",
+        "response_fingerprint",
+        "mockups",
+        "variants",
+        "provider_locked",
+        "provider_published",
+        "synchronized_at",
+    }
+)
+
+
+def product_sync_record_fingerprint(value: BaseModel | Mapping[str, Any]) -> str:
+    """Hash exact immutable synchronization evidence, including owner-bound shop authority.
+
+    Records written before Phase 7.1 had no ``printify_shop_id`` field. They remain readable and
+    retain their historical fingerprint, but cannot pass the approval boundary. New records must
+    include a positive shop identifier and bind it into this fingerprint.
+    """
+
+    if isinstance(value, BaseModel):
+        payload = value.model_dump(
+            mode="json",
+            exclude={"contract_version", "sync_id", "fingerprint"},
+        )
+        synchronized_at = getattr(value, "synchronized_at", None)
+        if isinstance(synchronized_at, datetime):
+            # Preserve the Phase 6 canonical timestamp spelling used by existing records.
+            payload["synchronized_at"] = synchronized_at.isoformat()
+    else:
+        payload = dict(value)
+        if isinstance(payload.get("synchronized_at"), datetime):
+            payload["synchronized_at"] = payload["synchronized_at"].isoformat()
+    if payload.get("printify_shop_id") is None:
+        payload.pop("printify_shop_id", None)
+    expected_fields = _PRODUCT_SYNC_FINGERPRINT_FIELDS | (
+        {"printify_shop_id"} if "printify_shop_id" in payload else set()
+    )
+    if set(payload) != expected_fields:
+        raise ValueError("Product synchronization fingerprint material has unexpected fields")
+    return canonical_fingerprint(payload)
+
+
 def command_request_fingerprint(*, command_type: str, payload: Mapping[str, Any]) -> str:
     """Bind an idempotency receipt to its command type and complete request body."""
 

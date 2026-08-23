@@ -129,6 +129,7 @@ def competing_commits(current: ControlJobRecord) -> tuple[CommandCommit, Command
             "approved_review_version": 1,
             "approved_review_fingerprint": REVIEW_FP,
             "approval_fingerprint": APPROVAL_FP,
+            "approval_decision_id": "decision_approve",
             "updated_at": changed_at,
         }
     )
@@ -270,6 +271,19 @@ def test_approval_requires_a_decision_and_exact_composite_authority() -> None:
                 updated=approval.updated,
                 event=approval.event,
                 receipt=approval.receipt,
+            )
+        )
+
+    pointerless = approval.updated.model_copy(update={"approval_decision_id": None})
+    pointerless_receipt = approval.receipt.model_copy(update={"response": response(pointerless)})
+    with pytest.raises(InvalidControlStateError, match="Approval decision does not match"):
+        store.commit_command(
+            CommandCommit(
+                current=approval.current,
+                updated=pointerless,
+                event=approval.event,
+                receipt=pointerless_receipt,
+                review_decision=approval.review_decision,
             )
         )
 

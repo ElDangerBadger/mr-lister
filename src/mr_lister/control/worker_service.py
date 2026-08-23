@@ -20,6 +20,7 @@ from mr_lister.control.fingerprints import (
     agent_preparation_evidence_fingerprint,
     canonical_fingerprint,
     command_request_fingerprint,
+    product_sync_record_fingerprint,
 )
 from mr_lister.control.models import (
     AgentPreparationEvidence,
@@ -1324,6 +1325,7 @@ class WorkerControlService:
             "review_version": current.review_version,
             "product_id": observation.product_id,
             "image_id": observation.image_id,
+            "printify_shop_id": observation.printify_shop_id,
             "payload_fingerprint": observation.request_fingerprint,
             "response_fingerprint": observation.response_fingerprint,
             "mockups": [item.model_dump(mode="json") for item in observation.mockups],
@@ -1334,7 +1336,7 @@ class WorkerControlService:
         }
         sync = ProductSyncRecord(
             sync_id=self._record_id("sync", current.job_id, attempt.attempt_id),
-            fingerprint=canonical_fingerprint(sync_material),
+            fingerprint=product_sync_record_fingerprint(sync_material),
             **sync_material,
         )
         next_work = None

@@ -333,6 +333,12 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     notification, terminal-settlement retention, and three-scope activation
     ([ADR 0013](architecture/0013-one-shot-verified-channel-publication.md),
     [detailed contract](phase7-publication-contract.md))
+  - [x] Phase 7.1 authority prerequisites: new approvals retain the immutable decision ID,
+    new product synchronizations retain the owner-bound Printify shop ID, and legacy rows remain
+    readable while failing closed for publication when either prerequisite is absent
+  - [x] Phase 7.1 offline request authority: strict immutable snapshot/attempt/permit/work/event/
+    receipt records, receipt-first idempotency, one separate aggregate, and the exact atomic
+    14-action DynamoDB request transaction; publication remains uncomposed and disabled
   - [ ] Approval-version and publish guard verification
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports

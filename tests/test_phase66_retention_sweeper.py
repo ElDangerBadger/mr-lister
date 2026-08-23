@@ -91,6 +91,7 @@ def _job(
                 "product_sync_fingerprint": "f" * 64,
                 "pricing_snapshot_id": "pricing_retention",
                 "pricing_snapshot_fingerprint": "1" * 64,
+                "approval_decision_id": "decision_retention",
                 "approved_review_version": 1,
                 "approved_review_fingerprint": "e" * 64,
                 "approval_fingerprint": "2" * 64,

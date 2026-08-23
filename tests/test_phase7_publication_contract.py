@@ -256,17 +256,35 @@ def test_changed_serialized_contract_fails_semantic_validation() -> None:
         validate_phase7_publication_contract_json(json.dumps(payload))
 
 
-def test_publication_package_has_no_capability_imports() -> None:
+def test_publication_core_has_no_capability_imports() -> None:
+    """Keep the pure 7.0.1 authority reusable without any runtime capability."""
+
     forbidden = {
         "boto3",
         "botocore",
+        "httpx",
         "requests",
         "urllib",
+        "mr_lister.agent",
         "mr_lister.production",
         "mr_lister.cloud",
-        "mr_lister.control.store",
+        "mr_lister.control",
+        "mr_lister.intelligence",
+        "mr_lister.workflow",
     }
-    for path in (ROOT / "src" / "mr_lister" / "publication").glob("*.py"):
+    pure_files = {
+        "__init__.py",
+        "commands.py",
+        "contract.py",
+        "errors.py",
+        "fingerprints.py",
+        "models.py",
+    }
+    publication_root = ROOT / "src" / "mr_lister" / "publication"
+    assert pure_files.issubset({path.name for path in publication_root.glob("*.py")})
+
+    for filename in pure_files:
+        path = publication_root / filename
         tree = ast.parse(path.read_text())
         imported: set[str] = set()
         for node in ast.walk(tree):
@@ -279,3 +297,80 @@ def test_publication_package_has_no_capability_imports() -> None:
             for module in imported
             for denied in forbidden
         )
+
+
+def test_publication_persistence_and_service_cannot_acquire_runtime_capability() -> None:
+    """Allow control evidence and botocore errors, but no client factory or provider surface."""
+
+    publication_root = ROOT / "src" / "mr_lister" / "publication"
+    adapter_paths = [
+        path
+        for path in publication_root.glob("*.py")
+        if path.name
+        not in {
+            "__init__.py",
+            "commands.py",
+            "contract.py",
+            "errors.py",
+            "fingerprints.py",
+            "models.py",
+        }
+    ]
+    assert {path.name for path in adapter_paths}.issuperset({"store.py", "dynamodb.py"})
+
+    forbidden_imports = {
+        "boto3",
+        "httpx",
+        "requests",
+        "urllib",
+        "mr_lister.agent",
+        "mr_lister.cloud",
+        "mr_lister.intelligence",
+        "mr_lister.production",
+        "mr_lister.workflow",
+    }
+    forbidden_calls = {
+        "client",
+        "create_unpublished_product",
+        "describe_execution",
+        "describe_secret",
+        "dispatch",
+        "get_secret_value",
+        "publish",
+        "resource",
+        "start_execution",
+    }
+    forbidden_definitions = {
+        "consume_permit",
+        "dispatch",
+        "dispatch_due",
+        "dispatch_one",
+        "publish",
+        "retire_permit",
+    }
+
+    for path in adapter_paths:
+        tree = ast.parse(path.read_text())
+        imported: set[str] = set()
+        called: set[str] = set()
+        defined: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module)
+            elif isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name):
+                    called.add(node.func.id)
+                elif isinstance(node.func, ast.Attribute):
+                    called.add(node.func.attr)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                defined.add(node.name)
+
+        assert not any(
+            module == denied or module.startswith(f"{denied}.")
+            for module in imported
+            for denied in forbidden_imports
+        ), path.name
+        assert called.isdisjoint(forbidden_calls), path.name
+        assert defined.isdisjoint(forbidden_definitions), path.name

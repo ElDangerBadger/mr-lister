@@ -12,7 +12,11 @@ from pydantic import ValidationError
 from mr_lister.contracts import ListingIntelligence, ProductProfile
 from mr_lister.control.dispatch import deterministic_execution_name, work_input_fingerprint
 from mr_lister.control.errors import ControlError, NotFoundError
-from mr_lister.control.fingerprints import canonical_fingerprint, review_etag
+from mr_lister.control.fingerprints import (
+    canonical_fingerprint,
+    product_sync_record_fingerprint,
+    review_etag,
+)
 from mr_lister.control.models import (
     AgentPreparationEvidence,
     ArtworkAnalysisRecord,
@@ -220,21 +224,7 @@ def _review_content_fingerprint(review: ReviewContent) -> str:
 def _product_sync_fingerprint(sync: ProductSyncRecord) -> str:
     """Rebuild the exact immutable material used when provider evidence was stored."""
 
-    return canonical_fingerprint(
-        {
-            "job_id": sync.job_id,
-            "review_version": sync.review_version,
-            "product_id": sync.product_id,
-            "image_id": sync.image_id,
-            "payload_fingerprint": sync.payload_fingerprint,
-            "response_fingerprint": sync.response_fingerprint,
-            "mockups": [item.model_dump(mode="json") for item in sync.mockups],
-            "variants": [item.model_dump(mode="json") for item in sync.variants],
-            "provider_locked": sync.provider_locked,
-            "provider_published": sync.provider_published,
-            "synchronized_at": sync.synchronized_at.isoformat(),
-        }
-    )
+    return product_sync_record_fingerprint(sync)
 
 
 class SellerReviewProjectionService:
@@ -989,7 +979,11 @@ class SellerReviewProjectionService:
             return ActionReason.REVIEW_NOT_READY
         if not review.validation_passed or not job.review_validated:
             return ActionReason.REVIEW_INVALID
-        if sync is None or sync.review_version != job.review_version:
+        if (
+            sync is None
+            or sync.review_version != job.review_version
+            or sync.printify_shop_id is None
+        ):
             return ActionReason.PRODUCT_NOT_CURRENT
         if sync.provider_locked or sync.provider_published:
             return ActionReason.PRODUCT_NOT_REVIEWABLE
