@@ -6,6 +6,10 @@ import pytest
 from pydantic import ValidationError
 
 from mr_lister.contracts import CONTRACT_VERSION, JobRecord, JobState
+from mr_lister.control.fingerprints import (
+    canonical_fingerprint,
+    product_sync_record_fingerprint,
+)
 from mr_lister.control.models import (
     CONTROL_ALLOWED_TRANSITIONS,
     CONTROL_CONTRACT_VERSION,
@@ -40,6 +44,24 @@ def job(**updates: object) -> ControlJobRecord:
     }
     values.update(updates)
     return ControlJobRecord.model_validate(values)
+
+
+def approved_job(**updates: object) -> ControlJobRecord:
+    values: dict[str, object] = {
+        "state": ControlJobState.APPROVED,
+        "review_validated": True,
+        "product_id": "product_approved",
+        "product_sync_id": "sync_approved",
+        "synchronized_review_version": 1,
+        "product_sync_fingerprint": "c" * 64,
+        "pricing_snapshot_id": "pricing_approved",
+        "pricing_snapshot_fingerprint": "d" * 64,
+        "approved_review_version": 1,
+        "approved_review_fingerprint": FINGERPRINT,
+        "approval_fingerprint": "e" * 64,
+    }
+    values.update(updates)
+    return job(**values)
 
 
 def test_phase6_contract_is_strictly_separate_from_legacy_v1() -> None:
@@ -109,6 +131,29 @@ def test_approved_job_requires_composite_review_product_and_pricing_authority() 
             pricing_snapshot_id="pricing_1",
             pricing_snapshot_fingerprint="d" * 64,
         )
+
+
+def test_legacy_approved_authority_remains_readable_but_new_pointers_are_state_scoped() -> None:
+    legacy = approved_job()
+    assert legacy.approval_decision_id is None
+    assert legacy.publication_aggregate_id is None
+    assert "approval_decision_id" not in legacy.model_dump(mode="json")
+    assert "publication_aggregate_id" not in legacy.model_dump(mode="json")
+    assert ControlJobRecord.model_validate_json(legacy.model_dump_json()) == legacy
+
+    current = approved_job(
+        approval_decision_id="decision_approved",
+        publication_aggregate_id="publication_approved",
+    )
+    assert current.approval_decision_id == "decision_approved"
+    assert current.publication_aggregate_id == "publication_approved"
+    assert current.model_dump(mode="json")["approval_decision_id"] == "decision_approved"
+    assert current.model_dump(mode="json")["publication_aggregate_id"] == ("publication_approved")
+
+    with pytest.raises(ValidationError, match="approval decision"):
+        job(approval_decision_id="decision_invalid")
+    with pytest.raises(ValidationError, match="publication aggregate"):
+        job(publication_aggregate_id="publication_invalid")
 
 
 def test_pre_review_cancellation_record_does_not_manufacture_review_authority() -> None:
@@ -235,6 +280,7 @@ def test_product_sync_selects_deterministic_variant_covering_mockups() -> None:
         job_id="job_phase6_models",
         review_version=1,
         product_id="product_projection",
+        printify_shop_id=42,
         image_id="image_projection",
         payload_fingerprint="c" * 64,
         response_fingerprint="d" * 64,
@@ -267,6 +313,7 @@ def test_product_sync_rejects_duplicate_labels_and_unknown_mockup_variants() -> 
         "job_id": "job_phase6_models",
         "review_version": 1,
         "product_id": "product_projection",
+        "printify_shop_id": 42,
         "image_id": "image_projection",
         "payload_fingerprint": "c" * 64,
         "response_fingerprint": "d" * 64,
@@ -294,4 +341,52 @@ def test_product_sync_rejects_duplicate_labels_and_unknown_mockup_variants() -> 
                     variant.model_copy(update={"variant_id": 102}),
                 ),
             }
+        )
+
+
+def test_product_sync_shop_authority_is_strict_fingerprinted_and_legacy_compatible() -> None:
+    legacy = ProductSyncRecord(
+        sync_id="sync_legacy",
+        job_id="job_phase6_models",
+        review_version=1,
+        product_id="product_projection",
+        image_id="image_projection",
+        payload_fingerprint="c" * 64,
+        response_fingerprint="d" * 64,
+        fingerprint="e" * 64,
+        variants=(
+            ProductVariantEvidence(
+                variant_id=101,
+                color="Black",
+                size="S",
+                placement_group_id="small",
+                retail_price_cents=2999,
+                production_cost_cents=1100,
+            ),
+        ),
+        synchronized_at=NOW,
+    )
+    legacy_material = legacy.model_dump(
+        mode="json",
+        exclude={"contract_version", "sync_id", "fingerprint", "printify_shop_id"},
+    )
+    legacy_material["synchronized_at"] = legacy.synchronized_at.isoformat()
+    assert legacy.printify_shop_id is None
+    assert "printify_shop_id" not in legacy.model_dump(mode="json")
+    assert product_sync_record_fingerprint(legacy) == canonical_fingerprint(legacy_material)
+
+    shop_bound = legacy.model_copy(update={"printify_shop_id": 42})
+    assert shop_bound.model_dump(mode="json")["printify_shop_id"] == 42
+    assert product_sync_record_fingerprint(shop_bound) != product_sync_record_fingerprint(legacy)
+    assert product_sync_record_fingerprint(
+        shop_bound.model_copy(update={"printify_shop_id": 43})
+    ) != product_sync_record_fingerprint(shop_bound)
+
+    with pytest.raises(ValidationError, match="valid integer"):
+        ProductSyncRecord.model_validate(
+            {**shop_bound.model_dump(mode="python"), "printify_shop_id": "42"}
+        )
+    with pytest.raises(ValidationError, match="valid integer"):
+        ProductSyncRecord.model_validate(
+            {**shop_bound.model_dump(mode="python"), "printify_shop_id": True}
         )

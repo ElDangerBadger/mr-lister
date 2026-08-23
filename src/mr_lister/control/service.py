@@ -43,6 +43,7 @@ from mr_lister.control.fingerprints import (
     canonical_fingerprint,
     command_request_fingerprint,
     idempotency_key_digest,
+    product_sync_record_fingerprint,
     review_etag,
 )
 from mr_lister.control.models import (
@@ -231,6 +232,7 @@ class SellerControlService:
                 # the immutable provider basis needed to reconstruct and reconcile the PUT.
                 "pricing_snapshot_id": None,
                 "pricing_snapshot_fingerprint": None,
+                "approval_decision_id": None,
                 "approved_review_version": None,
                 "approved_review_fingerprint": None,
                 "approval_fingerprint": None,
@@ -302,6 +304,8 @@ class SellerControlService:
             or sync.review_version != current.review_version
             or current.product_id != sync.product_id
             or current.product_sync_fingerprint != sync.fingerprint
+            or sync.fingerprint != product_sync_record_fingerprint(sync)
+            or sync.printify_shop_id is None
             or pricing.review_version != current.review_version
             or pricing.product_sync_fingerprint != sync.fingerprint
             or current.pricing_snapshot_fingerprint != pricing.fingerprint
@@ -329,12 +333,14 @@ class SellerControlService:
             command.job_id,
             idempotency_key_digest(command.idempotency_key),
         )
+        decision_id = self._record_id("decision", receipt_id)
         updated = self._job_update(
             current,
             **{
                 "state": ControlJobState.APPROVED,
                 "record_version": current.record_version + 1,
                 "event_sequence": current.event_sequence + 1,
+                "approval_decision_id": decision_id,
                 "approved_review_version": current.review_version,
                 "approved_review_fingerprint": review.fingerprint,
                 "approval_fingerprint": current_etag,
@@ -356,7 +362,7 @@ class SellerControlService:
             now=now,
         )
         decision = ReviewDecisionRecord(
-            decision_id=self._record_id("decision", receipt_id),
+            decision_id=decision_id,
             job_id=current.job_id,
             actor_owner_id=current.owner_id,
             decision=ReviewDecision.APPROVE,

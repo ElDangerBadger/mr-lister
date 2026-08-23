@@ -6,7 +6,7 @@ import pytest
 
 from mr_lister.contracts import Placement, PlacementGroup, ProductProfile
 from mr_lister.control.errors import InvalidControlStateError
-from mr_lister.control.fingerprints import canonical_fingerprint
+from mr_lister.control.fingerprints import canonical_fingerprint, product_sync_record_fingerprint
 from mr_lister.control.models import (
     CommandResponse,
     ControlJobRecord,
@@ -717,6 +717,7 @@ def _prior_sync() -> tuple[ProductSyncRecord, str]:
         job_id=JOB_ID,
         review_version=1,
         product_id="product_1",
+        printify_shop_id=42,
         image_id="image_old",
         payload_fingerprint=draft.payload_fingerprint,
         response_fingerprint=RESPONSE_FP,
@@ -733,6 +734,7 @@ def _prior_sync() -> tuple[ProductSyncRecord, str]:
         ),
         synchronized_at=NOW,
     )
+    sync = sync.model_copy(update={"fingerprint": product_sync_record_fingerprint(sync)})
     return sync, draft.payload_fingerprint
 
 
@@ -855,6 +857,7 @@ def test_initial_create_claims_then_consumes_one_shot_before_mutation() -> None:
     assert resources.upload_count == 1
     assert sync.mutations == [None]
     assert control.successes[0].observation.product_id == "product_1"
+    assert control.successes[0].observation.printify_shop_id == 42
     variant = control.successes[0].observation.variants[0]
     assert variant.production_cost_cents == 1100
     assert (variant.color, variant.size, variant.placement_group_id) == (
@@ -1132,6 +1135,7 @@ def test_update_uses_only_the_application_owned_product_identity() -> None:
 
     assert sync.mutations == ["product_1"]
     assert control.successes[0].observation.product_id == "product_1"
+    assert control.successes[0].observation.printify_shop_id == 42
 
 
 @pytest.mark.parametrize(

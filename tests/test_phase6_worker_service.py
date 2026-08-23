@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
 import pytest
+from pydantic import ValidationError
 
 from mr_lister.agent.contracts import PreparationDecision
 from mr_lister.contracts import ArtworkAnalysis, ListingIntelligence
@@ -22,7 +23,7 @@ from mr_lister.control.errors import (
     InvalidControlStateError,
     WorkNotActiveError,
 )
-from mr_lister.control.fingerprints import review_etag
+from mr_lister.control.fingerprints import product_sync_record_fingerprint, review_etag
 from mr_lister.control.models import (
     CommandReceipt,
     CommandResponse,
@@ -42,7 +43,11 @@ from mr_lister.control.models import (
 )
 from mr_lister.control.service import SellerControlService
 from mr_lister.control.source_artwork import source_artifact_fingerprint
-from mr_lister.control.store import InMemorySellerControlStore
+from mr_lister.control.store import (
+    CommandCommit,
+    InMemorySellerControlStore,
+    validate_command_commit,
+)
 from mr_lister.control.worker_commands import (
     BeginPreparationCommand,
     BeginProviderUploadCommand,
@@ -374,6 +379,7 @@ def _observation(
 ) -> ProductSyncObservation:
     return ProductSyncObservation(
         product_id=product_id,
+        printify_shop_id=12_345,
         image_id=image_id,
         request_fingerprint=request_fingerprint,
         response_fingerprint=response_fingerprint,
@@ -403,6 +409,17 @@ def _observation(
             ),
         ),
     )
+
+
+def test_product_sync_observation_requires_strict_positive_shop_authority() -> None:
+    payload = _observation().model_dump(mode="python")
+    payload.pop("printify_shop_id")
+    with pytest.raises(ValidationError, match="Field required"):
+        ProductSyncObservation.model_validate(payload)
+    with pytest.raises(ValidationError, match="valid integer"):
+        ProductSyncObservation.model_validate({**payload, "printify_shop_id": "12345"})
+    with pytest.raises(ValidationError, match="greater than 0"):
+        ProductSyncObservation.model_validate({**payload, "printify_shop_id": 0})
 
 
 def _begin_create(
@@ -1177,7 +1194,9 @@ def test_product_sync_success_persists_evidence_and_creates_pricing_work() -> No
     assert job.provider_payload_fingerprint == TARGET_FP
     assert job.provider_outcome_unconfirmed is False
     assert sync.image_id == IMAGE_ID
+    assert sync.printify_shop_id == 12_345
     assert sync.response_fingerprint == RESPONSE_FP
+    assert sync.fingerprint == product_sync_record_fingerprint(sync)
     assert tuple(item.variant_id for item in sync.variants) == (101, 102)
     assert pricing_work.work_type is WorkType.REFRESH_ECONOMICS
     assert pricing_work.review_version == job.review_version
@@ -1185,6 +1204,48 @@ def test_product_sync_success_persists_evidence_and_creates_pricing_work() -> No
         store.get_work_request(job.job_id, active.work_request_id).status
         is WorkRequestStatus.COMPLETED
     )
+
+
+def test_product_sync_commit_rejects_new_shopless_legacy_shape() -> None:
+    store, clock, worker, _sync_work = _prepare_to_product_sync()
+    claimed, active, attempt_id = _begin_create(store, clock, worker)
+    captured: list[CommandCommit] = []
+    original_commit = store.commit_command
+
+    def capture(commit: CommandCommit):  # type: ignore[no-untyped-def]
+        captured.append(commit)
+        return original_commit(commit)
+
+    store.commit_command = capture  # type: ignore[method-assign]
+    worker.record_product_sync_success(
+        RecordProductSyncSuccessCommand(
+            job_id=claimed.job_id,
+            work_request_id=active.work_request_id,
+            expected_record_version=claimed.record_version,
+            attempt_id=attempt_id,
+            observation=_observation(),
+        )
+    )
+    valid = captured[-1]
+    assert valid.product_sync is not None
+    shopless = valid.product_sync.model_copy(update={"printify_shop_id": None})
+    shopless = shopless.model_copy(
+        update={"fingerprint": product_sync_record_fingerprint(shopless)}
+    )
+    forged = CommandCommit(
+        **{
+            **valid.__dict__,
+            "updated": valid.updated.model_copy(
+                update={"product_sync_fingerprint": shopless.fingerprint}
+            ),
+            "product_sync": shopless,
+        }
+    )
+    assert forged.updated.product_sync_fingerprint == shopless.fingerprint
+    assert shopless.fingerprint == product_sync_record_fingerprint(shopless)
+
+    with pytest.raises(InvalidControlStateError, match="product synchronization"):
+        validate_command_commit(forged)
 
 
 def test_pricing_success_atomically_persists_full_evidence_and_settles_exact_work() -> None:

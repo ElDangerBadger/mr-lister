@@ -19,7 +19,7 @@ from mr_lister.control.errors import (
     InvalidControlStateError,
     NotFoundError,
 )
-from mr_lister.control.fingerprints import review_etag
+from mr_lister.control.fingerprints import product_sync_record_fingerprint, review_etag
 from mr_lister.control.models import (
     CONTROL_NEW_WORK_BY_STATE,
     CONTROL_RECOVERY_BINDINGS,
@@ -217,7 +217,9 @@ def validate_initial_job(
         or job.provider_payload_fingerprint is not None
         or job.product_sync_id is not None
         or job.pricing_snapshot_id is not None
+        or job.approval_decision_id is not None
         or job.approval_fingerprint is not None
+        or job.publication_aggregate_id is not None
         or job.failure_id is not None
         or job.provider_upload_attempt_id is not None
         or job.uploaded_artwork_id is not None
@@ -305,6 +307,10 @@ def validate_command_commit(commit: CommandCommit) -> None:
         retired_permit_attempt_id = expected_permit.attempt_id
     if updated.job_id != current.job_id or updated.owner_id != current.owner_id:
         raise InvalidControlStateError("A command cannot change job identity or ownership")
+    if updated.publication_aggregate_id != current.publication_aggregate_id:
+        raise InvalidControlStateError(
+            "Phase 6 commands cannot change publication aggregate authority"
+        )
     if updated.record_version != current.record_version + 1:
         raise InvalidControlStateError("A command must increment record_version exactly once")
     if updated.event_sequence != current.event_sequence + 1:
@@ -432,7 +438,11 @@ def validate_command_commit(commit: CommandCommit) -> None:
         if decision.approval_fingerprint != updated.approval_fingerprint:
             raise InvalidControlStateError("The decision does not bind the committed approval")
         if decision.decision is ReviewDecision.APPROVE:
-            if updated.state is not ControlJobState.APPROVED or commit.review is not None:
+            if (
+                updated.state is not ControlJobState.APPROVED
+                or updated.approval_decision_id != decision.decision_id
+                or commit.review is not None
+            ):
                 raise InvalidControlStateError("Approval decision does not match the transition")
         elif current.review_version == 0 or commit.review is None:
             raise InvalidControlStateError("Revision decision requires a prior and new review")
@@ -657,6 +667,8 @@ def validate_command_commit(commit: CommandCommit) -> None:
             or updated.synchronized_review_version != sync.review_version
             or updated.product_sync_fingerprint != sync.fingerprint
             or updated.provider_payload_fingerprint != sync.payload_fingerprint
+            or sync.printify_shop_id is None
+            or sync.fingerprint != product_sync_record_fingerprint(sync)
         ):
             raise InvalidControlStateError("The product synchronization does not match the job")
     elif updated.provider_payload_fingerprint != current.provider_payload_fingerprint:
@@ -774,8 +786,9 @@ def validate_command_commit(commit: CommandCommit) -> None:
             pricing_snapshot_fingerprint=current.pricing_snapshot_fingerprint,
         )
         if (
-            updated.approval_fingerprint != expected_approval
-            or commit.review_decision is None
+            commit.review_decision is None
+            or updated.approval_decision_id != commit.review_decision.decision_id
+            or updated.approval_fingerprint != expected_approval
             or commit.review_decision.approval_fingerprint != expected_approval
         ):
             raise InvalidControlStateError("Approval does not bind the exact composite authority")
@@ -887,6 +900,8 @@ class SellerControlStore(Protocol):
     def complete_upload(self, commit: UploadCompletionCommit) -> UploadReceipt: ...
 
     def get_review(self, job_id: str, review_version: int) -> ReviewContent: ...
+
+    def get_review_decision(self, job_id: str, decision_id: str) -> ReviewDecisionRecord: ...
 
     def get_source_artifact(self, job_id: str) -> SourceArtifactRecord: ...
 
@@ -1101,6 +1116,13 @@ class InMemorySellerControlStore:
             return self._reviews[(job_id, review_version)]
         except KeyError as error:
             raise NotFoundError("The requested review was not found") from error
+
+    def get_review_decision(self, job_id: str, decision_id: str) -> ReviewDecisionRecord:
+        self.get_job(job_id)
+        decision = self._review_decisions.get(decision_id)
+        if decision is None or decision.job_id != job_id or decision.decision_id != decision_id:
+            raise NotFoundError("The requested review decision was not found")
+        return decision
 
     def get_source_artifact(self, job_id: str) -> SourceArtifactRecord:
         self.get_job(job_id)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any
@@ -26,6 +27,8 @@ from mr_lister.control.models import (
     ProviderCallPermitStatus,
     ReviewActor,
     ReviewContent,
+    ReviewDecision,
+    ReviewDecisionRecord,
     SourceArtifactRecord,
     WorkRequest,
     WorkRequestStatus,
@@ -248,6 +251,26 @@ class MemoryLowLevelDynamoClient:
             }
             return all(existing.get(name) == value for name, value in expected_attributes.items())
         raise AssertionError(f"Unsupported fake condition: {condition}")
+
+
+def store_as_legacy_job_payload(
+    client: MemoryLowLevelDynamoClient,
+    job_id: str,
+) -> str:
+    """Physically remove Phase 7.1 fields from an existing Dynamo payload fixture."""
+
+    item = client.items[(f"JOB#{job_id}", "META")]
+    payload = json.loads(item["payload"]["S"])
+    payload["approval_decision_id"] = None
+    payload["publication_aggregate_id"] = None
+    item["payload"] = {"S": json.dumps(payload, separators=(",", ":"))}
+
+    stored = json.loads(item["payload"]["S"])
+    assert stored.pop("approval_decision_id") is None
+    assert stored.pop("publication_aggregate_id") is None
+    legacy_payload = json.dumps(stored, separators=(",", ":"))
+    item["payload"] = {"S": legacy_payload}
+    return legacy_payload
 
 
 def make_job(
@@ -720,6 +743,46 @@ def test_create_job_is_one_transaction_and_round_trips_from_a_fresh_store() -> N
     )
 
 
+def test_review_decision_lookup_round_trips_and_rejects_cross_job_payloads() -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    job, _receipt, _work = create_job_with_work(store)
+    other_job = job.model_copy(update={"job_id": "job_phase6_dynamo_other"})
+    other_meta = dict(client.items[(f"JOB#{job.job_id}", "META")])
+    other_meta.update(
+        {
+            "PK": {"S": f"JOB#{other_job.job_id}"},
+            "payload": {"S": other_job.model_dump_json()},
+        }
+    )
+    client.items[(f"JOB#{other_job.job_id}", "META")] = other_meta
+
+    decision = ReviewDecisionRecord(
+        decision_id="decision_dynamo_lookup",
+        job_id=job.job_id,
+        actor_owner_id=OWNER,
+        decision=ReviewDecision.REVISE,
+        review_version=1,
+        review_fingerprint="b" * 64,
+        command_receipt_id="receipt_dynamo_lookup",
+        decided_at=NOW,
+    )
+    for partition_job_id in (job.job_id, other_job.job_id):
+        client.items[(f"JOB#{partition_job_id}", f"DECISION#{decision.decision_id}")] = {
+            "PK": {"S": f"JOB#{partition_job_id}"},
+            "SK": {"S": f"DECISION#{decision.decision_id}"},
+            "entity_type": {"S": "REVIEW_DECISION"},
+            "contract_version": {"S": decision.contract_version},
+            "payload": {"S": decision.model_dump_json()},
+        }
+
+    assert store.get_review_decision(job.job_id, decision.decision_id) == decision
+    with pytest.raises(NotFoundError, match="review decision"):
+        store.get_review_decision(other_job.job_id, decision.decision_id)
+    with pytest.raises(NotFoundError, match="review decision"):
+        store.get_review_decision(job.job_id, "decision_unknown")
+
+
 def test_owner_scoped_job_read_checks_raw_owner_before_payload_and_binds_partition() -> None:
     client = MemoryLowLevelDynamoClient()
     store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
@@ -1029,6 +1092,25 @@ def test_command_transaction_binds_job_cas_and_round_trips_immutable_review() ->
         reconstructed.get_work_request(current.job_id, dispatched.work_request_id)
         == (commit.work_update[1])
     )
+
+
+def test_legacy_raw_job_payload_round_trips_and_completes_legal_command_cas() -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    initial, _receipt, _work = create_job_with_work(store)
+    legacy_payload = store_as_legacy_job_payload(client, initial.job_id)
+
+    reloaded = store.get_job(initial.job_id)
+    assert reloaded.approval_decision_id is None
+    assert reloaded.publication_aggregate_id is None
+    assert reloaded.model_dump_json() == legacy_payload
+
+    drafted = advance_to_listing_drafted(store, reloaded)
+
+    assert drafted.state is ControlJobState.LISTING_DRAFTED
+    first_job_put = client.transactions[1]["TransactItems"][0]["Put"]
+    assert first_job_put["ExpressionAttributeValues"][":expected_payload"] == {"S": legacy_payload}
+    assert store.get_job(initial.job_id) == drafted
 
 
 def test_command_cannot_clear_active_work_without_settling_it_atomically() -> None:
@@ -1490,6 +1572,61 @@ def test_provider_permit_transaction_consumes_for_exact_claimed_or_dispatched_wo
     )
 
 
+def test_legacy_raw_job_payload_completes_worker_permit_cas() -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    job, work, attempt_id = seed_provider_permit(store, dispatch_sync_work=True)
+    legacy_payload = store_as_legacy_job_payload(client, job.job_id)
+    reloaded = store.get_job(job.job_id)
+    assert reloaded.model_dump_json() == legacy_payload
+
+    consumed = store.consume_provider_call_permit(
+        reloaded,
+        work,
+        attempt_id,
+        now=NOW + timedelta(seconds=3),
+    )
+
+    assert consumed is not None
+    job_check = client.transactions[-1]["TransactItems"][0]["ConditionCheck"]
+    assert job_check["ExpressionAttributeValues"] == {":expected_job": {"S": legacy_payload}}
+
+
+@pytest.mark.parametrize(
+    ("field_name", "authority_id"),
+    (
+        ("approval_decision_id", "decision_forged"),
+        ("publication_aggregate_id", "publication_forged"),
+    ),
+)
+def test_legacy_job_cas_never_omits_non_null_authority(
+    field_name: str,
+    authority_id: str,
+) -> None:
+    client = MemoryLowLevelDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
+    job, work, attempt_id = seed_provider_permit(store, dispatch_sync_work=True)
+    legacy_payload = store_as_legacy_job_payload(client, job.job_id)
+    reloaded = store.get_job(job.job_id)
+    forged_expected = reloaded.model_copy(update={field_name: authority_id})
+    assert authority_id in forged_expected.model_dump_json()
+    assert forged_expected.model_dump_json() != legacy_payload
+
+    assert (
+        store.consume_provider_call_permit(
+            forged_expected,
+            work,
+            attempt_id,
+            now=NOW + timedelta(seconds=3),
+        )
+        is None
+    )
+    assert (
+        store.get_provider_call_permit(job.job_id, attempt_id).status
+        is ProviderCallPermitStatus.AVAILABLE
+    )
+
+
 def test_provider_permit_transaction_rejects_stale_active_work_payload() -> None:
     client = MemoryLowLevelDynamoClient()
     store = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
@@ -1556,6 +1693,7 @@ def test_pricing_settlement_writes_and_round_trips_snapshot_with_complete_eviden
             attempt_id=attempt_id,
             observation=ProductSyncObservation(
                 product_id="printify_product_dynamo",
+                printify_shop_id=12_345,
                 image_id="printify_image_dynamo",
                 request_fingerprint="d" * 64,
                 response_fingerprint="9" * 64,

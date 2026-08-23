@@ -778,6 +778,7 @@ class Phase6ProductMachineWorker:
         return ProductSyncObservation(
             product_id=evidence.product_id,
             image_id=evidence.image_id,
+            printify_shop_id=resolved.shop_id,
             request_fingerprint=evidence.request_fingerprint,
             response_fingerprint=evidence.response_fingerprint,
             mockups=evidence.mockups,

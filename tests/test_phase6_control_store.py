@@ -22,6 +22,8 @@ from mr_lister.control.models import (
     DomainEvent,
     ReviewActor,
     ReviewContent,
+    ReviewDecision,
+    ReviewDecisionRecord,
     SourceArtifactRecord,
     WorkRequest,
     WorkRequestStatus,
@@ -105,6 +107,7 @@ def make_non_initial_job(state: ControlJobState) -> ControlJobRecord:
                 "product_sync_fingerprint": "3" * 64,
                 "pricing_snapshot_id": "pricing_initial",
                 "pricing_snapshot_fingerprint": "4" * 64,
+                "approval_decision_id": "decision_initial",
                 "approved_review_version": 1,
                 "approved_review_fingerprint": "2" * 64,
                 "approval_fingerprint": "5" * 64,
@@ -129,6 +132,69 @@ def make_job(
         created_at=NOW,
         updated_at=NOW,
     )
+
+
+def test_review_decision_lookup_is_owner_neutral_but_job_bound() -> None:
+    store = InMemorySellerControlStore()
+    job = make_job(active_work_request_id="work_lookup")
+    other = job.model_copy(update={"job_id": "job_phase6_other"})
+    decision = ReviewDecisionRecord(
+        decision_id="decision_lookup",
+        job_id=job.job_id,
+        actor_owner_id=OWNER,
+        decision=ReviewDecision.REVISE,
+        review_version=1,
+        review_fingerprint=REVIEW_FP,
+        command_receipt_id="receipt_lookup",
+        decided_at=NOW,
+    )
+    store._jobs[job.job_id] = job
+    store._jobs[other.job_id] = other
+    store._review_decisions[decision.decision_id] = decision
+
+    assert store.get_review_decision(job.job_id, decision.decision_id) == decision
+    with pytest.raises(NotFoundError, match="review decision"):
+        store.get_review_decision(other.job_id, decision.decision_id)
+    with pytest.raises(NotFoundError, match="review decision"):
+        store.get_review_decision(job.job_id, "decision_unknown")
+
+
+@pytest.mark.parametrize(
+    ("current_id", "updated_id"),
+    (
+        (None, "publication_new"),
+        ("publication_existing", None),
+        ("publication_existing", "publication_replacement"),
+    ),
+)
+def test_phase6_commits_cannot_mutate_publication_aggregate_authority(
+    current_id: str | None,
+    updated_id: str | None,
+) -> None:
+    current = make_non_initial_job(ControlJobState.APPROVED).model_copy(
+        update={"publication_aggregate_id": current_id}
+    )
+    updated = current.model_copy(
+        update={
+            "record_version": current.record_version + 1,
+            "event_sequence": current.event_sequence + 1,
+            "publication_aggregate_id": updated_id,
+        }
+    )
+
+    with pytest.raises(InvalidControlStateError, match="Phase 6 commands cannot change"):
+        validate_command_commit(
+            CommandCommit(
+                current=current,
+                updated=updated,
+                event=make_event(updated),
+                receipt=make_receipt(
+                    updated,
+                    receipt_id="receipt_publication_mutation",
+                    command_type="forged_phase6_publication_mutation",
+                ),
+            )
+        )
 
 
 def make_source(job: ControlJobRecord) -> SourceArtifactRecord:

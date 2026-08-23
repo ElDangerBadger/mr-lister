@@ -1,18 +1,69 @@
 {
   "activation_gates": [
-    "phase6_deployed_non_destructive_acceptance",
-    "immutable_release_and_agentcore_binding",
-    "linux_arm64_artifact_inspection",
+    "phase71_authority_prerequisites",
     "publication_domain_store_service_matrix",
     "publication_provider_one_shot_matrix",
     "publication_api_browser_matrix",
     "publication_infrastructure_and_alarm_matrix",
+    "phase6_deployed_non_destructive_acceptance",
+    "immutable_release_and_agentcore_binding",
+    "linux_arm64_artifact_inspection",
     "read_only_etsy_preflight",
-    "explicit_one_listing_live_canary"
+    "explicit_one_listing_live_canary",
+    "explicit_general_availability_enablement"
   ],
+  "activation_phases": [
+    {
+      "bounded_provider_mutation_allowed": false,
+      "name": "offline_implementation",
+      "required_gates": [
+        "phase71_authority_prerequisites",
+        "publication_domain_store_service_matrix",
+        "publication_provider_one_shot_matrix",
+        "publication_api_browser_matrix",
+        "publication_infrastructure_and_alarm_matrix"
+      ],
+      "requires_new_enabled_contract": false,
+      "seller_publication_route_allowed": false
+    },
+    {
+      "bounded_provider_mutation_allowed": false,
+      "name": "deployed_read_only_validation",
+      "required_gates": [
+        "phase6_deployed_non_destructive_acceptance",
+        "immutable_release_and_agentcore_binding",
+        "linux_arm64_artifact_inspection",
+        "read_only_etsy_preflight"
+      ],
+      "requires_new_enabled_contract": false,
+      "seller_publication_route_allowed": false
+    },
+    {
+      "bounded_provider_mutation_allowed": true,
+      "name": "explicit_one_listing_canary",
+      "required_gates": [
+        "explicit_one_listing_live_canary"
+      ],
+      "requires_new_enabled_contract": false,
+      "seller_publication_route_allowed": false
+    },
+    {
+      "bounded_provider_mutation_allowed": true,
+      "name": "general_availability",
+      "required_gates": [
+        "explicit_general_availability_enablement"
+      ],
+      "requires_new_enabled_contract": true,
+      "seller_publication_route_allowed": true
+    }
+  ],
+  "aggregate_boundary": "separate_publication_aggregate",
+  "bridge_source_state": "approved",
   "command_route": "/v1/jobs/{job_id}/publish",
   "confirmation_literal": "publish_exact_approved_listing",
-  "contract_version": "7.0.0",
+  "contract_version": "7.0.1",
+  "current_activation_phase": "offline_implementation",
+  "duplicate_prevention_retention_invariant": "job_aggregate_tombstone_until_operational_expiry",
   "forbidden_provider_operations": [
     "product_create",
     "product_update",
@@ -27,6 +78,7 @@
     "webhook"
   ],
   "maximum_publish_posts_per_job": 1,
+  "maximum_root_attempts_per_job": 1,
   "notification_channel": "authenticated_in_application",
   "operational_ttl_after_terminal_days": 90,
   "permit_states": [
@@ -34,7 +86,34 @@
     "consumed",
     "retired"
   ],
+  "permit_transitions": [
+    {
+      "authority": "atomic_pre_call_publish_authorization",
+      "maximum_publish_posts_authorized": 1,
+      "source": "available",
+      "target": "consumed"
+    },
+    {
+      "authority": "definitive_pre_call_terminal_settlement",
+      "maximum_publish_posts_authorized": 0,
+      "source": "available",
+      "target": "retired"
+    }
+  ],
+  "persisted_aggregate_states": [
+    "publication_requested",
+    "publication_verifying",
+    "publication_reconciling",
+    "published",
+    "publication_failed",
+    "publication_outcome_unknown"
+  ],
   "phase": "7",
+  "phase6_control_state_during_publication": "approved",
+  "phase71_authority_prerequisites": [
+    "approval_decision_id",
+    "printify_shop_id"
+  ],
   "positive_verification_fields": [
     "exact_shop",
     "exact_product",
@@ -45,23 +124,27 @@
     "numeric_listing_id",
     "safe_etsy_link"
   ],
+  "provider_call_budget_scope": "root_publication_attempt",
   "provider_calls": [
     {
-      "maximum_calls": 1,
+      "bounded_by_fixed_deadline": true,
+      "maximum_calls_per_root_attempt": 3,
       "method": "GET",
       "mutating": false,
       "purpose": "etsy_shop_preflight",
       "route": "/v1/shops.json"
     },
     {
-      "maximum_calls": 100,
+      "bounded_by_fixed_deadline": true,
+      "maximum_calls_per_root_attempt": 100,
       "method": "GET",
       "mutating": false,
-      "purpose": "product_preflight_and_verification",
+      "purpose": "product_preflight_and_positive_verification",
       "route": "/v1/shops/{shop_id}/products/{product_id}.json"
     },
     {
-      "maximum_calls": 1,
+      "bounded_by_fixed_deadline": true,
+      "maximum_calls_per_root_attempt": 1,
       "method": "POST",
       "mutating": true,
       "purpose": "one_shot_connected_channel_publication",
@@ -78,6 +161,12 @@
     "shipping_template"
   ],
   "publication_enabled": false,
+  "read_observation_outcomes": [
+    "positive_publication_proof",
+    "publication_not_yet_proven",
+    "conflicting_or_incomplete_evidence"
+  ],
+  "retention_anchor": "publication_terminal_at",
   "snapshot_fields": [
     "owner_id",
     "job_id",
@@ -116,6 +205,11 @@
     "publication_outcome_unknown"
   ],
   "status": "frozen",
+  "terminal_settlement_fields": [
+    "terminal_at",
+    "source_release_eligible_at",
+    "operational_expires_at"
+  ],
   "terminal_states": [
     "published",
     "publication_failed",
@@ -141,8 +235,14 @@
       "target": "publication_reconciling"
     },
     {
-      "authority": "definitive_preflight_failure",
+      "authority": "definitive_pre_call_terminal_settlement",
       "provider_mutation_count": 0,
+      "source": "publication_requested",
+      "target": "publication_failed"
+    },
+    {
+      "authority": "consumed_permit_and_definitive_synchronous_rejection",
+      "provider_mutation_count": 1,
       "source": "publication_requested",
       "target": "publication_failed"
     },
@@ -151,12 +251,6 @@
       "provider_mutation_count": 0,
       "source": "publication_verifying",
       "target": "published"
-    },
-    {
-      "authority": "definitive_provider_failure_observation",
-      "provider_mutation_count": 0,
-      "source": "publication_verifying",
-      "target": "publication_failed"
     },
     {
       "authority": "fixed_deadline_without_positive_proof",
@@ -171,17 +265,13 @@
       "target": "published"
     },
     {
-      "authority": "definitive_provider_failure_observation",
-      "provider_mutation_count": 0,
-      "source": "publication_reconciling",
-      "target": "publication_failed"
-    },
-    {
       "authority": "fixed_deadline_without_definitive_proof",
       "provider_mutation_count": 0,
       "source": "publication_reconciling",
       "target": "publication_outcome_unknown"
     }
   ],
+  "verification_deadline_anchor": "root_attempt_requested_at",
+  "verification_deadline_extension_allowed": false,
   "verification_deadline_seconds": 1800
 }

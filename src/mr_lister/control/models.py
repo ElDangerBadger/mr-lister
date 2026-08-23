@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import Field, StringConstraints, model_validator
+from pydantic import Field, StrictInt, StringConstraints, model_validator
 
 from mr_lister.contracts import ArtworkAnalysis, ContractModel
 from mr_lister.contracts.presentation import ProductMockupEvidence
@@ -261,9 +261,15 @@ class ControlJobRecord(ControlModel):
     product_sync_fingerprint: Fingerprint | None = None
     pricing_snapshot_id: SafeId | None = None
     pricing_snapshot_fingerprint: Fingerprint | None = None
+    approval_decision_id: SafeId | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     approved_review_version: int | None = Field(default=None, ge=1)
     approved_review_fingerprint: Fingerprint | None = None
     approval_fingerprint: Fingerprint | None = None
+    publication_aggregate_id: SafeId | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     active_work_request_id: SafeId | None = None
     provider_upload_attempt_id: SafeId | None = None
     uploaded_artwork_id: SafeId | None = None
@@ -350,6 +356,10 @@ class ControlJobRecord(ControlModel):
                 raise ValueError("Approval requires a pricing snapshot")
         elif any(value is not None for value in approval_fields):
             raise ValueError("Only an approved job may carry approval authority")
+        if self.approval_decision_id is not None and self.state is not ControlJobState.APPROVED:
+            raise ValueError("Only an approved job may reference an approval decision")
+        if self.publication_aggregate_id is not None and self.state is not ControlJobState.APPROVED:
+            raise ValueError("Only an approved job may reference a publication aggregate")
         if self.state in CONTROL_NEW_WORK_BY_STATE and self.active_work_request_id is None:
             raise ValueError("Machine states require durable active work")
         if self.state is ControlJobState.CANCEL_REQUESTED and self.active_work_request_id is None:
@@ -632,6 +642,11 @@ class ProductSyncRecord(ControlModel):
     review_version: int = Field(ge=1)
     product_id: SafeId
     image_id: SafeId
+    printify_shop_id: StrictInt | None = Field(
+        default=None,
+        gt=0,
+        exclude_if=lambda value: value is None,
+    )
     payload_fingerprint: Fingerprint
     response_fingerprint: Fingerprint
     fingerprint: Fingerprint

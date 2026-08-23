@@ -328,10 +328,17 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       formatting, compileall, both contract drift checks, npm audit, SAM lint/build, and diff
       hygiene passed. Details: [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
 - [ ] Phase 7 — Etsy publication through Printify
-  - [x] Freeze the publication-disabled one-shot authority, state graph, exact provider route,
-    GET-only reconciliation, verified safe-link, notification, retention, and activation contract
+  - [x] Freeze publication-disabled contract 7.0.1: separate aggregate authority, complete
+    one-shot permit semantics, positive-proof-only GET reconciliation, verified safe link,
+    notification, terminal-settlement retention, and three-scope activation
     ([ADR 0013](architecture/0013-one-shot-verified-channel-publication.md),
     [detailed contract](phase7-publication-contract.md))
+  - [x] Phase 7.1 authority prerequisites: new approvals retain the immutable decision ID,
+    new product synchronizations retain the owner-bound Printify shop ID, and legacy rows remain
+    readable while failing closed for publication when either prerequisite is absent
+  - [x] Phase 7.1 offline request authority: strict immutable snapshot/attempt/permit/work/event/
+    receipt records, receipt-first idempotency, one separate aggregate, and the exact atomic
+    14-action DynamoDB request transaction; publication remains uncomposed and disabled
   - [ ] Approval-version and publish guard verification
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports

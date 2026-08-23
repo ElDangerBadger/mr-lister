@@ -28,6 +28,7 @@ from mr_lister.control.models import (
     ProviderUploadAttempt,
     ProviderWriteAttempt,
     ReviewContent,
+    ReviewDecisionRecord,
     SourceArtifactRecord,
     UploadedArtworkRecord,
     WorkRequest,
@@ -90,6 +91,8 @@ def _upload_receipt_sk(command_type: str, upload_id: str, key_digest: str) -> st
 
 
 def _payload(model: Any) -> str:
+    """Serialize the exact CAS value, including model-declared legacy omission behavior."""
+
     return model.model_dump_json()
 
 
@@ -430,6 +433,17 @@ class DynamoDBSellerControlStore:
             ReviewContent,
             "review",
         )
+
+    def get_review_decision(self, job_id: str, decision_id: str) -> ReviewDecisionRecord:
+        decision = self._get_record(
+            job_id,
+            f"DECISION#{decision_id}",
+            ReviewDecisionRecord,
+            "review decision",
+        )
+        if decision.job_id != job_id or decision.decision_id != decision_id:
+            raise NotFoundError("The requested review decision was not found")
+        return decision
 
     def get_source_artifact(self, job_id: str) -> SourceArtifactRecord:
         source = self._get_record(job_id, "SOURCE", SourceArtifactRecord, "source artifact")

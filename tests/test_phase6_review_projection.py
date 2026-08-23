@@ -215,7 +215,7 @@ def _shipping_resource(variant_id: int, amount: int) -> dict[str, object]:
     }
 
 
-def _fixture() -> tuple[FakeProjectionStore, FakePreviewIssuer]:
+def _fixture(*, printify_shop_id: int | None = 42) -> tuple[FakeProjectionStore, FakePreviewIssuer]:
     variant_rows: list[ProductVariantEvidence] = []
     variant_id = 10_000
     group_by_size = {
@@ -239,6 +239,7 @@ def _fixture() -> tuple[FakeProjectionStore, FakePreviewIssuer]:
         job_id=JOB_ID,
         review_version=1,
         product_id="product_projection",
+        printify_shop_id=printify_shop_id,
         image_id="image_projection",
         payload_fingerprint=PAYLOAD_FP,
         response_fingerprint="6" * 64,
@@ -533,6 +534,16 @@ def test_complete_projection_joins_one_safe_human_review() -> None:
         pricing_snapshot_id=store.pricing.snapshot_id,
         pricing_snapshot_fingerprint=store.pricing.fingerprint,
     )
+
+
+def test_legacy_sync_without_shop_authority_disables_approval() -> None:
+    store, preview = _fixture(printify_shop_id=None)
+
+    result = _service(store, preview).get(owner_id=OWNER, job_id=JOB_ID)
+
+    assert SellerAction.APPROVE_REVIEW not in _enabled(result)
+    approval = next(item for item in result.actions if item.action is SellerAction.APPROVE_REVIEW)
+    assert approval.reason is ActionReason.PRODUCT_NOT_CURRENT
 
 
 def test_wrong_owner_is_indistinguishable_and_stops_before_any_join_or_preview() -> None:
@@ -1258,6 +1269,7 @@ def test_terminal_and_human_state_capabilities_are_server_derived(
     if state is ControlJobState.APPROVED:
         updates.update(
             {
+                "approval_decision_id": "decision_projection",
                 "approved_review_version": 1,
                 "approved_review_fingerprint": store.job.review_fingerprint,
                 "approval_fingerprint": review_etag(
