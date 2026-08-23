@@ -16,6 +16,7 @@ from mr_lister.control.errors import (
     ConcurrentControlModificationError,
     IdempotencyConflictError,
     InvalidControlStateError,
+    NotFoundError,
 )
 from mr_lister.control.fingerprints import canonical_fingerprint
 from mr_lister.control.models import ControlJobState, WorkRequestStatus, WorkType
@@ -195,6 +196,12 @@ class CompletionFailsStore(InMemorySellerControlStore):
         raise RuntimeError("raw adapter detail must not escape")
 
 
+class UploadReadFailsStore(InMemorySellerControlStore):
+    def get_upload_intent_for_owner(self, owner_id: str, upload_id: str) -> UploadIntent:
+        del owner_id, upload_id
+        raise RuntimeError("raw adapter detail must not escape")
+
+
 class FirstCompletionFailsStore(InMemorySellerControlStore):
     """Fail one completion, then allow a concurrent same-version winner."""
 
@@ -285,6 +292,34 @@ def test_create_upload_replays_one_receipt_and_rejects_key_reuse_with_changed_in
             size_bytes=len(content),
         )
     assert len(harness.artifacts.authorization_calls) == 2
+
+
+def test_upload_recovery_read_preserves_the_store_owner_boundary() -> None:
+    harness = _harness()
+    _content, created = _create(harness)
+
+    recovered = harness.service.get_upload(
+        owner_id=OWNER,
+        upload_id=created.receipt.upload_id,
+    )
+
+    assert recovered.owner_id == OWNER
+    assert recovered.upload_id == created.receipt.upload_id
+    with pytest.raises(NotFoundError, match="requested upload"):
+        harness.service.get_upload(
+            owner_id="b" * 64,
+            upload_id=created.receipt.upload_id,
+        )
+
+
+def test_upload_recovery_read_maps_unexpected_storage_failure_to_dependency_error() -> None:
+    harness = _harness(store=UploadReadFailsStore())
+
+    with pytest.raises(UploadDependencyUnavailableError) as unavailable:
+        harness.service.get_upload(owner_id=OWNER, upload_id="upload_unavailable")
+
+    assert unavailable.value.__cause__ is None
+    assert "raw adapter detail" not in str(unavailable.value)
 
 
 def test_concurrent_create_returns_only_the_winner_intent_authorization_window() -> None:

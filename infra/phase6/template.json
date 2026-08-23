@@ -1,7 +1,7 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
   "Transform": "AWS::Serverless-2016-10-31",
-  "Description": "Mr Lister Phase 6.4 owner-scoped seller-control scaffold",
+  "Description": "Mr Lister Phase 6.5 owner-scoped seller-control and private web-edge scaffold",
   "Parameters": {
     "EnvironmentName": {
       "Type": "String",
@@ -23,15 +23,10 @@
       "AllowedPattern": "^https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
       "ConstraintDescription": "Supply the exact lowercase HTTPS application origin with no port, path, or wildcard."
     },
-    "ApplicationCallbackUrl": {
+    "ApplicationCertificateArn": {
       "Type": "String",
-      "AllowedPattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[0-9]{1,5})?/[^?#]*$",
-      "ConstraintDescription": "Supply one exact HTTPS OAuth return URL."
-    },
-    "ApplicationLogoutUrl": {
-      "Type": "String",
-      "AllowedPattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[0-9]{1,5})?/[^?#]*$",
-      "ConstraintDescription": "Supply one exact HTTPS post-sign-out URL."
+      "AllowedPattern": "^arn:(aws|aws-us-gov|aws-cn):acm:us-east-1:[0-9]{12}:certificate/[0-9a-fA-F-]{36}$",
+      "ConstraintDescription": "Supply the exact us-east-1 ACM certificate ARN for the application origin."
     }
   },
   "Globals": {
@@ -137,6 +132,327 @@
               "Action": "s3:PutObject",
               "Resource": {"Fn::Sub": "${PrivateArtifactBucket.Arn}/private/owners/*/jobs/*/source/source.png"},
               "Condition": {"StringNotEquals": {"s3:x-amz-server-side-encryption": "AES256"}}
+            }
+          ]
+        }
+      }
+    },
+    "SellerWebAssetBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {"Fn::Sub": "mr-lister-phase6-web-${EnvironmentName}-${AWS::AccountId}-${AWS::Region}"},
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {"ServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}
+          ]
+        },
+        "OwnershipControls": {"Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]},
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "VersioningConfiguration": {"Status": "Enabled"},
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "DataClassification", "Value": "PublicApplicationAssets"}
+        ]
+      }
+    },
+    "SellerWebOriginAccessControl": {
+      "Type": "AWS::CloudFront::OriginAccessControl",
+      "Properties": {
+        "OriginAccessControlConfig": {
+          "Description": "SigV4 read access from the Mr Lister seller distribution only",
+          "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-${AWS::Region}-web-oac"},
+          "OriginAccessControlOriginType": "s3",
+          "SigningBehavior": "always",
+          "SigningProtocol": "sigv4"
+        }
+      }
+    },
+    "SellerWebNoStoreCachePolicy": {
+      "Type": "AWS::CloudFront::CachePolicy",
+      "Properties": {
+        "CachePolicyConfig": {
+          "Comment": "Never cache seller HTML, runtime configuration, or authenticated API responses",
+          "DefaultTTL": 0,
+          "MaxTTL": 0,
+          "MinTTL": 0,
+          "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-${AWS::Region}-no-store"},
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {"CookieBehavior": "none"},
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {"HeaderBehavior": "none"},
+            "QueryStringsConfig": {"QueryStringBehavior": "none"}
+          }
+        }
+      }
+    },
+    "SellerWebImmutableAssetCachePolicy": {
+      "Type": "AWS::CloudFront::CachePolicy",
+      "Properties": {
+        "CachePolicyConfig": {
+          "Comment": "Cache content-addressed application assets for one year",
+          "DefaultTTL": 31536000,
+          "MaxTTL": 31536000,
+          "MinTTL": 31536000,
+          "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-${AWS::Region}-immutable-assets"},
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {"CookieBehavior": "none"},
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {"HeaderBehavior": "none"},
+            "QueryStringsConfig": {"QueryStringBehavior": "none"}
+          }
+        }
+      }
+    },
+    "SellerApiNoStoreCachePolicy": {
+      "Type": "AWS::CloudFront::CachePolicy",
+      "Properties": {
+        "CachePolicyConfig": {
+          "Comment": "Forward the exact seller API transport without caching or cookies",
+          "DefaultTTL": 0,
+          "MaxTTL": 0,
+          "MinTTL": 0,
+          "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-${AWS::Region}-api-no-store"},
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {"CookieBehavior": "none"},
+            "EnableAcceptEncodingBrotli": false,
+            "EnableAcceptEncodingGzip": false,
+            "HeadersConfig": {
+              "HeaderBehavior": "whitelist",
+              "Headers": [
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "If-Match",
+                "Origin",
+                "Access-Control-Request-Headers",
+                "Access-Control-Request-Method"
+              ]
+            },
+            "QueryStringsConfig": {"QueryStringBehavior": "all"}
+          }
+        }
+      }
+    },
+    "SellerWebNoStoreResponseHeadersPolicy": {
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Comment": "Security headers and browser no-store policy for seller application state",
+          "CustomHeadersConfig": {
+            "Items": [
+              {"Header": "Cache-Control", "Override": true, "Value": "private, no-store, max-age=0"},
+              {"Header": "Permissions-Policy", "Override": true, "Value": "camera=(), geolocation=(), microphone=(), payment=(), usb=()"}
+            ]
+          },
+          "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-${AWS::Region}-secure-no-store"},
+          "SecurityHeadersConfig": {
+            "ContentSecurityPolicy": {
+              "ContentSecurityPolicy": {
+                "Fn::Sub": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://images.printify.com https://${PrivateArtifactBucket}.s3.${AWS::Region}.${AWS::URLSuffix}; connect-src 'self' https://${SellerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com https://${PrivateArtifactBucket}.s3.${AWS::Region}.${AWS::URLSuffix}; form-action 'self' https://${SellerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com https://${PrivateArtifactBucket}.s3.${AWS::Region}.${AWS::URLSuffix}; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'none'"
+              },
+              "Override": true
+            },
+            "ContentTypeOptions": {"Override": true},
+            "FrameOptions": {"FrameOption": "DENY", "Override": true},
+            "ReferrerPolicy": {"Override": true, "ReferrerPolicy": "no-referrer"},
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 63072000,
+              "IncludeSubdomains": true,
+              "Override": true,
+              "Preload": true
+            }
+          }
+        }
+      }
+    },
+    "SellerWebImmutableResponseHeadersPolicy": {
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Comment": "Security headers and immutable browser caching for content-addressed assets",
+          "CustomHeadersConfig": {
+            "Items": [
+              {"Header": "Cache-Control", "Override": true, "Value": "public, max-age=31536000, immutable"},
+              {"Header": "Permissions-Policy", "Override": true, "Value": "camera=(), geolocation=(), microphone=(), payment=(), usb=()"}
+            ]
+          },
+          "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-${AWS::Region}-secure-immutable"},
+          "SecurityHeadersConfig": {
+            "ContentSecurityPolicy": {
+              "ContentSecurityPolicy": {
+                "Fn::Sub": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://images.printify.com https://${PrivateArtifactBucket}.s3.${AWS::Region}.${AWS::URLSuffix}; connect-src 'self' https://${SellerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com https://${PrivateArtifactBucket}.s3.${AWS::Region}.${AWS::URLSuffix}; form-action 'self' https://${SellerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com https://${PrivateArtifactBucket}.s3.${AWS::Region}.${AWS::URLSuffix}; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'none'"
+              },
+              "Override": true
+            },
+            "ContentTypeOptions": {"Override": true},
+            "FrameOptions": {"FrameOption": "DENY", "Override": true},
+            "ReferrerPolicy": {"Override": true, "ReferrerPolicy": "no-referrer"},
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 63072000,
+              "IncludeSubdomains": true,
+              "Override": true,
+              "Preload": true
+            }
+          }
+        }
+      }
+    },
+    "SellerSpaRouteFunction": {
+      "Type": "AWS::CloudFront::Function",
+      "Properties": {
+        "AutoPublish": true,
+        "FunctionCode": "function handler(event) {\n  var request = event.request;\n  var uri = request.uri;\n  var isSafeMethod = request.method === 'GET' || request.method === 'HEAD';\n  var isSpaRoute = uri === '/' || uri === '/auth/callback' || uri === '/jobs' || uri.indexOf('/jobs/') === 0 || uri.indexOf('/uploads/') === 0;\n  if (isSafeMethod && isSpaRoute) {\n    request.uri = '/index.html';\n  }\n  return request;\n}\n",
+        "FunctionConfig": {
+          "Comment": "Rewrite only the closed Phase 6.5 SPA route allowlist",
+          "Runtime": "cloudfront-js-2.0"
+        },
+        "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-${AWS::Region}-spa-routes"}
+      }
+    },
+    "SellerApiMethodGuardFunction": {
+      "Type": "AWS::CloudFront::Function",
+      "Properties": {
+        "AutoPublish": true,
+        "FunctionCode": "function handler(event) {\n  var request = event.request;\n  var method = request.method;\n  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS' && method !== 'POST' && method !== 'PUT') {\n    return {\n      statusCode: 405,\n      statusDescription: 'Method Not Allowed',\n      headers: {\n        'allow': {value: 'GET, HEAD, OPTIONS, POST, PUT'},\n        'cache-control': {value: 'private, no-store, max-age=0'},\n        'content-security-policy': {value: \"default-src 'none'; frame-ancestors 'none'\"},\n        'content-type': {value: 'application/json'},\n        'permissions-policy': {value: 'camera=(), geolocation=(), microphone=(), payment=(), usb=()'},\n        'referrer-policy': {value: 'no-referrer'},\n        'strict-transport-security': {value: 'max-age=63072000; includeSubDomains; preload'},\n        'x-content-type-options': {value: 'nosniff'},\n        'x-frame-options': {value: 'DENY'}\n      },\n      body: {\n        encoding: 'text',\n        data: '{\"error\":{\"code\":\"METHOD_NOT_ALLOWED\",\"message\":\"Method not allowed.\"}}'\n      }\n    };\n  }\n  return request;\n}\n",
+        "FunctionConfig": {
+          "Comment": "Reject methods outside the closed seller API transport",
+          "Runtime": "cloudfront-js-2.0"
+        },
+        "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-${AWS::Region}-api-methods"}
+      }
+    },
+    "SellerWebDistribution": {
+      "Type": "AWS::CloudFront::Distribution",
+      "Properties": {
+        "DistributionConfig": {
+          "Aliases": [
+            {"Fn::Select": [1, {"Fn::Split": ["https://", {"Ref": "ApplicationOrigin"}]}]}
+          ],
+          "CacheBehaviors": [
+            {
+              "AllowedMethods": ["GET", "HEAD"],
+              "CachePolicyId": {"Ref": "SellerWebImmutableAssetCachePolicy"},
+              "CachedMethods": ["GET", "HEAD"],
+              "Compress": true,
+              "PathPattern": "/assets/*",
+              "ResponseHeadersPolicyId": {"Ref": "SellerWebImmutableResponseHeadersPolicy"},
+              "TargetOriginId": "SellerWebAssets",
+              "ViewerProtocolPolicy": "redirect-to-https"
+            },
+            {
+              "AllowedMethods": ["GET", "HEAD"],
+              "CachePolicyId": {"Ref": "SellerWebNoStoreCachePolicy"},
+              "CachedMethods": ["GET", "HEAD"],
+              "Compress": true,
+              "PathPattern": "/runtime-config.json",
+              "ResponseHeadersPolicyId": {"Ref": "SellerWebNoStoreResponseHeadersPolicy"},
+              "TargetOriginId": "SellerWebAssets",
+              "ViewerProtocolPolicy": "redirect-to-https"
+            },
+            {
+              "AllowedMethods": ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"],
+              "CachePolicyId": {"Ref": "SellerApiNoStoreCachePolicy"},
+              "CachedMethods": ["GET", "HEAD"],
+              "Compress": false,
+              "FunctionAssociations": [
+                {"EventType": "viewer-request", "FunctionARN": {"Fn::GetAtt": ["SellerApiMethodGuardFunction", "FunctionARN"]}}
+              ],
+              "PathPattern": "/v1/*",
+              "ResponseHeadersPolicyId": {"Ref": "SellerWebNoStoreResponseHeadersPolicy"},
+              "TargetOriginId": "SellerApi",
+              "ViewerProtocolPolicy": "https-only"
+            }
+          ],
+          "Comment": {"Fn::Sub": "Mr Lister Phase 6.5 ${EnvironmentName} seller application"},
+          "DefaultCacheBehavior": {
+            "AllowedMethods": ["GET", "HEAD"],
+            "CachePolicyId": {"Ref": "SellerWebNoStoreCachePolicy"},
+            "CachedMethods": ["GET", "HEAD"],
+            "Compress": true,
+            "FunctionAssociations": [
+              {"EventType": "viewer-request", "FunctionARN": {"Fn::GetAtt": ["SellerSpaRouteFunction", "FunctionARN"]}}
+            ],
+            "ResponseHeadersPolicyId": {"Ref": "SellerWebNoStoreResponseHeadersPolicy"},
+            "TargetOriginId": "SellerWebAssets",
+            "ViewerProtocolPolicy": "redirect-to-https"
+          },
+          "DefaultRootObject": "index.html",
+          "Enabled": true,
+          "HttpVersion": "http2and3",
+          "IPV6Enabled": true,
+          "Origins": [
+            {
+              "DomainName": {"Fn::GetAtt": ["SellerWebAssetBucket", "RegionalDomainName"]},
+              "Id": "SellerWebAssets",
+              "OriginAccessControlId": {"Ref": "SellerWebOriginAccessControl"},
+              "S3OriginConfig": {"OriginAccessIdentity": ""}
+            },
+            {
+              "CustomOriginConfig": {
+                "HTTPSPort": 443,
+                "OriginKeepaliveTimeout": 5,
+                "OriginProtocolPolicy": "https-only",
+                "OriginReadTimeout": 30,
+                "OriginSSLProtocols": ["TLSv1.2"]
+              },
+              "DomainName": {"Fn::Sub": "${SellerHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}"},
+              "Id": "SellerApi"
+            }
+          ],
+          "PriceClass": "PriceClass_100",
+          "ViewerCertificate": {
+            "AcmCertificateArn": {"Ref": "ApplicationCertificateArn"},
+            "MinimumProtocolVersion": "TLSv1.2_2021",
+            "SslSupportMethod": "sni-only"
+          }
+        },
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "DataClassification", "Value": "SellerApplicationEdge"}
+        ]
+      }
+    },
+    "SellerWebAssetBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {"Ref": "SellerWebAssetBucket"},
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {"Fn::GetAtt": ["SellerWebAssetBucket", "Arn"]},
+                {"Fn::Sub": "${SellerWebAssetBucket.Arn}/*"}
+              ],
+              "Condition": {"Bool": {"aws:SecureTransport": "false"}}
+            },
+            {
+              "Sid": "AllowExactCloudFrontDistributionRead",
+              "Effect": "Allow",
+              "Principal": {"Service": "cloudfront.amazonaws.com"},
+              "Action": "s3:GetObject",
+              "Resource": {"Fn::Sub": "${SellerWebAssetBucket.Arn}/*"},
+              "Condition": {
+                "StringEquals": {
+                  "AWS:SourceAccount": {"Ref": "AWS::AccountId"},
+                  "AWS:SourceArn": {"Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${SellerWebDistribution}"}
+                }
+              }
             }
           ]
         }
@@ -256,8 +572,8 @@
         "AllowedOAuthFlowsUserPoolClient": true,
         "AllowedOAuthFlows": ["code"],
         "AllowedOAuthScopes": ["openid", "mr-lister-api/seller"],
-        "CallbackURLs": [{"Ref": "ApplicationCallbackUrl"}],
-        "LogoutURLs": [{"Ref": "ApplicationLogoutUrl"}],
+        "CallbackURLs": [{"Fn::Sub": "${ApplicationOrigin}/auth/callback"}],
+        "LogoutURLs": [{"Fn::Sub": "${ApplicationOrigin}/"}],
         "SupportedIdentityProviders": ["COGNITO"],
         "AccessTokenValidity": 60,
         "IdTokenValidity": 60,
@@ -663,6 +979,10 @@
             "Type": "HttpApi",
             "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/uploads", "Method": "POST", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
           },
+          "GetUpload": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/uploads/{upload_id}", "Method": "GET", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          },
           "AuthorizeUpload": {
             "Type": "HttpApi",
             "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/uploads/{upload_id}/authorize", "Method": "POST", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
@@ -913,10 +1233,22 @@
     },
     "StateTableName": {"Value": {"Ref": "OperationalStateTable"}},
     "ArtifactBucketName": {"Value": {"Ref": "PrivateArtifactBucket"}},
+    "ArtifactBucketBrowserOrigin": {"Value": {"Fn::Sub": "https://${PrivateArtifactBucket}.s3.${AWS::Region}.${AWS::URLSuffix}"}},
+    "SellerWebAssetBucketName": {"Value": {"Ref": "SellerWebAssetBucket"}},
+    "SellerWebDistributionId": {"Value": {"Ref": "SellerWebDistribution"}},
+    "SellerWebDistributionDomainName": {"Value": {"Fn::GetAtt": ["SellerWebDistribution", "DomainName"]}},
+    "SellerApplicationOrigin": {"Value": {"Ref": "ApplicationOrigin"}},
     "SellerUserPoolId": {"Value": {"Ref": "SellerUserPool"}},
     "SellerUserPoolClientId": {"Value": {"Ref": "SellerUserPoolClient"}},
     "SellerSignInOrigin": {"Value": {"Fn::Sub": "https://${SellerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"}},
     "SellerApiOrigin": {"Value": {"Fn::Sub": "https://${SellerHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}"}},
+    "SellerRuntimeConfigObjectKey": {"Value": "runtime-config.json"},
+    "SellerRuntimeConfig": {
+      "Description": "Public no-secret JSON to upload as runtime-config.json with Cache-Control no-store.",
+      "Value": {
+        "Fn::Sub": "{\"cognito_authorize_url\":\"https://${SellerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/oauth2/authorize\",\"cognito_token_url\":\"https://${SellerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/oauth2/token\",\"cognito_logout_url\":\"https://${SellerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/logout\",\"client_id\":\"${SellerUserPoolClient}\",\"redirect_uri\":\"${ApplicationOrigin}/auth/callback\",\"scopes\":[\"openid\",\"mr-lister-api/seller\"]}"
+      }
+    },
     "PrepareStateMachineArn": {"Value": {"Ref": "PrepareStateMachine"}},
     "SynchronizeProductStateMachineArn": {"Value": {"Ref": "SynchronizeProductStateMachine"}},
     "ReconcileProductStateMachineArn": {"Value": {"Ref": "ReconcileProductStateMachine"}},

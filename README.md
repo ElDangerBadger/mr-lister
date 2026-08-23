@@ -71,6 +71,32 @@ python -m pytest -q \
   tests/test_phase6_agentcore_bridge.py
 ```
 
+## Phase 6 seller workspace
+
+The Phase 6.5 implementation includes a strict React/TypeScript seller application under
+[`web/`](web/). It supports one private PNG upload, durable progress and upload recovery,
+consolidated artwork/listing/mockup/economics review, a prominent same-job Strands evidence card,
+and the five server-authorized seller actions. The interface keeps
+**Unpublished — not on Etsy** visible throughout and contains no browser publication, order, or
+fulfillment capability.
+
+The accompanying SAM scaffold adds a private CloudFront/OAC web origin, same-origin cache-disabled
+`/v1/*`, exact Cognito PKCE runtime configuration, CSP/security headers, and allowlisted SPA
+routing. The browser contract is exported from Python into versioned JSON Schema and fixtures, so
+backend/frontend drift fails CI.
+
+```bash
+cd web
+npm ci
+npm run check
+```
+
+The seller UI and hosting topology are offline-tested, but the Phase 6 Lambda entry points remain
+deliberately `SCAFFOLD_ONLY`. They must be composed, deployed, and pass the documented live gates
+before this repository claims an end-to-end production launch. See
+[`docs/phase6-accessible-seller-interface.md`](docs/phase6-accessible-seller-interface.md) and
+[`docs/architecture/0012-phase65-browser-and-hosting-boundary.md`](docs/architecture/0012-phase65-browser-and-hosting-boundary.md).
+
 ## Target submission architecture
 
 ```mermaid

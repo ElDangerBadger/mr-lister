@@ -26,6 +26,7 @@ WORK_TYPE_STATE_MACHINE_ENV = {
 UPLOAD_API_ROUTE_KEYS = frozenset(
     {
         "POST /v1/uploads",
+        "GET /v1/uploads/{upload_id}",
         "POST /v1/uploads/{upload_id}/authorize",
         "POST /v1/uploads/{upload_id}/complete",
         "POST /v1/uploads/{upload_id}/cancel",

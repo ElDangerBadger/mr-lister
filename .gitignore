@@ -17,3 +17,5 @@ infra/agentcore/mrlisterphase3/README.md
 infra/agentcore/mrlisterphase3/agentcore/.cli/
 infra/agentcore/mrlisterphase3/agentcore/.llm-context/
 infra/agentcore/mrlisterphase3/agentcore/cdk/
+.playwright-cli/
+output/playwright/

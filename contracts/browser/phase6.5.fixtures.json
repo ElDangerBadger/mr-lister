@@ -1,0 +1,236 @@
+{
+  "job_progress": {
+    "actions": [
+      {
+        "action": "edit_listing",
+        "contract_version": "2.0.0",
+        "enabled": false,
+        "message": "This action is not available yet.",
+        "reason": "NOT_IN_CURRENT_STATE"
+      },
+      {
+        "action": "approve_review",
+        "contract_version": "2.0.0",
+        "enabled": false,
+        "message": "This action is not available yet.",
+        "reason": "NOT_IN_CURRENT_STATE"
+      },
+      {
+        "action": "cancel_job",
+        "contract_version": "2.0.0",
+        "enabled": false,
+        "message": "This action is not available yet.",
+        "reason": "NOT_IN_CURRENT_STATE"
+      },
+      {
+        "action": "retry_job",
+        "contract_version": "2.0.0",
+        "enabled": false,
+        "message": "This action is not available yet.",
+        "reason": "NOT_IN_CURRENT_STATE"
+      },
+      {
+        "action": "refresh_economics",
+        "contract_version": "2.0.0",
+        "enabled": false,
+        "message": "This action is not available yet.",
+        "reason": "NOT_IN_CURRENT_STATE"
+      }
+    ],
+    "authority_notice": "Unpublished — not on Etsy",
+    "contract_version": "2.0.0",
+    "created_at": "2026-08-22T11:59:00Z",
+    "display_state": "preparing",
+    "failure": null,
+    "job_id": "job_browser_fixture",
+    "provider_outcome_unconfirmed": false,
+    "record_version": 1,
+    "review_version": 0,
+    "stage": "artwork_review",
+    "updated_at": "2026-08-22T12:00:00Z"
+  },
+  "seller_review_pending": {
+    "actions": [
+      {
+        "action": "edit_listing",
+        "contract_version": "2.0.0",
+        "enabled": false,
+        "message": "This action is not available yet.",
+        "reason": "NOT_IN_CURRENT_STATE"
+      },
+      {
+        "action": "approve_review",
+        "contract_version": "2.0.0",
+        "enabled": false,
+        "message": "This action is not available yet.",
+        "reason": "NOT_IN_CURRENT_STATE"
+      },
+      {
+        "action": "cancel_job",
+        "contract_version": "2.0.0",
+        "enabled": false,
+        "message": "This action is not available yet.",
+        "reason": "NOT_IN_CURRENT_STATE"
+      },
+      {
+        "action": "retry_job",
+        "contract_version": "2.0.0",
+        "enabled": false,
+        "message": "This action is not available yet.",
+        "reason": "NOT_IN_CURRENT_STATE"
+      },
+      {
+        "action": "refresh_economics",
+        "contract_version": "2.0.0",
+        "enabled": false,
+        "message": "This action is not available yet.",
+        "reason": "NOT_IN_CURRENT_STATE"
+      }
+    ],
+    "artwork": {
+      "confidence": null,
+      "contract_version": "2.0.0",
+      "readiness": "pending",
+      "safety_notes": [],
+      "styles": [],
+      "subject": null,
+      "themes": [],
+      "visible_text": [],
+      "visual_elements": []
+    },
+    "authority_notice": "Unpublished — not on Etsy",
+    "contract_version": "2.0.0",
+    "created_at": "2026-08-22T11:59:00Z",
+    "display_state": "preparing",
+    "economics": {
+      "assumptions": [],
+      "calculated_at": null,
+      "contract_version": "2.0.0",
+      "currency": "USD",
+      "fee_policy_id": null,
+      "fee_policy_source": null,
+      "fee_policy_verified_on": null,
+      "fresh_until": null,
+      "label": "Estimated proceeds",
+      "maximum_cents": null,
+      "minimum_cents": null,
+      "production_cost_observed_at": null,
+      "production_cost_source": null,
+      "production_shipping_observed_at": null,
+      "production_shipping_source": null,
+      "readiness": "missing",
+      "variants": []
+    },
+    "failure": null,
+    "job_id": "job_browser_fixture",
+    "listing": {
+      "audience": [],
+      "contract_version": "2.0.0",
+      "description": null,
+      "readiness": "pending",
+      "tags": [],
+      "title": null
+    },
+    "mockups": {
+      "contract_version": "2.0.0",
+      "items": [],
+      "readiness": "pending"
+    },
+    "preview": {
+      "contract_version": "2.0.0",
+      "expires_at": null,
+      "readiness": "pending",
+      "url": null
+    },
+    "product_policy": {
+      "buyer_shipping_cents": 0,
+      "colors": [
+        "Black"
+      ],
+      "contract_version": "2.0.0",
+      "currency": "USD",
+      "placements": [
+        {
+          "angle": 0,
+          "contract_version": "2.0.0",
+          "decoration_method": "Direct to garment",
+          "group_id": "placement_small",
+          "position": "Centered below collar",
+          "scale": 0.65,
+          "sizes": [
+            "S"
+          ],
+          "x": 0.5,
+          "y": 0.0
+        }
+      ],
+      "product_name": "Gildan 64000",
+      "provider_name": "SwiftPOD",
+      "retail_price_cents": 2999,
+      "sizes": [
+        "S"
+      ]
+    },
+    "provider_outcome_unconfirmed": false,
+    "record_version": 1,
+    "review_authority_etag": null,
+    "review_fingerprint": null,
+    "review_version": 0,
+    "stage": "artwork_review",
+    "strands": {
+      "agent_id": null,
+      "completed_at": null,
+      "contract_version": "2.0.0",
+      "correlation_id": null,
+      "framework": null,
+      "prepared_review_version": null,
+      "readiness": "pending",
+      "tool_calls": []
+    },
+    "synchronization": {
+      "contract_version": "2.0.0",
+      "editable_draft": null,
+      "product_id": null,
+      "readiness": "pending",
+      "review_version": null,
+      "synchronized_at": null
+    },
+    "updated_at": "2026-08-22T12:00:00Z",
+    "validation": {
+      "contract_version": "2.0.0",
+      "issues": [],
+      "passed": null,
+      "readiness": "pending"
+    }
+  },
+  "upload_recovery": {
+    "authorization_expires_at": "2026-08-22T12:05:00Z",
+    "cancelled_at": null,
+    "completed_at": null,
+    "content_type": "image/png",
+    "created_at": "2026-08-22T12:00:00Z",
+    "expired_at": null,
+    "filename": "artwork.png",
+    "intent_expires_at": "2026-08-23T12:00:00Z",
+    "job_id": "job_browser_fixture",
+    "record_version": 0,
+    "size_bytes": 1024,
+    "status": "open",
+    "updated_at": "2026-08-22T12:00:00Z",
+    "upload_id": "upload_browser_fixture"
+  },
+  "validation_error": {
+    "error": {
+      "code": "VALIDATION_FAILED",
+      "fields": [
+        {
+          "code": "INVALID_LENGTH",
+          "message": "Use the required number of items.",
+          "path": "$.listing.tags"
+        }
+      ],
+      "message": "One or more request fields are not valid.",
+      "request_id": "request-browser-fixture"
+    }
+  }
+}

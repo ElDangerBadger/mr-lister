@@ -14,6 +14,7 @@ from mr_lister.control.errors import (
     ConcurrentControlModificationError,
     IdempotencyConflictError,
     InvalidControlStateError,
+    NotFoundError,
 )
 from mr_lister.control.fingerprints import (
     canonical_fingerprint,
@@ -120,6 +121,16 @@ class UploadIntakeService:
         self._profile_id = profile_id
         self._profile_version = profile_version
         self._clock = clock or (lambda: datetime.now(UTC))
+
+    def get_upload(self, *, owner_id: str, upload_id: str) -> UploadIntent:
+        """Return one durable owner-scoped intent for browser reload recovery."""
+
+        try:
+            return self._store.get_upload_intent_for_owner(owner_id, upload_id)
+        except NotFoundError:
+            raise
+        except Exception:
+            raise UploadDependencyUnavailableError from None
 
     def create_upload(
         self,

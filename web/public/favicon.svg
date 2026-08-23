@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Mr. Lister">
+  <circle cx="32" cy="32" r="30" fill="#124a36"/>
+  <path fill="#fffdf8" d="M15 44V20h7l10 13 10-13h7v24h-7V30L32 43 22 30v14z"/>
+</svg>

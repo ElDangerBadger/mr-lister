@@ -23,6 +23,7 @@ from mr_lister.control.commands import (
     RetryJobCommand,
     ReviseListingCommand,
 )
+from mr_lister.control.errors import NotFoundError
 from mr_lister.control.models import CommandResponse, ControlJobRecord, ControlJobState
 from mr_lister.control.projection_models import (
     ActionReason,
@@ -48,6 +49,7 @@ from mr_lister.control.store import OwnerJobPage, encode_owner_job_cursor
 from mr_lister.control.upload_models import (
     UploadAuthorization,
     UploadCommandType,
+    UploadIntent,
     UploadIntentStatus,
     UploadReceipt,
 )
@@ -91,6 +93,7 @@ _PRIVATE_RESPONSE_FIELDS = {
 _ROUTE_PATHS = {
     "GET /health": "/health",
     "POST /v1/uploads": "/v1/uploads",
+    "GET /v1/uploads/{upload_id}": f"/v1/uploads/{UPLOAD_ID}",
     "POST /v1/uploads/{upload_id}/authorize": f"/v1/uploads/{UPLOAD_ID}/authorize",
     "POST /v1/uploads/{upload_id}/complete": f"/v1/uploads/{UPLOAD_ID}/complete",
     "POST /v1/uploads/{upload_id}/cancel": f"/v1/uploads/{UPLOAD_ID}/cancel",
@@ -260,6 +263,10 @@ class UploadSpy:
         self.calls.append(("cancel", values))
         return self._result(UploadCommandType.CANCEL_UPLOAD, values)
 
+    def get_upload(self, *, owner_id: str, upload_id: str) -> UploadIntent:
+        self.calls.append(("get", {"owner_id": owner_id, "upload_id": upload_id}))
+        return upload_intent(owner_id=owner_id, upload_id=upload_id)
+
     @staticmethod
     def _result(
         command_type: UploadCommandType,
@@ -318,6 +325,33 @@ class UploadSpy:
                 expires_at=NOW + timedelta(minutes=5),
             )
         return UploadIntakeResult(receipt=receipt, authorization=form)
+
+
+def upload_intent(
+    *,
+    owner_id: str = OWNER,
+    upload_id: str = UPLOAD_ID,
+) -> UploadIntent:
+    return UploadIntent(
+        owner_id=owner_id,
+        upload_id=upload_id,
+        job_id=JOB_ID,
+        filename="artwork.png",
+        content_type="image/png",
+        content_sha256=CONTENT_SHA256,
+        size_bytes=1_024,
+        bucket="phase64-private-artifacts",
+        object_key=f"private/owners/{owner_id}/jobs/{JOB_ID}/source/source.png",
+        product_profile_id="gildan_64000_swiftpod",
+        product_profile_version=1,
+        product_profile_fingerprint="e" * 64,
+        authorization_generation=1,
+        authorization_issued_at=NOW,
+        authorization_expires_at=NOW + timedelta(minutes=5),
+        intent_expires_at=NOW + timedelta(days=1),
+        created_at=NOW,
+        updated_at=NOW,
+    )
 
 
 class QueryStoreSpy:
@@ -536,6 +570,44 @@ def test_create_upload_rejects_identity_extra_duplicate_json_and_base64_body(
     assert spy.calls == []
 
 
+def test_request_validation_exposes_only_bounded_safe_field_metadata() -> None:
+    spy = UploadSpy()
+    private_value = "not-a-digest-private-value"
+    response = upload_adapter(spy).handle(
+        api_event(
+            "POST /v1/uploads",
+            body={
+                "filename": "artwork.png",
+                "content_type": "image/png",
+                "content_sha256": private_value,
+                "size_bytes": 0,
+                **{f"extra_{index}": "private" for index in range(30)},
+            },
+            headers={"Content-Type": "application/json", "Idempotency-Key": "create-1"},
+        )
+    )
+
+    assert response["statusCode"] == 422
+    payload = response_body(response)
+    assert payload["error"]["code"] == "VALIDATION_FAILED"
+    assert len(payload["error"]["fields"]) == 25
+    assert payload["error"]["fields"][:2] == [
+        {
+            "path": "$.content_sha256",
+            "code": "INVALID_FORMAT",
+            "message": "Use the required format.",
+        },
+        {
+            "path": "$.size_bytes",
+            "code": "OUT_OF_RANGE",
+            "message": "Use a value within the allowed range.",
+        },
+    ]
+    assert private_value not in response["body"]
+    assert "private" not in response["body"]
+    assert spy.calls == []
+
+
 @pytest.mark.parametrize(
     ("route", "operation", "status", "has_authorization"),
     (
@@ -580,6 +652,75 @@ def test_upload_followup_rejects_any_request_body_before_service() -> None:
             headers={"Idempotency-Key": "complete-1", "Content-Type": "application/json"},
         )
     )
+
+    assert response["statusCode"] == 400
+    assert spy.calls == []
+
+
+def test_upload_recovery_is_owner_scoped_bodyless_and_contains_no_object_authority() -> None:
+    spy = UploadSpy()
+    response = upload_adapter(spy).handle(api_event("GET /v1/uploads/{upload_id}"))
+
+    assert response["statusCode"] == 200
+    assert spy.calls == [("get", {"owner_id": OWNER, "upload_id": UPLOAD_ID})]
+    payload = response_body(response)
+    assert payload == {
+        "authorization_expires_at": "2026-08-22T12:05:00Z",
+        "cancelled_at": None,
+        "completed_at": None,
+        "content_type": "image/png",
+        "created_at": "2026-08-22T12:00:00Z",
+        "expired_at": None,
+        "filename": "artwork.png",
+        "intent_expires_at": "2026-08-23T12:00:00Z",
+        "job_id": JOB_ID,
+        "record_version": 0,
+        "size_bytes": 1_024,
+        "status": "open",
+        "updated_at": "2026-08-22T12:00:00Z",
+        "upload_id": UPLOAD_ID,
+    }
+    assert recursive_keys(payload).isdisjoint(_PRIVATE_RESPONSE_FIELDS)
+    assert "content_sha256" not in response["body"]
+    assert "phase64-private-artifacts" not in response["body"]
+    assert "source.png" not in response["body"]
+
+
+def test_unknown_and_cross_owner_upload_recovery_are_identical_not_found() -> None:
+    class ClosedUploadSpy(UploadSpy):
+        def __init__(self, intent: UploadIntent | None) -> None:
+            super().__init__()
+            self.intent = intent
+
+        def get_upload(self, *, owner_id: str, upload_id: str) -> UploadIntent:
+            self.calls.append(("get", {"owner_id": owner_id, "upload_id": upload_id}))
+            if self.intent is None or self.intent.owner_id != owner_id:
+                raise NotFoundError("private storage detail")
+            return self.intent
+
+    unknown = upload_adapter(ClosedUploadSpy(None)).handle(api_event("GET /v1/uploads/{upload_id}"))
+    foreign = upload_adapter(ClosedUploadSpy(upload_intent(owner_id=OTHER_OWNER))).handle(
+        api_event("GET /v1/uploads/{upload_id}")
+    )
+
+    assert unknown["statusCode"] == foreign["statusCode"] == 404
+    assert unknown["body"] == foreign["body"]
+    assert response_body(unknown)["error"]["code"] == "NOT_FOUND"
+    assert "private storage detail" not in unknown["body"]
+    assert OTHER_OWNER not in foreign["body"]
+
+
+@pytest.mark.parametrize("mutation", ("body", "query"))
+def test_upload_recovery_rejects_body_or_query_before_read(mutation: str) -> None:
+    spy = UploadSpy()
+    event = api_event("GET /v1/uploads/{upload_id}")
+    if mutation == "body":
+        event["body"] = "{}"
+    else:
+        event["queryStringParameters"] = {"owner_id": OTHER_OWNER}
+        event["rawQueryString"] = f"owner_id={OTHER_OWNER}"
+
+    response = upload_adapter(spy).handle(event)
 
     assert response["statusCode"] == 400
     assert spy.calls == []
@@ -637,28 +778,40 @@ def test_recent_jobs_rejects_duplicate_raw_query_parameter() -> None:
     assert store.calls == []
 
 
-def test_job_status_read_uses_derived_owner_and_exact_path() -> None:
+def test_job_status_read_uses_server_derived_progress_and_exact_owner() -> None:
     store = QueryStoreSpy()
-    response = query_adapter(store, ReviewSpy(), PreviewSpy()).handle(
+    reviews = ReviewSpy()
+    response = query_adapter(store, reviews, PreviewSpy()).handle(
         api_event("GET /v1/jobs/{job_id}")
     )
 
     assert response["statusCode"] == 200
-    assert store.calls == [("get", (OWNER, JOB_ID))]
+    assert store.calls == []
+    assert reviews.calls == [(OWNER, JOB_ID)]
     payload = response_body(response)
     assert payload["job_id"] == JOB_ID
+    assert payload["display_state"] == "preparing"
+    assert payload["stage"] == "artwork_review"
+    assert payload["authority_notice"] == "Unpublished — not on Etsy"
+    assert [action["action"] for action in payload["actions"]] == [
+        action.value for action in SellerAction
+    ]
+    assert "state" not in payload
+    assert "listing" not in payload
     assert recursive_keys(payload).isdisjoint(_PRIVATE_RESPONSE_FIELDS)
 
 
 def test_job_status_rejects_route_path_disagreement_without_store_read() -> None:
     store = QueryStoreSpy()
+    reviews = ReviewSpy()
     event = api_event("GET /v1/jobs/{job_id}")
     event["rawPath"] = "/v1/jobs/a-different-job"
 
-    response = query_adapter(store, ReviewSpy(), PreviewSpy()).handle(event)
+    response = query_adapter(store, reviews, PreviewSpy()).handle(event)
 
     assert response["statusCode"] == 400
     assert store.calls == []
+    assert reviews.calls == []
 
 
 def test_review_read_returns_strong_etag_and_owner_safe_projection() -> None:

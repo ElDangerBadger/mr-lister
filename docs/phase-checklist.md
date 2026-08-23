@@ -259,6 +259,34 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [ ] Pass deployed cross-owner, upload-expiry, exact-version preview, concurrency, and same-job
       Strands live acceptance; no Phase 6.4 live/deployment gate is claimed by the offline slice
   - [ ] Phase 6.5 accessible seller interface with refresh and conflict recovery
+    - [x] Browser, same-origin hosting, PKCE storage, upload recovery, preview, accessibility, and
+      server-directed authority decisions frozen in
+      [`phase6-accessible-seller-interface.md`](phase6-accessible-seller-interface.md) and ADR
+      [0012](architecture/0012-phase65-browser-and-hosting-boundary.md)
+    - [x] Strict TypeScript/Vite application, versioned runtime-validated browser contracts, and
+      frontend CI
+    - [x] Memory-only Cognito PKCE session recovery and owner-scoped recent-job/upload recovery
+    - [x] Direct upload with measured bytes, expiry/cancellation recovery, and durable completion
+    - [x] Consolidated progress/review with prominent Strands provenance, thirteen labelled tags,
+      mockups, complete economics, and persistent unpublished authority
+    - [x] Version/ETag/idempotency-bound edit, refresh, approve, cancel, and retry with local-edit
+      conflict preservation
+    - [ ] WCAG 2.2 AA component/browser gates across keyboard, focus, screen-reader semantics,
+      contrast, reduced motion, and 200-percent zoom
+      - [x] Semantic component/axe coverage and partial real-Chrome desktop/mobile, keyboard, focus,
+        reduced-motion, conflict, preview-recovery, and fail-closed evidence
+      - [ ] Re-run the exact final bundle in Chromium, Firefox, and WebKit, including forced colors,
+        contrast, route-race cases, hidden-tab polling, and 200-percent zoom
+    - [ ] Private static hosting, same-origin cache-disabled `/v1/*`, CSP/security headers, SPA
+      routing, observability, and deployed non-destructive smoke
+      - [x] Offline private-S3/OAC/CloudFront topology, exact SPA routes, security headers, and
+        uncompressed strong-ETag `/v1/*` behavior
+      - [ ] Compose the `SCAFFOLD_ONLY` handlers, deploy, and pass the non-destructive smoke
+    - Evidence: 846 Python tests passed, including 636 Phase 6 tests; 11 gated live-Bedrock tests
+      skipped. The web gate passes 62 tests, lint, strict typecheck, production build, artifact
+      hygiene, and an audit with zero high-severity vulnerabilities. Ruff, contract drift,
+      compileall, SAM lint/build, and `git diff --check` pass. The browser gate remains explicitly
+      conditional as detailed in [`phase6-accessible-seller-interface.md`](phase6-accessible-seller-interface.md).
   - [ ] Phase 6.6 replay, concurrency, cross-owner, live-canary, and first-time-user acceptance
 - [ ] Phase 7 — Etsy publication through Printify
   - [ ] Approval-version and publish guard verification

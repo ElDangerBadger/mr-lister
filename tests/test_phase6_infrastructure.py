@@ -78,8 +78,8 @@ def test_identity_is_invite_only_totp_and_public_code_flow() -> None:
     assert client_properties["AllowedOAuthFlowsUserPoolClient"] is True
     assert client_properties["AllowedOAuthFlows"] == ["code"]
     assert client_properties["AllowedOAuthScopes"] == ["openid", "mr-lister-api/seller"]
-    assert client_properties["CallbackURLs"] == [{"Ref": "ApplicationCallbackUrl"}]
-    assert client_properties["LogoutURLs"] == [{"Ref": "ApplicationLogoutUrl"}]
+    assert client_properties["CallbackURLs"] == [{"Fn::Sub": "${ApplicationOrigin}/auth/callback"}]
+    assert client_properties["LogoutURLs"] == [{"Fn::Sub": "${ApplicationOrigin}/"}]
     assert client_properties["SupportedIdentityProviders"] == ["COGNITO"]
     assert client_properties["AccessTokenValidity"] == 60
     assert client_properties["IdTokenValidity"] == 60
@@ -444,6 +444,7 @@ def test_exact_public_and_protected_http_routes_are_closed() -> None:
     assert set(public) == {"GET /health"}
     assert set(protected) == {
         "POST /v1/uploads",
+        "GET /v1/uploads/{upload_id}",
         "POST /v1/uploads/{upload_id}/authorize",
         "POST /v1/uploads/{upload_id}/complete",
         "POST /v1/uploads/{upload_id}/cancel",
@@ -491,6 +492,7 @@ def test_dispatcher_and_machine_routes_are_exactly_allowlisted() -> None:
 
     assert module.UPLOAD_API_ROUTE_KEYS == {
         "POST /v1/uploads",
+        "GET /v1/uploads/{upload_id}",
         "POST /v1/uploads/{upload_id}/authorize",
         "POST /v1/uploads/{upload_id}/complete",
         "POST /v1/uploads/{upload_id}/cancel",
@@ -526,11 +528,28 @@ def test_dispatcher_and_machine_routes_are_exactly_allowlisted() -> None:
 
 
 def test_no_forbidden_external_capability_is_present() -> None:
-    deployment_text = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted(PHASE6.rglob("*"))
-        if path.is_file() and path.name != "README.md" and path.suffix in {".json", ".py", ".txt"}
-    ).lower()
+    deployment_parts: list[str] = []
+    for path in sorted(PHASE6.rglob("*")):
+        if (
+            not path.is_file()
+            or path.name == "README.md"
+            or path.suffix not in {".json", ".py", ".txt"}
+        ):
+            continue
+        if path == TEMPLATE:
+            template = load_template()
+            cloudfront_functions = [
+                resource
+                for resource in template["Resources"].values()
+                if resource["Type"] == "AWS::CloudFront::Function"
+            ]
+            assert cloudfront_functions
+            for resource in cloudfront_functions:
+                assert resource["Properties"].pop("AutoPublish") is True
+            deployment_parts.append(json.dumps(template, sort_keys=True))
+        else:
+            deployment_parts.append(path.read_text(encoding="utf-8"))
+    deployment_text = "\n".join(deployment_parts).lower()
     for forbidden in (
         "waitfortasktoken",
         "sendtasksuccess",

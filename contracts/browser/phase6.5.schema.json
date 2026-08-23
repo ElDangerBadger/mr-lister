@@ -1,0 +1,2046 @@
+{
+  "$defs": {
+    "ActionReason": {
+      "enum": [
+        "AVAILABLE",
+        "NOT_IN_CURRENT_STATE",
+        "REVIEW_NOT_READY",
+        "REVIEW_INVALID",
+        "PRODUCT_NOT_CURRENT",
+        "PRODUCT_NOT_REVIEWABLE",
+        "MOCKUPS_NOT_READY",
+        "ECONOMICS_MISSING",
+        "ECONOMICS_STALE",
+        "PROVIDER_OUTCOME_UNCONFIRMED",
+        "CANCELLATION_PENDING",
+        "RETRY_NOT_AVAILABLE"
+      ],
+      "title": "ActionReason",
+      "type": "string"
+    },
+    "ArtworkInterpretation": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "readiness": {
+          "$ref": "#/$defs/SectionReadiness"
+        },
+        "safety_notes": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Safety Notes",
+          "type": "array"
+        },
+        "styles": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Styles",
+          "type": "array"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subject"
+        },
+        "themes": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Themes",
+          "type": "array"
+        },
+        "visible_text": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Visible Text",
+          "type": "array"
+        },
+        "visual_elements": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Visual Elements",
+          "type": "array"
+        }
+      },
+      "required": [
+        "readiness"
+      ],
+      "title": "ArtworkInterpretation",
+      "type": "object"
+    },
+    "ArtworkPreview": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires At"
+        },
+        "readiness": {
+          "$ref": "#/$defs/SectionReadiness"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "readiness"
+      ],
+      "title": "ArtworkPreview",
+      "type": "object"
+    },
+    "ControlJobState": {
+      "enum": [
+        "intake_validated",
+        "analyzing_artwork",
+        "listing_drafted",
+        "needs_revision",
+        "product_draft_syncing",
+        "awaiting_approval",
+        "pricing_refreshing",
+        "reconciliation_required",
+        "failed_retryable",
+        "failed_terminal",
+        "cancel_requested",
+        "cancelled",
+        "approved"
+      ],
+      "title": "ControlJobState",
+      "type": "string"
+    },
+    "CreateUploadRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "content_type": {
+          "const": "image/png",
+          "title": "Content Type",
+          "type": "string"
+        },
+        "filename": {
+          "description": "PNG basename without path or control characters",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Filename",
+          "type": "string"
+        },
+        "size_bytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 5242880,
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "filename",
+        "content_type",
+        "content_sha256",
+        "size_bytes"
+      ],
+      "title": "CreateUploadRequest",
+      "type": "object"
+    },
+    "EconomicsProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "calculated_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calculated At"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "currency": {
+          "const": "USD",
+          "default": "USD",
+          "title": "Currency",
+          "type": "string"
+        },
+        "fee_policy_id": {
+          "anyOf": [
+            {
+              "const": "etsy-us-standard-v1",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fee Policy Id"
+        },
+        "fee_policy_source": {
+          "anyOf": [
+            {
+              "const": "Etsy US standard fee policy",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fee Policy Source"
+        },
+        "fee_policy_verified_on": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fee Policy Verified On"
+        },
+        "fresh_until": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fresh Until"
+        },
+        "label": {
+          "const": "Estimated proceeds",
+          "default": "Estimated proceeds",
+          "title": "Label",
+          "type": "string"
+        },
+        "maximum_cents": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Cents"
+        },
+        "minimum_cents": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum Cents"
+        },
+        "production_cost_observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Production Cost Observed At"
+        },
+        "production_cost_source": {
+          "anyOf": [
+            {
+              "const": "Connected production product readback",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Production Cost Source"
+        },
+        "production_shipping_observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Production Shipping Observed At"
+        },
+        "production_shipping_source": {
+          "anyOf": [
+            {
+              "const": "Connected production standard US shipping",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Production Shipping Source"
+        },
+        "readiness": {
+          "$ref": "#/$defs/EconomicsReadiness"
+        },
+        "variants": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/VariantEconomicsProjection"
+          },
+          "maxItems": 100,
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "readiness"
+      ],
+      "title": "EconomicsProjection",
+      "type": "object"
+    },
+    "EconomicsReadiness": {
+      "enum": [
+        "missing",
+        "refreshing",
+        "ready",
+        "stale",
+        "outdated",
+        "unavailable"
+      ],
+      "title": "EconomicsReadiness",
+      "type": "string"
+    },
+    "ErrorDetail": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^[A-Z][A-Z0-9_]{0,99}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "fields": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/RequestFieldError"
+              },
+              "maxItems": 25,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fields"
+        },
+        "message": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "request_id"
+      ],
+      "title": "ErrorDetail",
+      "type": "object"
+    },
+    "ErrorEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ErrorDetail"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "title": "ErrorEnvelope",
+      "type": "object"
+    },
+    "FailureProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^[A-Z][A-Z0-9_]{0,99}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SellerAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "stage": {
+          "$ref": "#/$defs/ReviewStage"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "stage",
+        "retryable"
+      ],
+      "title": "FailureProjection",
+      "type": "object"
+    },
+    "HealthResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "ok",
+          "default": "ok",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "HealthResponse",
+      "type": "object"
+    },
+    "JobPageProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "jobs": {
+          "items": {
+            "$ref": "#/$defs/JobSummaryProjection"
+          },
+          "maxItems": 100,
+          "title": "Jobs",
+          "type": "array"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_-]{1,200}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Cursor"
+        }
+      },
+      "required": [
+        "jobs"
+      ],
+      "title": "JobPageProjection",
+      "type": "object"
+    },
+    "JobProgressProjection": {
+      "additionalProperties": false,
+      "description": "Server-derived seller progress; canonical machine state is intentionally absent.",
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/SellerActionCapability"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "title": "Actions",
+          "type": "array"
+        },
+        "authority_notice": {
+          "const": "Unpublished — not on Etsy",
+          "default": "Unpublished — not on Etsy",
+          "title": "Authority Notice",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_state": {
+          "$ref": "#/$defs/ReviewDisplayState"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FailureProjection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "job_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "provider_outcome_unconfirmed": {
+          "default": false,
+          "title": "Provider Outcome Unconfirmed",
+          "type": "boolean"
+        },
+        "record_version": {
+          "minimum": 0,
+          "title": "Record Version",
+          "type": "integer"
+        },
+        "review_version": {
+          "minimum": 0,
+          "title": "Review Version",
+          "type": "integer"
+        },
+        "stage": {
+          "$ref": "#/$defs/ReviewStage"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "record_version",
+        "review_version",
+        "display_state",
+        "stage",
+        "actions",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "JobProgressProjection",
+      "type": "object"
+    },
+    "JobSummaryProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "job_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "record_version": {
+          "minimum": 0,
+          "title": "Record Version",
+          "type": "integer"
+        },
+        "review_version": {
+          "minimum": 0,
+          "title": "Review Version",
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/ControlJobState"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "state",
+        "record_version",
+        "review_version",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "JobSummaryProjection",
+      "type": "object"
+    },
+    "ListingProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "audience": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Audience",
+          "type": "array"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "readiness": {
+          "$ref": "#/$defs/SectionReadiness"
+        },
+        "tags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 13,
+          "title": "Tags",
+          "type": "array"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "maxLength": 140,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "readiness"
+      ],
+      "title": "ListingProjection",
+      "type": "object"
+    },
+    "ListingRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 100000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "maxLength": 20,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 13,
+          "minItems": 13,
+          "title": "Tags",
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 140,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "description",
+        "tags"
+      ],
+      "title": "ListingRequest",
+      "type": "object"
+    },
+    "ListingValidationProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "issues": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PublicValidationIssue"
+          },
+          "maxItems": 50,
+          "title": "Issues",
+          "type": "array"
+        },
+        "passed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Passed"
+        },
+        "readiness": {
+          "$ref": "#/$defs/SectionReadiness"
+        }
+      },
+      "required": [
+        "readiness"
+      ],
+      "title": "ListingValidationProjection",
+      "type": "object"
+    },
+    "MockupProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "alt_text": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Alt Text",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "alt_text"
+      ],
+      "title": "MockupProjection",
+      "type": "object"
+    },
+    "MockupSetProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "items": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MockupProjection"
+          },
+          "maxItems": 5,
+          "title": "Items",
+          "type": "array"
+        },
+        "readiness": {
+          "$ref": "#/$defs/SectionReadiness"
+        }
+      },
+      "required": [
+        "readiness"
+      ],
+      "title": "MockupSetProjection",
+      "type": "object"
+    },
+    "PlacementPresentation": {
+      "additionalProperties": false,
+      "properties": {
+        "angle": {
+          "maximum": 360,
+          "minimum": -360,
+          "title": "Angle",
+          "type": "integer"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "decoration_method": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Decoration Method",
+          "type": "string"
+        },
+        "group_id": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$",
+          "title": "Group Id",
+          "type": "string"
+        },
+        "position": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Position",
+          "type": "string"
+        },
+        "scale": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Scale",
+          "type": "number"
+        },
+        "sizes": {
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Sizes",
+          "type": "array"
+        },
+        "x": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "group_id",
+        "sizes",
+        "position",
+        "decoration_method",
+        "x",
+        "y",
+        "scale",
+        "angle"
+      ],
+      "title": "PlacementPresentation",
+      "type": "object"
+    },
+    "ProductPolicyProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "buyer_shipping_cents": {
+          "minimum": 0,
+          "title": "Buyer Shipping Cents",
+          "type": "integer"
+        },
+        "colors": {
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "minItems": 1,
+          "title": "Colors",
+          "type": "array"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "currency": {
+          "const": "USD",
+          "default": "USD",
+          "title": "Currency",
+          "type": "string"
+        },
+        "placements": {
+          "items": {
+            "$ref": "#/$defs/PlacementPresentation"
+          },
+          "maxItems": 10,
+          "minItems": 1,
+          "title": "Placements",
+          "type": "array"
+        },
+        "product_name": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Product Name",
+          "type": "string"
+        },
+        "provider_name": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Provider Name",
+          "type": "string"
+        },
+        "retail_price_cents": {
+          "exclusiveMinimum": 0,
+          "title": "Retail Price Cents",
+          "type": "integer"
+        },
+        "sizes": {
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "minItems": 1,
+          "title": "Sizes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "product_name",
+        "provider_name",
+        "colors",
+        "sizes",
+        "placements",
+        "retail_price_cents",
+        "buyer_shipping_cents"
+      ],
+      "title": "ProductPolicyProjection",
+      "type": "object"
+    },
+    "ProductSynchronizationProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "editable_draft": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Editable Draft"
+        },
+        "product_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Id"
+        },
+        "readiness": {
+          "$ref": "#/$defs/SectionReadiness"
+        },
+        "review_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review Version"
+        },
+        "synchronized_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Synchronized At"
+        }
+      },
+      "required": [
+        "readiness"
+      ],
+      "title": "ProductSynchronizationProjection",
+      "type": "object"
+    },
+    "PublicValidationIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^[A-Z][A-Z0-9_]{0,99}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning"
+          ],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "path",
+        "severity",
+        "message"
+      ],
+      "title": "PublicValidationIssue",
+      "type": "object"
+    },
+    "RecordAuthorityRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_record_version": {
+          "minimum": 0,
+          "title": "Expected Record Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expected_record_version"
+      ],
+      "title": "RecordAuthorityRequest",
+      "type": "object"
+    },
+    "RequestFieldError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "REQUIRED",
+            "UNEXPECTED_FIELD",
+            "INVALID_TYPE",
+            "INVALID_LENGTH",
+            "INVALID_FORMAT",
+            "OUT_OF_RANGE",
+            "INVALID_VALUE"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 160,
+          "pattern": "^\\$(?:\\.[a-z_][a-z0-9_]{0,63}|\\[[0-9]{1,3}\\])*$",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "code",
+        "message"
+      ],
+      "title": "RequestFieldError",
+      "type": "object"
+    },
+    "ReviewAuthorityRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_record_version": {
+          "minimum": 0,
+          "title": "Expected Record Version",
+          "type": "integer"
+        },
+        "expected_review_fingerprint": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Expected Review Fingerprint",
+          "type": "string"
+        },
+        "expected_review_version": {
+          "minimum": 1,
+          "title": "Expected Review Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expected_record_version",
+        "expected_review_version",
+        "expected_review_fingerprint"
+      ],
+      "title": "ReviewAuthorityRequest",
+      "type": "object"
+    },
+    "ReviewDisplayState": {
+      "enum": [
+        "preparing",
+        "needs_revision",
+        "synchronizing",
+        "ready_for_review",
+        "refreshing_estimate",
+        "reconciling",
+        "cancelling",
+        "retryable_failure",
+        "terminal_failure",
+        "cancelled",
+        "approved"
+      ],
+      "title": "ReviewDisplayState",
+      "type": "string"
+    },
+    "ReviewStage": {
+      "enum": [
+        "upload_verified",
+        "artwork_review",
+        "listing_validation",
+        "seller_revision",
+        "product_sync",
+        "human_review",
+        "economics_refresh",
+        "provider_reconciliation",
+        "cancellation",
+        "recovery",
+        "complete"
+      ],
+      "title": "ReviewStage",
+      "type": "string"
+    },
+    "ReviseListingRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_record_version": {
+          "minimum": 0,
+          "title": "Expected Record Version",
+          "type": "integer"
+        },
+        "expected_review_fingerprint": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Expected Review Fingerprint",
+          "type": "string"
+        },
+        "expected_review_version": {
+          "minimum": 1,
+          "title": "Expected Review Version",
+          "type": "integer"
+        },
+        "listing": {
+          "$ref": "#/$defs/ListingRequest"
+        }
+      },
+      "required": [
+        "expected_record_version",
+        "expected_review_version",
+        "expected_review_fingerprint",
+        "listing"
+      ],
+      "title": "ReviseListingRequest",
+      "type": "object"
+    },
+    "SectionReadiness": {
+      "enum": [
+        "pending",
+        "ready",
+        "outdated",
+        "unavailable"
+      ],
+      "title": "SectionReadiness",
+      "type": "string"
+    },
+    "SellerAction": {
+      "enum": [
+        "edit_listing",
+        "approve_review",
+        "cancel_job",
+        "retry_job",
+        "refresh_economics"
+      ],
+      "title": "SellerAction",
+      "type": "string"
+    },
+    "SellerActionCapability": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/SellerAction"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "message": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/ActionReason"
+        }
+      },
+      "required": [
+        "action",
+        "enabled",
+        "reason",
+        "message"
+      ],
+      "title": "SellerActionCapability",
+      "type": "object"
+    },
+    "SellerCommandResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "record_version": {
+          "minimum": 0,
+          "title": "Record Version",
+          "type": "integer"
+        },
+        "review_version": {
+          "minimum": 0,
+          "title": "Review Version",
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/ControlJobState"
+        }
+      },
+      "required": [
+        "job_id",
+        "state",
+        "record_version",
+        "review_version"
+      ],
+      "title": "SellerCommandResponse",
+      "type": "object"
+    },
+    "SellerReviewProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/SellerActionCapability"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "title": "Actions",
+          "type": "array"
+        },
+        "artwork": {
+          "$ref": "#/$defs/ArtworkInterpretation"
+        },
+        "authority_notice": {
+          "const": "Unpublished — not on Etsy",
+          "default": "Unpublished — not on Etsy",
+          "title": "Authority Notice",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_state": {
+          "$ref": "#/$defs/ReviewDisplayState"
+        },
+        "economics": {
+          "$ref": "#/$defs/EconomicsProjection"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FailureProjection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "job_id": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "listing": {
+          "$ref": "#/$defs/ListingProjection"
+        },
+        "mockups": {
+          "$ref": "#/$defs/MockupSetProjection"
+        },
+        "preview": {
+          "$ref": "#/$defs/ArtworkPreview"
+        },
+        "product_policy": {
+          "$ref": "#/$defs/ProductPolicyProjection"
+        },
+        "provider_outcome_unconfirmed": {
+          "default": false,
+          "title": "Provider Outcome Unconfirmed",
+          "type": "boolean"
+        },
+        "record_version": {
+          "minimum": 0,
+          "title": "Record Version",
+          "type": "integer"
+        },
+        "review_authority_etag": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review Authority Etag"
+        },
+        "review_fingerprint": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review Fingerprint"
+        },
+        "review_version": {
+          "minimum": 0,
+          "title": "Review Version",
+          "type": "integer"
+        },
+        "stage": {
+          "$ref": "#/$defs/ReviewStage"
+        },
+        "strands": {
+          "$ref": "#/$defs/StrandsProvenanceProjection"
+        },
+        "synchronization": {
+          "$ref": "#/$defs/ProductSynchronizationProjection"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/ListingValidationProjection"
+        }
+      },
+      "required": [
+        "job_id",
+        "record_version",
+        "review_version",
+        "display_state",
+        "stage",
+        "actions",
+        "preview",
+        "artwork",
+        "listing",
+        "validation",
+        "product_policy",
+        "synchronization",
+        "mockups",
+        "economics",
+        "strands",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "SellerReviewProjection",
+      "type": "object"
+    },
+    "StrandsProvenanceProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "const": "mr-lister-preparation",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Id"
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "correlation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{24}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Correlation Id"
+        },
+        "framework": {
+          "anyOf": [
+            {
+              "const": "strands-agents",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Framework"
+        },
+        "prepared_review_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prepared Review Version"
+        },
+        "readiness": {
+          "$ref": "#/$defs/SectionReadiness"
+        },
+        "tool_calls": {
+          "default": [],
+          "items": {
+            "const": "record_prepared_review",
+            "type": "string"
+          },
+          "maxItems": 1,
+          "title": "Tool Calls",
+          "type": "array"
+        }
+      },
+      "required": [
+        "readiness"
+      ],
+      "title": "StrandsProvenanceProjection",
+      "type": "object"
+    },
+    "UploadAuthorizationProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "authorization_generation": {
+          "minimum": 1,
+          "title": "Authorization Generation",
+          "type": "integer"
+        },
+        "content_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "form_fields": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "maxProperties": 64,
+          "minProperties": 1,
+          "title": "Form Fields",
+          "type": "object"
+        },
+        "issued_at": {
+          "format": "date-time",
+          "title": "Issued At",
+          "type": "string"
+        },
+        "job_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "method": {
+          "const": "POST",
+          "default": "POST",
+          "title": "Method",
+          "type": "string"
+        },
+        "size_bytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 5242880,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "upload_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Upload Id",
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "upload_id",
+        "job_id",
+        "authorization_generation",
+        "url",
+        "form_fields",
+        "content_sha256",
+        "size_bytes",
+        "issued_at",
+        "expires_at"
+      ],
+      "title": "UploadAuthorizationProjection",
+      "type": "object"
+    },
+    "UploadCommandProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "record_version": {
+          "minimum": 0,
+          "title": "Record Version",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/UploadIntentStatus"
+        },
+        "upload_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Upload Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "upload_id",
+        "job_id",
+        "status",
+        "record_version"
+      ],
+      "title": "UploadCommandProjection",
+      "type": "object"
+    },
+    "UploadIntentStatus": {
+      "enum": [
+        "open",
+        "completed",
+        "cancelled",
+        "expired"
+      ],
+      "title": "UploadIntentStatus",
+      "type": "string"
+    },
+    "UploadMutationResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "authorization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UploadAuthorizationProjection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "upload": {
+          "$ref": "#/$defs/UploadCommandProjection"
+        }
+      },
+      "required": [
+        "upload"
+      ],
+      "title": "UploadMutationResponse",
+      "type": "object"
+    },
+    "UploadRecoveryProjection": {
+      "additionalProperties": false,
+      "description": "Durable upload status without object authority or short-lived S3 credentials.",
+      "properties": {
+        "authorization_expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Authorization Expires At"
+        },
+        "cancelled_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cancelled At"
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At"
+        },
+        "content_type": {
+          "const": "image/png",
+          "title": "Content Type",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "expired_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expired At"
+        },
+        "filename": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Filename",
+          "type": "string"
+        },
+        "intent_expires_at": {
+          "format": "date-time",
+          "title": "Intent Expires At",
+          "type": "string"
+        },
+        "job_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "record_version": {
+          "minimum": 0,
+          "title": "Record Version",
+          "type": "integer"
+        },
+        "size_bytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 5242880,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/UploadIntentStatus"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "upload_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Upload Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "upload_id",
+        "job_id",
+        "status",
+        "filename",
+        "content_type",
+        "size_bytes",
+        "record_version",
+        "intent_expires_at",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "UploadRecoveryProjection",
+      "type": "object"
+    },
+    "VariantEconomicsProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "buyer_shipping_cents": {
+          "minimum": 0,
+          "title": "Buyer Shipping Cents",
+          "type": "integer"
+        },
+        "color": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Color",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "2.0.0",
+          "default": "2.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "estimated_proceeds_cents": {
+          "title": "Estimated Proceeds Cents",
+          "type": "integer"
+        },
+        "marketplace_fees_cents": {
+          "minimum": 0,
+          "title": "Marketplace Fees Cents",
+          "type": "integer"
+        },
+        "production_cost_cents": {
+          "minimum": 0,
+          "title": "Production Cost Cents",
+          "type": "integer"
+        },
+        "production_shipping_cents": {
+          "minimum": 0,
+          "title": "Production Shipping Cents",
+          "type": "integer"
+        },
+        "retail_price_cents": {
+          "exclusiveMinimum": 0,
+          "title": "Retail Price Cents",
+          "type": "integer"
+        },
+        "size": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Size",
+          "type": "string"
+        }
+      },
+      "required": [
+        "color",
+        "size",
+        "retail_price_cents",
+        "buyer_shipping_cents",
+        "production_cost_cents",
+        "production_shipping_cents",
+        "marketplace_fees_cents",
+        "estimated_proceeds_cents"
+      ],
+      "title": "VariantEconomicsProjection",
+      "type": "object"
+    }
+  },
+  "$id": "https://mr-lister.invalid/contracts/browser-6.5.0.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Mr. Lister Phase 6.5 browser contract",
+  "x-mr-lister-contract-version": "6.5.0",
+  "x-mr-lister-models": {
+    "CreateUploadRequest": "#/$defs/CreateUploadRequest",
+    "ErrorEnvelope": "#/$defs/ErrorEnvelope",
+    "HealthResponse": "#/$defs/HealthResponse",
+    "JobPageProjection": "#/$defs/JobPageProjection",
+    "JobProgressProjection": "#/$defs/JobProgressProjection",
+    "RecordAuthorityRequest": "#/$defs/RecordAuthorityRequest",
+    "ReviewAuthorityRequest": "#/$defs/ReviewAuthorityRequest",
+    "ReviseListingRequest": "#/$defs/ReviseListingRequest",
+    "SellerCommandResponse": "#/$defs/SellerCommandResponse",
+    "SellerReviewProjection": "#/$defs/SellerReviewProjection",
+    "UploadMutationResponse": "#/$defs/UploadMutationResponse",
+    "UploadRecoveryProjection": "#/$defs/UploadRecoveryProjection"
+  },
+  "x-mr-lister-routes": {
+    "*": {
+      "error": "#/$defs/ErrorEnvelope"
+    },
+    "GET /health": {
+      "response": "#/$defs/HealthResponse"
+    },
+    "GET /v1/jobs": {
+      "response": "#/$defs/JobPageProjection"
+    },
+    "GET /v1/jobs/{job_id}": {
+      "response": "#/$defs/JobProgressProjection"
+    },
+    "GET /v1/jobs/{job_id}/artwork-preview": {
+      "response-kind": "bodyless-redirect"
+    },
+    "GET /v1/jobs/{job_id}/review": {
+      "response": "#/$defs/SellerReviewProjection"
+    },
+    "GET /v1/uploads/{upload_id}": {
+      "response": "#/$defs/UploadRecoveryProjection"
+    },
+    "POST /v1/jobs/{job_id}/approve": {
+      "request": "#/$defs/ReviewAuthorityRequest",
+      "response": "#/$defs/SellerCommandResponse"
+    },
+    "POST /v1/jobs/{job_id}/cancel": {
+      "request": "#/$defs/RecordAuthorityRequest",
+      "response": "#/$defs/SellerCommandResponse"
+    },
+    "POST /v1/jobs/{job_id}/economics/refresh": {
+      "request": "#/$defs/ReviewAuthorityRequest",
+      "response": "#/$defs/SellerCommandResponse"
+    },
+    "POST /v1/jobs/{job_id}/retry": {
+      "request": "#/$defs/RecordAuthorityRequest",
+      "response": "#/$defs/SellerCommandResponse"
+    },
+    "POST /v1/uploads": {
+      "request": "#/$defs/CreateUploadRequest",
+      "response": "#/$defs/UploadMutationResponse"
+    },
+    "POST /v1/uploads/{upload_id}/authorize": {
+      "response": "#/$defs/UploadMutationResponse"
+    },
+    "POST /v1/uploads/{upload_id}/cancel": {
+      "response": "#/$defs/UploadMutationResponse"
+    },
+    "POST /v1/uploads/{upload_id}/complete": {
+      "response": "#/$defs/UploadMutationResponse"
+    },
+    "PUT /v1/jobs/{job_id}/review/listing": {
+      "request": "#/$defs/ReviseListingRequest",
+      "response": "#/$defs/SellerCommandResponse"
+    }
+  }
+}

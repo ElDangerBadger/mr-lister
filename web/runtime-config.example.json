@@ -1,0 +1,8 @@
+{
+  "cognito_authorize_url": "https://example.auth.us-west-2.amazoncognito.com/oauth2/authorize",
+  "cognito_token_url": "https://example.auth.us-west-2.amazoncognito.com/oauth2/token",
+  "cognito_logout_url": "https://example.auth.us-west-2.amazoncognito.com/logout",
+  "client_id": "replace-at-deploy-time",
+  "redirect_uri": "https://seller.example.com/auth/callback",
+  "scopes": ["openid", "mr-lister-api/seller"]
+}

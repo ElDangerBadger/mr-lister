@@ -11,6 +11,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from mr_lister.cloud.auth import AccessDeniedError, AuthenticationRequiredError
+from mr_lister.cloud.browser_contracts import RequestFieldError
 from mr_lister.cloud.preview import PreviewAuthorizationUnavailableError
 from mr_lister.control.errors import (
     ConcurrentControlModificationError,
@@ -35,6 +36,7 @@ PUBLIC_ROUTE_KEYS = frozenset({"GET /health"})
 PROTECTED_ROUTE_KEYS = frozenset(
     {
         "POST /v1/uploads",
+        "GET /v1/uploads/{upload_id}",
         "POST /v1/uploads/{upload_id}/authorize",
         "POST /v1/uploads/{upload_id}/complete",
         "POST /v1/uploads/{upload_id}/cancel",
@@ -59,6 +61,16 @@ _LOG_OWNER = re.compile(r"^[a-f0-9]{16}$")
 
 class InvalidRequestError(Exception):
     code = "INVALID_REQUEST"
+
+
+class RequestValidationError(Exception):
+    """A request-body schema failure reduced to bounded, value-free public metadata."""
+
+    code = "VALIDATION_FAILED"
+
+    def __init__(self, fields: tuple[RequestFieldError, ...]) -> None:
+        super().__init__(self.code)
+        self.fields = fields[:25]
 
 
 class PreconditionRequiredError(Exception):
@@ -236,6 +248,8 @@ def error_response(error: BaseException, *, request_id: object) -> dict[str, Any
             "request_id": safe_request_id,
         }
     }
+    if isinstance(error, RequestValidationError) and error.fields:
+        body["error"]["fields"] = [field.model_dump(mode="json") for field in error.fields]
     return {
         "statusCode": spec.status_code,
         "headers": headers,
@@ -312,7 +326,7 @@ def _error_spec(error: BaseException) -> _ErrorSpec:
         return _ERROR_SPECS["INVALID_REQUEST"]
     if isinstance(error, PreconditionRequiredError):
         return _ERROR_SPECS["PRECONDITION_REQUIRED"]
-    if isinstance(error, ValidationError):
+    if isinstance(error, (RequestValidationError, ValidationError)):
         return _ERROR_SPECS["VALIDATION_FAILED"]
     if isinstance(error, UploadArtifactIntegrityError):
         return _ERROR_SPECS["ARTIFACT_INTEGRITY"]
@@ -352,6 +366,7 @@ __all__ = [
     "PUBLIC_ROUTE_KEYS",
     "InvalidRequestError",
     "PreconditionRequiredError",
+    "RequestValidationError",
     "RouteNotFoundError",
     "build_safe_request_log",
     "error_response",

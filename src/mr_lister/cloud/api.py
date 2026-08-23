@@ -11,14 +11,31 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Mapping
-from typing import Annotated, Any, Protocol
+from typing import Any, Protocol
 from urllib.parse import parse_qsl
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import ValidationError
 
 from mr_lister.cloud.auth import AuthenticatedSeller, SellerClaimsPolicy, authenticate_seller
+from mr_lister.cloud.browser_contracts import (
+    BrowserContractModel,
+    CreateUploadRequest,
+    JobPageProjection,
+    JobProgressProjection,
+    JobSummaryProjection,
+    RecordAuthorityRequest,
+    RequestFieldError,
+    ReviewAuthorityRequest,
+    ReviseListingRequest,
+    SellerCommandResponse,
+    UploadAuthorizationProjection,
+    UploadCommandProjection,
+    UploadMutationResponse,
+    UploadRecoveryProjection,
+)
 from mr_lister.cloud.http import (
     InvalidRequestError,
+    RequestValidationError,
     RouteNotFoundError,
     error_response,
     parse_idempotency_key,
@@ -36,18 +53,18 @@ from mr_lister.control.commands import (
     ReviseListingCommand,
 )
 from mr_lister.control.models import (
-    PHASE6_MAX_SOURCE_ARTWORK_BYTES,
     CommandResponse,
     ControlJobRecord,
 )
 from mr_lister.control.projection_models import SellerReviewProjection
 from mr_lister.control.store import OwnerJobPage, decode_owner_job_cursor
-from mr_lister.control.upload_models import UploadAuthorization, UploadCommandType
+from mr_lister.control.upload_models import UploadAuthorization, UploadCommandType, UploadIntent
 from mr_lister.control.upload_service import UploadIntakeResult
 
 _UPLOAD_ROUTES = frozenset(
     {
         "POST /v1/uploads",
+        "GET /v1/uploads/{upload_id}",
         "POST /v1/uploads/{upload_id}/authorize",
         "POST /v1/uploads/{upload_id}/complete",
         "POST /v1/uploads/{upload_id}/cancel",
@@ -72,51 +89,13 @@ _COMMAND_ROUTES = frozenset(
 )
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
-_FINGERPRINT = re.compile(r"^[a-f0-9]{64}$")
 _CURSOR = re.compile(r"^[A-Za-z0-9_-]{1,200}$")
 _MAX_JSON_BODY_BYTES = 512 * 1024
 
-Fingerprint = Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")]
-Filename = Annotated[str, StringConstraints(min_length=1, max_length=255)]
-Title = Annotated[str, StringConstraints(min_length=1, max_length=140)]
-Description = Annotated[str, StringConstraints(min_length=1, max_length=100_000)]
-Tag = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
-
-
-class _RequestModel(BaseModel):
-    """Strict browser request base with no internal contract or identity fields."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-
-class _CreateUploadBody(_RequestModel):
-    filename: Filename
-    content_type: str = Field(pattern=r"^image/png$")
-    content_sha256: Fingerprint
-    size_bytes: int = Field(gt=0, le=PHASE6_MAX_SOURCE_ARTWORK_BYTES)
-
-
-class _ListingBody(_RequestModel):
-    title: Title
-    description: Description
-    tags: list[Tag] = Field(min_length=13, max_length=13)
-
-
-class _ReviewAuthorityBody(_RequestModel):
-    expected_record_version: int = Field(ge=0)
-    expected_review_version: int = Field(ge=1)
-    expected_review_fingerprint: Fingerprint
-
-
-class _ReviseListingBody(_ReviewAuthorityBody):
-    listing: _ListingBody
-
-
-class _RecordAuthorityBody(_RequestModel):
-    expected_record_version: int = Field(ge=0)
-
 
 class UploadIntakePort(Protocol):
+    def get_upload(self, *, owner_id: str, upload_id: str) -> UploadIntent: ...
+
     def create_upload(
         self,
         *,
@@ -142,8 +121,6 @@ class UploadIntakePort(Protocol):
 
 
 class SellerQueryStore(Protocol):
-    def get_job_for_owner(self, owner_id: str, job_id: str) -> ControlJobRecord: ...
-
     def list_jobs_for_owner(
         self,
         owner_id: str,
@@ -210,7 +187,7 @@ class _ProtectedApiAdapter:
 
 
 class UploadApiAdapter(_ProtectedApiAdapter):
-    """Translate the four private direct-upload routes for the upload-only Lambda role."""
+    """Translate the closed private direct-upload routes for the upload-only Lambda role."""
 
     _allowed_routes = _UPLOAD_ROUTES
 
@@ -231,10 +208,30 @@ class UploadApiAdapter(_ProtectedApiAdapter):
         request_id: str,
     ) -> dict[str, Any]:
         _require_no_query(event)
+        if route_key == "GET /v1/uploads/{upload_id}":
+            upload_id = _resource_id(event, name="upload_id")
+            _require_path(
+                event,
+                expected=f"/v1/uploads/{upload_id}",
+                resource_name="upload_id",
+            )
+            _require_no_body(event)
+            intent = self._uploads.get_upload(owner_id=seller.owner_id, upload_id=upload_id)
+            projection = _upload_recovery_projection(
+                intent,
+                expected_owner_id=seller.owner_id,
+                expected_upload_id=upload_id,
+            )
+            return _json_response(
+                200,
+                projection.model_dump(mode="json"),
+                request_id=request_id,
+            )
+
         idempotency_key = parse_idempotency_key(_headers(event))
         if route_key == "POST /v1/uploads":
             _require_path(event, expected="/v1/uploads")
-            body = _parse_json_body(event, _CreateUploadBody)
+            body = _parse_json_body(event, CreateUploadRequest)
             result = self._uploads.create_upload(
                 owner_id=seller.owner_id,
                 idempotency_key=idempotency_key,
@@ -345,12 +342,13 @@ class ReviewQueryApiAdapter(_ProtectedApiAdapter):
             )
             jobs = tuple(_owned_job(job, owner_id=seller.owner_id) for job in page.jobs)
             next_cursor = _trusted_page_cursor(page.next_cursor)
+            page_projection = JobPageProjection(
+                jobs=tuple(_job_summary(job) for job in jobs),
+                next_cursor=next_cursor,
+            )
             return _json_response(
                 200,
-                {
-                    "jobs": [_job_summary(job) for job in jobs],
-                    "next_cursor": next_cursor,
-                },
+                page_projection.model_dump(mode="json"),
                 request_id=request_id,
             )
 
@@ -367,9 +365,14 @@ class ReviewQueryApiAdapter(_ProtectedApiAdapter):
             resource_name="job_id",
         )
         if route_key == "GET /v1/jobs/{job_id}":
-            job = self._store.get_job_for_owner(seller.owner_id, job_id)
-            _owned_job(job, owner_id=seller.owner_id, expected_job_id=job_id)
-            return _json_response(200, _job_summary(job), request_id=request_id)
+            review = self._reviews.get(owner_id=seller.owner_id, job_id=job_id)
+            public_review = _public_review_projection(review, expected_job_id=job_id)
+            progress = _job_progress_projection(public_review)
+            return _json_response(
+                200,
+                progress.model_dump(mode="json"),
+                request_id=request_id,
+            )
         if route_key == "GET /v1/jobs/{job_id}/review":
             review = self._reviews.get(owner_id=seller.owner_id, job_id=job_id)
             public_review = _public_review_projection(review, expected_job_id=job_id)
@@ -424,7 +427,7 @@ class SellerCommandApiAdapter(_ProtectedApiAdapter):
         idempotency_key = parse_idempotency_key(headers)
 
         if route_key == "PUT /v1/jobs/{job_id}/review/listing":
-            body = _parse_json_body(event, _ReviseListingBody)
+            body = _parse_json_body(event, ReviseListingRequest)
             response = self._commands.revise_listing(
                 ReviseListingCommand(
                     owner_id=seller.owner_id,
@@ -445,7 +448,7 @@ class SellerCommandApiAdapter(_ProtectedApiAdapter):
             "POST /v1/jobs/{job_id}/economics/refresh",
             "POST /v1/jobs/{job_id}/approve",
         }:
-            body = _parse_json_body(event, _ReviewAuthorityBody)
+            body = _parse_json_body(event, ReviewAuthorityRequest)
             authority = {
                 "owner_id": seller.owner_id,
                 "job_id": job_id,
@@ -460,7 +463,7 @@ class SellerCommandApiAdapter(_ProtectedApiAdapter):
             else:
                 response = self._commands.approve_review(ApproveReviewCommand(**authority))
         else:
-            body = _parse_json_body(event, _RecordAuthorityBody)
+            body = _parse_json_body(event, RecordAuthorityRequest)
             authority = {
                 "owner_id": seller.owner_id,
                 "job_id": job_id,
@@ -525,7 +528,7 @@ def _require_no_body(event: Mapping[str, Any]) -> None:
         raise InvalidRequestError
 
 
-def _parse_json_body[ModelT: _RequestModel](
+def _parse_json_body[ModelT: BrowserContractModel](
     event: Mapping[str, Any], model: type[ModelT]
 ) -> ModelT:
     encoded = event.get("isBase64Encoded")
@@ -553,7 +556,57 @@ def _parse_json_body[ModelT: _RequestModel](
         raise InvalidRequestError from None
     if not isinstance(decoded, dict):
         raise InvalidRequestError
-    return model.model_validate(decoded)
+    try:
+        return model.model_validate(decoded)
+    except ValidationError as error:
+        raise RequestValidationError(_request_field_errors(error)) from None
+
+
+_FIELD_ERROR_PRESENTATION = {
+    "missing": ("REQUIRED", "This field is required."),
+    "extra_forbidden": ("UNEXPECTED_FIELD", "This field is not accepted."),
+    "string_type": ("INVALID_TYPE", "Use the required value type."),
+    "int_type": ("INVALID_TYPE", "Use the required value type."),
+    "list_type": ("INVALID_TYPE", "Use the required value type."),
+    "dict_type": ("INVALID_TYPE", "Use the required value type."),
+    "literal_error": ("INVALID_FORMAT", "Use one of the allowed values."),
+    "string_pattern_mismatch": ("INVALID_FORMAT", "Use the required format."),
+    "string_too_short": ("INVALID_LENGTH", "Use the required length."),
+    "string_too_long": ("INVALID_LENGTH", "Use the required length."),
+    "too_short": ("INVALID_LENGTH", "Use the required number of items."),
+    "too_long": ("INVALID_LENGTH", "Use the required number of items."),
+    "greater_than": ("OUT_OF_RANGE", "Use a value within the allowed range."),
+    "greater_than_equal": ("OUT_OF_RANGE", "Use a value within the allowed range."),
+    "less_than": ("OUT_OF_RANGE", "Use a value within the allowed range."),
+    "less_than_equal": ("OUT_OF_RANGE", "Use a value within the allowed range."),
+}
+_SAFE_FIELD_SEGMENT = re.compile(r"^[a-z_][a-z0-9_]{0,63}$")
+
+
+def _request_field_errors(error: ValidationError) -> tuple[RequestFieldError, ...]:
+    """Reduce Pydantic diagnostics to bounded paths and fixed seller-safe messages."""
+
+    result: list[RequestFieldError] = []
+    for issue in error.errors(include_url=False, include_context=False, include_input=False)[:25]:
+        path = "$"
+        location = issue.get("loc", ())
+        if isinstance(location, tuple):
+            for segment in location:
+                if (
+                    isinstance(segment, int)
+                    and not isinstance(segment, bool)
+                    and 0 <= segment <= 999
+                ):
+                    path += f"[{segment}]"
+                elif isinstance(segment, str) and _SAFE_FIELD_SEGMENT.fullmatch(segment):
+                    path += f".{segment}"
+        error_type = issue.get("type")
+        code, message = _FIELD_ERROR_PRESENTATION.get(
+            error_type if isinstance(error_type, str) else "",
+            ("INVALID_VALUE", "Use a valid value."),
+        )
+        result.append(RequestFieldError(path=path, code=code, message=message))
+    return tuple(result)
 
 
 def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -640,15 +693,15 @@ def _job_page_query(event: Mapping[str, Any]) -> tuple[int, str | None]:
     return limit, cursor
 
 
-def _job_summary(job: ControlJobRecord) -> dict[str, Any]:
-    return {
-        "job_id": job.job_id,
-        "state": job.state.value,
-        "record_version": job.record_version,
-        "review_version": job.review_version,
-        "created_at": job.created_at.isoformat(),
-        "updated_at": job.updated_at.isoformat(),
-    }
+def _job_summary(job: ControlJobRecord) -> JobSummaryProjection:
+    return JobSummaryProjection(
+        job_id=job.job_id,
+        state=job.state,
+        record_version=job.record_version,
+        review_version=job.review_version,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+    )
 
 
 def _upload_response(
@@ -673,35 +726,70 @@ def _upload_response(
         or result.authorization.job_id != receipt.job_id
     ):
         raise RuntimeError("Invalid upload authorization")
-    payload: dict[str, Any] = {
-        "upload": {
-            "upload_id": receipt.upload_id,
-            "job_id": receipt.job_id,
-            "status": receipt.status.value,
-            "record_version": receipt.record_version,
-        },
-        "authorization": (
+    payload = UploadMutationResponse(
+        upload=UploadCommandProjection(
+            upload_id=receipt.upload_id,
+            job_id=receipt.job_id,
+            status=receipt.status,
+            record_version=receipt.record_version,
+        ),
+        authorization=(
             _upload_authorization(result.authorization)
             if result.authorization is not None
             else None
         ),
-    }
-    return _json_response(status_code, payload, request_id=request_id)
+    )
+    return _json_response(
+        status_code,
+        payload.model_dump(mode="json"),
+        request_id=request_id,
+    )
 
 
-def _upload_authorization(authorization: UploadAuthorization) -> dict[str, Any]:
-    return {
-        "upload_id": authorization.upload_id,
-        "job_id": authorization.job_id,
-        "authorization_generation": authorization.authorization_generation,
-        "method": authorization.method,
-        "url": authorization.url,
-        "form_fields": dict(authorization.form_fields),
-        "content_sha256": authorization.content_sha256,
-        "size_bytes": authorization.size_bytes,
-        "issued_at": authorization.issued_at.isoformat(),
-        "expires_at": authorization.expires_at.isoformat(),
-    }
+def _upload_authorization(
+    authorization: UploadAuthorization,
+) -> UploadAuthorizationProjection:
+    return UploadAuthorizationProjection(
+        upload_id=authorization.upload_id,
+        job_id=authorization.job_id,
+        authorization_generation=authorization.authorization_generation,
+        method="POST",
+        url=authorization.url,
+        form_fields=dict(authorization.form_fields),
+        content_sha256=authorization.content_sha256,
+        size_bytes=authorization.size_bytes,
+        issued_at=authorization.issued_at,
+        expires_at=authorization.expires_at,
+    )
+
+
+def _upload_recovery_projection(
+    intent: UploadIntent,
+    *,
+    expected_owner_id: str,
+    expected_upload_id: str,
+) -> UploadRecoveryProjection:
+    if intent.owner_id != expected_owner_id or intent.upload_id != expected_upload_id:
+        raise RuntimeError("Invalid upload authority")
+    try:
+        return UploadRecoveryProjection(
+            upload_id=intent.upload_id,
+            job_id=intent.job_id,
+            status=intent.status,
+            filename=intent.filename,
+            content_type="image/png",
+            size_bytes=intent.size_bytes,
+            record_version=intent.record_version,
+            authorization_expires_at=intent.authorization_expires_at,
+            intent_expires_at=intent.intent_expires_at,
+            completed_at=intent.completed_at,
+            cancelled_at=intent.cancelled_at,
+            expired_at=intent.expired_at,
+            created_at=intent.created_at,
+            updated_at=intent.updated_at,
+        )
+    except ValidationError:
+        raise RuntimeError("Invalid upload authority") from None
 
 
 def _command_response(
@@ -711,18 +799,19 @@ def _command_response(
 ) -> dict[str, Any]:
     if response.job_id != expected_job_id:
         raise RuntimeError("Invalid command authority")
-    return {
-        "job_id": response.job_id,
-        "state": response.state.value,
-        "record_version": response.record_version,
-        "review_version": response.review_version,
-    }
+    projection = SellerCommandResponse(
+        job_id=response.job_id,
+        state=response.state,
+        record_version=response.record_version,
+        review_version=response.review_version,
+    )
+    return projection.model_dump(mode="json")
 
 
 def _strong_etag(authority: object) -> str | None:
     if authority is None:
         return None
-    if not isinstance(authority, str) or _FINGERPRINT.fullmatch(authority) is None:
+    if not isinstance(authority, str) or re.fullmatch(r"[a-f0-9]{64}", authority) is None:
         raise RuntimeError("Invalid review authority")
     return f'"{authority}"'
 
@@ -750,6 +839,24 @@ def _public_review_projection(
     if projection.job_id != expected_job_id:
         raise RuntimeError("Invalid review authority")
     return projection
+
+
+def _job_progress_projection(review: SellerReviewProjection) -> JobProgressProjection:
+    try:
+        return JobProgressProjection(
+            job_id=review.job_id,
+            record_version=review.record_version,
+            review_version=review.review_version,
+            display_state=review.display_state,
+            stage=review.stage,
+            actions=review.actions,
+            failure=review.failure,
+            provider_outcome_unconfirmed=review.provider_outcome_unconfirmed,
+            created_at=review.created_at,
+            updated_at=review.updated_at,
+        )
+    except ValidationError:
+        raise RuntimeError("Invalid review authority") from None
 
 
 def _owned_job(

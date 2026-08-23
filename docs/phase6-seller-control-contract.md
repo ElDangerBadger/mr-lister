@@ -364,12 +364,13 @@ The Phase 6 cloud surface is deliberately small:
 ```text
 Cognito managed sign-in
   -> private S3/CloudFront static application
-  -> API Gateway HTTP API with JWT authorization
-       -> upload API Lambda
-       -> review-query API Lambda
-       -> seller-command API Lambda
-       -> bounded preparation/synchronization workers
-            -> DynamoDB, private S3, AgentCore/Bedrock, Printify
+       -> cache-disabled same-origin /v1/* behavior
+            -> API Gateway HTTP API with JWT authorization
+                 -> upload API Lambda
+                 -> review-query API Lambda
+                 -> seller-command API Lambda
+                 -> bounded preparation/synchronization workers
+                      -> DynamoDB, private S3, AgentCore/Bedrock, Printify
 ```
 
 Initial identity scope:
@@ -380,7 +381,8 @@ Initial identity scope:
 - public signup disabled, membership in the `seller` group required, and TOTP MFA required;
 - access tokens, not ID tokens, authorize the dedicated Mr Lister API scope;
 - 60-minute access/ID tokens and a 30-day refresh token;
-- exact production callback/logout origins, with localhost present only in the development stack;
+- exact production and deployed-development callback/logout origins; local browser development uses
+  contract fixtures rather than broadening the real Cognito or API boundary to an arbitrary port;
 - immutable `owner_id = sha256(issuer + NUL + sub)` on jobs and owner-prefixed S3 keys;
 - ownership checks before reads, commands, presigning, or preview signing;
 - identical `404` response for unknown and cross-owner job access;
@@ -398,9 +400,9 @@ tokens.
 
 The SPA holds access and refresh tokens in memory only and sends the access token in the
 `Authorization: Bearer` header. Tokens never enter URLs, local storage, session storage, IndexedDB,
-logs, or analytics. Session storage may hold the one-use PKCE verifier and a validated same-origin
-return route only until callback completion. Reload can return through Cognito's managed session to
-the same route.
+logs, or analytics. Session storage may hold one one-use OAuth transaction containing only the
+random PKCE verifier, CSRF `state`, and a validated same-origin return route until callback
+completion. Reload can return through Cognito's managed session to the same route.
 
 API CORS permits only the exact configured application origin, methods `GET`, `POST`, `PUT`, and
 `OPTIONS`, request headers `Authorization`, `Content-Type`, `Idempotency-Key`, and `If-Match`, and
@@ -416,7 +418,7 @@ default-src 'self';
 script-src 'self';
 style-src 'self';
 img-src 'self' data: blob: https://images.printify.com https://<artifact-bucket-origin>;
-connect-src 'self' https://<api-origin> https://<cognito-origin> https://<artifact-bucket-origin>;
+connect-src 'self' https://<cognito-origin> https://<artifact-bucket-origin>;
 form-action 'self' https://<cognito-origin> https://<artifact-bucket-origin>;
 font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none';
 ```
@@ -540,6 +542,8 @@ trusted credential boundary.
 The initial versioned surface is:
 
 - `POST /v1/uploads` — create an owned upload intent and reserve a job ID;
+- `GET /v1/uploads/{upload_id}` — recover the minimal owner-scoped state of an active or terminal
+  upload intent without returning storage coordinates or upload authorization;
 - `POST /v1/uploads/{upload_id}/authorize` — reissue upload authorization for an active intent;
 - `POST /v1/uploads/{upload_id}/complete` — validate/pin the object and atomically create the job,
   source, event, receipt, and pending preparation work;
