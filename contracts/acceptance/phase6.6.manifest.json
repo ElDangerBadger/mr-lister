@@ -1,0 +1,339 @@
+{
+  "contract_version": "6.6.0",
+  "digest_algorithm": "sha256",
+  "forbidden_evidence_field_names": [
+    "owner",
+    "owner_id",
+    "raw_owner",
+    "sub",
+    "cognito_sub",
+    "email",
+    "username",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "authorization",
+    "authorization_header",
+    "cookie",
+    "secret",
+    "secret_arn",
+    "printify_token",
+    "presigned_url",
+    "upload_url",
+    "object_key",
+    "bucket_name",
+    "provider_payload",
+    "provider_response",
+    "request_body",
+    "response_body",
+    "raw_payload"
+  ],
+  "frozen_at": "2026-08-22T20:00:00Z",
+  "gates": [
+    {
+      "blocking_phase6_exit": true,
+      "double_gate_labels": [],
+      "evidence_class": "offline",
+      "gate_id": "offline.replay_matrix",
+      "minimum_evidence_records": 1,
+      "prerequisites": [],
+      "provider_mutation_policy": "forbidden",
+      "required_artifact_kinds": [
+        "test_report"
+      ],
+      "required_assertions": [
+        "nine_mutation_routes_replay_exactly",
+        "changed_requests_conflict",
+        "one_job_graph_is_created",
+        "one_logical_work_graph_is_created",
+        "provider_transport_is_not_invoked"
+      ],
+      "title": "Exact replay and lost-response matrix"
+    },
+    {
+      "blocking_phase6_exit": true,
+      "double_gate_labels": [],
+      "evidence_class": "offline",
+      "gate_id": "offline.concurrency_matrix",
+      "minimum_evidence_records": 1,
+      "prerequisites": [
+        "offline.replay_matrix"
+      ],
+      "provider_mutation_policy": "forbidden",
+      "required_artifact_kinds": [
+        "test_report"
+      ],
+      "required_assertions": [
+        "revise_approve_cancel_have_one_winner",
+        "identical_requests_share_one_receipt",
+        "changed_requests_have_one_conflict",
+        "upload_completion_and_cancel_have_one_winner",
+        "dispatcher_and_worker_races_settle_once",
+        "provider_transport_is_not_invoked"
+      ],
+      "title": "Upload, command, dispatcher, and worker concurrency matrix"
+    },
+    {
+      "blocking_phase6_exit": true,
+      "double_gate_labels": [],
+      "evidence_class": "offline",
+      "gate_id": "offline.cross_owner_matrix",
+      "minimum_evidence_records": 1,
+      "prerequisites": [],
+      "provider_mutation_policy": "forbidden",
+      "required_artifact_kinds": [
+        "test_report"
+      ],
+      "required_assertions": [
+        "fourteen_protected_routes_are_covered",
+        "foreign_resources_match_absence",
+        "foreign_job_list_is_empty",
+        "foreign_commands_write_nothing",
+        "identity_injection_is_rejected",
+        "provider_transport_is_not_invoked"
+      ],
+      "title": "All protected routes preserve owner indistinguishability"
+    },
+    {
+      "blocking_phase6_exit": true,
+      "double_gate_labels": [],
+      "evidence_class": "offline",
+      "gate_id": "offline.browser_matrix",
+      "minimum_evidence_records": 1,
+      "prerequisites": [
+        "offline.replay_matrix",
+        "offline.concurrency_matrix",
+        "offline.cross_owner_matrix"
+      ],
+      "provider_mutation_policy": "forbidden",
+      "required_artifact_kinds": [
+        "test_report",
+        "browser_trace"
+      ],
+      "required_assertions": [
+        "chromium_flow_passes",
+        "firefox_flow_passes",
+        "webkit_flow_passes",
+        "accessibility_matrix_passes",
+        "browser_restart_and_tab_recovery_pass",
+        "commerce_surface_is_absent",
+        "provider_transport_is_not_invoked"
+      ],
+      "title": "Exact production bundle passes the three-engine browser matrix"
+    },
+    {
+      "blocking_phase6_exit": true,
+      "double_gate_labels": [],
+      "evidence_class": "deployed_non_destructive",
+      "gate_id": "deployed.edge_auth_owner_smoke",
+      "minimum_evidence_records": 1,
+      "prerequisites": [
+        "offline.browser_matrix"
+      ],
+      "provider_mutation_policy": "forbidden",
+      "required_artifact_kinds": [
+        "deployment_snapshot",
+        "canary_summary",
+        "log_audit"
+      ],
+      "required_assertions": [
+        "health_and_readiness_pass",
+        "pkce_and_token_matrix_pass",
+        "two_actor_owner_matrix_passes",
+        "security_headers_and_cors_pass",
+        "strong_review_etag_is_preserved",
+        "provider_call_count_is_zero"
+      ],
+      "title": "Deployed edge, authentication, headers, and two-owner smoke"
+    },
+    {
+      "blocking_phase6_exit": true,
+      "double_gate_labels": [],
+      "evidence_class": "deployed_non_destructive",
+      "gate_id": "deployed.upload_integrity_smoke",
+      "minimum_evidence_records": 1,
+      "prerequisites": [
+        "deployed.edge_auth_owner_smoke"
+      ],
+      "provider_mutation_policy": "forbidden",
+      "required_artifact_kinds": [
+        "canary_summary",
+        "log_audit"
+      ],
+      "required_assertions": [
+        "expired_upload_grant_is_rejected",
+        "modified_upload_grant_is_rejected",
+        "wrong_artwork_bytes_are_rejected",
+        "preview_binds_exact_version",
+        "post_finalize_overwrite_cannot_change_preview",
+        "provider_call_count_is_zero"
+      ],
+      "title": "Deployed upload expiry, integrity, and exact-version preview smoke"
+    },
+    {
+      "blocking_phase6_exit": true,
+      "double_gate_labels": [],
+      "evidence_class": "deployed_non_destructive",
+      "gate_id": "deployed.outbox_recovery_smoke",
+      "minimum_evidence_records": 1,
+      "prerequisites": [
+        "deployed.edge_auth_owner_smoke"
+      ],
+      "provider_mutation_policy": "forbidden",
+      "required_artifact_kinds": [
+        "canary_summary",
+        "log_audit"
+      ],
+      "required_assertions": [
+        "committed_work_is_recovered_by_sweep",
+        "deterministic_execution_starts_once",
+        "logical_work_is_not_duplicated",
+        "stuck_execution_recovery_passes",
+        "reference_aware_retention_sweep_passes",
+        "privacy_scan_passes",
+        "provider_call_count_is_zero"
+      ],
+      "title": "Deployed outbox dispatch and sweep recovery smoke"
+    },
+    {
+      "blocking_phase6_exit": true,
+      "double_gate_labels": [
+        "run_gate",
+        "provider_write_gate"
+      ],
+      "evidence_class": "provider_destructive",
+      "gate_id": "provider.primary_same_job_canary",
+      "minimum_evidence_records": 1,
+      "prerequisites": [
+        "deployed.upload_integrity_smoke",
+        "deployed.outbox_recovery_smoke"
+      ],
+      "provider_mutation_policy": "double_gated",
+      "required_artifact_kinds": [
+        "provider_call_ledger",
+        "canary_summary",
+        "log_audit"
+      ],
+      "required_assertions": [
+        "five_mib_upload_reaches_review",
+        "same_job_strands_correlation_is_joined",
+        "gemma_intelligence_under_strands_is_recorded",
+        "one_product_post_is_recorded",
+        "two_same_product_puts_are_recorded",
+        "approval_ends_at_approved",
+        "final_product_is_unpublished_unlocked",
+        "forbidden_provider_attempt_count_is_zero"
+      ],
+      "title": "One same-job Strands and unpublished-product canary"
+    },
+    {
+      "blocking_phase6_exit": true,
+      "double_gate_labels": [
+        "run_gate",
+        "provider_write_gate"
+      ],
+      "evidence_class": "provider_destructive",
+      "gate_id": "provider.concurrency_canary",
+      "minimum_evidence_records": 1,
+      "prerequisites": [
+        "provider.primary_same_job_canary"
+      ],
+      "provider_mutation_policy": "double_gated",
+      "required_artifact_kinds": [
+        "provider_call_ledger",
+        "canary_summary"
+      ],
+      "required_assertions": [
+        "three_commands_have_one_winner",
+        "one_decision_or_work_effect_is_recorded",
+        "at_most_one_product_put_is_recorded",
+        "forbidden_provider_attempt_count_is_zero"
+      ],
+      "title": "Deployed revise, approve, and cancel concurrency canary"
+    },
+    {
+      "blocking_phase6_exit": true,
+      "double_gate_labels": [
+        "run_gate",
+        "provider_write_gate"
+      ],
+      "evidence_class": "provider_destructive",
+      "gate_id": "provider.cancellation_canary",
+      "minimum_evidence_records": 1,
+      "prerequisites": [
+        "deployed.edge_auth_owner_smoke"
+      ],
+      "provider_mutation_policy": "double_gated",
+      "required_artifact_kinds": [
+        "provider_call_ledger",
+        "canary_summary"
+      ],
+      "required_assertions": [
+        "seller_cancel_reaches_cancelled",
+        "root_credentials_are_rejected",
+        "no_phase6_execution_remains_running",
+        "forbidden_provider_attempt_count_is_zero"
+      ],
+      "title": "Seller cancellation without administrator authority"
+    },
+    {
+      "blocking_phase6_exit": true,
+      "double_gate_labels": [],
+      "evidence_class": "moderated_user",
+      "gate_id": "moderated.first_time_seller_exit",
+      "minimum_evidence_records": 1,
+      "prerequisites": [
+        "deployed.edge_auth_owner_smoke",
+        "provider.primary_same_job_canary"
+      ],
+      "provider_mutation_policy": "separate_provider_evidence",
+      "required_artifact_kinds": [
+        "moderated_session_record"
+      ],
+      "required_assertions": [
+        "invite_and_mfa_complete",
+        "supported_upload_completes",
+        "browser_restart_recovers_job",
+        "unpublished_boundary_is_understood",
+        "strands_evidence_is_found",
+        "human_decision_completes_without_intervention"
+      ],
+      "title": "First-time seller completes the deployed flow without documentation"
+    },
+    {
+      "blocking_phase6_exit": false,
+      "double_gate_labels": [],
+      "evidence_class": "moderated_user",
+      "gate_id": "moderated.five_session_target",
+      "minimum_evidence_records": 5,
+      "prerequisites": [
+        "moderated.first_time_seller_exit"
+      ],
+      "provider_mutation_policy": "separate_provider_evidence",
+      "required_artifact_kinds": [
+        "moderated_session_record"
+      ],
+      "required_assertions": [
+        "moderated_attempt_is_recorded",
+        "external_documentation_is_not_used",
+        "privacy_scan_passes"
+      ],
+      "title": "Five moderated first-time-seller attempts"
+    }
+  ],
+  "phase": "6.6",
+  "phase6_exit_gate_ids": [
+    "offline.replay_matrix",
+    "offline.concurrency_matrix",
+    "offline.cross_owner_matrix",
+    "offline.browser_matrix",
+    "deployed.edge_auth_owner_smoke",
+    "deployed.upload_integrity_smoke",
+    "deployed.outbox_recovery_smoke",
+    "provider.primary_same_job_canary",
+    "provider.concurrency_canary",
+    "provider.cancellation_canary",
+    "moderated.first_time_seller_exit"
+  ],
+  "status": "frozen"
+}

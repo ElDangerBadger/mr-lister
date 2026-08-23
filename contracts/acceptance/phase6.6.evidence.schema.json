@@ -1,0 +1,924 @@
+{
+  "$comment": "Structural validation only. Every record MUST also pass the application-owned validate_phase66_evidence semantic boundary.",
+  "$defs": {
+    "AcceptanceOutcome": {
+      "enum": [
+        "passed",
+        "failed",
+        "inconclusive"
+      ],
+      "title": "AcceptanceOutcome",
+      "type": "string"
+    },
+    "ArtifactFormat": {
+      "enum": [
+        "json",
+        "junit_xml",
+        "zip",
+        "png",
+        "webm"
+      ],
+      "title": "ArtifactFormat",
+      "type": "string"
+    },
+    "ArtifactKind": {
+      "enum": [
+        "test_report",
+        "browser_trace",
+        "screenshot",
+        "deployment_snapshot",
+        "log_audit",
+        "provider_call_ledger",
+        "canary_summary",
+        "moderated_session_record"
+      ],
+      "title": "ArtifactKind",
+      "type": "string"
+    },
+    "AssertionEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "assertion_id": {
+          "$ref": "#/$defs/AssertionId"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "maximum": 86400000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        },
+        "observation_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "observed_count": {
+          "anyOf": [
+            {
+              "maximum": 1000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Count"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "assertion_id",
+        "passed"
+      ],
+      "title": "AssertionEvidence",
+      "type": "object"
+    },
+    "AssertionId": {
+      "pattern": "^[a-z][a-z0-9_]{2,95}$",
+      "type": "string"
+    },
+    "DeployedNonDestructiveEvidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_digests": {
+          "items": {
+            "$ref": "#/$defs/Digest"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Actor Digests",
+          "type": "array"
+        },
+        "artifacts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SanitizedArtifactEvidence"
+          },
+          "maxItems": 24,
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/AssertionEvidence"
+          },
+          "maxItems": 24,
+          "minItems": 1,
+          "title": "Assertions",
+          "type": "array"
+        },
+        "correlation_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "deployment_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "evidence_class": {
+          "const": "deployed_non_destructive",
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "gate_id": {
+          "enum": [
+            "deployed.edge_auth_owner_smoke",
+            "deployed.upload_integrity_smoke",
+            "deployed.outbox_recovery_smoke"
+          ],
+          "title": "Gate Id",
+          "type": "string"
+        },
+        "job_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "moderated_session": {
+          "default": null,
+          "title": "Moderated Session",
+          "type": "null"
+        },
+        "outcome": {
+          "$ref": "#/$defs/AcceptanceOutcome"
+        },
+        "privacy": {
+          "$ref": "#/$defs/PrivacyAttestation"
+        },
+        "provider_call_summary": {
+          "default": null,
+          "title": "Provider Call Summary",
+          "type": "null"
+        },
+        "provider_gate_attestation": {
+          "default": null,
+          "title": "Provider Gate Attestation",
+          "type": "null"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+          "title": "Recorded At",
+          "type": "string"
+        },
+        "run_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "schema_version": {
+          "const": "6.6.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_commit_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "work_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "schema_version",
+        "manifest_digest",
+        "run_digest",
+        "source_commit_digest",
+        "gate_id",
+        "evidence_class",
+        "outcome",
+        "recorded_at",
+        "assertions",
+        "privacy",
+        "deployment_digest",
+        "actor_digests"
+      ],
+      "title": "DeployedNonDestructiveEvidenceRecord",
+      "type": "object"
+    },
+    "Digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "ModeratedSessionEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_supported_flow": {
+          "title": "Completed Supported Flow",
+          "type": "boolean"
+        },
+        "consent_record_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "duration_seconds": {
+          "maximum": 86400,
+          "minimum": 1,
+          "title": "Duration Seconds",
+          "type": "integer"
+        },
+        "external_documentation_used": {
+          "const": false,
+          "title": "External Documentation Used",
+          "type": "boolean"
+        },
+        "first_time_seller": {
+          "const": true,
+          "title": "First Time Seller",
+          "type": "boolean"
+        },
+        "operator_intervention_count": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Operator Intervention Count",
+          "type": "integer"
+        },
+        "participant_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "session_record_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "task_script_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "participant_digest",
+        "consent_record_digest",
+        "task_script_digest",
+        "session_record_digest",
+        "first_time_seller",
+        "external_documentation_used",
+        "operator_intervention_count",
+        "completed_supported_flow",
+        "duration_seconds"
+      ],
+      "title": "ModeratedSessionEvidence",
+      "type": "object"
+    },
+    "ModeratedUserEvidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_digests": {
+          "maxItems": 1,
+          "minItems": 1,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Digest"
+            }
+          ],
+          "title": "Actor Digests",
+          "type": "array"
+        },
+        "artifacts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SanitizedArtifactEvidence"
+          },
+          "maxItems": 24,
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/AssertionEvidence"
+          },
+          "maxItems": 24,
+          "minItems": 1,
+          "title": "Assertions",
+          "type": "array"
+        },
+        "correlation_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "deployment_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "evidence_class": {
+          "const": "moderated_user",
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "gate_id": {
+          "enum": [
+            "moderated.first_time_seller_exit",
+            "moderated.five_session_target"
+          ],
+          "title": "Gate Id",
+          "type": "string"
+        },
+        "job_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "moderated_session": {
+          "$ref": "#/$defs/ModeratedSessionEvidence"
+        },
+        "outcome": {
+          "$ref": "#/$defs/AcceptanceOutcome"
+        },
+        "privacy": {
+          "$ref": "#/$defs/PrivacyAttestation"
+        },
+        "provider_call_summary": {
+          "default": null,
+          "title": "Provider Call Summary",
+          "type": "null"
+        },
+        "provider_gate_attestation": {
+          "default": null,
+          "title": "Provider Gate Attestation",
+          "type": "null"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+          "title": "Recorded At",
+          "type": "string"
+        },
+        "run_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "schema_version": {
+          "const": "6.6.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_commit_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "work_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "schema_version",
+        "manifest_digest",
+        "run_digest",
+        "source_commit_digest",
+        "gate_id",
+        "evidence_class",
+        "outcome",
+        "recorded_at",
+        "assertions",
+        "privacy",
+        "deployment_digest",
+        "actor_digests",
+        "moderated_session"
+      ],
+      "title": "ModeratedUserEvidenceRecord",
+      "type": "object"
+    },
+    "OfflineEvidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_digests": {
+          "default": [],
+          "maxItems": 0,
+          "minItems": 0,
+          "title": "Actor Digests",
+          "type": "array"
+        },
+        "artifacts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SanitizedArtifactEvidence"
+          },
+          "maxItems": 24,
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/AssertionEvidence"
+          },
+          "maxItems": 24,
+          "minItems": 1,
+          "title": "Assertions",
+          "type": "array"
+        },
+        "correlation_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "deployment_digest": {
+          "default": null,
+          "title": "Deployment Digest",
+          "type": "null"
+        },
+        "evidence_class": {
+          "const": "offline",
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "gate_id": {
+          "enum": [
+            "offline.replay_matrix",
+            "offline.concurrency_matrix",
+            "offline.cross_owner_matrix",
+            "offline.browser_matrix"
+          ],
+          "title": "Gate Id",
+          "type": "string"
+        },
+        "job_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "moderated_session": {
+          "default": null,
+          "title": "Moderated Session",
+          "type": "null"
+        },
+        "outcome": {
+          "$ref": "#/$defs/AcceptanceOutcome"
+        },
+        "privacy": {
+          "$ref": "#/$defs/PrivacyAttestation"
+        },
+        "provider_call_summary": {
+          "default": null,
+          "title": "Provider Call Summary",
+          "type": "null"
+        },
+        "provider_gate_attestation": {
+          "default": null,
+          "title": "Provider Gate Attestation",
+          "type": "null"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+          "title": "Recorded At",
+          "type": "string"
+        },
+        "run_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "schema_version": {
+          "const": "6.6.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_commit_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "work_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "schema_version",
+        "manifest_digest",
+        "run_digest",
+        "source_commit_digest",
+        "gate_id",
+        "evidence_class",
+        "outcome",
+        "recorded_at",
+        "assertions",
+        "privacy"
+      ],
+      "title": "OfflineEvidenceRecord",
+      "type": "object"
+    },
+    "PrivacyAttestation": {
+      "additionalProperties": false,
+      "properties": {
+        "forbidden_field_match_count": {
+          "const": 0,
+          "title": "Forbidden Field Match Count",
+          "type": "integer"
+        },
+        "free_text_value_count": {
+          "const": 0,
+          "title": "Free Text Value Count",
+          "type": "integer"
+        },
+        "sanitizer_contract": {
+          "const": "phase6.6-sanitized-evidence-v1",
+          "title": "Sanitizer Contract",
+          "type": "string"
+        },
+        "sensitive_value_match_count": {
+          "const": 0,
+          "title": "Sensitive Value Match Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sanitizer_contract",
+        "forbidden_field_match_count",
+        "sensitive_value_match_count",
+        "free_text_value_count"
+      ],
+      "title": "PrivacyAttestation",
+      "type": "object"
+    },
+    "ProviderCallSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "artwork_upload_count": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Artwork Upload Count",
+          "type": "integer"
+        },
+        "final_state": {
+          "$ref": "#/$defs/ProviderFinalState"
+        },
+        "forbidden_attempt_count": {
+          "const": 0,
+          "title": "Forbidden Attempt Count",
+          "type": "integer"
+        },
+        "fulfillment_attempt_count": {
+          "const": 0,
+          "title": "Fulfillment Attempt Count",
+          "type": "integer"
+        },
+        "order_attempt_count": {
+          "const": 0,
+          "title": "Order Attempt Count",
+          "type": "integer"
+        },
+        "product_get_count": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Product Get Count",
+          "type": "integer"
+        },
+        "product_post_count": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Product Post Count",
+          "type": "integer"
+        },
+        "product_put_count": {
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Product Put Count",
+          "type": "integer"
+        },
+        "publish_attempt_count": {
+          "const": 0,
+          "title": "Publish Attempt Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "artwork_upload_count",
+        "product_post_count",
+        "product_put_count",
+        "product_get_count",
+        "forbidden_attempt_count",
+        "publish_attempt_count",
+        "order_attempt_count",
+        "fulfillment_attempt_count",
+        "final_state"
+      ],
+      "title": "ProviderCallSummary",
+      "type": "object"
+    },
+    "ProviderDestructiveEvidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_digests": {
+          "maxItems": 1,
+          "minItems": 1,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Digest"
+            }
+          ],
+          "title": "Actor Digests",
+          "type": "array"
+        },
+        "artifacts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SanitizedArtifactEvidence"
+          },
+          "maxItems": 24,
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/AssertionEvidence"
+          },
+          "maxItems": 24,
+          "minItems": 1,
+          "title": "Assertions",
+          "type": "array"
+        },
+        "correlation_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "deployment_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "evidence_class": {
+          "const": "provider_destructive",
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "gate_id": {
+          "enum": [
+            "provider.primary_same_job_canary",
+            "provider.concurrency_canary",
+            "provider.cancellation_canary"
+          ],
+          "title": "Gate Id",
+          "type": "string"
+        },
+        "job_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "moderated_session": {
+          "default": null,
+          "title": "Moderated Session",
+          "type": "null"
+        },
+        "outcome": {
+          "$ref": "#/$defs/AcceptanceOutcome"
+        },
+        "privacy": {
+          "$ref": "#/$defs/PrivacyAttestation"
+        },
+        "provider_call_summary": {
+          "$ref": "#/$defs/ProviderCallSummary"
+        },
+        "provider_gate_attestation": {
+          "$ref": "#/$defs/ProviderGateAttestation"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+          "title": "Recorded At",
+          "type": "string"
+        },
+        "run_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "schema_version": {
+          "const": "6.6.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_commit_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "work_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "schema_version",
+        "manifest_digest",
+        "run_digest",
+        "source_commit_digest",
+        "gate_id",
+        "evidence_class",
+        "outcome",
+        "recorded_at",
+        "job_digest",
+        "assertions",
+        "privacy",
+        "deployment_digest",
+        "actor_digests",
+        "provider_gate_attestation",
+        "provider_call_summary"
+      ],
+      "title": "ProviderDestructiveEvidenceRecord",
+      "type": "object"
+    },
+    "ProviderFinalState": {
+      "enum": [
+        "unpublished_unlocked",
+        "not_created",
+        "unresolved"
+      ],
+      "title": "ProviderFinalState",
+      "type": "string"
+    },
+    "ProviderGateAttestation": {
+      "additionalProperties": false,
+      "properties": {
+        "approved_max_product_posts": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Approved Max Product Posts",
+          "type": "integer"
+        },
+        "approved_max_product_puts": {
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Approved Max Product Puts",
+          "type": "integer"
+        },
+        "approved_scope": {
+          "const": "unpublished_draft_create_update_only",
+          "title": "Approved Scope",
+          "type": "string"
+        },
+        "provider_write_gate_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "publication_capability_absent": {
+          "const": true,
+          "title": "Publication Capability Absent",
+          "type": "boolean"
+        },
+        "root_credentials_rejected": {
+          "const": true,
+          "title": "Root Credentials Rejected",
+          "type": "boolean"
+        },
+        "run_gate_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "run_gate_digest",
+        "provider_write_gate_digest",
+        "approved_scope",
+        "root_credentials_rejected",
+        "publication_capability_absent",
+        "approved_max_product_posts",
+        "approved_max_product_puts"
+      ],
+      "title": "ProviderGateAttestation",
+      "type": "object"
+    },
+    "SanitizedArtifactEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "artifact_format": {
+          "$ref": "#/$defs/ArtifactFormat"
+        },
+        "byte_count": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000000000,
+          "title": "Byte Count",
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/ArtifactKind"
+        },
+        "redaction_verified": {
+          "const": true,
+          "title": "Redaction Verified",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "artifact_format",
+        "artifact_digest",
+        "byte_count",
+        "redaction_verified"
+      ],
+      "title": "SanitizedArtifactEvidence",
+      "type": "object"
+    }
+  },
+  "$id": "https://mr-lister.invalid/contracts/acceptance/phase6.6/evidence.schema.json",
+  "discriminator": {
+    "mapping": {
+      "deployed_non_destructive": "#/$defs/DeployedNonDestructiveEvidenceRecord",
+      "moderated_user": "#/$defs/ModeratedUserEvidenceRecord",
+      "offline": "#/$defs/OfflineEvidenceRecord",
+      "provider_destructive": "#/$defs/ProviderDestructiveEvidenceRecord"
+    },
+    "propertyName": "evidence_class"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/OfflineEvidenceRecord"
+    },
+    {
+      "$ref": "#/$defs/DeployedNonDestructiveEvidenceRecord"
+    },
+    {
+      "$ref": "#/$defs/ProviderDestructiveEvidenceRecord"
+    },
+    {
+      "$ref": "#/$defs/ModeratedUserEvidenceRecord"
+    }
+  ],
+  "title": "Mr. Lister Phase 6.6 sanitized acceptance evidence",
+  "x-runtime-semantic-validator": "mr_lister.acceptance.phase6.validate_phase66_evidence"
+}

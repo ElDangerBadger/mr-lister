@@ -172,7 +172,7 @@ def test_cache_behaviors_separate_immutable_assets_runtime_config_and_api() -> N
     resources = load_template()["Resources"]
     config = resources["SellerWebDistribution"]["Properties"]["DistributionConfig"]
     behaviors = {behavior["PathPattern"]: behavior for behavior in config["CacheBehaviors"]}
-    assert set(behaviors) == {"/assets/*", "/runtime-config.json", "/v1/*"}
+    assert set(behaviors) == {"/assets/*", "/health", "/runtime-config.json", "/v1/*"}
 
     assets = behaviors["/assets/*"]
     assert assets["TargetOriginId"] == "SellerWebAssets"
@@ -196,6 +196,18 @@ def test_cache_behaviors_separate_immutable_assets_runtime_config_and_api() -> N
     )
     no_store = resources["SellerWebNoStoreCachePolicy"]["Properties"]["CachePolicyConfig"]
     assert (no_store["MinTTL"], no_store["DefaultTTL"], no_store["MaxTTL"]) == (0, 0, 0)
+
+    health = behaviors["/health"]
+    assert health == {
+        "AllowedMethods": ["GET", "HEAD"],
+        "CachePolicyId": {"Ref": "SellerWebNoStoreCachePolicy"},
+        "CachedMethods": ["GET", "HEAD"],
+        "Compress": False,
+        "PathPattern": "/health",
+        "ResponseHeadersPolicyId": {"Ref": "SellerWebNoStoreResponseHeadersPolicy"},
+        "TargetOriginId": "SellerApi",
+        "ViewerProtocolPolicy": "https-only",
+    }
 
     api = behaviors["/v1/*"]
     assert api["TargetOriginId"] == "SellerApi"

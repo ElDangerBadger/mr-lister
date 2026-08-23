@@ -26,6 +26,8 @@ jobs:
         run: ruff format --check .
       - name: Browser contract drift
         run: python tools/export_phase65_browser_contracts.py --check
+      - name: Phase 6.6 acceptance contract drift
+        run: python tools/export_phase66_acceptance_contract.py --check
       - name: Test
         run: pytest
       - name: Build

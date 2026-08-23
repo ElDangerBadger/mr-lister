@@ -218,6 +218,12 @@ def test_artifact_bucket_is_private_encrypted_versioned_and_tls_only() -> None:
                 "ExpirationInDays": 1,
                 "NoncurrentVersionExpiration": {"NoncurrentDays": 1},
             },
+            {
+                "Id": "RemoveExpiredPrivateSourceDeleteMarkers",
+                "Status": "Enabled",
+                "Prefix": "private/owners/",
+                "ExpiredObjectDeleteMarker": True,
+            },
         ]
     }
     assert all(properties["PublicAccessBlockConfiguration"].values())

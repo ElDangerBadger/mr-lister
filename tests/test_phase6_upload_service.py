@@ -33,6 +33,7 @@ from mr_lister.control.upload_service import (
     CurrentUploadObject,
     UploadArtifactIntegrityError,
     UploadDependencyUnavailableError,
+    UploadExpiredError,
     UploadIntakeService,
 )
 from mr_lister.review_profile import ExactReviewProductProfile
@@ -93,6 +94,7 @@ class FakeUploadArtifacts:
         self.pin_calls: list[tuple[UploadIntent, str]] = []
         self.release_calls: list[tuple[UploadIntent, str]] = []
         self.tag_calls: list[tuple[str, str]] = []
+        self.before_pin: Callable[[], None] | None = None
         self.before_release: Callable[[], None] | None = None
 
     def issue_authorization(
@@ -136,6 +138,10 @@ class FakeUploadArtifacts:
         return self.current
 
     def pin_object_version(self, intent: UploadIntent, version_id: str) -> None:
+        callback = self.before_pin
+        self.before_pin = None
+        if callback is not None:
+            callback()
         self.pin_calls.append((intent, version_id))
         self.tag_calls.append(("pinned", version_id))
 
@@ -488,6 +494,29 @@ def test_valid_png_completion_atomically_creates_exactly_one_preparation_graph()
         "source-version-1",
         "source-version-1",
     ]
+
+
+def test_completion_expiring_during_the_pin_is_released_before_any_job_commit() -> None:
+    harness = _harness()
+    content, created = _create(harness)
+    harness.artifacts.stage(content)
+    intent = harness.store.get_upload_intent_for_owner(OWNER, created.receipt.upload_id)
+    harness.artifacts.before_pin = lambda: setattr(
+        harness.clock,
+        "value",
+        intent.intent_expires_at,
+    )
+
+    with pytest.raises(UploadExpiredError):
+        harness.service.complete_upload(
+            owner_id=OWNER,
+            upload_id=created.receipt.upload_id,
+            idempotency_key="complete-expires-during-pin",
+        )
+
+    assert len(harness.artifacts.pin_calls) == 1
+    assert harness.artifacts.release_calls == harness.artifacts.pin_calls
+    assert harness.store.jobs == {}
 
 
 def test_terminal_create_replay_never_reissues_a_presigned_form() -> None:

@@ -70,6 +70,12 @@
               ],
               "ExpirationInDays": 1,
               "NoncurrentVersionExpiration": {"NoncurrentDays": 1}
+            },
+            {
+              "Id": "RemoveExpiredPrivateSourceDeleteMarkers",
+              "Status": "Enabled",
+              "Prefix": "private/owners/",
+              "ExpiredObjectDeleteMarker": true
             }
           ]
         },
@@ -179,7 +185,7 @@
       "Type": "AWS::CloudFront::CachePolicy",
       "Properties": {
         "CachePolicyConfig": {
-          "Comment": "Never cache seller HTML, runtime configuration, or authenticated API responses",
+          "Comment": "Never cache seller HTML, runtime configuration, or public health responses",
           "DefaultTTL": 0,
           "MaxTTL": 0,
           "MinTTL": 0,
@@ -358,6 +364,16 @@
               "ResponseHeadersPolicyId": {"Ref": "SellerWebNoStoreResponseHeadersPolicy"},
               "TargetOriginId": "SellerWebAssets",
               "ViewerProtocolPolicy": "redirect-to-https"
+            },
+            {
+              "AllowedMethods": ["GET", "HEAD"],
+              "CachePolicyId": {"Ref": "SellerWebNoStoreCachePolicy"},
+              "CachedMethods": ["GET", "HEAD"],
+              "Compress": false,
+              "PathPattern": "/health",
+              "ResponseHeadersPolicyId": {"Ref": "SellerWebNoStoreResponseHeadersPolicy"},
+              "TargetOriginId": "SellerApi",
+              "ViewerProtocolPolicy": "https-only"
             },
             {
               "AllowedMethods": ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"],

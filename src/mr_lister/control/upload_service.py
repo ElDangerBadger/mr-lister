@@ -375,10 +375,18 @@ class UploadIntakeService:
             event=event,
             work_request=work,
         )
+        # Object validation can be expensive. Recheck the one-day intent authority immediately
+        # before pinning, then again after the external tag write before the durable transaction.
+        self._require_open(current, self._now())
         try:
             self._artifacts.pin_object_version(current, observed.version_id)
         except Exception:
             raise UploadDependencyUnavailableError from None
+        try:
+            self._require_open(current, self._now())
+        except UploadExpiredError:
+            self._release_if_unreferenced(current, observed.version_id)
+            raise
         try:
             persisted = self._store.complete_upload(commit)
         except (ConcurrentControlModificationError, IdempotencyConflictError):

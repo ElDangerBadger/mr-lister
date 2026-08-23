@@ -82,11 +82,13 @@ upload recovery, and invalid-origin fail-closed behavior. The accepted-approval/
 regression was reproduced and repaired; focus now moves to the action status rather than the
 document body.
 
-This is intentionally not the final browser or deployment gate. The newest bundle's added
-validation-status rendering, pending-dialog double-submit lock, route-race isolation, and hidden-
-tab behavior remain source/component-tested after the fixture CLI failed to reload the final
-bundle. Firefox, WebKit, forced colors, full contrast evidence, 200-percent zoom, and the deployed
-non-destructive smoke also remain open. No Phase 6 Lambda `SCAFFOLD_ONLY` marker was removed.
+Phase 6.6 subsequently replaced the unstable fixture with a deterministic local server and ran one
+digest-bound production bundle through Chromium, Firefox, and WebKit. All three engines passed the
+same authentication/review/approval, stale-readback focus, tab recovery, route-race, hidden/offline
+polling, forced-colors, reduced-motion, and 360-CSS-pixel reflow flows and produced trace ZIPs. The
+sanitized summary records zero provider transport attempts and no commerce surface. Full manual
+screen-reader/contrast coverage, the remaining command journeys, and the deployed non-destructive
+smoke remain open. No Phase 6 Lambda `SCAFFOLD_ONLY` marker was removed.
 
-Phase 6.6 retains the destructive/provider live canaries, cross-owner/concurrency probes, browser-
-restart acceptance, and moderated first-time-seller evidence.
+Phase 6.6 retains the destructive/provider live canaries, deployed cross-owner/concurrency probes,
+and moderated first-time-seller evidence.

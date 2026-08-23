@@ -275,8 +275,10 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       contrast, reduced motion, and 200-percent zoom
       - [x] Semantic component/axe coverage and partial real-Chrome desktop/mobile, keyboard, focus,
         reduced-motion, conflict, preview-recovery, and fail-closed evidence
-      - [ ] Re-run the exact final bundle in Chromium, Firefox, and WebKit, including forced colors,
-        contrast, route-race cases, hidden-tab polling, and 200-percent zoom
+      - [x] Re-run one digest-bound final bundle in Chromium, Firefox, and WebKit for forced colors,
+        reduced motion, route-race isolation, hidden-tab polling, and 360-CSS-pixel reflow
+      - [ ] Complete manual screen-reader and contrast evidence plus the remaining edit, refresh,
+        cancel, retry, upload, and logout browser journeys
     - [ ] Private static hosting, same-origin cache-disabled `/v1/*`, CSP/security headers, SPA
       routing, observability, and deployed non-destructive smoke
       - [x] Offline private-S3/OAC/CloudFront topology, exact SPA routes, security headers, and
@@ -285,9 +287,36 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - Evidence: 846 Python tests passed, including 636 Phase 6 tests; 11 gated live-Bedrock tests
       skipped. The web gate passes 62 tests, lint, strict typecheck, production build, artifact
       hygiene, and an audit with zero high-severity vulnerabilities. Ruff, contract drift,
-      compileall, SAM lint/build, and `git diff --check` pass. The browser gate remains explicitly
-      conditional as detailed in [`phase6-accessible-seller-interface.md`](phase6-accessible-seller-interface.md).
+      compileall, SAM lint/build, and `git diff --check` pass. The later Phase 6.6 tri-engine matrix
+      is recorded in [`phase6-accessible-seller-interface.md`](phase6-accessible-seller-interface.md),
+      while full WCAG and deployed evidence remain open.
   - [ ] Phase 6.6 replay, concurrency, cross-owner, live-canary, and first-time-user acceptance
+    - [x] Freeze the 12-gate manifest, closed structural evidence schema, and authoritative runtime
+      semantic validator, including deterministic checked artifacts and CI drift detection
+    - [x] Prove exact command replay, changed-body idempotency conflicts, forced three-way
+      revise/approve/cancel concurrency, and foreign-versus-unknown behavior across all 14
+      protected routes in the offline oracle
+    - [x] Implement fresh owner-bound Printify secret resolution, exact-version source reads,
+      draft-only provider resources, and an identifier-free allowed/rejected provider call ledger
+    - [x] Implement role-separated upload/query/command API composition roots with exact pinned
+      profile/config authority while leaving the SAM handlers fail closed
+    - [x] Implement the reference-aware source-retention core with lifecycle delete-marker
+      pagination, bounded durable checkpoints, trusted inventory time, and recent-pin preservation
+    - [x] Verify one exact final browser bundle in Chromium, Firefox, and WebKit with a shared
+      SHA-256 authority, a sanitized report, and credential-free per-engine trace evidence
+    - [ ] Add the evidence-set/artifact verifier that closes prerequisites, record counts,
+      cross-record run/job bindings, and on-disk artifact digests
+    - [ ] Add concrete retention AWS adapters/schedule/IAM plus 90-day operational-record cleanup
+    - [ ] Package and wire dispatcher, preparation, provider, settlement, and API handlers; add a
+      separately deployed Phase 6 AgentCore runtime that visibly runs Strands over pinned Gemma
+    - [ ] Add stuck-execution recovery, alarms, release/deploy tooling, and Linux ARM64 artifact
+      inspection; only then remove `SCAFFOLD_ONLY`
+    - [ ] Run explicitly authorized deployed non-destructive, double-gated unpublished Printify,
+      and moderated first-time-seller acceptance and attach sanitized evidence
+    - Evidence: 1,068 full Python tests passed with 11 gated live-Bedrock skips; 692 Phase 6 and
+      151 Phase 6.6 tests passed; the 62-test web gate, tri-engine exact-bundle harness, Ruff,
+      formatting, compileall, both contract drift checks, npm audit, SAM lint/build, and diff
+      hygiene passed. Details: [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
 - [ ] Phase 7 — Etsy publication through Printify
   - [ ] Approval-version and publish guard verification
   - [ ] Channel publication and status polling

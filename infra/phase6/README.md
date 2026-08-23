@@ -11,13 +11,13 @@ three capability-separated API Lambda boundaries.
 
 Phase 6.5 adds a separate private, versioned web-asset bucket and an HTTPS-only CloudFront
 distribution that reads it through SigV4 origin access control. It does not expose the private
-artwork bucket. The distribution sends only `/v1/*` to API Gateway, disables caching and cookies
-on that behavior, disables automatic compression and `Accept-Encoding` normalization so a strong
-review ETag remains strong for `If-Match`, forwards the closed authorization/content/concurrency
-header set and all query strings, and rejects unsupported methods at the viewer boundary. Only the
-documented `/`, `/auth/callback`, `/jobs[/...]`, and `/uploads/...` browser routes rewrite to
-`index.html`; there is no blanket error-page rewrite that could conceal API or missing-asset
-responses.
+artwork bucket. The distribution sends `/v1/*` and the exact public `/health` route to API Gateway.
+It disables caching and cookies on both API-origin behaviors, disables automatic compression and
+`Accept-Encoding` normalization so a strong review ETag remains strong for `If-Match`, forwards
+the closed authorization/content/concurrency header set and all query strings on `/v1/*`, and
+rejects unsupported protected-route methods at the viewer boundary. Only the documented `/`,
+`/auth/callback`, `/jobs[/...]`, and `/uploads/...` browser routes rewrite to `index.html`; there is
+no blanket error-page rewrite that could conceal API or missing-asset responses.
 
 `AgentCoreRuntimeArn`, `PrintifySecretArn`, `ApplicationOrigin`, and
 `ApplicationCertificateArn` are required, nonblank, exact-resource or exact-origin parameters.
@@ -29,8 +29,8 @@ neither uses a wildcard. The HTTP API has exactly fourteen authenticated `/v1` r
 the owner-scoped upload-recovery read, and one public, information-minimal `/health` route.
 
 Content-addressed `/assets/*` files use a one-year immutable policy. `index.html`, the public
-no-secret `runtime-config.json`, all other static paths, and `/v1/*` use zero-TTL and browser
-`no-store`. Both response-header policies enforce CSP without inline/eval execution, HSTS,
+no-secret `runtime-config.json`, all other static paths, `/health`, and `/v1/*` use zero-TTL and
+browser `no-store`. Both response-header policies enforce CSP without inline/eval execution, HSTS,
 `nosniff`, `DENY` framing, `no-referrer`, and a closed permissions policy. The
 `SellerRuntimeConfig` stack output is the exact public JSON release tooling must upload under the
 `SellerRuntimeConfigObjectKey`; it contains identifiers and origins, never credentials.
@@ -46,7 +46,8 @@ same constraints and requires no object-existence or `ListBucket` probe. Complet
 observed `VersionId` and atomically commits the consumed intent, job, source, event, receipt, and
 pending `PREPARE` work. Open/cancelled intent rows use DynamoDB TTL; current and noncurrent S3
 versions still tagged `staged` use the tag-filtered one-day lifecycle, while `pinned` versions do
-not.
+not. A separate prefix-only rule removes expired delete markers only after no object versions
+remain; it has no tag filter and cannot delete a referenced version.
 
 The review projection exposes an authenticated application preview route without an opaque query
 grant. After JWT owner derivation and an owner-first job read, the query boundary returns a
@@ -66,13 +67,17 @@ the `MR_LISTER_PHASE6_SCAFFOLD_ONLY=true` environment marker make this condition
 
 Before deployment, compose the tested owner derivation, upload-intent transactions, exact-version
 preview redirect, consolidated review reads, and seller-command application adapters into the API
-Lambda handlers. Replace the worker shims with adapters that construct the Phase 6 DynamoDB store,
+Lambda handlers. A role-isolated, fail-closed API composition root now exists under
+`src/mr_lister/cloud/phase6_composition.py`, but it is deliberately not imported by this scaffold
+until the Linux package and exact environment authority are supplied. Replace the worker shims
+with adapters that construct the Phase 6 DynamoDB store,
 invoke the checkpointed Strands/AgentCore preparation bridge, execute the draft-only Printify
 synchronizer, and settle outcomes only through application-owned worker commands. Remove the
 scaffold marker and change the readiness output only after all runtime compositions pass offline
 tests and an approved live canary. The deploy-ready retention composition must also add the
-reference-aware cleanup sweeper described in the frozen contract; the offline scaffold does not
-claim that sweeper exists yet.
+exact-prefix S3, strong DynamoDB, checkpoint, schedule, and IAM adapters around the tested
+reference-aware retention core. Operational-record expiry at 90 days remains a separate required
+deployment boundary; the offline scaffold does not claim either AWS cleanup composition yet.
 
 The query role may read and presign only the exact pinned S3 object version after application
 ownership checks. It cannot write DynamoDB, call KMS, read a secret, or proxy artwork bytes through
