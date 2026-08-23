@@ -220,6 +220,13 @@ def validate_initial_job(
         or job.approval_decision_id is not None
         or job.approval_fingerprint is not None
         or job.publication_aggregate_id is not None
+        or job.publication_terminal_state is not None
+        or job.publication_terminal_at is not None
+        or job.publication_source_release_eligible_at is not None
+        or job.publication_operational_expires_at is not None
+        or job.publication_report_id is not None
+        or job.publication_result_id is not None
+        or job.publication_terminal_summary_fingerprint is not None
         or job.failure_id is not None
         or job.provider_upload_attempt_id is not None
         or job.uploaded_artwork_id is not None
@@ -310,6 +317,28 @@ def validate_command_commit(commit: CommandCommit) -> None:
     if updated.publication_aggregate_id != current.publication_aggregate_id:
         raise InvalidControlStateError(
             "Phase 6 commands cannot change publication aggregate authority"
+        )
+    current_publication_summary = (
+        current.publication_terminal_state,
+        current.publication_terminal_at,
+        current.publication_source_release_eligible_at,
+        current.publication_operational_expires_at,
+        current.publication_report_id,
+        current.publication_result_id,
+        current.publication_terminal_summary_fingerprint,
+    )
+    updated_publication_summary = (
+        updated.publication_terminal_state,
+        updated.publication_terminal_at,
+        updated.publication_source_release_eligible_at,
+        updated.publication_operational_expires_at,
+        updated.publication_report_id,
+        updated.publication_result_id,
+        updated.publication_terminal_summary_fingerprint,
+    )
+    if updated_publication_summary != current_publication_summary:
+        raise InvalidControlStateError(
+            "Phase 6 commands cannot change publication terminal authority"
         )
     if updated.record_version != current.record_version + 1:
         raise InvalidControlStateError("A command must increment record_version exactly once")

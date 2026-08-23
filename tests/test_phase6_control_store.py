@@ -197,6 +197,43 @@ def test_phase6_commits_cannot_mutate_publication_aggregate_authority(
         )
 
 
+def test_phase6_commits_cannot_mutate_publication_terminal_authority() -> None:
+    current = make_non_initial_job(ControlJobState.APPROVED).model_copy(
+        update={"publication_aggregate_id": "publication_existing"}
+    )
+    terminal_at = current.updated_at + timedelta(days=1)
+    updated = current.model_copy(
+        update={
+            "record_version": current.record_version + 1,
+            "event_sequence": current.event_sequence + 1,
+            "updated_at": terminal_at,
+            "publication_terminal_state": "publication_failed",
+            "publication_terminal_at": terminal_at,
+            "publication_source_release_eligible_at": terminal_at + timedelta(days=30),
+            "publication_operational_expires_at": terminal_at + timedelta(days=90),
+            "publication_report_id": "report_forged",
+            "publication_terminal_summary_fingerprint": "f" * 64,
+        }
+    )
+
+    with pytest.raises(
+        InvalidControlStateError,
+        match="Phase 6 commands cannot change publication terminal authority",
+    ):
+        validate_command_commit(
+            CommandCommit(
+                current=current,
+                updated=updated,
+                event=make_event(updated),
+                receipt=make_receipt(
+                    updated,
+                    receipt_id="receipt_publication_terminal_mutation",
+                    command_type="forged_phase6_publication_terminal_mutation",
+                ),
+            )
+        )
+
+
 def make_source(job: ControlJobRecord) -> SourceArtifactRecord:
     material = _source_material(job_id=job.job_id, owner_id=job.owner_id, created_at=NOW)
     return SourceArtifactRecord(fingerprint=source_artifact_fingerprint(**material), **material)

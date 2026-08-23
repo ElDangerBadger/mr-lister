@@ -9,6 +9,7 @@ from mr_lister.contracts import CONTRACT_VERSION, JobRecord, JobState
 from mr_lister.control.fingerprints import (
     canonical_fingerprint,
     product_sync_record_fingerprint,
+    publication_terminal_summary_fingerprint,
 )
 from mr_lister.control.models import (
     CONTROL_ALLOWED_TRANSITIONS,
@@ -139,6 +140,17 @@ def test_legacy_approved_authority_remains_readable_but_new_pointers_are_state_s
     assert legacy.publication_aggregate_id is None
     assert "approval_decision_id" not in legacy.model_dump(mode="json")
     assert "publication_aggregate_id" not in legacy.model_dump(mode="json")
+    assert not any(
+        key.startswith("publication_terminal_")
+        or key
+        in {
+            "publication_source_release_eligible_at",
+            "publication_operational_expires_at",
+            "publication_report_id",
+            "publication_result_id",
+        }
+        for key in legacy.model_dump(mode="json")
+    )
     assert ControlJobRecord.model_validate_json(legacy.model_dump_json()) == legacy
 
     current = approved_job(
@@ -154,6 +166,114 @@ def test_legacy_approved_authority_remains_readable_but_new_pointers_are_state_s
         job(approval_decision_id="decision_invalid")
     with pytest.raises(ValidationError, match="publication aggregate"):
         job(publication_aggregate_id="publication_invalid")
+
+
+def test_publication_terminal_summary_is_closed_and_retention_bound() -> None:
+    terminal_at = NOW + timedelta(days=1)
+    summary_fingerprint = publication_terminal_summary_fingerprint(
+        aggregate_id="publication_terminal",
+        terminal_state="published",
+        terminal_at=terminal_at,
+        source_release_eligible_at=terminal_at + timedelta(days=30),
+        operational_expires_at=terminal_at + timedelta(days=90),
+        report_id="report_terminal",
+        result_id="result_terminal",
+    )
+    summary = {
+        "publication_aggregate_id": "publication_terminal",
+        "publication_terminal_state": "published",
+        "publication_terminal_at": terminal_at,
+        "publication_source_release_eligible_at": terminal_at + timedelta(days=30),
+        "publication_operational_expires_at": terminal_at + timedelta(days=90),
+        "publication_report_id": "report_terminal",
+        "publication_result_id": "result_terminal",
+        "publication_terminal_summary_fingerprint": summary_fingerprint,
+        "updated_at": terminal_at,
+    }
+    terminal = approved_job(**summary)
+
+    assert terminal.publication_terminal_state == "published"
+    assert terminal.model_dump(mode="json")["publication_report_id"] == "report_terminal"
+
+    for missing in (
+        "publication_terminal_state",
+        "publication_terminal_at",
+        "publication_source_release_eligible_at",
+        "publication_operational_expires_at",
+        "publication_report_id",
+        "publication_terminal_summary_fingerprint",
+    ):
+        with pytest.raises(ValidationError, match="all-or-none"):
+            approved_job(**{**summary, missing: None})
+
+    with pytest.raises(ValidationError, match="plus 30 days"):
+        approved_job(
+            **{
+                **summary,
+                "publication_source_release_eligible_at": terminal_at + timedelta(days=29),
+            }
+        )
+    with pytest.raises(ValidationError, match="plus 90 days"):
+        approved_job(
+            **{
+                **summary,
+                "publication_operational_expires_at": terminal_at + timedelta(days=89),
+            }
+        )
+    with pytest.raises(ValidationError, match="requires a result identity"):
+        approved_job(**{**summary, "publication_result_id": None})
+    with pytest.raises(ValidationError, match="Only a published"):
+        approved_job(
+            **{
+                **summary,
+                "publication_terminal_state": "publication_outcome_unknown",
+            }
+        )
+    with pytest.raises(ValidationError, match="fingerprint is invalid"):
+        approved_job(
+            **{
+                **summary,
+                "publication_terminal_summary_fingerprint": "f" * 64,
+            }
+        )
+    with pytest.raises(ValidationError, match="timezone info"):
+        approved_job(
+            **{
+                **summary,
+                "publication_terminal_at": terminal_at.replace(tzinfo=None),
+            }
+        )
+
+
+def test_publication_terminal_summary_fingerprint_binds_every_primitive() -> None:
+    terminal_at = NOW + timedelta(days=1)
+    values: dict[str, object] = {
+        "aggregate_id": "publication_terminal",
+        "terminal_state": "published",
+        "terminal_at": terminal_at,
+        "source_release_eligible_at": terminal_at + timedelta(days=30),
+        "operational_expires_at": terminal_at + timedelta(days=90),
+        "report_id": "report_terminal",
+        "result_id": "result_terminal",
+    }
+    fingerprint = publication_terminal_summary_fingerprint(**values)  # type: ignore[arg-type]
+    changed_values = {
+        "aggregate_id": "publication_other",
+        "terminal_state": "publication_failed",
+        "terminal_at": terminal_at + timedelta(seconds=1),
+        "source_release_eligible_at": terminal_at + timedelta(days=30, seconds=1),
+        "operational_expires_at": terminal_at + timedelta(days=90, seconds=1),
+        "report_id": "report_other",
+        "result_id": "result_other",
+    }
+
+    for field_name, changed in changed_values.items():
+        assert (
+            publication_terminal_summary_fingerprint(  # type: ignore[arg-type]
+                **{**values, field_name: changed}
+            )
+            != fingerprint
+        )
 
 
 def test_pre_review_cancellation_record_does_not_manufacture_review_authority() -> None:

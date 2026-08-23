@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import Field, StrictInt, StringConstraints, model_validator
+from pydantic import AwareDatetime, Field, StrictInt, StringConstraints, model_validator
 
 from mr_lister.contracts import ArtworkAnalysis, ContractModel
 from mr_lister.contracts.presentation import ProductMockupEvidence
 from mr_lister.control.economics import EtsyUsStandardEstimate
-from mr_lister.control.fingerprints import agent_preparation_evidence_fingerprint
+from mr_lister.control.fingerprints import (
+    agent_preparation_evidence_fingerprint,
+    publication_terminal_summary_fingerprint,
+)
 
 CONTROL_CONTRACT_VERSION = "2.0.0"
 ControlContractVersion = Literal["2.0.0"]
@@ -270,6 +273,32 @@ class ControlJobRecord(ControlModel):
     publication_aggregate_id: SafeId | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    publication_terminal_state: (
+        Literal[
+            "published",
+            "publication_failed",
+            "publication_outcome_unknown",
+        ]
+        | None
+    ) = Field(default=None, exclude_if=lambda value: value is None)
+    publication_terminal_at: AwareDatetime | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    publication_source_release_eligible_at: AwareDatetime | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    publication_operational_expires_at: AwareDatetime | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    publication_report_id: SafeId | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    publication_result_id: SafeId | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    publication_terminal_summary_fingerprint: Fingerprint | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     active_work_request_id: SafeId | None = None
     provider_upload_attempt_id: SafeId | None = None
     uploaded_artwork_id: SafeId | None = None
@@ -360,6 +389,71 @@ class ControlJobRecord(ControlModel):
             raise ValueError("Only an approved job may reference an approval decision")
         if self.publication_aggregate_id is not None and self.state is not ControlJobState.APPROVED:
             raise ValueError("Only an approved job may reference a publication aggregate")
+        publication_terminal_fields = (
+            self.publication_terminal_state,
+            self.publication_terminal_at,
+            self.publication_source_release_eligible_at,
+            self.publication_operational_expires_at,
+            self.publication_report_id,
+            self.publication_terminal_summary_fingerprint,
+        )
+        has_publication_terminal_summary = all(
+            value is not None for value in publication_terminal_fields
+        )
+        if any(value is not None for value in publication_terminal_fields) and not (
+            has_publication_terminal_summary
+        ):
+            raise ValueError("Publication terminal summary fields are all-or-none")
+        if has_publication_terminal_summary:
+            if self.state is not ControlJobState.APPROVED or self.publication_aggregate_id is None:
+                raise ValueError("Publication terminal summary requires an approved linked job")
+            assert self.publication_terminal_at is not None
+            if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
+                raise ValueError("Publication terminal summary requires aware job time authority")
+            terminal_times = (
+                self.publication_terminal_at,
+                self.publication_source_release_eligible_at,
+                self.publication_operational_expires_at,
+            )
+            if any(value is None or value.utcoffset() != timedelta(0) for value in terminal_times):
+                raise ValueError("Publication terminal summary timestamps must be UTC-aware")
+            if self.publication_terminal_at < self.created_at:
+                raise ValueError("Publication terminal time cannot precede job creation")
+            if self.updated_at != self.publication_terminal_at:
+                raise ValueError("Publication terminal time must update the job projection")
+            if self.publication_source_release_eligible_at != (
+                self.publication_terminal_at + timedelta(days=30)
+            ):
+                raise ValueError("Publication source release must be terminal time plus 30 days")
+            if self.publication_operational_expires_at != (
+                self.publication_terminal_at + timedelta(days=90)
+            ):
+                raise ValueError(
+                    "Publication operational expiry must be terminal time plus 90 days"
+                )
+            if self.publication_terminal_state == "published":
+                if self.publication_result_id is None:
+                    raise ValueError("Published job summary requires a result identity")
+            elif self.publication_result_id is not None:
+                raise ValueError("Only a published job summary may reference a result")
+            assert self.publication_terminal_state is not None
+            assert self.publication_source_release_eligible_at is not None
+            assert self.publication_operational_expires_at is not None
+            assert self.publication_report_id is not None
+            if self.publication_terminal_summary_fingerprint != (
+                publication_terminal_summary_fingerprint(
+                    aggregate_id=self.publication_aggregate_id,
+                    terminal_state=self.publication_terminal_state,
+                    terminal_at=self.publication_terminal_at,
+                    source_release_eligible_at=self.publication_source_release_eligible_at,
+                    operational_expires_at=self.publication_operational_expires_at,
+                    report_id=self.publication_report_id,
+                    result_id=self.publication_result_id,
+                )
+            ):
+                raise ValueError("Publication terminal summary fingerprint is invalid")
+        elif self.publication_result_id is not None:
+            raise ValueError("Publication result requires a complete terminal summary")
         if self.state in CONTROL_NEW_WORK_BY_STATE and self.active_work_request_id is None:
             raise ValueError("Machine states require durable active work")
         if self.state is ControlJobState.CANCEL_REQUESTED and self.active_work_request_id is None:
