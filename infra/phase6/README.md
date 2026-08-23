@@ -60,28 +60,30 @@ this design adds no KMS dependency.
 
 This stack is **not ready for cloud deployment**. Every Lambda entrypoint remains fail-closed under
 the checked `MR_LISTER_PHASE6_SCAFFOLD_ONLY=true` marker. The thin shim now has closed delegation
-surfaces for the API, dispatcher, preparation, provider, settlement, and source-retention roles,
+surfaces for the API, dispatcher, preparation, provider, settlement, source-retention,
+terminal-operational-cleanup, and stuck-execution-recovery roles,
 but the checked `CodeUri` still contains only the scaffold package rather than the tested
 application source and Linux ARM64 dependencies. The public health route therefore returns `503`
 with only `{"status":"scaffold_only"}`. The stack output `DeploymentReadiness=SCAFFOLD_ONLY` makes
 this condition inspectable.
 
 Role-separated composition roots now construct the tested API, dispatcher, preparation, provider,
-settlement, and reference-aware source-retention boundaries. A dedicated Phase 6 AgentCore source
+settlement, reference-aware source-retention, terminal operational-cleanup, and execution-recovery
+boundaries. A dedicated Phase 6 AgentCore source
 entrypoint visibly keeps Strands as controller over the pinned Gemma intelligence configuration,
 and reproducible narrow source manifests isolate ordinary Lambda code from the AgentCore runtime.
-The retention schedule and least-capability S3-version-tag/DynamoDB IAM are present in this
-template. None of that is a deployment claim while the application bundles, exact runtime
-configuration, and dependencies are absent from `CodeUri` and the scaffold marker remains true.
+The cleanup/recovery schedules, encrypted recovery DLQ, release/runtime bindings, least-capability
+IAM, and closed alarm/SNS transport are present in this template. Recovery can describe an exact
+execution and settle durable authority, but cannot start, stop, or redrive workflows. None of that
+is a deployment claim while the application bundles and dependencies are absent from `CodeUri` and
+the scaffold marker remains true.
 
-Before deployment, bind the release fingerprint to the packaged source manifest and an immutable
-Phase 6 AgentCore runtime version or endpoint; build and inspect reproducible Linux ARM64 dependency
-artifacts; provide every exact profile, account, origin, Cognito, bucket-owner, and model authority
-required by the composition roots; and wire those artifacts into SAM and the separate AgentCore
-deployment. Add the separate 90-day terminal operational-record cleanup boundary, stuck-execution
-recovery and alarms, and release/deploy tooling. Remove the scaffold marker and change the readiness
-output only after those controls pass offline artifact inspection and explicitly authorized live
-acceptance.
+Before deployment, produce the real controlled Linux ARM64 dependency artifacts, run their target
+import smoke, seal both runtime trees, and wire those exact bytes into SAM and the separate
+versioned AgentCore deployment. Then deploy through a reviewed change set, verify the configured
+endpoint observation, alarms, cleanup/recovery schedules, static assets, and non-destructive smoke.
+Remove the scaffold marker and change the readiness output only after those controls and explicitly
+authorized live acceptance pass.
 
 The query role may read and presign only the exact pinned S3 object version after application
 ownership checks. It cannot write DynamoDB, call KMS, read a secret, or proxy artwork bytes through

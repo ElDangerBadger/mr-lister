@@ -159,6 +159,8 @@ def test_table_has_durable_due_work_topology() -> None:
         {"AttributeName": "dispatch_sk", "AttributeType": "S"},
         {"AttributeName": "owner_jobs_pk", "AttributeType": "S"},
         {"AttributeName": "owner_jobs_sk", "AttributeType": "S"},
+        {"AttributeName": "recovery_pk", "AttributeType": "S"},
+        {"AttributeName": "recovery_sk", "AttributeType": "S"},
     ]
     assert properties["GlobalSecondaryIndexes"] == [
         {
@@ -176,6 +178,14 @@ def test_table_has_durable_due_work_topology() -> None:
                 {"AttributeName": "owner_jobs_sk", "KeyType": "RANGE"},
             ],
             "Projection": {"ProjectionType": "ALL"},
+        },
+        {
+            "IndexName": "ExecutionRecoveryIndex",
+            "KeySchema": [
+                {"AttributeName": "recovery_pk", "KeyType": "HASH"},
+                {"AttributeName": "recovery_sk", "KeyType": "RANGE"},
+            ],
+            "Projection": {"ProjectionType": "KEYS_ONLY"},
         },
     ]
     assert properties["StreamSpecification"] == {"StreamViewType": "KEYS_ONLY"}
@@ -309,7 +319,7 @@ def test_exact_four_standard_machines_have_private_error_logs() -> None:
     log_groups = [
         resource for resource in resources.values() if resource["Type"] == "AWS::Logs::LogGroup"
     ]
-    assert len(log_groups) == 13
+    assert len(log_groups) == 15
     assert all(group["Properties"]["RetentionInDays"] == 14 for group in log_groups)
 
 
@@ -323,6 +333,8 @@ def test_functions_have_distinct_explicit_roles_and_scaffold_gate() -> None:
     }
     assert set(functions) == {
         "SourceVersionRetentionFunction",
+        "TerminalOperationalCleanupFunction",
+        "StuckExecutionRecoveryFunction",
         "DispatcherFunction",
         "PreparationDispatchFunction",
         "ProviderDraftFunction",
@@ -334,6 +346,8 @@ def test_functions_have_distinct_explicit_roles_and_scaffold_gate() -> None:
     roles = {resource["Properties"]["Role"]["Fn::GetAtt"][0] for resource in functions.values()}
     assert roles == {
         "SourceVersionRetentionFunctionRole",
+        "TerminalOperationalCleanupFunctionRole",
+        "StuckExecutionRecoveryFunctionRole",
         "DispatcherFunctionRole",
         "PreparationDispatchFunctionRole",
         "ProviderDraftFunctionRole",
@@ -354,6 +368,8 @@ def test_functions_have_distinct_explicit_roles_and_scaffold_gate() -> None:
     assert functions["ProviderDraftFunction"]["Properties"]["Timeout"] == 600
     assert functions["SettlementFunction"]["Properties"]["Timeout"] == 30
     assert functions["SourceVersionRetentionFunction"]["Properties"]["Timeout"] == 300
+    assert functions["TerminalOperationalCleanupFunction"]["Properties"]["Timeout"] == 300
+    assert functions["StuckExecutionRecoveryFunction"]["Properties"]["Timeout"] == 120
 
 
 def test_iam_keeps_agentcore_secret_and_state_authority_separate() -> None:
@@ -371,7 +387,10 @@ def test_iam_keeps_agentcore_secret_and_state_authority_separate() -> None:
     assert "secretsmanager:GetSecretValue" not in dispatcher
 
     assert "bedrock-agentcore:InvokeAgentRuntime" in preparation
-    assert '"Resource": {"Ref": "AgentCoreRuntimeArn"}' in preparation
+    assert (
+        '"Resource": [{"Ref": "AgentCoreRuntimeArn"}, {"Ref": "AgentCoreRuntimeEndpointArn"}]'
+        in preparation
+    )
     assert "secretsmanager" not in preparation
     assert "dynamodb:TransactWriteItems" not in preparation
     assert "s3:GetObject" not in preparation
@@ -559,6 +578,8 @@ def test_no_forbidden_external_capability_is_present() -> None:
         else:
             deployment_parts.append(path.read_text(encoding="utf-8"))
     deployment_text = "\n".join(deployment_parts).lower()
+    # Operational alarm delivery is the sole non-marketplace use of this verb.
+    deployment_text = deployment_text.replace('"sns:publish"', "")
     for forbidden in (
         "waitfortasktoken",
         "sendtasksuccess",

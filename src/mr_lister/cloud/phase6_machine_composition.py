@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
+from mr_lister.agent.runtime_binding import load_agentcore_runtime_binding
 from mr_lister.cloud.phase6_composition import (
     PinnedProfileConfiguration,
     PinnedReviewProductAuthority,
@@ -54,11 +55,6 @@ _STATE_MACHINE_ARN = re.compile(
     r"^arn:(?P<partition>aws|aws-us-gov|aws-cn):states:(?P<region>[a-z0-9-]+):"
     r"(?P<account>[0-9]{12}):stateMachine:(?P<name>[A-Za-z0-9_-]{1,80})$"
 )
-_AGENTCORE_ARN = re.compile(
-    r"^arn:(?P<partition>aws|aws-us-gov|aws-cn):bedrock-agentcore:"
-    r"(?P<region>[a-z0-9-]+):(?P<account>[0-9]{12}):"
-    r"runtime/(?P<name>[A-Za-z0-9_-]{1,100})$"
-)
 _GENERIC_CONFIGURATION_ERROR = "Phase 6 machine configuration is invalid"
 
 
@@ -89,6 +85,10 @@ class DispatcherConfiguration:
 class PreparationConfiguration:
     common: MachineCommonConfiguration
     runtime_arn: str
+    runtime_endpoint_arn: str
+    runtime_qualifier: str
+    runtime_version: str
+    runtime_binding_fingerprint: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,17 +140,21 @@ def load_dispatcher_configuration(environment: Mapping[str, object]) -> Dispatch
 def load_preparation_configuration(environment: Mapping[str, object]) -> PreparationConfiguration:
     try:
         common = _common(environment)
-        runtime_arn = _required(environment, "MR_LISTER_AGENTCORE_RUNTIME_ARN")
-        match = _AGENTCORE_ARN.fullmatch(runtime_arn)
-        if (
-            match is None
-            or match.group("region") != common.region
-            or match.group("account") != common.account_id
-            or match.group("partition") != _partition(common.region)
-            or "phase6" not in match.group("name").casefold()
-        ):
-            raise ValueError
-        return PreparationConfiguration(common=common, runtime_arn=runtime_arn)
+        binding = load_agentcore_runtime_binding(
+            environment,
+            region=common.region,
+            account_id=common.account_id,
+            environment_name=common.environment_name,
+            release_fingerprint=common.release_fingerprint,
+        )
+        return PreparationConfiguration(
+            common=common,
+            runtime_arn=binding.runtime_arn,
+            runtime_endpoint_arn=binding.endpoint_arn,
+            runtime_qualifier=binding.qualifier,
+            runtime_version=binding.runtime_version,
+            runtime_binding_fingerprint=binding.binding_fingerprint,
+        )
     except Exception:
         pass
     raise Phase6MachineConfigurationError(_GENERIC_CONFIGURATION_ERROR)
@@ -254,6 +258,8 @@ def compose_preparation_handler(
         store=store,
         agentcore=agentcore,
         runtime_arn=configuration.runtime_arn,
+        runtime_qualifier=configuration.runtime_qualifier,
+        runtime_version=configuration.runtime_version,
     )
     return Phase6PreparationHandler(preparation=bridge)
 

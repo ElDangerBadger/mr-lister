@@ -308,22 +308,30 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       cross-record run/job bindings, and on-disk artifact digests
     - [x] Add concrete exact-prefix retention AWS adapters, bounded schedule, checkpoint, and
       least-capability IAM without object-byte read or delete authority
-    - [ ] Add the separate 90-day terminal operational-record cleanup boundary
+    - [x] Add the separate 90-day terminal operational-record cleanup boundary, including bounded
+      completed-upload intent and upload-receipt TTLs
     - [x] Implement role-separated dispatcher, preparation, provider, settlement, API, and
       retention composition roots; add a dedicated Phase 6 AgentCore source entrypoint that
       visibly runs Strands over pinned Gemma; and generate reproducible narrow source manifests
-    - [ ] Bind source manifests and an immutable AgentCore runtime version into release authority,
-      produce and inspect Linux ARM64 dependency artifacts, wire them into SAM/AgentCore deploy
-      configuration, and deploy the composed handlers
-    - [ ] Add stuck-execution recovery, alarms, and release/deploy tooling; only then remove
-      `SCAFFOLD_ONLY`
+    - [x] Bind both sealed source trees and an immutable versioned AgentCore endpoint into release
+      authority; add deterministic Linux ARM64 build requests, native-artifact inspection, and
+      cross-component release sealing
+    - [ ] Produce the real controlled Linux ARM64 dependency artifacts, run target import smoke,
+      wire the sealed Lambda `CodeUri` and AgentCore release, and deploy the composed handlers
+    - [x] Add read-before-settle stuck-execution recovery, bounded schedules/DLQ, and closed
+      operational alarms without workflow-redrive or provider authority
+    - [ ] Complete release/deploy execution and smoke tooling; only then remove `SCAFFOLD_ONLY`
     - [ ] Run explicitly authorized deployed non-destructive, double-gated unpublished Printify,
       and moderated first-time-seller acceptance and attach sanitized evidence
-    - Evidence: 1,239 full Python tests passed with 11 gated live-Bedrock skips; 692 Phase 6 and
-      322 Phase 6.6 tests passed; the 62-test web gate, tri-engine exact-bundle harness, Ruff,
+    - Evidence: 1,419 full Python tests passed with 11 gated live-Bedrock skips; 697 Phase 6 and
+      490 Phase 6.6 tests passed; the 62-test web gate, tri-engine exact-bundle harness, Ruff,
       formatting, compileall, both contract drift checks, npm audit, SAM lint/build, and diff
       hygiene passed. Details: [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
 - [ ] Phase 7 — Etsy publication through Printify
+  - [x] Freeze the publication-disabled one-shot authority, state graph, exact provider route,
+    GET-only reconciliation, verified safe-link, notification, retention, and activation contract
+    ([ADR 0013](architecture/0013-one-shot-verified-channel-publication.md),
+    [detailed contract](phase7-publication-contract.md))
   - [ ] Approval-version and publish guard verification
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports

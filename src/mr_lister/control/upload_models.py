@@ -34,6 +34,8 @@ from mr_lister.control.source_artwork import validate_source_artifact_authority
 
 UPLOAD_AUTHORIZATION_TTL = timedelta(minutes=5)
 UPLOAD_INTENT_TTL = timedelta(days=1)
+COMPLETED_UPLOAD_INTENT_TTL = timedelta(days=90)
+UPLOAD_RECEIPT_TTL = timedelta(days=90)
 _DNS_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 _S3_POST_URL = re.compile(
     rf"https://(?:(?:{_DNS_LABEL}\.)+)?s3(?:\.[a-z0-9-]+)?"
@@ -460,8 +462,10 @@ class UploadCompletionCommit(ControlModel):
 
 
 __all__ = [
+    "COMPLETED_UPLOAD_INTENT_TTL",
     "UPLOAD_AUTHORIZATION_TTL",
     "UPLOAD_INTENT_TTL",
+    "UPLOAD_RECEIPT_TTL",
     "UploadAuthorization",
     "UploadCommandType",
     "UploadCompletionCommit",

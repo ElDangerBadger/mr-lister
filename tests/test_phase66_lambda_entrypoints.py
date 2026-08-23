@@ -8,7 +8,11 @@ from typing import Any
 
 import pytest
 
-from mr_lister.cloud import phase6_entrypoints
+from mr_lister.cloud import (
+    phase6_entrypoints,
+    phase6_execution_recovery_entrypoint,
+    phase6_operational_cleanup_entrypoint,
+)
 from mr_lister.cloud.phase6_machine import Phase6MachineExecutionError
 
 ROOT = Path(__file__).parents[1]
@@ -98,6 +102,25 @@ def test_machine_composition_failure_is_detached_and_value_free() -> None:
     assert captured.value.__cause__ is None
 
 
+def test_direct_production_entrypoint_environment_is_release_verified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setenv("MR_LISTER_RELEASE_FINGERPRINT", "a" * 64)
+    monkeypatch.setattr(
+        phase6_entrypoints,
+        "verify_phase6_packaged_release",
+        lambda environment, *, component: calls.append(
+            (component, str(environment["MR_LISTER_RELEASE_FINGERPRINT"]))
+        ),
+    )
+
+    environment = phase6_entrypoints._environment()
+
+    assert environment["MR_LISTER_RELEASE_FINGERPRINT"] == "a" * 64
+    assert calls == [("lambda", "a" * 64)]
+
+
 @pytest.mark.parametrize("marker", [None, "true", "TRUE", "False", "0", ""])
 def test_lambda_shim_remains_fail_closed_for_every_nonexact_marker(
     monkeypatch: pytest.MonkeyPatch,
@@ -121,6 +144,7 @@ def test_exact_false_marker_delegates_without_import_time_application_work(
 ) -> None:
     monkeypatch.setenv("MR_LISTER_PHASE6_SCAFFOLD_ONLY", "false")
     module = _load_shim("phase6_lambda_production_delegate")
+    monkeypatch.setattr(module, "_require_release_authority", lambda: None)
     calls: list[tuple[dict[str, Any], object | None]] = []
 
     def handler(event: dict[str, Any], context: object | None = None) -> dict[str, Any]:
@@ -144,9 +168,68 @@ def test_exact_false_health_delegates_but_scaffold_health_stays_503(
 
     monkeypatch.setenv("MR_LISTER_PHASE6_SCAFFOLD_ONLY", "false")
     production = _load_shim("phase6_lambda_production_health")
+    monkeypatch.setattr(production, "_require_release_authority", lambda: None)
     monkeypatch.setattr(
         phase6_entrypoints,
         "review_query_api_handler",
         lambda _event, _context=None: {"statusCode": 200, "body": '{"status":"ok"}'},
     )
     assert production.review_query_api_handler(event, None)["statusCode"] == 200
+
+
+def test_exact_false_still_fails_closed_without_a_sealed_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MR_LISTER_PHASE6_SCAFFOLD_ONLY", "false")
+    monkeypatch.setenv("MR_LISTER_RELEASE_FINGERPRINT", "a" * 64)
+    module = _load_shim("phase6_lambda_unsealed_release")
+
+    with pytest.raises(module.Phase6ScaffoldNotReady, match="release authority"):
+        module.preparation_dispatch_handler(
+            {"job_id": "job_1", "work_request_id": "work_1"},
+            None,
+        )
+
+
+def test_terminal_cleanup_shim_is_scaffolded_and_release_verified_before_delegate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_shim("phase6_lambda_terminal_cleanup")
+    event = {"contract_version": "1.0.0", "source": "terminal-operational-record-cleanup"}
+    monkeypatch.setenv("MR_LISTER_PHASE6_SCAFFOLD_ONLY", "true")
+    with pytest.raises(module.Phase6ScaffoldNotReady):
+        module.terminal_operational_cleanup_handler(event, None)
+
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setenv("MR_LISTER_PHASE6_SCAFFOLD_ONLY", "false")
+    monkeypatch.setattr(module, "_require_release_authority", lambda: None)
+    monkeypatch.setattr(
+        phase6_operational_cleanup_entrypoint,
+        "terminal_operational_cleanup_handler",
+        lambda received, _context=None: calls.append(received) or {"delegated": True},
+    )
+
+    assert module.terminal_operational_cleanup_handler(event, None) == {"delegated": True}
+    assert calls == [event]
+
+
+def test_execution_recovery_shim_is_scaffolded_and_release_verified_before_delegate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_shim("phase6_lambda_execution_recovery")
+    event = {"source": "stuck-execution-sweeper"}
+    monkeypatch.setenv("MR_LISTER_PHASE6_SCAFFOLD_ONLY", "true")
+    with pytest.raises(module.Phase6ScaffoldNotReady):
+        module.stuck_execution_recovery_handler(event, None)
+
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setenv("MR_LISTER_PHASE6_SCAFFOLD_ONLY", "false")
+    monkeypatch.setattr(module, "_require_release_authority", lambda: None)
+    monkeypatch.setattr(
+        phase6_execution_recovery_entrypoint,
+        "execution_recovery_handler",
+        lambda received, _context=None: calls.append(received) or {"delegated": True},
+    )
+
+    assert module.stuck_execution_recovery_handler(event, None) == {"delegated": True}
+    assert calls == [event]

@@ -92,6 +92,7 @@ def test_retention_shim_is_inert_until_exact_false_then_delegates(
 
     calls: list[dict[str, Any]] = []
     monkeypatch.setenv("MR_LISTER_PHASE6_SCAFFOLD_ONLY", "false")
+    monkeypatch.setattr(module, "_require_release_authority", lambda: None)
     monkeypatch.setattr(
         phase6_retention_entrypoint,
         "source_version_retention_handler",

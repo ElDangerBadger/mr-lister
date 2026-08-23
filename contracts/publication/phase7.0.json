@@ -1,0 +1,187 @@
+{
+  "activation_gates": [
+    "phase6_deployed_non_destructive_acceptance",
+    "immutable_release_and_agentcore_binding",
+    "linux_arm64_artifact_inspection",
+    "publication_domain_store_service_matrix",
+    "publication_provider_one_shot_matrix",
+    "publication_api_browser_matrix",
+    "publication_infrastructure_and_alarm_matrix",
+    "read_only_etsy_preflight",
+    "explicit_one_listing_live_canary"
+  ],
+  "command_route": "/v1/jobs/{job_id}/publish",
+  "confirmation_literal": "publish_exact_approved_listing",
+  "contract_version": "7.0.0",
+  "forbidden_provider_operations": [
+    "product_create",
+    "product_update",
+    "product_delete",
+    "image_upload",
+    "image_archive",
+    "publishing_succeeded",
+    "publishing_failed",
+    "unpublish",
+    "order",
+    "fulfillment",
+    "webhook"
+  ],
+  "maximum_publish_posts_per_job": 1,
+  "notification_channel": "authenticated_in_application",
+  "operational_ttl_after_terminal_days": 90,
+  "permit_states": [
+    "available",
+    "consumed",
+    "retired"
+  ],
+  "phase": "7",
+  "positive_verification_fields": [
+    "exact_shop",
+    "exact_product",
+    "unlocked",
+    "visible",
+    "canonical_content_match",
+    "single_etsy_external_id",
+    "numeric_listing_id",
+    "safe_etsy_link"
+  ],
+  "provider_calls": [
+    {
+      "maximum_calls": 1,
+      "method": "GET",
+      "mutating": false,
+      "purpose": "etsy_shop_preflight",
+      "route": "/v1/shops.json"
+    },
+    {
+      "maximum_calls": 100,
+      "method": "GET",
+      "mutating": false,
+      "purpose": "product_preflight_and_verification",
+      "route": "/v1/shops/{shop_id}/products/{product_id}.json"
+    },
+    {
+      "maximum_calls": 1,
+      "method": "POST",
+      "mutating": true,
+      "purpose": "one_shot_connected_channel_publication",
+      "route": "/v1/shops/{shop_id}/products/{product_id}/publish.json"
+    }
+  ],
+  "publication_body_fields": [
+    "title",
+    "description",
+    "images",
+    "variants",
+    "tags",
+    "keyFeatures",
+    "shipping_template"
+  ],
+  "publication_enabled": false,
+  "snapshot_fields": [
+    "owner_id",
+    "job_id",
+    "expected_record_version",
+    "approval_decision_id",
+    "approval_fingerprint",
+    "review_version",
+    "review_fingerprint",
+    "product_sync_id",
+    "product_sync_fingerprint",
+    "printify_shop_id",
+    "printify_product_id",
+    "printify_image_id",
+    "product_payload_fingerprint",
+    "pricing_snapshot_id",
+    "pricing_snapshot_fingerprint",
+    "pricing_evidence_fingerprint",
+    "pricing_fresh_until",
+    "profile_id",
+    "profile_version",
+    "profile_fingerprint",
+    "expected_sales_channel",
+    "publication_body_fingerprint",
+    "release_manifest_fingerprint",
+    "requested_at",
+    "verification_deadline"
+  ],
+  "source_release_after_terminal_days": 30,
+  "states": [
+    "approved",
+    "publication_requested",
+    "publication_verifying",
+    "publication_reconciling",
+    "published",
+    "publication_failed",
+    "publication_outcome_unknown"
+  ],
+  "status": "frozen",
+  "terminal_states": [
+    "published",
+    "publication_failed",
+    "publication_outcome_unknown"
+  ],
+  "transitions": [
+    {
+      "authority": "exact_publish_command_transaction",
+      "provider_mutation_count": 0,
+      "source": "approved",
+      "target": "publication_requested"
+    },
+    {
+      "authority": "consumed_permit_and_definite_acceptance",
+      "provider_mutation_count": 1,
+      "source": "publication_requested",
+      "target": "publication_verifying"
+    },
+    {
+      "authority": "consumed_permit_and_ambiguous_outcome",
+      "provider_mutation_count": 1,
+      "source": "publication_requested",
+      "target": "publication_reconciling"
+    },
+    {
+      "authority": "definitive_preflight_failure",
+      "provider_mutation_count": 0,
+      "source": "publication_requested",
+      "target": "publication_failed"
+    },
+    {
+      "authority": "positive_exact_product_observation",
+      "provider_mutation_count": 0,
+      "source": "publication_verifying",
+      "target": "published"
+    },
+    {
+      "authority": "definitive_provider_failure_observation",
+      "provider_mutation_count": 0,
+      "source": "publication_verifying",
+      "target": "publication_failed"
+    },
+    {
+      "authority": "fixed_deadline_without_positive_proof",
+      "provider_mutation_count": 0,
+      "source": "publication_verifying",
+      "target": "publication_outcome_unknown"
+    },
+    {
+      "authority": "positive_exact_product_observation",
+      "provider_mutation_count": 0,
+      "source": "publication_reconciling",
+      "target": "published"
+    },
+    {
+      "authority": "definitive_provider_failure_observation",
+      "provider_mutation_count": 0,
+      "source": "publication_reconciling",
+      "target": "publication_failed"
+    },
+    {
+      "authority": "fixed_deadline_without_definitive_proof",
+      "provider_mutation_count": 0,
+      "source": "publication_reconciling",
+      "target": "publication_outcome_unknown"
+    }
+  ],
+  "verification_deadline_seconds": 1800
+}

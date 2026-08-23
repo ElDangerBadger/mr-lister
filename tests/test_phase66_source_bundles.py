@@ -44,6 +44,9 @@ def test_manifest_has_only_relative_sha256_size_records(tmp_path: Path) -> None:
             assert ".." not in Path(item["path"]).parts
             assert len(item["sha256"]) == 64
             assert item["size_bytes"] == (root / item["path"]).stat().st_size
+        assert (root / "dependency-build-request.json").is_file()
+        assert (root / "mr_lister/release/phase6.py").is_file()
+        assert not (root / "release-manifest.json").exists()
 
 
 def test_tamper_or_extra_file_fails_verification(tmp_path: Path) -> None:
@@ -80,6 +83,12 @@ def test_lambda_bundle_excludes_agentcore_and_legacy_broad_surfaces(tmp_path: Pa
     assert (lambda_root / "phase6_lambda.py").is_file()
     assert (lambda_root / "mr_lister/cloud/phase6_entrypoints.py").is_file()
     assert (lambda_root / "mr_lister/cloud/phase6_retention_entrypoint.py").is_file()
+    assert (lambda_root / "mr_lister/cloud/phase6_operational_cleanup_entrypoint.py").is_file()
+    assert (lambda_root / "mr_lister/cloud/phase6_execution_recovery_composition.py").is_file()
+    assert (lambda_root / "mr_lister/cloud/phase6_execution_recovery_entrypoint.py").is_file()
+    assert (lambda_root / "mr_lister/agent/runtime_binding.py").is_file()
+    assert (lambda_root / "mr_lister/production/operational_cleanup.py").is_file()
+    assert (lambda_root / "mr_lister/production/operational_cleanup_aws.py").is_file()
     assert (lambda_root / "mr_lister/production/retention.py").is_file()
     assert (lambda_root / "mr_lister/production/retention_aws.py").is_file()
     assert not (lambda_root / "mr_lister/api").exists()
@@ -96,6 +105,7 @@ def test_agentcore_bundle_is_phase6_gemma_strands_not_phase3_synthetic(tmp_path:
 
     main = (agentcore_root / "main.py").read_text(encoding="utf-8")
     assert "build_phase6_agentcore_runtime" in main
+    assert "verify_phase6_packaged_release" in main
     assert "build_synthetic_canary_runtime" not in main
     assert (agentcore_root / "config/bedrock/google_gemma_3_27b_it.json").is_file()
     assert not (agentcore_root / "mr_lister/cloud").exists()
@@ -125,6 +135,8 @@ def test_bundled_module_imports_do_not_eager_load_legacy_publish_surfaces(tmp_pa
             "-c",
             (
                 "import sys; import mr_lister.cloud.phase6_entrypoints; "
+                "import mr_lister.cloud.phase6_execution_recovery_entrypoint; "
+                "import mr_lister.cloud.phase6_operational_cleanup_entrypoint; "
                 "import mr_lister.cloud.phase6_retention_entrypoint; "
                 "assert 'mr_lister.production.adapter' not in sys.modules; "
                 "assert 'mr_lister.workflow.service' not in sys.modules"

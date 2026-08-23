@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from mr_lister.agent.runtime_binding import agentcore_runtime_binding_fingerprint
 from mr_lister.cloud.phase6_machine import (
     Phase6DispatcherHandler,
     Phase6PreparationHandler,
@@ -39,7 +40,12 @@ RELEASE = "d" * 64
 
 def _base_environment() -> dict[str, object]:
     prefix = f"arn:aws:states:{REGION}:{ACCOUNT}:stateMachine:mr-lister-phase6-{ENVIRONMENT}"
-    return {
+    runtime_arn = (
+        f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT}:runtime/mr_lister_phase6_dev-AbCd123456"
+    )
+    qualifier = "phase6_v7_dev"
+    endpoint_arn = f"{runtime_arn}/runtime-endpoint/{qualifier}"
+    environment: dict[str, object] = {
         "AWS_REGION": REGION,
         "MR_LISTER_ENVIRONMENT": ENVIRONMENT,
         "MR_LISTER_AWS_ACCOUNT_ID": ACCOUNT,
@@ -49,9 +55,10 @@ def _base_environment() -> dict[str, object]:
         "MR_LISTER_SYNCHRONIZE_PRODUCT_MACHINE_ARN": f"{prefix}-synchronize-product",
         "MR_LISTER_RECONCILE_PRODUCT_MACHINE_ARN": f"{prefix}-reconcile-product",
         "MR_LISTER_REFRESH_ECONOMICS_MACHINE_ARN": f"{prefix}-refresh-economics",
-        "MR_LISTER_AGENTCORE_RUNTIME_ARN": (
-            f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT}:runtime/mr_lister_phase6_dev-AbCd1234"
-        ),
+        "MR_LISTER_AGENTCORE_RUNTIME_ARN": runtime_arn,
+        "MR_LISTER_AGENTCORE_RUNTIME_ENDPOINT_ARN": endpoint_arn,
+        "MR_LISTER_AGENTCORE_RUNTIME_QUALIFIER": qualifier,
+        "MR_LISTER_AGENTCORE_RUNTIME_VERSION": "7",
         "MR_LISTER_ARTIFACT_BUCKET": (
             f"mr-lister-phase6-artifacts-{ENVIRONMENT}-{ACCOUNT}-{REGION}"
         ),
@@ -63,6 +70,16 @@ def _base_environment() -> dict[str, object]:
         "MR_LISTER_PRODUCT_PROFILE_FINGERPRINT": PROFILE.fingerprint,
         "MR_LISTER_PRODUCT_PROFILE_PATH": PROFILE_PATH.as_posix(),
     }
+    environment["MR_LISTER_AGENTCORE_RUNTIME_BINDING_FINGERPRINT"] = (
+        agentcore_runtime_binding_fingerprint(
+            runtime_arn=runtime_arn,
+            endpoint_arn=endpoint_arn,
+            qualifier=qualifier,
+            runtime_version="7",
+            release_fingerprint=RELEASE,
+        )
+    )
+    return environment
 
 
 class FakeDynamo:
@@ -137,6 +154,9 @@ def test_configuration_loaders_bind_one_release_account_region_and_table() -> No
 
     assert dispatcher.common == preparation.common == provider.common == settlement.common
     assert dispatcher.state_machine_arns[WorkType.PREPARE].endswith("-prepare")
+    assert preparation.runtime_qualifier == "phase6_v7_dev"
+    assert preparation.runtime_version == "7"
+    assert preparation.runtime_endpoint_arn.endswith("/runtime-endpoint/phase6_v7_dev")
     assert provider.artifact_bucket.endswith(f"-{ACCOUNT}-{REGION}")
     assert provider.profile.exact.fingerprint == PROFILE.fingerprint
 
@@ -202,6 +222,27 @@ def test_preparation_requires_a_same_account_phase6_runtime() -> None:
         environment["MR_LISTER_AGENTCORE_RUNTIME_ARN"] = changed
         with pytest.raises(Phase6MachineConfigurationError):
             load_preparation_configuration(environment)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("MR_LISTER_AGENTCORE_RUNTIME_QUALIFIER", "DEFAULT"),
+        ("MR_LISTER_AGENTCORE_RUNTIME_QUALIFIER", "phase6_v8_dev"),
+        ("MR_LISTER_AGENTCORE_RUNTIME_QUALIFIER", "phase6_v7_prod"),
+        ("MR_LISTER_AGENTCORE_RUNTIME_VERSION", "0"),
+        ("MR_LISTER_AGENTCORE_RUNTIME_VERSION", "8"),
+    ],
+)
+def test_preparation_requires_an_environment_and_version_named_endpoint(
+    name: str,
+    value: str,
+) -> None:
+    environment = _base_environment()
+    environment[name] = value
+
+    with pytest.raises(Phase6MachineConfigurationError):
+        load_preparation_configuration(environment)
 
 
 def test_provider_rejects_bucket_secret_or_profile_drift() -> None:

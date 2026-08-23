@@ -1,0 +1,7 @@
+agentcore/agentcore.json
+agentcore/aws-targets.json
+*.local.json
+.cli/
+.cache/
+cdk/
+*.zip

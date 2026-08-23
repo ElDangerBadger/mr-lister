@@ -26,6 +26,7 @@ from mr_lister.cloud.phase6_machine_composition import (
     build_provider_handler,
     build_settlement_handler,
 )
+from mr_lister.release.phase6 import verify_phase6_packaged_release
 
 HEALTH_ROUTE_KEY = "GET /health"
 
@@ -71,7 +72,9 @@ class _LazyHandler:
 
 def _environment() -> Mapping[str, object]:
     # Return a fresh shallow copy so a builder cannot retain a mutable process environment view.
-    return dict(os.environ)
+    environment: dict[str, object] = dict(os.environ)
+    verify_phase6_packaged_release(environment, component="lambda")
+    return environment
 
 
 _dispatcher = _LazyHandler(

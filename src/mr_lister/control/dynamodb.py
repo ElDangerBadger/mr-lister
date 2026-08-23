@@ -45,6 +45,8 @@ from mr_lister.control.store import (
     validate_initial_job,
 )
 from mr_lister.control.upload_models import (
+    COMPLETED_UPLOAD_INTENT_TTL,
+    UPLOAD_RECEIPT_TTL,
     UploadCompletionCommit,
     UploadIntent,
     UploadIntentCommit,
@@ -139,6 +141,9 @@ def _work_item(work: WorkRequest) -> dict[str, dict[str, Any]]:
         assert due_at is not None
         item["dispatch_pk"] = _s("WORK_DUE#0")
         item["dispatch_sk"] = _s(f"{int(due_at.timestamp()):020d}#{work.work_request_id}")
+    elif work.status is WorkRequestStatus.DISPATCHED:
+        item["recovery_pk"] = _s("WORK_RECOVERY#0")
+        item["recovery_sk"] = _s(f"{int(work.updated_at.timestamp()):020d}#{work.work_request_id}")
     return item
 
 
@@ -179,6 +184,11 @@ def _upload_intent_item(intent: UploadIntent) -> dict[str, dict[str, Any]]:
         UploadIntentStatus.EXPIRED,
     }:
         item["expires_at"] = _n(int(intent.intent_expires_at.timestamp()))
+    elif intent.status is UploadIntentStatus.COMPLETED:
+        assert intent.completed_at is not None
+        item["expires_at"] = _n(
+            int((intent.completed_at + COMPLETED_UPLOAD_INTENT_TTL).timestamp())
+        )
     return item
 
 
@@ -199,6 +209,7 @@ def _upload_receipt_item(receipt: UploadReceipt) -> dict[str, dict[str, Any]]:
         "command_type": _s(receipt.command_type.value),
         "key_digest": _s(receipt.idempotency_key_digest),
         "request_fingerprint": _s(receipt.request_fingerprint),
+        "expires_at": _n(int((receipt.created_at + UPLOAD_RECEIPT_TTL).timestamp())),
         "payload": _s(_payload(receipt)),
     }
 

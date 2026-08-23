@@ -10,8 +10,33 @@
     },
     "AgentCoreRuntimeArn": {
       "Type": "String",
-      "AllowedPattern": "^arn:(aws|aws-us-gov|aws-cn):bedrock-agentcore:[a-z0-9-]+:[0-9]{12}:runtime/[A-Za-z0-9_-]+$",
+      "AllowedPattern": "^arn:(aws|aws-us-gov|aws-cn):bedrock-agentcore:[a-z0-9-]+:[0-9]{12}:runtime/[A-Za-z][A-Za-z0-9_]{0,47}-[A-Za-z0-9]{10}$",
       "ConstraintDescription": "Supply one exact AgentCore runtime ARN. A blank value is not accepted."
+    },
+    "AgentCoreRuntimeEndpointArn": {
+      "Type": "String",
+      "AllowedPattern": "^arn:(aws|aws-us-gov|aws-cn):bedrock-agentcore:[a-z0-9-]+:[0-9]{12}:runtime/[A-Za-z][A-Za-z0-9_]{0,47}-[A-Za-z0-9]{10}/runtime-endpoint/[A-Za-z][A-Za-z0-9_]{0,47}$",
+      "ConstraintDescription": "Supply the exact immutable custom AgentCore runtime endpoint ARN."
+    },
+    "AgentCoreRuntimeVersion": {
+      "Type": "String",
+      "AllowedPattern": "^[1-9][0-9]{0,4}$",
+      "ConstraintDescription": "Supply the immutable AgentCore runtime version."
+    },
+    "AgentCoreRuntimeQualifier": {
+      "Type": "String",
+      "AllowedPattern": "^phase6_v[1-9][0-9]{0,4}_[a-z][a-z0-9_]{1,15}$",
+      "ConstraintDescription": "Supply the environment-bound non-DEFAULT Phase 6 qualifier."
+    },
+    "AgentCoreRuntimeBindingFingerprint": {
+      "Type": "String",
+      "AllowedPattern": "^(?!0{64}$)[a-f0-9]{64}$",
+      "ConstraintDescription": "Supply the canonical release/runtime/endpoint binding fingerprint."
+    },
+    "ReleaseFingerprint": {
+      "Type": "String",
+      "AllowedPattern": "^(?!0{64}$)[a-f0-9]{64}$",
+      "ConstraintDescription": "Supply the SHA-256 fingerprint of the sealed Phase 6 release manifest."
     },
     "PrintifySecretArn": {
       "Type": "String",
@@ -37,6 +62,9 @@
       "Environment": {
         "Variables": {
           "MR_LISTER_PHASE6_SCAFFOLD_ONLY": "true",
+          "MR_LISTER_ENVIRONMENT": {"Ref": "EnvironmentName"},
+          "MR_LISTER_AWS_ACCOUNT_ID": {"Ref": "AWS::AccountId"},
+          "MR_LISTER_RELEASE_FINGERPRINT": {"Ref": "ReleaseFingerprint"},
           "MR_LISTER_STATE_TABLE": {"Ref": "OperationalStateTable"},
           "MR_LISTER_ARTIFACT_BUCKET": {"Ref": "PrivateArtifactBucket"}
         }
@@ -487,7 +515,9 @@
           {"AttributeName": "dispatch_pk", "AttributeType": "S"},
           {"AttributeName": "dispatch_sk", "AttributeType": "S"},
           {"AttributeName": "owner_jobs_pk", "AttributeType": "S"},
-          {"AttributeName": "owner_jobs_sk", "AttributeType": "S"}
+          {"AttributeName": "owner_jobs_sk", "AttributeType": "S"},
+          {"AttributeName": "recovery_pk", "AttributeType": "S"},
+          {"AttributeName": "recovery_sk", "AttributeType": "S"}
         ],
         "KeySchema": [
           {"AttributeName": "PK", "KeyType": "HASH"},
@@ -509,6 +539,14 @@
               {"AttributeName": "owner_jobs_sk", "KeyType": "RANGE"}
             ],
             "Projection": {"ProjectionType": "ALL"}
+          },
+          {
+            "IndexName": "ExecutionRecoveryIndex",
+            "KeySchema": [
+              {"AttributeName": "recovery_pk", "KeyType": "HASH"},
+              {"AttributeName": "recovery_sk", "KeyType": "RANGE"}
+            ],
+            "Projection": {"ProjectionType": "KEYS_ONLY"}
           }
         ],
         "PointInTimeRecoverySpecification": {"PointInTimeRecoveryEnabled": true},
@@ -656,6 +694,119 @@
         "Tags": {"Project": "MrLister", "Environment": {"Ref": "EnvironmentName"}}
       }
     },
+    "OperationalAlarmTopicKey": {
+      "Type": "AWS::KMS::Key",
+      "Properties": {
+        "Description": "Encrypt only the Phase 6 operational alarm topic",
+        "EnableKeyRotation": true,
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "RetainAccountKeyAdministration",
+              "Effect": "Allow",
+              "Principal": {"AWS": {"Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"}},
+              "Action": "kms:*",
+              "Resource": "*"
+            },
+            {
+              "Sid": "AllowOnlyPhase6CloudWatchAlarmEncryption",
+              "Effect": "Allow",
+              "Principal": {"Service": "cloudwatch.amazonaws.com"},
+              "Action": ["kms:Decrypt", "kms:GenerateDataKey*"],
+              "Resource": "*",
+              "Condition": {
+                "ArnLike": {"aws:SourceArn": {"Fn::Sub": "arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:mr-lister-phase6-${EnvironmentName}-*"}},
+                "StringEquals": {"aws:SourceAccount": {"Ref": "AWS::AccountId"}}
+              }
+            },
+            {
+              "Sid": "AllowOnlyOperationalTopicEncryptionContext",
+              "Effect": "Allow",
+              "Principal": {"Service": "sns.amazonaws.com"},
+              "Action": ["kms:Decrypt", "kms:GenerateDataKey*"],
+              "Resource": "*",
+              "Condition": {
+                "StringEquals": {
+                  "kms:EncryptionContext:aws:sns:topicArn": {"Fn::Sub": "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:mr-lister-phase6-${EnvironmentName}-operational-alarms"}
+                }
+              }
+            }
+          ]
+        },
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}}
+        ]
+      }
+    },
+    "OperationalAlarmTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "TopicName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-operational-alarms"},
+        "KmsMasterKeyId": {"Fn::GetAtt": ["OperationalAlarmTopicKey", "Arn"]},
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}}
+        ]
+      }
+    },
+    "OperationalAlarmTopicPolicy": {
+      "Type": "AWS::SNS::TopicPolicy",
+      "Properties": {
+        "Topics": [{"Ref": "OperationalAlarmTopic"}],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowOnlyPhase6CloudWatchAlarmNotifications",
+              "Effect": "Allow",
+              "Principal": {"Service": "cloudwatch.amazonaws.com"},
+              "Action": "sns:Publish",
+              "Resource": {"Ref": "OperationalAlarmTopic"},
+              "Condition": {
+                "ArnLike": {"aws:SourceArn": {"Fn::Sub": "arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:mr-lister-phase6-${EnvironmentName}-*"}},
+                "StringEquals": {"aws:SourceAccount": {"Ref": "AWS::AccountId"}}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "StuckExecutionRecoveryDeadLetterQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-execution-recovery-dlq"},
+        "MessageRetentionPeriod": 1209600,
+        "SqsManagedSseEnabled": true,
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}}
+        ]
+      }
+    },
+    "StuckExecutionRecoveryDeadLetterQueuePolicy": {
+      "Type": "AWS::SQS::QueuePolicy",
+      "Properties": {
+        "Queues": [{"Ref": "StuckExecutionRecoveryDeadLetterQueue"}],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowOnlyExactRecoveryScheduleDeadLetters",
+              "Effect": "Allow",
+              "Principal": {"Service": "events.amazonaws.com"},
+              "Action": "sqs:SendMessage",
+              "Resource": {"Fn::GetAtt": ["StuckExecutionRecoveryDeadLetterQueue", "Arn"]},
+              "Condition": {
+                "ArnEquals": {"aws:SourceArn": {"Fn::GetAtt": ["StuckExecutionRecoveryScheduleRule", "Arn"]}},
+                "StringEquals": {"aws:SourceAccount": {"Ref": "AWS::AccountId"}}
+              }
+            }
+          ]
+        }
+      }
+    },
 
     "SourceVersionRetentionFunctionRole": {
       "Type": "AWS::IAM::Role",
@@ -722,6 +873,111 @@
                     "ForAllValues:StringEquals": {"dynamodb:LeadingKeys": ["SYSTEM#SOURCE_VERSION_RETENTION"]},
                     "Null": {"dynamodb:LeadingKeys": "false"}
                   }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "TerminalOperationalCleanupFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-terminal-cleanup-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [
+          {
+            "PolicyName": "AssignTerminalOperationalExpiryOnly",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "WriteTerminalCleanupLogs",
+                  "Effect": "Allow",
+                  "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                  "Resource": {"Fn::GetAtt": ["TerminalOperationalCleanupLogGroup", "Arn"]}
+                },
+                {
+                  "Sid": "ScanProjectedControlJobAuthority",
+                  "Effect": "Allow",
+                  "Action": "dynamodb:Scan",
+                  "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}
+                },
+                {
+                  "Sid": "ReadAndAssignExactOperationalExpiry",
+                  "Effect": "Allow",
+                  "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems"],
+                  "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]},
+                  "Condition": {
+                    "ForAllValues:StringLike": {
+                      "dynamodb:LeadingKeys": [
+                        "JOB#*",
+                        "OWNER#*",
+                        "SYSTEM#TERMINAL_OPERATIONAL_CLEANUP"
+                      ]
+                    },
+                    "Null": {"dynamodb:LeadingKeys": "false"}
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "StuckExecutionRecoveryFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-execution-recovery-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ObserveAndSettleStuckExecutionsOnly",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "WriteExecutionRecoveryLogsAndMetrics",
+                  "Effect": "Allow",
+                  "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                  "Resource": {"Fn::GetAtt": ["StuckExecutionRecoveryLogGroup", "Arn"]}
+                },
+                {
+                  "Sid": "QueryOnlyExecutionRecoveryIndex",
+                  "Effect": "Allow",
+                  "Action": "dynamodb:Query",
+                  "Resource": {"Fn::Sub": "${OperationalStateTable.Arn}/index/ExecutionRecoveryIndex"},
+                  "Condition": {
+                    "ForAllValues:StringEquals": {"dynamodb:LeadingKeys": ["WORK_RECOVERY#0"]},
+                    "Null": {"dynamodb:LeadingKeys": "false"}
+                  }
+                },
+                {
+                  "Sid": "StrongReadAndSettleExactJobAuthority",
+                  "Effect": "Allow",
+                  "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:TransactGetItems", "dynamodb:TransactWriteItems"],
+                  "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]},
+                  "Condition": {
+                    "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "OWNER#*"]},
+                    "Null": {"dynamodb:LeadingKeys": "false"}
+                  }
+                },
+                {
+                  "Sid": "DescribeOnlyPhase6Executions",
+                  "Effect": "Allow",
+                  "Action": "states:DescribeExecution",
+                  "Resource": [
+                    {"Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:mr-lister-phase6-${EnvironmentName}-prepare:*"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:mr-lister-phase6-${EnvironmentName}-synchronize-product:*"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:mr-lister-phase6-${EnvironmentName}-reconcile-product:*"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:mr-lister-phase6-${EnvironmentName}-refresh-economics:*"}
+                  ]
                 }
               ]
             }
@@ -808,7 +1064,15 @@
               "Statement": [
                 {"Sid": "WritePreparationLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::GetAtt": ["PreparationDispatchLogGroup", "Arn"]}},
                 {"Sid": "VerifyPreparationAuthority", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:Query"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}},
-                {"Sid": "InvokeConfiguredStrandsRuntime", "Effect": "Allow", "Action": "bedrock-agentcore:InvokeAgentRuntime", "Resource": {"Ref": "AgentCoreRuntimeArn"}}
+                {
+                  "Sid": "InvokeConfiguredStrandsRuntime",
+                  "Effect": "Allow",
+                  "Action": "bedrock-agentcore:InvokeAgentRuntime",
+                  "Resource": [
+                    {"Ref": "AgentCoreRuntimeArn"},
+                    {"Ref": "AgentCoreRuntimeEndpointArn"}
+                  ]
+                }
               ]
             }
           }
@@ -995,6 +1259,93 @@
         }
       }
     },
+    "TerminalOperationalCleanupFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "TerminalOperationalCleanupLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-terminal-cleanup"},
+        "CodeUri": "lambda/",
+        "Handler": "phase6_lambda.terminal_operational_cleanup_handler",
+        "Role": {"Fn::GetAtt": ["TerminalOperationalCleanupFunctionRole", "Arn"]},
+        "ReservedConcurrentExecutions": 1,
+        "Timeout": 300,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_ENVIRONMENT": {"Ref": "EnvironmentName"},
+            "MR_LISTER_AWS_ACCOUNT_ID": {"Ref": "AWS::AccountId"}
+          }
+        },
+        "Events": {
+          "TerminalOperationalCleanupSweep": {
+            "Type": "Schedule",
+            "Properties": {
+              "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-terminal-cleanup"},
+              "Description": "Bounded TTL assignment for terminal operational records",
+              "Schedule": "rate(1 day)",
+              "Enabled": true,
+              "Input": "{\"contract_version\":\"1.0.0\",\"source\":\"terminal-operational-record-cleanup\"}",
+              "RetryPolicy": {"MaximumEventAgeInSeconds": 3600, "MaximumRetryAttempts": 2}
+            }
+          }
+        }
+      }
+    },
+    "StuckExecutionRecoveryFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "StuckExecutionRecoveryLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-execution-recovery"},
+        "CodeUri": "lambda/",
+        "Handler": "phase6_lambda.stuck_execution_recovery_handler",
+        "Role": {"Fn::GetAtt": ["StuckExecutionRecoveryFunctionRole", "Arn"]},
+        "ReservedConcurrentExecutions": 1,
+        "Timeout": 120,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_EXECUTION_RECOVERY_STALE_SECONDS": "1200",
+            "MR_LISTER_EXECUTION_RECOVERY_BATCH_LIMIT": "25",
+            "MR_LISTER_EXECUTION_RECOVERY_MAX_CAS_RECHECKS": "2",
+            "MR_LISTER_PREPARE_MACHINE_ARN": {"Ref": "PrepareStateMachine"},
+            "MR_LISTER_SYNCHRONIZE_PRODUCT_MACHINE_ARN": {"Ref": "SynchronizeProductStateMachine"},
+            "MR_LISTER_RECONCILE_PRODUCT_MACHINE_ARN": {"Ref": "ReconcileProductStateMachine"},
+            "MR_LISTER_REFRESH_ECONOMICS_MACHINE_ARN": {"Ref": "RefreshEconomicsStateMachine"}
+          }
+        }
+      }
+    },
+    "StuckExecutionRecoveryScheduleRule": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Name": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-execution-recovery"},
+        "Description": "Bounded observation and settlement for abandoned Phase 6 executions",
+        "ScheduleExpression": "rate(5 minutes)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Id": "StuckExecutionRecovery",
+            "Arn": {"Fn::GetAtt": ["StuckExecutionRecoveryFunction", "Arn"]},
+            "Input": "{\"source\":\"stuck-execution-sweeper\"}",
+            "RetryPolicy": {
+              "MaximumEventAgeInSeconds": 3600,
+              "MaximumRetryAttempts": 2
+            },
+            "DeadLetterConfig": {
+              "Arn": {"Fn::GetAtt": ["StuckExecutionRecoveryDeadLetterQueue", "Arn"]}
+            }
+          }
+        ]
+      }
+    },
+    "StuckExecutionRecoverySchedulePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {"Ref": "StuckExecutionRecoveryFunction"},
+        "Principal": "events.amazonaws.com",
+        "SourceAccount": {"Ref": "AWS::AccountId"},
+        "SourceArn": {"Fn::GetAtt": ["StuckExecutionRecoveryScheduleRule", "Arn"]}
+      }
+    },
     "DispatcherFunction": {
       "Type": "AWS::Serverless::Function",
       "DependsOn": "DispatcherLogGroup",
@@ -1050,7 +1401,15 @@
         "Handler": "phase6_lambda.preparation_dispatch_handler",
         "Role": {"Fn::GetAtt": ["PreparationDispatchFunctionRole", "Arn"]},
         "Timeout": 600,
-        "Environment": {"Variables": {"MR_LISTER_AGENTCORE_RUNTIME_ARN": {"Ref": "AgentCoreRuntimeArn"}}}
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_AGENTCORE_RUNTIME_ARN": {"Ref": "AgentCoreRuntimeArn"},
+            "MR_LISTER_AGENTCORE_RUNTIME_ENDPOINT_ARN": {"Ref": "AgentCoreRuntimeEndpointArn"},
+            "MR_LISTER_AGENTCORE_RUNTIME_VERSION": {"Ref": "AgentCoreRuntimeVersion"},
+            "MR_LISTER_AGENTCORE_RUNTIME_QUALIFIER": {"Ref": "AgentCoreRuntimeQualifier"},
+            "MR_LISTER_AGENTCORE_RUNTIME_BINDING_FINGERPRINT": {"Ref": "AgentCoreRuntimeBindingFingerprint"}
+          }
+        }
       }
     },
     "ProviderDraftFunction": {
@@ -1062,7 +1421,15 @@
         "Handler": "phase6_lambda.provider_draft_handler",
         "Role": {"Fn::GetAtt": ["ProviderDraftFunctionRole", "Arn"]},
         "Timeout": 600,
-        "Environment": {"Variables": {"MR_LISTER_PRINTIFY_SECRET_ARN": {"Ref": "PrintifySecretArn"}}}
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_PRINTIFY_SECRET_ARN": {"Ref": "PrintifySecretArn"},
+            "MR_LISTER_PRODUCT_PROFILE_ID": "gildan_64000_swiftpod",
+            "MR_LISTER_PRODUCT_PROFILE_VERSION": "2",
+            "MR_LISTER_PRODUCT_PROFILE_FINGERPRINT": "5de1257141cfdacb1731f68bb9113712957483b33d5b0f7115afdba86eb7476c",
+            "MR_LISTER_PRODUCT_PROFILE_PATH": "/var/task/config/product_profiles/gildan_64000_swiftpod.json"
+          }
+        }
       }
     },
     "SettlementFunction": {
@@ -1090,6 +1457,14 @@
           "Variables": {
             "MR_LISTER_COGNITO_ISSUER": {"Fn::Sub": "https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${SellerUserPool}"},
             "MR_LISTER_COGNITO_CLIENT_ID": {"Ref": "SellerUserPoolClient"},
+            "MR_LISTER_COGNITO_SCOPE": "mr-lister-api/seller",
+            "MR_LISTER_COGNITO_GROUP": "seller",
+            "MR_LISTER_ARTIFACT_BUCKET_OWNER_ACCOUNT_ID": {"Ref": "AWS::AccountId"},
+            "MR_LISTER_ARTIFACT_ORIGIN": {"Fn::Sub": "https://${PrivateArtifactBucket}.s3.${AWS::Region}.${AWS::URLSuffix}"},
+            "MR_LISTER_PRODUCT_PROFILE_ID": "gildan_64000_swiftpod",
+            "MR_LISTER_PRODUCT_PROFILE_VERSION": "2",
+            "MR_LISTER_PRODUCT_PROFILE_FINGERPRINT": "5de1257141cfdacb1731f68bb9113712957483b33d5b0f7115afdba86eb7476c",
+            "MR_LISTER_PRODUCT_PROFILE_PATH": "/var/task/config/product_profiles/gildan_64000_swiftpod.json",
             "MR_LISTER_APPLICATION_ORIGIN": {"Ref": "ApplicationOrigin"}
           }
         },
@@ -1130,6 +1505,14 @@
           "Variables": {
             "MR_LISTER_COGNITO_ISSUER": {"Fn::Sub": "https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${SellerUserPool}"},
             "MR_LISTER_COGNITO_CLIENT_ID": {"Ref": "SellerUserPoolClient"},
+            "MR_LISTER_COGNITO_SCOPE": "mr-lister-api/seller",
+            "MR_LISTER_COGNITO_GROUP": "seller",
+            "MR_LISTER_ARTIFACT_BUCKET_OWNER_ACCOUNT_ID": {"Ref": "AWS::AccountId"},
+            "MR_LISTER_ARTIFACT_ORIGIN": {"Fn::Sub": "https://${PrivateArtifactBucket}.s3.${AWS::Region}.${AWS::URLSuffix}"},
+            "MR_LISTER_PRODUCT_PROFILE_ID": "gildan_64000_swiftpod",
+            "MR_LISTER_PRODUCT_PROFILE_VERSION": "2",
+            "MR_LISTER_PRODUCT_PROFILE_FINGERPRINT": "5de1257141cfdacb1731f68bb9113712957483b33d5b0f7115afdba86eb7476c",
+            "MR_LISTER_PRODUCT_PROFILE_PATH": "/var/task/config/product_profiles/gildan_64000_swiftpod.json",
             "MR_LISTER_APPLICATION_ORIGIN": {"Ref": "ApplicationOrigin"}
           }
         },
@@ -1170,6 +1553,8 @@
           "Variables": {
             "MR_LISTER_COGNITO_ISSUER": {"Fn::Sub": "https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${SellerUserPool}"},
             "MR_LISTER_COGNITO_CLIENT_ID": {"Ref": "SellerUserPoolClient"},
+            "MR_LISTER_COGNITO_SCOPE": "mr-lister-api/seller",
+            "MR_LISTER_COGNITO_GROUP": "seller",
             "MR_LISTER_APPLICATION_ORIGIN": {"Ref": "ApplicationOrigin"}
           }
         },
@@ -1201,6 +1586,14 @@
     "SourceVersionRetentionLogGroup": {
       "Type": "AWS::Logs::LogGroup",
       "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-source-retention"}, "RetentionInDays": 14}
+    },
+    "TerminalOperationalCleanupLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-terminal-cleanup"}, "RetentionInDays": 14}
+    },
+    "StuckExecutionRecoveryLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase6-${EnvironmentName}-execution-recovery"}, "RetentionInDays": 14}
     },
     "DispatcherLogGroup": {
       "Type": "AWS::Logs::LogGroup",
@@ -1347,6 +1740,641 @@
         "Role": {"Fn::GetAtt": ["RefreshEconomicsStateMachineRole", "Arn"]},
         "Logging": {"Destinations": [{"CloudWatchLogsLogGroup": {"LogGroupArn": {"Fn::GetAtt": ["RefreshEconomicsWorkflowLogGroup", "Arn"]}}}], "IncludeExecutionData": false, "Level": "ERROR"}
       }
+    },
+    "Phase6LambdaErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-lambda-errors"},
+        "AlarmDescription": "One or more Phase 6 Lambda invocations failed in a five-minute window.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching",
+        "Metrics": [
+          {"Id": "e1", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "SourceVersionRetentionFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "e2", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "TerminalOperationalCleanupFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "e3", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "DispatcherFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "e4", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "PreparationDispatchFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "e5", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "ProviderDraftFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "e6", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "SettlementFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "e7", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "UploadApiFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "e8", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "ReviewQueryApiFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "e9", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "SellerCommandApiFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "e10", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "StuckExecutionRecoveryFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "total_errors", "Expression": "SUM(METRICS(\"e\"))", "Label": "Phase 6 Lambda errors", "ReturnData": true}
+        ]
+      }
+    },
+    "Phase6LambdaThrottlesAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-lambda-throttles"},
+        "AlarmDescription": "One or more Phase 6 Lambda invocations were throttled in a five-minute window.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching",
+        "Metrics": [
+          {"Id": "t1", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Throttles", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "SourceVersionRetentionFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "t2", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Throttles", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "TerminalOperationalCleanupFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "t3", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Throttles", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "DispatcherFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "t4", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Throttles", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "PreparationDispatchFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "t5", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Throttles", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "ProviderDraftFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "t6", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Throttles", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "SettlementFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "t7", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Throttles", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "UploadApiFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "t8", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Throttles", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "ReviewQueryApiFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "t9", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Throttles", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "SellerCommandApiFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "t10", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Throttles", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "StuckExecutionRecoveryFunction"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "total_throttles", "Expression": "SUM(METRICS(\"t\"))", "Label": "Phase 6 Lambda throttles", "ReturnData": true}
+        ]
+      }
+    },
+    "Phase6LambdaDurationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-lambda-duration"},
+        "AlarmDescription": "A Phase 6 Lambda reached at least eighty percent of its configured timeout.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching",
+        "Metrics": [
+          {"Id": "d1", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "SourceVersionRetentionFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
+          {"Id": "d2", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "TerminalOperationalCleanupFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
+          {"Id": "d3", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "DispatcherFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
+          {"Id": "d4", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "PreparationDispatchFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
+          {"Id": "d5", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "ProviderDraftFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
+          {"Id": "d6", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "SettlementFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
+          {"Id": "d7", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "UploadApiFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
+          {"Id": "d8", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "ReviewQueryApiFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
+          {"Id": "d9", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "SellerCommandApiFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
+          {"Id": "d10", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "StuckExecutionRecoveryFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
+          {"Id": "timeout_fraction", "Expression": "MAX([d1/240000,d2/240000,d3/24000,d4/480000,d5/480000,d6/24000,d7/24000,d8/12000,d9/24000,d10/96000])", "Label": "Maximum Phase 6 Lambda timeout fraction", "ReturnData": true}
+        ]
+      }
+    },
+    "PrepareWorkflowFailedAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-prepare-failed"},
+        "AlarmDescription": "The Phase 6 prepare workflow failed.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/States",
+        "MetricName": "ExecutionsFailed",
+        "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "PrepareStateMachine"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "PrepareWorkflowTimedOutAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-prepare-timed-out"},
+        "AlarmDescription": "The Phase 6 prepare workflow timed out.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/States",
+        "MetricName": "ExecutionsTimedOut",
+        "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "PrepareStateMachine"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "PrepareWorkflowAbortedAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-prepare-aborted"},
+        "AlarmDescription": "The Phase 6 prepare workflow was aborted.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/States",
+        "MetricName": "ExecutionsAborted",
+        "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "PrepareStateMachine"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "SynchronizeProductWorkflowFailedAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-synchronize-product-failed"},
+        "AlarmDescription": "The Phase 6 synchronize-product workflow failed.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/States",
+        "MetricName": "ExecutionsFailed",
+        "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "SynchronizeProductStateMachine"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "SynchronizeProductWorkflowTimedOutAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-synchronize-product-timed-out"},
+        "AlarmDescription": "The Phase 6 synchronize-product workflow timed out.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/States",
+        "MetricName": "ExecutionsTimedOut",
+        "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "SynchronizeProductStateMachine"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "SynchronizeProductWorkflowAbortedAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-synchronize-product-aborted"},
+        "AlarmDescription": "The Phase 6 synchronize-product workflow was aborted.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/States",
+        "MetricName": "ExecutionsAborted",
+        "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "SynchronizeProductStateMachine"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "ReconcileProductWorkflowFailedAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-reconcile-product-failed"},
+        "AlarmDescription": "The Phase 6 reconcile-product workflow failed.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/States",
+        "MetricName": "ExecutionsFailed",
+        "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "ReconcileProductStateMachine"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "ReconcileProductWorkflowTimedOutAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-reconcile-product-timed-out"},
+        "AlarmDescription": "The Phase 6 reconcile-product workflow timed out.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/States",
+        "MetricName": "ExecutionsTimedOut",
+        "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "ReconcileProductStateMachine"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "ReconcileProductWorkflowAbortedAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-reconcile-product-aborted"},
+        "AlarmDescription": "The Phase 6 reconcile-product workflow was aborted.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/States",
+        "MetricName": "ExecutionsAborted",
+        "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "ReconcileProductStateMachine"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "RefreshEconomicsWorkflowFailedAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-refresh-economics-failed"},
+        "AlarmDescription": "The Phase 6 refresh-economics workflow failed.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/States",
+        "MetricName": "ExecutionsFailed",
+        "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "RefreshEconomicsStateMachine"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "RefreshEconomicsWorkflowTimedOutAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-refresh-economics-timed-out"},
+        "AlarmDescription": "The Phase 6 refresh-economics workflow timed out.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/States",
+        "MetricName": "ExecutionsTimedOut",
+        "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "RefreshEconomicsStateMachine"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "RefreshEconomicsWorkflowAbortedAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-refresh-economics-aborted"},
+        "AlarmDescription": "The Phase 6 refresh-economics workflow was aborted.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/States",
+        "MetricName": "ExecutionsAborted",
+        "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "RefreshEconomicsStateMachine"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "OperationalStateTableThrottlesAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-state-table-throttles"},
+        "AlarmDescription": "The Phase 6 operational table emitted read or write throttle events.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching",
+        "Metrics": [
+          {"Id": "read_throttles", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/DynamoDB", "MetricName": "ReadThrottleEvents", "Dimensions": [{"Name": "TableName", "Value": {"Ref": "OperationalStateTable"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "write_throttles", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/DynamoDB", "MetricName": "WriteThrottleEvents", "Dimensions": [{"Name": "TableName", "Value": {"Ref": "OperationalStateTable"}}]}, "Period": 300, "Stat": "Sum"}},
+          {"Id": "total_throttles", "Expression": "SUM(METRICS(\"throttles\"))", "Label": "Operational table throttle events", "ReturnData": true}
+        ]
+      }
+    },
+    "SellerApiServerErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-seller-api-5xx"},
+        "AlarmDescription": "The Phase 6 seller API returned one or more server errors.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/ApiGateway",
+        "MetricName": "5xx",
+        "Dimensions": [
+          {"Name": "ApiId", "Value": {"Ref": "SellerHttpApi"}},
+          {"Name": "Stage", "Value": "$default"}
+        ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "ExecutionRecoveryAlarmSignalsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-recovery-signals"},
+        "AlarmDescription": "The recovery sweep observed one or more conditions requiring operator attention.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "MrLister/Phase6/ExecutionRecovery",
+        "MetricName": "AlarmSignals",
+        "Dimensions": [{"Name": "Environment", "Value": {"Ref": "EnvironmentName"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "ExecutionRecoveryAuthorityConflictsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-recovery-authority-conflicts"},
+        "AlarmDescription": "The recovery sweep lost durable authority while evaluating a candidate.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "MrLister/Phase6/ExecutionRecovery",
+        "MetricName": "AuthorityConflicts",
+        "Dimensions": [{"Name": "Environment", "Value": {"Ref": "EnvironmentName"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "ExecutionRecoveryDependencyUnavailableAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-recovery-dependency-unavailable"},
+        "AlarmDescription": "A bounded recovery dependency was unavailable.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "MrLister/Phase6/ExecutionRecovery",
+        "MetricName": "DependencyUnavailable",
+        "Dimensions": [{"Name": "Environment", "Value": {"Ref": "EnvironmentName"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "ExecutionRecoverySettlementExhaustedAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-recovery-settlement-exhausted"},
+        "AlarmDescription": "A recovery settlement exhausted its bounded compare-and-swap attempts.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "MrLister/Phase6/ExecutionRecovery",
+        "MetricName": "SettlementExhausted",
+        "Dimensions": [{"Name": "Environment", "Value": {"Ref": "EnvironmentName"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "ExecutionRecoveryRunningPastBoundAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-recovery-running-past-bound"},
+        "AlarmDescription": "A Step Functions execution remained running beyond the recovery safety bound.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "MrLister/Phase6/ExecutionRecovery",
+        "MetricName": "RunningPastBound",
+        "Dimensions": [{"Name": "Environment", "Value": {"Ref": "EnvironmentName"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "ExecutionRecoveryBatchSaturationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-recovery-batch-saturation"},
+        "AlarmDescription": "The recovery sweep reached its bounded batch limit in three consecutive runs.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "MrLister/Phase6/ExecutionRecovery",
+        "MetricName": "BatchLimitReached",
+        "Dimensions": [{"Name": "Environment", "Value": {"Ref": "EnvironmentName"}}],
+        "Statistic": "Maximum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "StuckExecutionRecoveryErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-recovery-lambda-errors"},
+        "AlarmDescription": "The isolated execution-recovery Lambda failed.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Errors",
+        "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "StuckExecutionRecoveryFunction"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "StuckExecutionRecoveryThrottlesAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-recovery-lambda-throttles"},
+        "AlarmDescription": "The isolated execution-recovery Lambda was throttled.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Throttles",
+        "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "StuckExecutionRecoveryFunction"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "StuckExecutionRecoveryDurationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-recovery-lambda-duration"},
+        "AlarmDescription": "The isolated execution-recovery Lambda exceeded eighty percent of its timeout.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Duration",
+        "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "StuckExecutionRecoveryFunction"}}],
+        "Statistic": "Maximum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 96000,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "StuckExecutionRecoveryScheduleFailuresAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-recovery-schedule-failures"},
+        "AlarmDescription": "EventBridge failed to invoke the execution-recovery target.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/Events",
+        "MetricName": "FailedInvocations",
+        "Dimensions": [{"Name": "RuleName", "Value": {"Ref": "StuckExecutionRecoveryScheduleRule"}}],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "StuckExecutionRecoveryDeadLettersAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-recovery-dead-letters"},
+        "AlarmDescription": "One or more recovery schedule invocations reached the dead-letter queue.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/SQS",
+        "MetricName": "ApproximateNumberOfMessagesVisible",
+        "Dimensions": [{"Name": "QueueName", "Value": {"Fn::GetAtt": ["StuckExecutionRecoveryDeadLetterQueue", "QueueName"]}}],
+        "Statistic": "Maximum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "SourceVersionRetentionErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-source-retention-errors"},
+        "AlarmDescription": "The reference-aware private source retention sweep failed.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Errors",
+        "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "SourceVersionRetentionFunction"}}],
+        "Statistic": "Sum",
+        "Period": 900,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "SourceVersionRetentionLivenessAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-source-retention-liveness"},
+        "AlarmDescription": "No source retention sweep was invoked during two consecutive thirty-minute windows.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Invocations",
+        "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "SourceVersionRetentionFunction"}}],
+        "Statistic": "Sum",
+        "Period": 1800,
+        "ComparisonOperator": "LessThanThreshold",
+        "EvaluationPeriods": 2,
+        "DatapointsToAlarm": 2,
+        "Threshold": 1,
+        "TreatMissingData": "breaching"
+      }
+    },
+    "TerminalOperationalCleanupErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-terminal-cleanup-errors"},
+        "AlarmDescription": "The terminal operational-record cleanup sweep failed.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Errors",
+        "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "TerminalOperationalCleanupFunction"}}],
+        "Statistic": "Sum",
+        "Period": 86400,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "TerminalOperationalCleanupLivenessAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}-terminal-cleanup-liveness"},
+        "AlarmDescription": "No terminal cleanup sweep was invoked during two consecutive daily windows.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "OperationalAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Invocations",
+        "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "TerminalOperationalCleanupFunction"}}],
+        "Statistic": "Sum",
+        "Period": 86400,
+        "ComparisonOperator": "LessThanThreshold",
+        "EvaluationPeriods": 2,
+        "DatapointsToAlarm": 2,
+        "Threshold": 1,
+        "TreatMissingData": "breaching"
+      }
     }
   },
   "Outputs": {
@@ -1372,6 +2400,7 @@
         "Fn::Sub": "{\"cognito_authorize_url\":\"https://${SellerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/oauth2/authorize\",\"cognito_token_url\":\"https://${SellerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/oauth2/token\",\"cognito_logout_url\":\"https://${SellerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/logout\",\"client_id\":\"${SellerUserPoolClient}\",\"redirect_uri\":\"${ApplicationOrigin}/auth/callback\",\"scopes\":[\"openid\",\"mr-lister-api/seller\"]}"
       }
     },
+    "OperationalAlarmTopicArn": {"Value": {"Ref": "OperationalAlarmTopic"}},
     "PrepareStateMachineArn": {"Value": {"Ref": "PrepareStateMachine"}},
     "SynchronizeProductStateMachineArn": {"Value": {"Ref": "SynchronizeProductStateMachine"}},
     "ReconcileProductStateMachineArn": {"Value": {"Ref": "ReconcileProductStateMachine"}},

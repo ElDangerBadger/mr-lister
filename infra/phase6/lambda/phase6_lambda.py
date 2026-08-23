@@ -11,7 +11,14 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+from threading import Lock
 from typing import Any
+
+# A sealed package never executes an unmanifested bytecode cache.  Set this before
+# importing any application module; writable local/container runtimes then behave like
+# Lambda's read-only code mount.
+sys.dont_write_bytecode = True
 
 
 class Phase6ScaffoldNotReady(RuntimeError):
@@ -55,6 +62,8 @@ SELLER_COMMAND_API_ROUTE_KEYS = frozenset(
 )
 
 HEALTH_ROUTE_KEY = "GET /health"
+_release_verified = False
+_release_lock = Lock()
 
 
 def dispatcher_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
@@ -91,6 +100,7 @@ def source_version_retention_handler(
 
     if not _production_enabled():
         return _not_ready("source_version_retention")
+    _require_release_authority()
     try:
         from mr_lister.cloud.phase6_retention_entrypoint import (
             source_version_retention_handler as handler,
@@ -98,6 +108,46 @@ def source_version_retention_handler(
     except Exception:
         raise Phase6ScaffoldNotReady(
             "Phase 6 production component 'source_version_retention' is unavailable"
+        ) from None
+    return handler(event, context)
+
+
+def terminal_operational_cleanup_handler(
+    event: dict[str, Any],
+    context: Any,
+) -> dict[str, Any]:
+    """Run only the gated, release-verified terminal-record cleanup adapter."""
+
+    if not _production_enabled():
+        return _not_ready("terminal_operational_cleanup")
+    _require_release_authority()
+    try:
+        from mr_lister.cloud.phase6_operational_cleanup_entrypoint import (
+            terminal_operational_cleanup_handler as handler,
+        )
+    except Exception:
+        raise Phase6ScaffoldNotReady(
+            "Phase 6 production component 'terminal_operational_cleanup' is unavailable"
+        ) from None
+    return handler(event, context)
+
+
+def stuck_execution_recovery_handler(
+    event: dict[str, Any],
+    context: Any,
+) -> dict[str, Any]:
+    """Run only the gated, read-before-settle stuck-execution recovery adapter."""
+
+    if not _production_enabled():
+        return _not_ready("stuck_execution_recovery")
+    _require_release_authority()
+    try:
+        from mr_lister.cloud.phase6_execution_recovery_entrypoint import (
+            execution_recovery_handler as handler,
+        )
+    except Exception:
+        raise Phase6ScaffoldNotReady(
+            "Phase 6 production component 'stuck_execution_recovery' is unavailable"
         ) from None
     return handler(event, context)
 
@@ -166,6 +216,24 @@ def _production_enabled() -> bool:
     return os.environ.get("MR_LISTER_PHASE6_SCAFFOLD_ONLY") == "false"
 
 
+def _require_release_authority() -> None:
+    global _release_verified
+    if _release_verified:
+        return
+    with _release_lock:
+        if _release_verified:
+            return
+        try:
+            from mr_lister.release.phase6 import verify_phase6_packaged_release
+
+            verify_phase6_packaged_release(dict(os.environ), component="lambda")
+        except Exception:
+            raise Phase6ScaffoldNotReady(
+                "Phase 6 production release authority is unavailable"
+            ) from None
+        _release_verified = True
+
+
 def _delegate(
     handler_name: str,
     event: dict[str, Any],
@@ -175,6 +243,7 @@ def _delegate(
 ) -> dict[str, Any]:
     if not _production_enabled():
         return _not_ready(component)
+    _require_release_authority()
     try:
         from mr_lister.cloud import phase6_entrypoints
 
@@ -201,5 +270,7 @@ __all__ = [
     "seller_command_api_handler",
     "settlement_handler",
     "source_version_retention_handler",
+    "stuck_execution_recovery_handler",
+    "terminal_operational_cleanup_handler",
     "upload_api_handler",
 ]

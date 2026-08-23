@@ -1,0 +1,29 @@
+{
+  "format": "mr-lister-phase6-agentcore-deployment-v1",
+  "accountId": "<AWS_ACCOUNT_ID>",
+  "region": "<AWS_REGION>",
+  "environment": "<ENVIRONMENT>",
+  "releaseFingerprint": "<RELEASE_FINGERPRINT>",
+  "runtime": {
+    "name": "mr_lister_phase6",
+    "pythonRuntime": "PYTHON_3_12",
+    "codeLocation": "../../../.mr_lister_private/phase6-deployment/agentcore",
+    "executionRoleArn": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/mr-lister-phase6-agentcore-runtime-<ENVIRONMENT>",
+    "immutableVersion": "<RUNTIME_VERSION>",
+    "endpointName": "phase6_v<RUNTIME_VERSION>_<ENVIRONMENT_UNDERSCORE>"
+  },
+  "logRetention": {
+    "retentionInDays": 14,
+    "logGroupNamePattern": "/aws/bedrock-agentcore/runtimes/*mr_lister_phase6-??????????-phase6_v<RUNTIME_VERSION>_<ENVIRONMENT_UNDERSCORE>",
+    "applyAction": "logs:PutRetentionPolicy",
+    "verifyAction": "logs:DescribeLogGroups",
+    "requiredBeforeTraffic": true
+  },
+  "requiredPostDeployChecks": [
+    "runtime-ready",
+    "custom-endpoint-ready",
+    "custom-endpoint-targets-exact-version",
+    "standard-log-group-retention-is-14-days",
+    "sealed-release-fingerprint-matches"
+  ]
+}

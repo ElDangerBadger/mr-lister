@@ -458,8 +458,10 @@ work request. The dispatcher—not the upload request—starts the deterministic
 If cancellation or another completion wins the transaction race, an unreferenced version is
 retagged `staged`; a concurrently committed winner's referenced version remains pinned.
 
-Open and cancelled intent rows carry the original one-day `expires_at` and use DynamoDB TTL for
-eventual cleanup. Current and noncurrent artwork versions tagged `staged` use the bucket's
+Open and cancelled intent rows carry the original one-day `expires_at`; completed intent rows carry
+a 90-day post-completion `expires_at`; upload command receipts carry a bounded 90-day `expires_at`;
+all use DynamoDB TTL for eventual cleanup. Current and
+noncurrent artwork versions tagged `staged` use the bucket's
 tag-filtered one-day lifecycle; versions tagged `pinned` are excluded from that rule. Active,
 retryable, and `APPROVED` jobs retain their pinned source and operational records; `APPROVED` is not
 overall-terminal because Phase 7 still needs it. Before the scaffold may be marked deploy-ready, a

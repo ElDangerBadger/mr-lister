@@ -1,0 +1,104 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "mrlisterphase6",
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "mr-lister:component": "preparation-runtime",
+    "mr-lister:environment": "<ENVIRONMENT>",
+    "mr-lister:release-fingerprint": "<RELEASE_FINGERPRINT>"
+  },
+  "runtimes": [
+    {
+      "name": "mr_lister_phase6",
+      "description": "Release-bound Phase 6 Strands preparation runtime",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "../../../.mr_lister_private/phase6-deployment/agentcore",
+      "runtimeVersion": "PYTHON_3_12",
+      "envVars": [
+        {
+          "name": "AWS_REGION",
+          "value": "<AWS_REGION>"
+        },
+        {
+          "name": "MR_LISTER_ARTIFACT_BUCKET",
+          "value": "mr-lister-phase6-artifacts-<ENVIRONMENT>-<AWS_ACCOUNT_ID>-<AWS_REGION>"
+        },
+        {
+          "name": "MR_LISTER_AWS_ACCOUNT_ID",
+          "value": "<AWS_ACCOUNT_ID>"
+        },
+        {
+          "name": "MR_LISTER_ENVIRONMENT",
+          "value": "<ENVIRONMENT>"
+        },
+        {
+          "name": "MR_LISTER_GEMMA_CONFIG_FINGERPRINT",
+          "value": "f036b77edad91d9923f844d0f4db9725b89574d698cc5ce6fcdee23101f9e929"
+        },
+        {
+          "name": "MR_LISTER_GEMMA_CONFIG_PATH",
+          "value": "/var/task/config/bedrock/google_gemma_3_27b_it.json"
+        },
+        {
+          "name": "MR_LISTER_PRODUCT_PROFILE_FINGERPRINT",
+          "value": "5de1257141cfdacb1731f68bb9113712957483b33d5b0f7115afdba86eb7476c"
+        },
+        {
+          "name": "MR_LISTER_PRODUCT_PROFILE_ID",
+          "value": "gildan_64000_swiftpod"
+        },
+        {
+          "name": "MR_LISTER_PRODUCT_PROFILE_PATH",
+          "value": "/var/task/config/product_profiles/gildan_64000_swiftpod.json"
+        },
+        {
+          "name": "MR_LISTER_PRODUCT_PROFILE_VERSION",
+          "value": "2"
+        },
+        {
+          "name": "MR_LISTER_RELEASE_FINGERPRINT",
+          "value": "<RELEASE_FINGERPRINT>"
+        },
+        {
+          "name": "MR_LISTER_STATE_TABLE",
+          "value": "mr-lister-phase6-<ENVIRONMENT>"
+        },
+        {
+          "name": "MR_LISTER_STRANDS_CONTROLLER_MODEL_ID",
+          "value": "us.amazon.nova-2-lite-v1:0"
+        }
+      ],
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP",
+      "authorizerType": "AWS_IAM",
+      "executionRoleArn": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/mr-lister-phase6-agentcore-runtime-<ENVIRONMENT>",
+      "instrumentation": {
+        "enableOtel": false
+      },
+      "lifecycleConfiguration": {
+        "idleRuntimeSessionTimeout": 900,
+        "maxLifetime": 3600
+      },
+      "endpoints": {
+        "phase6_v<RUNTIME_VERSION>_<ENVIRONMENT_UNDERSCORE>": {
+          "version": "<RUNTIME_VERSION_NUMBER>",
+          "description": "Immutable Phase 6 version <RUNTIME_VERSION> endpoint for <ENVIRONMENT>"
+        }
+      }
+    }
+  ],
+  "memories": [],
+  "knowledgeBases": [],
+  "credentials": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": [],
+  "configBundles": [],
+  "abTests": [],
+  "harnesses": [],
+  "datasets": [],
+  "payments": []
+}

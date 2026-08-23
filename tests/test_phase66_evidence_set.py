@@ -376,6 +376,25 @@ def test_manifest_prerequisites_are_closed_before_phase_exit(tmp_path: Path) -> 
         _verify(bundle)
 
 
+def test_evidence_cannot_predate_the_frozen_contract(tmp_path: Path) -> None:
+    bundle = _make_bundle(tmp_path)
+    bundle.records[0]["recorded_at"] = "2026-08-22T19:59:59Z"
+
+    with pytest.raises(EvidenceSetVerificationError, match="predates"):
+        _verify(bundle)
+
+
+def test_evidence_cannot_precede_its_prerequisite(tmp_path: Path) -> None:
+    bundle = _make_bundle(tmp_path)
+    concurrency = next(
+        record for record in bundle.records if record["gate_id"] == "offline.concurrency_matrix"
+    )
+    concurrency["recorded_at"] = "2026-08-23T05:59:59Z"
+
+    with pytest.raises(EvidenceSetVerificationError, match="before its prerequisite"):
+        _verify(bundle)
+
+
 def test_every_blocking_gate_is_required(tmp_path: Path) -> None:
     bundle = _make_bundle(tmp_path)
     bundle.records = [
@@ -391,6 +410,28 @@ def test_represented_gate_must_meet_its_frozen_minimum_count(tmp_path: Path) -> 
     bundle = _make_bundle(tmp_path, target_session_count=1)
 
     with pytest.raises(EvidenceSetVerificationError, match="insufficient evidence"):
+        _verify(bundle)
+
+
+def test_blocking_destructive_gate_cannot_add_an_extra_passing_record(tmp_path: Path) -> None:
+    bundle = _make_bundle(tmp_path)
+    primary = next(
+        record
+        for record in bundle.records
+        if record["gate_id"] == "provider.primary_same_job_canary"
+    )
+    duplicate = copy.deepcopy(primary)
+    duplicate["run_digest"] = _digest("extra-primary-run")
+    duplicate["job_digest"] = _digest("extra-primary-job")
+    duplicate["work_digest"] = _digest("extra-primary-work")
+    duplicate["correlation_digest"] = _digest("extra-primary-correlation")
+    duplicate["provider_gate_attestation"]["run_gate_digest"] = _digest("extra-primary-run-gate")
+    duplicate["provider_gate_attestation"]["provider_write_gate_digest"] = _digest(
+        "extra-primary-write-gate"
+    )
+    bundle.records.append(duplicate)
+
+    with pytest.raises(EvidenceSetVerificationError, match="exact frozen record count"):
         _verify(bundle)
 
 
@@ -437,6 +478,30 @@ def test_moderated_run_must_join_the_same_job_provider_primary(tmp_path: Path) -
     moderated["run_digest"] = _digest("unrelated-run")
 
     with pytest.raises(EvidenceSetVerificationError, match="same-run provider"):
+        _verify(bundle)
+
+
+def test_provider_records_cannot_share_one_run_gate(tmp_path: Path) -> None:
+    bundle = _make_bundle(tmp_path)
+    providers = [
+        record for record in bundle.records if record["evidence_class"] == "provider_destructive"
+    ]
+    providers[1]["provider_gate_attestation"]["run_gate_digest"] = providers[0][
+        "provider_gate_attestation"
+    ]["run_gate_digest"]
+
+    with pytest.raises(EvidenceSetVerificationError, match="run-gate authority"):
+        _verify(bundle)
+
+
+def test_moderated_records_must_share_the_frozen_task_script(tmp_path: Path) -> None:
+    bundle = _make_bundle(tmp_path, target_session_count=5)
+    target = next(
+        record for record in bundle.records if record["gate_id"] == "moderated.five_session_target"
+    )
+    target["moderated_session"]["task_script_digest"] = _digest("drifted-task-script")
+
+    with pytest.raises(EvidenceSetVerificationError, match="one task script"):
         _verify(bundle)
 
 
@@ -589,6 +654,50 @@ def test_junit_artifact_requires_a_complete_testsuite_document(tmp_path: Path) -
     assert _verify(bundle).artifact_count == 20
 
     _replace_artifact_bytes(bundle, 0, 0, b"<testsuite><testcase></testsuite>")
+    with pytest.raises(EvidenceSetVerificationError, match="declared format"):
+        _verify(bundle)
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        (
+            b'<?xml version="1.0"?><testsuite tests="1" failures="1">'
+            b"<testcase><failure/></testcase></testsuite>"
+        ),
+        b'<?xml version="1.0"?><testsuite tests="1"><testcase><skipped/></testcase></testsuite>',
+        b'<?xml version="1.0"?><testsuite tests="0"/>',
+    ],
+)
+def test_junit_artifact_must_prove_a_nonempty_passing_run(tmp_path: Path, contents: bytes) -> None:
+    bundle = _make_bundle(tmp_path)
+    _replace_artifact_bytes(bundle, 0, 0, contents)
+    artifact = bundle.records[0]["artifacts"][0]
+    reference = _reference_for(bundle, artifact["artifact_digest"])
+    old_path = bundle.root / reference["relative_path"]
+    new_path = bundle.root / "failed-report.xml"
+    old_path.rename(new_path)
+    artifact["artifact_format"] = "junit_xml"
+    reference["artifact_format"] = "junit_xml"
+    reference["relative_path"] = new_path.name
+
+    with pytest.raises(EvidenceSetVerificationError, match="declared format"):
+        _verify(bundle)
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        b"null",
+        b"{}",
+        b'{"contract":"phase6.6-sanitized-artifact-v1","result":"failed"}',
+        b'{"contract":"phase6.6-sanitized-artifact-v1","result":"passed","access_token":"redacted"}',
+    ],
+)
+def test_json_artifact_must_be_a_passed_sanitized_envelope(tmp_path: Path, contents: bytes) -> None:
+    bundle = _make_bundle(tmp_path)
+    _replace_artifact_bytes(bundle, 0, 0, contents)
+
     with pytest.raises(EvidenceSetVerificationError, match="declared format"):
         _verify(bundle)
 

@@ -825,6 +825,14 @@ def test_upload_create_is_atomic_and_receipt_replay_is_fingerprint_bound() -> No
     assert intent_item["expires_at"] == {
         "N": str(int(creation.updated.intent_expires_at.timestamp()))
     }
+    receipt_item = next(
+        operation["Put"]["Item"]
+        for operation in request["TransactItems"]
+        if operation["Put"]["Item"]["entity_type"]["S"] == "UPLOAD_RECEIPT"
+    )
+    assert receipt_item["expires_at"] == {
+        "N": str(int((creation.receipt.created_at + timedelta(days=90)).timestamp()))
+    }
     assert all(
         operation["Put"]["ConditionExpression"] == "attribute_not_exists(PK)"
         for operation in request["TransactItems"]
@@ -874,7 +882,9 @@ def test_upload_completion_is_one_six_item_intent_cas_and_round_trips_graph() ->
         "WORK_REQUEST",
     ]
     intent_put = request["TransactItems"][0]["Put"]
-    assert "expires_at" not in intent_put["Item"]
+    assert intent_put["Item"]["expires_at"] == {
+        "N": str(int((completion.intent.updated.completed_at + timedelta(days=90)).timestamp()))
+    }
     assert intent_put["ConditionExpression"] == (
         "owner_id = :owner_id AND record_version = :record_version AND "
         "upload_status = :upload_status AND payload = :expected_payload"
@@ -884,6 +894,10 @@ def test_upload_completion_is_one_six_item_intent_cas_and_round_trips_graph() ->
         ":record_version": {"N": "0"},
         ":upload_status": {"S": UploadIntentStatus.OPEN.value},
         ":expected_payload": {"S": creation.updated.model_dump_json()},
+    }
+    completion_receipt_item = request["TransactItems"][4]["Put"]["Item"]
+    assert completion_receipt_item["expires_at"] == {
+        "N": str(int((completion.intent.receipt.created_at + timedelta(days=90)).timestamp()))
     }
     assert all(
         operation["Put"]["ConditionExpression"] == "attribute_not_exists(PK)"
@@ -1004,6 +1018,8 @@ def test_command_transaction_binds_job_cas_and_round_trips_immutable_review() ->
     work_put = request["TransactItems"][-1]["Put"]
     assert work_put["ConditionExpression"] == "payload = :expected_payload"
     assert work_put["Item"]["work_status"] == {"S": WorkRequestStatus.COMPLETED.value}
+    assert "recovery_pk" not in work_put["Item"]
+    assert "recovery_sk" not in work_put["Item"]
 
     reconstructed = DynamoDBSellerControlStore(client=client, table_name=TABLE_NAME)
     assert reconstructed.get_job(current.job_id) == commit.updated
@@ -1177,7 +1193,12 @@ def test_due_work_claim_release_nudge_and_dispatch_are_payload_cas_updates() -> 
     assert dispatched.execution_arn is not None
     assert dispatched.claim_id is None
     assert dispatched.lease_expires_at is None
-    assert "dispatch_pk" not in client.items[(f"JOB#{job.job_id}", f"WORK#{work.work_request_id}")]
+    dispatched_item = client.items[(f"JOB#{job.job_id}", f"WORK#{work.work_request_id}")]
+    assert "dispatch_pk" not in dispatched_item
+    assert dispatched_item["recovery_pk"] == {"S": "WORK_RECOVERY#0"}
+    assert dispatched_item["recovery_sk"] == {
+        "S": f"{int(dispatched.updated_at.timestamp()):020d}#{work.work_request_id}"
+    }
     assert store.list_due_work(now=NOW + timedelta(days=1)) == ()
 
 

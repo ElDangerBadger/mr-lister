@@ -45,8 +45,10 @@ EVIDENCE_ID = "evidence_phase6_agentcore_001"
 EVIDENCE_FINGERPRINT = "e" * 64
 REVIEW_FINGERPRINT = "c" * 64
 RUNTIME_ARN = (
-    "arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/mr_lister_preparation-AbCd1234"
+    "arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/mr_lister_preparation-AbCd123456"
 )
+RUNTIME_QUALIFIER = "phase6_v7_dev"
+RUNTIME_VERSION = "7"
 
 
 def make_authority() -> tuple[ControlJobRecord, WorkRequest]:
@@ -256,6 +258,8 @@ def make_bridge(
             store=store,
             agentcore=client,
             runtime_arn=RUNTIME_ARN,
+            runtime_qualifier=RUNTIME_QUALIFIER,
+            runtime_version=RUNTIME_VERSION,
             audit_sink=audit,
         ),
         store,
@@ -296,7 +300,7 @@ def test_durable_prepare_accepts_only_exact_runtime_and_completed_readback() -> 
 
     [request] = agentcore.calls
     assert request["agentRuntimeArn"] == RUNTIME_ARN
-    assert request["qualifier"] == "DEFAULT"
+    assert request["qualifier"] == RUNTIME_QUALIFIER
     assert OWNER_ID not in request["runtimeSessionId"]
     assert JOB_ID not in request["runtimeSessionId"]
     assert WORK_ID not in request["runtimeSessionId"]
@@ -450,5 +454,33 @@ def test_runtime_configuration_must_name_one_exact_runtime(runtime_arn: str) -> 
             store=AuthorityStore(job, work),
             agentcore=RecordingAgentCore(),
             runtime_arn=runtime_arn,
+            runtime_qualifier=RUNTIME_QUALIFIER,
+            runtime_version=RUNTIME_VERSION,
+            audit_sink=MemoryAudit(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("qualifier", "version"),
+    [
+        ("DEFAULT", "7"),
+        ("phase6_v7_dev", "8"),
+        ("phase6_v0_dev", "0"),
+        ("phase6_v7-dev", "7"),
+        ("phase3_v7_dev", "7"),
+    ],
+)
+def test_runtime_configuration_requires_a_version_named_nondefault_endpoint(
+    qualifier: str,
+    version: str,
+) -> None:
+    job, work = make_authority()
+    with pytest.raises(PreparationBridgeConfigurationError):
+        AgentCorePreparationBridge(
+            store=AuthorityStore(job, work),
+            agentcore=RecordingAgentCore(),
+            runtime_arn=RUNTIME_ARN,
+            runtime_qualifier=qualifier,
+            runtime_version=version,
             audit_sink=MemoryAudit(),
         )

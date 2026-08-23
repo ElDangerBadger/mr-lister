@@ -1,0 +1,89 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CreateAndInspectAgentCoreRuntimeLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogStreams",
+        "logs:CreateLogGroup"
+      ],
+      "Resource": "arn:aws:logs:<AWS_REGION>:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/*"
+    },
+    {
+      "Sid": "ConfigureOnlyPhase6AgentCoreRuntimeLogs",
+      "Effect": "Allow",
+      "Action": "logs:PutResourcePolicy",
+      "Resource": "arn:aws:logs:<AWS_REGION>:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/*mr_lister_phase6-*"
+    },
+    {
+      "Sid": "DiscoverOnlyAccountLogGroups",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "arn:aws:logs:<AWS_REGION>:<AWS_ACCOUNT_ID>:log-group:*"
+    },
+    {
+      "Sid": "WriteOnlyPhase6AgentCoreRuntimeLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:<AWS_REGION>:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/*mr_lister_phase6-*:log-stream:*"
+    },
+    {
+      "Sid": "ReadAndCommitOnlyPhase6PreparationState",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:TransactWriteItems"
+      ],
+      "Resource": "arn:aws:dynamodb:<AWS_REGION>:<AWS_ACCOUNT_ID>:table/mr-lister-phase6-<ENVIRONMENT>",
+      "Condition": {
+        "ForAllValues:StringLike": {
+          "dynamodb:LeadingKeys": [
+            "JOB#*",
+            "OWNER#*"
+          ]
+        },
+        "Null": {
+          "dynamodb:LeadingKeys": "false"
+        }
+      }
+    },
+    {
+      "Sid": "ReadOnlyPinnedPhase6SourceVersions",
+      "Effect": "Allow",
+      "Action": "s3:GetObjectVersion",
+      "Resource": "arn:aws:s3:::mr-lister-phase6-artifacts-<ENVIRONMENT>-<AWS_ACCOUNT_ID>-<AWS_REGION>/private/owners/*/jobs/*/source/source.png"
+    },
+    {
+      "Sid": "InvokeNova2LiteUSProfile",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": "arn:aws:bedrock:<AWS_REGION>:<AWS_ACCOUNT_ID>:inference-profile/us.amazon.nova-2-lite-v1:0"
+    },
+    {
+      "Sid": "InvokeNova2LiteOnlyThroughUSProfile",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": [
+        "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0",
+        "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0",
+        "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "bedrock:InferenceProfileArn": "arn:aws:bedrock:<AWS_REGION>:<AWS_ACCOUNT_ID>:inference-profile/us.amazon.nova-2-lite-v1:0"
+        }
+      }
+    },
+    {
+      "Sid": "InvokeOnlyGemma327BIntelligence",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": "arn:aws:bedrock:<AWS_REGION>::foundation-model/google.gemma-3-27b-it"
+    }
+  ]
+}

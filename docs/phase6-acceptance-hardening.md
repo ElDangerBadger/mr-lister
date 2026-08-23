@@ -90,8 +90,13 @@ the pinned Gemma configuration remains the image-review and listing-intelligence
 Reproducible narrow source manifests are generated separately for the ordinary Lambda and Phase 6
 AgentCore runtime surfaces. Their import tests prove that the Lambda source bundle excludes
 Strands, AgentCore, and legacy publication surfaces, while the AgentCore source bundle excludes
-provider and cloud capabilities. These are source-boundary inputs, not Linux ARM64 dependency
-artifacts and not proof that the checked SAM `CodeUri` deploys the application package.
+provider and cloud capabilities. A cross-component release manifest now binds every sealed source
+and dependency byte, the Lambda verifies that authority before every production delegate, and the
+preparation boundary binds an exact non-default AgentCore endpoint, immutable runtime version, and
+observed `READY` deployment fingerprint. The build tooling rejects missing target-native awscrt,
+Pillow, or pydantic-core extensions and non-AArch64 ELF bytes. The checked repository still contains
+build requests—not the real controlled Linux ARM64 dependency artifacts or target-runtime import
+smoke—and its SAM `CodeUri` deliberately remains the fail-closed scaffold.
 
 The deterministic production bundle with digest
 `c6115a4d8f3d4fec88ce9b640d760dff1599db43fe3cba10b3962a8eda16aad2` passed the same
@@ -107,9 +112,19 @@ object-byte or deletion authority. It traverses lifecycle delete-marker pages, k
 cursor history below the DynamoDB item ceiling, binds application time to the inventory adapter's
 trusted S3 observation time, and never releases a recent pre-commit pin within the two-day safety
 window. The SAM template includes a bounded schedule, singleton concurrency, durable checkpoint,
-strong DynamoDB authority reads, and least-capability version-tag IAM. The current scaffold marker
-still prevents that handler from executing in AWS. A separate 90-day terminal operational-record
-cleanup boundary is also required before deployment can claim the full retention gate.
+strong DynamoDB authority reads, and least-capability version-tag IAM. A separate daily cleanup
+boundary now conditionally assigns the table's 90-day TTL to exact `CANCELLED` and
+`FAILED_TERMINAL` job partitions and matching owner receipts; completed upload intents and all
+upload receipts also have bounded 90-day TTLs, while open/cancelled reservations retain their
+one-day cleanup. Neither cleanup boundary has object-byte, deletion, provider, or secret authority.
+
+A five-minute execution-recovery boundary indexes only dispatched work, strongly rebinds the exact
+job/work pair, and calls only `DescribeExecution`. It never starts, stops, or redrives an execution.
+Terminal or missing executions converge through the existing CAS/idempotent settlement commands;
+running or pending-redrive observations emit alarms only. The isolated function has singleton
+concurrency, an encrypted DLQ, bounded retries, identifier-free embedded metrics, and corresponding
+Lambda, EventBridge, Step Functions, DynamoDB, API, retention, cleanup, and recovery alarms. The
+checked scaffold marker still prevents every one of these handlers from executing in AWS.
 
 ## Frozen gate order
 
@@ -139,8 +154,8 @@ Run the focused credential-free contract gate with:
 .venv/bin/python -m tools.phase66_browser.run_gate
 ```
 
-At this checkpoint, the full Python suite passes 1,239 tests with 11 explicitly gated live-Bedrock
-skips; the Phase 6 and Phase 6.6 subsets pass 692 and 322 tests respectively. The web gate passes
+At this checkpoint, the full Python suite passes 1,419 tests with 11 explicitly gated live-Bedrock
+skips; the Phase 6 and Phase 6.6 subsets pass 697 and 490 tests respectively. The web gate passes
 62 tests, lint, strict typecheck, production build, and release-artifact checks. SAM lint/build,
 Ruff lint/format, `compileall`, both contract drift checks, `npm audit`, and `git diff --check` pass.
 

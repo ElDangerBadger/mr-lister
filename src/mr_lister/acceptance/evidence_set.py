@@ -226,15 +226,29 @@ def _require_manifest_closure(records: tuple[Any, ...]) -> Counter[str]:
     manifest = phase66_acceptance_manifest()
     gates = {gate.gate_id: gate for gate in manifest.gates}
     counts = Counter(record.gate_id for record in records)
+    recorded_by_gate: dict[str, list[Any]] = {}
+    for record in records:
+        recorded_by_gate.setdefault(record.gate_id, []).append(record.recorded_at)
 
     for gate_id, count in counts.items():
         gate = gates[gate_id]
         if count < gate.minimum_evidence_records:
             raise EvidenceSetVerificationError("A represented gate has insufficient evidence")
+        if gate.blocking_phase6_exit and count != gate.minimum_evidence_records:
+            raise EvidenceSetVerificationError(
+                "A blocking evidence gate must have its exact frozen record count"
+            )
         for prerequisite in gate.prerequisites:
             required = gates[prerequisite].minimum_evidence_records
             if counts[prerequisite] < required:
                 raise EvidenceSetVerificationError("An evidence gate prerequisite is not closed")
+            if min(recorded_by_gate[gate_id]) < max(recorded_by_gate[prerequisite]):
+                raise EvidenceSetVerificationError(
+                    "Evidence was recorded before its prerequisite closed"
+                )
+
+    if any(record.recorded_at < manifest.frozen_at for record in records):
+        raise EvidenceSetVerificationError("Evidence predates the frozen acceptance contract")
 
     if any(
         counts[gate_id] < gates[gate_id].minimum_evidence_records
@@ -266,6 +280,7 @@ def _require_cross_record_bindings(
     moderated_sessions: set[str] = set()
     moderated_participants: set[str] = set()
     moderated_consents: set[str] = set()
+    moderated_task_scripts: set[str] = set()
     moderated_jobs: set[str] = set()
     primary_bindings: set[tuple[str, str, str]] = set()
 
@@ -297,6 +312,7 @@ def _require_cross_record_bindings(
             moderated_sessions.add(session.session_record_digest)
             moderated_participants.add(session.participant_digest)
             moderated_consents.add(session.consent_record_digest)
+            moderated_task_scripts.add(session.task_script_digest)
             if record.job_digest is not None:
                 moderated_jobs.add(record.job_digest)
         else:
@@ -309,8 +325,14 @@ def _require_cross_record_bindings(
         isinstance(record, ProviderDestructiveEvidenceRecord) for record in records
     ):
         raise EvidenceSetVerificationError("Provider write-gate authority is reused")
+    if len(provider_run_gates) != sum(
+        isinstance(record, ProviderDestructiveEvidenceRecord) for record in records
+    ):
+        raise EvidenceSetVerificationError("Provider run-gate authority is reused")
     if provider_write_gates & provider_run_gates:
         raise EvidenceSetVerificationError("Provider run and write authorities overlap")
+    if len(moderated_task_scripts) != 1:
+        raise EvidenceSetVerificationError("Moderated evidence does not share one task script")
 
     for record in records:
         if (
@@ -418,16 +440,36 @@ def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return value
 
 
+def _contains_forbidden_artifact_field(value: object, forbidden: set[str]) -> bool:
+    if isinstance(value, dict):
+        return any(
+            key.casefold() in forbidden or _contains_forbidden_artifact_field(nested, forbidden)
+            for key, nested in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_forbidden_artifact_field(nested, forbidden) for nested in value)
+    return False
+
+
 def _verify_json(file_fd: int) -> None:
     with os.fdopen(os.dup(file_fd), "rb") as source:
         source.seek(0)
         _require_bounded_json_depth(source.read())
         source.seek(0)
-        json.load(
+        value = json.load(
             source,
             parse_constant=_reject_json_constant,
             object_pairs_hook=_unique_json_object,
         )
+    if not isinstance(value, dict) or not value:
+        raise ValueError("sanitized JSON evidence must be a nonempty object")
+    forbidden = {
+        name.casefold() for name in phase66_acceptance_manifest().forbidden_evidence_field_names
+    }
+    if _contains_forbidden_artifact_field(value, forbidden):
+        raise ValueError("sanitized JSON evidence contains forbidden authority fields")
+    if value.get("result") != "passed":
+        raise ValueError("sanitized JSON evidence must report a passed result")
 
 
 def _verify_junit_xml(file_fd: int) -> None:
@@ -443,13 +485,28 @@ def _verify_junit_xml(file_fd: int) -> None:
         decoder.decode(b"", final=True)
         source.seek(0)
         root_name: str | None = None
+        testcase_count = 0
+        failed_count = 0
+        skipped_count = 0
         for event, element in ElementTree.iterparse(source, events=("start", "end")):
             if event == "start" and root_name is None:
                 root_name = element.tag.rsplit("}", 1)[-1]
             if event == "end":
+                name = element.tag.rsplit("}", 1)[-1]
+                if name == "testcase":
+                    testcase_count += 1
+                elif name in {"failure", "error"}:
+                    failed_count += 1
+                elif name == "skipped":
+                    skipped_count += 1
                 element.clear()
-        if root_name not in {"testsuite", "testsuites"}:
-            raise ValueError("not a JUnit document")
+        if (
+            root_name not in {"testsuite", "testsuites"}
+            or testcase_count < 1
+            or failed_count
+            or skipped_count
+        ):
+            raise ValueError("not a passing JUnit document")
 
 
 def _canonical_archive_member(name: str) -> bool:

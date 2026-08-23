@@ -48,8 +48,10 @@ from mr_lister.control.models import (
 
 _AGENTCORE_RUNTIME_ARN = re.compile(
     r"^arn:(aws|aws-us-gov|aws-cn):bedrock-agentcore:[a-z0-9-]+:\d{12}:"
-    r"runtime/[A-Za-z0-9_-]{1,100}$"
+    r"runtime/[A-Za-z][A-Za-z0-9_]{0,47}-[A-Za-z0-9]{10}$"
 )
+_AGENTCORE_ENDPOINT = re.compile(r"^phase6_v(?P<version>[1-9][0-9]{0,4})_[a-z][a-z0-9_]{1,23}$")
+_AGENTCORE_VERSION = re.compile(r"^[1-9][0-9]{0,4}$")
 _TRANSIENT_AGENTCORE_CODES = frozenset(
     {
         "InternalServerException",
@@ -165,12 +167,24 @@ class AgentCorePreparationBridge:
         store: PreparationAuthorityStore,
         agentcore: Any,
         runtime_arn: str,
+        runtime_qualifier: str,
+        runtime_version: str,
         audit_sink: PreparationBridgeAuditSink | None = None,
         maximum_response_bytes: int = 1_000_000,
     ) -> None:
         if not _AGENTCORE_RUNTIME_ARN.fullmatch(runtime_arn):
             raise PreparationBridgeConfigurationError(
                 "The AgentCore runtime ARN is outside the fixed configuration contract"
+            )
+        endpoint = _AGENTCORE_ENDPOINT.fullmatch(runtime_qualifier)
+        if (
+            endpoint is None
+            or runtime_qualifier == "DEFAULT"
+            or _AGENTCORE_VERSION.fullmatch(runtime_version) is None
+            or endpoint.group("version") != runtime_version
+        ):
+            raise PreparationBridgeConfigurationError(
+                "The AgentCore endpoint is outside the immutable version contract"
             )
         if not 1 <= maximum_response_bytes <= 1_000_000:
             raise PreparationBridgeConfigurationError(
@@ -179,7 +193,11 @@ class AgentCorePreparationBridge:
         self._store = store
         self._agentcore = agentcore
         self._runtime_arn = runtime_arn
-        self._runtime_fingerprint = sha256(runtime_arn.encode()).hexdigest()[:24]
+        self._runtime_qualifier = runtime_qualifier
+        self._runtime_version = runtime_version
+        self._runtime_fingerprint = sha256(
+            f"{runtime_arn}:{runtime_qualifier}:v{runtime_version}".encode()
+        ).hexdigest()[:24]
         self._audit_sink = audit_sink or LoggingPreparationBridgeAuditSink()
         self._maximum_response_bytes = maximum_response_bytes
 
@@ -207,7 +225,7 @@ class AgentCorePreparationBridge:
             response = self._agentcore.invoke_agent_runtime(
                 agentRuntimeArn=self._runtime_arn,
                 runtimeSessionId=session_id,
-                qualifier="DEFAULT",
+                qualifier=self._runtime_qualifier,
                 contentType="application/json",
                 accept="application/json",
                 payload=payload,
