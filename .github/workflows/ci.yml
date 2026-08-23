@@ -31,7 +31,7 @@ jobs:
       - name: Phase 7 publication contract drift
         run: python tools/export_phase7_publication_contract.py --check
       - name: Test
-        run: pytest
+        run: python -m pytest
       - name: Build
         run: python -m build
 
