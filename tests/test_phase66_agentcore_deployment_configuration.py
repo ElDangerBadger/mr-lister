@@ -152,9 +152,9 @@ def test_runtime_policy_has_only_composed_phase6_data_and_model_capabilities() -
         "logs:DescribeLogGroups",
         "logs:CreateLogStream",
         "logs:PutLogEvents",
+        "dynamodb:ConditionCheckItem",
         "dynamodb:GetItem",
         "dynamodb:PutItem",
-        "dynamodb:TransactWriteItems",
         "s3:GetObjectVersion",
         "bedrock:InvokeModel",
     }
@@ -170,6 +170,15 @@ def test_runtime_policy_has_only_composed_phase6_data_and_model_capabilities() -
         f"arn:aws:s3:::mr-lister-phase6-artifacts-{ENVIRONMENT}-{ACCOUNT}-{REGION}/"
         "private/owners/*/jobs/*/source/source.png"
     )
+    runtime_log_prefix = (
+        f"arn:aws:logs:{REGION}:{ACCOUNT}:log-group:"
+        "/aws/bedrock-agentcore/runtimes/mr_lister_phase6-*"
+    )
+    assert statements["CreateAndInspectAgentCoreRuntimeLogs"]["Resource"] == runtime_log_prefix
+    assert statements["ConfigureOnlyPhase6AgentCoreRuntimeLogs"]["Resource"] == (runtime_log_prefix)
+    assert statements["WriteOnlyPhase6AgentCoreRuntimeLogs"]["Resource"] == (
+        f"{runtime_log_prefix}:log-stream:*"
+    )
 
     bedrock = [
         statement
@@ -184,6 +193,7 @@ def test_runtime_policy_has_only_composed_phase6_data_and_model_capabilities() -
     assert "InvokeModelWithResponseStream" not in serialized_bedrock
 
     serialized = json.dumps(policy, sort_keys=True).casefold()
+    assert "/runtimes/*mr_lister_phase6" not in serialized
     for forbidden in (
         "secretsmanager:",
         "states:",
@@ -192,6 +202,8 @@ def test_runtime_policy_has_only_composed_phase6_data_and_model_capabilities() -
         "printify",
         "etsy",
         "publication",
+        "dynamodb:transactgetitems",
+        "dynamodb:transactwriteitems",
     ):
         assert forbidden not in serialized
 
@@ -208,7 +220,7 @@ def test_trust_and_log_retention_are_separate_and_version_scoped() -> None:
                     "ArnLike": {
                         "aws:SourceArn": (
                             f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT}:"
-                            "runtime/*mr_lister_phase6-*"
+                            "runtime/mr_lister_phase6-*"
                         )
                     },
                     "StringEquals": {"aws:SourceAccount": ACCOUNT},
@@ -234,14 +246,14 @@ def test_trust_and_log_retention_are_separate_and_version_scoped() -> None:
     assert retention["Statement"][1]["Action"] == "logs:PutRetentionPolicy"
     assert retention["Statement"][1]["Resource"] == (
         f"arn:aws:logs:{REGION}:{ACCOUNT}:log-group:/aws/bedrock-agentcore/runtimes/"
-        "*mr_lister_phase6-??????????-phase6_v17_prod_west:*"
+        "mr_lister_phase6-??????????-phase6_v17_prod_west:*"
     )
 
     plan = _json_document(documents, DEPLOYMENT_PLAN_OUTPUT)
     assert plan["logRetention"] == {
         "applyAction": "logs:PutRetentionPolicy",
         "logGroupNamePattern": (
-            "/aws/bedrock-agentcore/runtimes/*mr_lister_phase6-??????????-phase6_v17_prod_west"
+            "/aws/bedrock-agentcore/runtimes/mr_lister_phase6-??????????-phase6_v17_prod_west"
         ),
         "requiredBeforeTraffic": True,
         "retentionInDays": 14,

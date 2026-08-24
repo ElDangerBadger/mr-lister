@@ -317,8 +317,9 @@ source, and the sweeper strongly rereads the exact terminal publication aggregat
 The capability-free marker model enters a rebuilt Phase 6 source bundle, while every publication
 retention module remains excluded. Resealing and deploying that normal Phase 6 bundle, plus future
 retention scheduling/composition, are later gates. The existing source-retention role's
-`dynamodb:TransactGetItems` condition expands only from `JOB#*` to `JOB#*` plus `PUBLICATION#*` on
-the same state table; it gains no write, query, scan, secret, network, or provider authority.
+`dynamodb:GetItem` authority for its transactional reads expands only from `JOB#*` to `JOB#*` plus
+`PUBLICATION#*` on the same state table; it gains no write, query, scan, secret, network, or
+provider authority.
 
 Provider credentials are independently contained. An injected adapter resolves the existing owner
 secret fresh and binds it to the exact owner, Printify shop, aggregate, snapshot, and reconstructed

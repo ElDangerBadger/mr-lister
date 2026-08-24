@@ -397,13 +397,14 @@ def test_iam_keeps_agentcore_secret_and_state_authority_separate() -> None:
 
     assert "secretsmanager:GetSecretValue" in provider
     assert '"Resource": {"Ref": "PrintifySecretArn"}' in provider
+    assert "dynamodb:ConditionCheckItem" in provider
     assert "dynamodb:PutItem" in provider
     assert '"Action": "s3:GetObjectVersion"' in provider
     assert '"s3:GetObject"' not in provider
     assert "private/owners/*/jobs/*/source/source.png" in provider
     assert "bedrock-agentcore" not in provider
 
-    assert "dynamodb:TransactWriteItems" in settlement
+    assert "dynamodb:ConditionCheckItem" not in settlement
     assert "dynamodb:PutItem" in settlement
     assert "bedrock-agentcore" not in settlement
     assert "s3:GetObject" not in settlement
@@ -417,7 +418,7 @@ def test_api_roles_are_capability_separated_and_have_no_direct_orchestration() -
     command = serialized_policies(resources["SellerCommandApiFunctionRole"])
 
     assert "OwnerJobsIndex" not in upload
-    assert "dynamodb:TransactWriteItems" in upload
+    assert "dynamodb:PutItem" in upload
     assert '"Action": ["s3:PutObject", "s3:PutObjectTagging"]' in upload
     assert '"Action": ["s3:GetObject", "s3:PutObjectVersionTagging"]' in upload
     assert "s3:GetObjectVersion" not in upload
@@ -430,7 +431,6 @@ def test_api_roles_are_capability_separated_and_have_no_direct_orchestration() -
     assert "dynamodb:TransactWriteItems" not in query
     assert "kms:" not in query
 
-    assert "dynamodb:TransactWriteItems" in command
     assert "dynamodb:PutItem" in command
     assert "s3:" not in command
 
@@ -439,6 +439,17 @@ def test_api_roles_are_capability_separated_and_have_no_direct_orchestration() -
         assert "bedrock" not in policy
         assert "secretsmanager" not in policy
         assert "lambda:InvokeFunction" not in policy
+
+    all_roles = json.dumps(
+        {
+            name: resource
+            for name, resource in resources.items()
+            if resource["Type"] == "AWS::IAM::Role"
+        },
+        sort_keys=True,
+    )
+    assert "dynamodb:TransactGetItems" not in all_roles
+    assert "dynamodb:TransactWriteItems" not in all_roles
 
 
 def test_exact_public_and_protected_http_routes_are_closed() -> None:

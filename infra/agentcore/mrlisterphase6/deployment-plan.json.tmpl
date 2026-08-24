@@ -14,7 +14,7 @@
   },
   "logRetention": {
     "retentionInDays": 14,
-    "logGroupNamePattern": "/aws/bedrock-agentcore/runtimes/*mr_lister_phase6-??????????-phase6_v<RUNTIME_VERSION>_<ENVIRONMENT_UNDERSCORE>",
+    "logGroupNamePattern": "/aws/bedrock-agentcore/runtimes/mr_lister_phase6-??????????-phase6_v<RUNTIME_VERSION>_<ENVIRONMENT_UNDERSCORE>",
     "applyAction": "logs:PutRetentionPolicy",
     "verifyAction": "logs:DescribeLogGroups",
     "requiredBeforeTraffic": true

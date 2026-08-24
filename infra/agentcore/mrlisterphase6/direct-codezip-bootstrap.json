@@ -1,0 +1,466 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "One-time root-applied, fail-closed bootstrap for the Mr Lister Phase 6 dev AgentCore direct-CodeZip release",
+  "Metadata": {
+    "MrListerDeployment": {
+      "CreateAuthorization": "BLOCKED_UNTIL_SEPARATELY_REVIEWED",
+      "DeploymentClass": "AGENTCORE_DIRECT_CODEZIP_BOOTSTRAP_ONLY",
+      "Environment": "dev",
+      "Region": "us-west-2",
+      "RootApplied": true,
+      "RuntimeName": "mr_lister_phase6"
+    }
+  },
+  "Parameters": {
+    "NotAfter": {
+      "Type": "String",
+      "AllowedPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "ConstraintDescription": "must be a near-term ISO 8601 UTC timestamp such as 2026-08-25T00:00:00Z",
+      "Description": "Exclusive UTC expiry for every temporary developer permission; no default is permitted"
+    },
+    "ReleaseFingerprint": {
+      "Type": "String",
+      "AllowedPattern": "^[a-f0-9]{64}$",
+      "ConstraintDescription": "must be the exact lowercase 64-hex sealed Phase 6 release fingerprint",
+      "Description": "Exact sealed Phase 6 release fingerprint"
+    },
+    "AgentCoreArchiveSha256": {
+      "Type": "String",
+      "AllowedPattern": "^[a-f0-9]{64}$",
+      "ConstraintDescription": "must be the exact lowercase 64-hex sealed AgentCore archive SHA-256",
+      "Description": "Exact SHA-256 of phase6-agentcore.zip"
+    }
+  },
+  "Rules": {
+    "OnlyUsWest2": {
+      "Assertions": [
+        {
+          "Assert": {"Fn::Equals": [{"Ref": "AWS::Region"}, "us-west-2"]},
+          "AssertDescription": "This dev-only bootstrap must be created in us-west-2"
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "AgentCoreRuntimeExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "RoleName": "mr-lister-phase6-agentcore-runtime-dev",
+        "Description": "Retained least-privilege execution role for the release-bound Phase 6 dev AgentCore runtime",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "TrustOnlyPhase6AgentCoreRuntime",
+              "Effect": "Allow",
+              "Principal": {"Service": "bedrock-agentcore.amazonaws.com"},
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {"aws:SourceAccount": {"Ref": "AWS::AccountId"}},
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:bedrock-agentcore:us-west-2:${AWS::AccountId}:runtime/mr_lister_phase6-*"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "RunOnlyMrListerPhase6Preparation",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "CreateAndInspectAgentCoreRuntimeLogs",
+                  "Effect": "Allow",
+                  "Action": ["logs:DescribeLogStreams", "logs:CreateLogGroup"],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/mr_lister_phase6-*"
+                  }
+                },
+                {
+                  "Sid": "ConfigureOnlyPhase6AgentCoreRuntimeLogs",
+                  "Effect": "Allow",
+                  "Action": "logs:PutResourcePolicy",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/mr_lister_phase6-*"
+                  }
+                },
+                {
+                  "Sid": "DiscoverOnlyAccountLogGroups",
+                  "Effect": "Allow",
+                  "Action": "logs:DescribeLogGroups",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:*"
+                  }
+                },
+                {
+                  "Sid": "WriteOnlyPhase6AgentCoreRuntimeLogs",
+                  "Effect": "Allow",
+                  "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/mr_lister_phase6-*:log-stream:*"
+                  }
+                },
+                {
+                  "Sid": "ReadAndCommitOnlyPhase6PreparationState",
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:ConditionCheckItem",
+                    "dynamodb:GetItem",
+                    "dynamodb:PutItem"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:dynamodb:us-west-2:${AWS::AccountId}:table/mr-lister-phase6-dev"
+                  },
+                  "Condition": {
+                    "ForAllValues:StringLike": {
+                      "dynamodb:LeadingKeys": ["JOB#*", "OWNER#*"]
+                    },
+                    "Null": {"dynamodb:LeadingKeys": "false"}
+                  }
+                },
+                {
+                  "Sid": "ReadOnlyPinnedPhase6SourceVersions",
+                  "Effect": "Allow",
+                  "Action": "s3:GetObjectVersion",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2/private/owners/*/jobs/*/source/source.png"
+                  }
+                },
+                {
+                  "Sid": "ReadOnlyExactAgentCoreDeploymentArchive",
+                  "Effect": "Allow",
+                  "Action": ["s3:GetObject", "s3:GetObjectVersion"],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2/private/deployments/agentcore/releases/${ReleaseFingerprint}/phase6-agentcore-${AgentCoreArchiveSha256}.zip"
+                  }
+                },
+                {
+                  "Sid": "InvokeNova2LiteUSProfile",
+                  "Effect": "Allow",
+                  "Action": "bedrock:InvokeModel",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:bedrock:us-west-2:${AWS::AccountId}:inference-profile/us.amazon.nova-2-lite-v1:0"
+                  }
+                },
+                {
+                  "Sid": "InvokeNova2LiteOnlyThroughUSProfile",
+                  "Effect": "Allow",
+                  "Action": "bedrock:InvokeModel",
+                  "Resource": [
+                    {"Fn::Sub": "arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0"}
+                  ],
+                  "Condition": {
+                    "StringEquals": {
+                      "bedrock:InferenceProfileArn": {
+                        "Fn::Sub": "arn:${AWS::Partition}:bedrock:us-west-2:${AWS::AccountId}:inference-profile/us.amazon.nova-2-lite-v1:0"
+                      }
+                    }
+                  }
+                },
+                {
+                  "Sid": "InvokeOnlyGemma327BIntelligence",
+                  "Effect": "Allow",
+                  "Action": "bedrock:InvokeModel",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/google.gemma-3-27b-it"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {"Key": "DeploymentClass", "Value": "AGENTCORE_RUNTIME_EXECUTION"},
+          {"Key": "Environment", "Value": "dev"},
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "ReleaseFingerprint", "Value": {"Ref": "ReleaseFingerprint"}}
+        ]
+      }
+    },
+    "DeveloperUploadPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": "mr-lister-phase6-agentcore-direct-uploader-dev",
+        "Description": "Expiring conditional upload authority detached before deployment inputs can render",
+        "Groups": ["mr-lister-developers"],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ConditionallyUploadOnlyExactAgentCoreArchive",
+              "Effect": "Allow",
+              "Action": "s3:PutObject",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2/private/deployments/agentcore/releases/${ReleaseFingerprint}/phase6-agentcore-${AgentCoreArchiveSha256}.zip"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {
+                  "s3:if-none-match": "*",
+                  "s3:x-amz-server-side-encryption": "AES256"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "DeveloperEvidenceReadbackPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": "mr-lister-phase6-agentcore-direct-evidence-reader-dev",
+        "Description": "Expiring exact readback, verification, canary, and rollback access; AgentCore create remains fail-closed",
+        "Groups": ["mr-lister-developers"],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ReadBackOnlyExactAgentCoreArchiveVersion",
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObjectVersion",
+                "s3:GetObjectVersionAttributes"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2/private/deployments/agentcore/releases/${ReleaseFingerprint}/phase6-agentcore-${AgentCoreArchiveSha256}.zip"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            },
+            {
+              "Sid": "ListOnlyExactAgentCoreArchiveVersions",
+              "Effect": "Allow",
+              "Action": "s3:ListBucketVersions",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {
+                  "s3:prefix": {
+                    "Fn::Sub": "private/deployments/agentcore/releases/${ReleaseFingerprint}/phase6-agentcore-${AgentCoreArchiveSha256}.zip"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "InspectOnlyFoundationArtifactBucket",
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetBucketLocation",
+                "s3:GetBucketOwnershipControls",
+                "s3:GetBucketVersioning",
+                "s3:GetEncryptionConfiguration"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            },
+            {
+              "Sid": "AttachOnlyExactReleaseFreezeToDevelopers",
+              "Effect": "Allow",
+              "Action": "iam:AttachGroupPolicy",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:group/mr-lister-developers"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "ArnEquals": {"iam:PolicyARN": {"Ref": "DeveloperReleaseFreezePolicy"}}
+              }
+            },
+            {
+              "Sid": "DetachOnlyExactUploadAuthorityFromDevelopers",
+              "Effect": "Allow",
+              "Action": "iam:DetachGroupPolicy",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:group/mr-lister-developers"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "ArnEquals": {"iam:PolicyARN": {"Ref": "DeveloperUploadPolicy"}}
+              }
+            },
+            {
+              "Sid": "ReadBackOnlyDeveloperPolicyAttachments",
+              "Effect": "Allow",
+              "Action": ["iam:GetGroup", "iam:ListAttachedGroupPolicies"],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:group/mr-lister-developers"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            },
+            {
+              "Sid": "ReadBackOnlyExactReleaseFreezePolicy",
+              "Effect": "Allow",
+              "Action": ["iam:GetPolicy", "iam:GetPolicyVersion"],
+              "Resource": {"Ref": "DeveloperReleaseFreezePolicy"},
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            },
+            {
+              "Sid": "PassOnlyTheRetainedAgentCoreRuntimeRole",
+              "Effect": "Allow",
+              "Action": "iam:PassRole",
+              "Resource": {"Fn::GetAtt": ["AgentCoreRuntimeExecutionRole", "Arn"]},
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {
+                  "iam:PassedToService": "bedrock-agentcore.amazonaws.com"
+                }
+              }
+            },
+            {
+              "Sid": "InspectOnlyTheRetainedAgentCoreRuntimeRole",
+              "Effect": "Allow",
+              "Action": [
+                "iam:GetRole",
+                "iam:GetRolePolicy",
+                "iam:ListAttachedRolePolicies",
+                "iam:ListRolePolicies"
+              ],
+              "Resource": {"Fn::GetAtt": ["AgentCoreRuntimeExecutionRole", "Arn"]},
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            },
+            {
+              "Sid": "ReadCanaryStopAndRollbackOnlyTaggedPhase6V1",
+              "Effect": "Allow",
+              "Action": [
+                "bedrock-agentcore:DeleteAgentRuntime",
+                "bedrock-agentcore:DeleteAgentRuntimeEndpoint",
+                "bedrock-agentcore:GetAgentRuntime",
+                "bedrock-agentcore:GetAgentRuntimeEndpoint",
+                "bedrock-agentcore:InvokeAgentRuntime",
+                "bedrock-agentcore:ListTagsForResource",
+                "bedrock-agentcore:StopRuntimeSession"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:bedrock-agentcore:us-west-2:${AWS::AccountId}:runtime/mr_lister_phase6-*"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:bedrock-agentcore:us-west-2:${AWS::AccountId}:runtime/mr_lister_phase6-*/runtime-endpoint/phase6_v1_dev"
+                }
+              ],
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {
+                  "aws:ResourceTag/DeploymentClass": "AGENTCORE_DIRECT_CODEZIP",
+                  "aws:ResourceTag/Environment": "dev",
+                  "aws:ResourceTag/Project": "MrLister",
+                  "aws:ResourceTag/ReleaseFingerprint": {"Ref": "ReleaseFingerprint"}
+                }
+              }
+            },
+            {
+              "Sid": "InspectOnlyCheckedBedrockModels",
+              "Effect": "Allow",
+              "Action": [
+                "bedrock:GetFoundationModel",
+                "bedrock:GetInferenceProfile"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:bedrock:us-west-2:${AWS::AccountId}:inference-profile/us.amazon.nova-2-lite-v1:0"
+                },
+                {"Fn::Sub": "arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0"},
+                {"Fn::Sub": "arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0"},
+                {"Fn::Sub": "arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0"},
+                {"Fn::Sub": "arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/google.gemma-3-27b-it"}
+              ],
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            },
+            {
+              "Sid": "ReadOnlyExactPhase6V1RuntimeLogs",
+              "Effect": "Allow",
+              "Action": [
+                "logs:DescribeLogStreams",
+                "logs:FilterLogEvents",
+                "logs:GetLogEvents"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/mr_lister_phase6-*-phase6_v1_dev:*"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/mr_lister_phase6-*-phase6_v1_dev:log-stream:*"
+                }
+              ],
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "DeveloperReleaseFreezePolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "ManagedPolicyName": "mr-lister-phase6-agentcore-release-freeze-dev",
+        "Description": "Retained explicit deny for all writes and deletes of the exact sealed AgentCore release object",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "FreezeExactPhase6ReleaseObject",
+              "Effect": "Deny",
+              "Action": [
+                "s3:DeleteObject",
+                "s3:DeleteObjectVersion",
+                "s3:PutObject"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2/private/deployments/agentcore/releases/${ReleaseFingerprint}/phase6-agentcore-${AgentCoreArchiveSha256}.zip"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "AgentCoreRuntimeExecutionRoleArn": {
+      "Value": {"Fn::GetAtt": ["AgentCoreRuntimeExecutionRole", "Arn"]}
+    },
+    "AgentCoreDeploymentBucket": {
+      "Value": {
+        "Fn::Sub": "mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2"
+      }
+    },
+    "AgentCoreDeploymentKey": {
+      "Value": {
+        "Fn::Sub": "private/deployments/agentcore/releases/${ReleaseFingerprint}/phase6-agentcore-${AgentCoreArchiveSha256}.zip"
+      }
+    },
+    "DefaultAgentCoreCreateAuthorization": {"Value": "BLOCKED"},
+    "DeveloperEvidenceReadbackPolicyArn": {
+      "Value": {"Ref": "DeveloperEvidenceReadbackPolicy"}
+    },
+    "DeveloperReleaseFreezePolicyArn": {
+      "Value": {"Ref": "DeveloperReleaseFreezePolicy"}
+    },
+    "DeveloperUploadPolicyArn": {"Value": {"Ref": "DeveloperUploadPolicy"}},
+    "DeveloperDeploymentPolicyNotAfter": {"Value": {"Ref": "NotAfter"}}
+  }
+}
