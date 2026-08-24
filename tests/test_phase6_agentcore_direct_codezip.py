@@ -122,7 +122,7 @@ def _runtime_evidence_document(runtime_documents: dict[Path, bytes]) -> dict[str
         "agentRuntimeId": RUNTIME_ID,
         "agentRuntimeName": runtime_input["agentRuntimeName"],
         "agentRuntimeVersion": "1",
-        "createdAt": create_response["createdAt"],
+        "createdAt": "2026-08-24T18:00:12+00:00",
         "description": runtime_input["description"],
         "environmentVariables": runtime_input["environmentVariables"],
         "lastUpdatedAt": "2026-08-24T18:03:00+00:00",
@@ -990,10 +990,47 @@ def test_runtime_v1_evidence_joins_create_get_tags_and_rejects_authority_drift(
         target[path[-1]] = value
         return altered
 
+    equal_timestamps = mutate(
+        ("getAgentRuntime", "response", "createdAt"),
+        evidence["createAgentRuntime"]["response"]["createdAt"],
+    )
+    _write_canonical(evidence_path, equal_timestamps)
+    direct.verify_phase6_agentcore_runtime_v1_evidence(
+        _binding(),
+        _archive(),
+        _remote(),
+        runtime_v1_evidence_path=evidence_path,
+        repository_root=repository,
+    )
+
     adversarial = (
         mutate(("createAgentRuntime", "inputSHA256"), "0" * 64),
         mutate(("createAgentRuntime", "response", "agentRuntimeArn"), RUNTIME_ARN + "x"),
         mutate(("getAgentRuntime", "request", "agentRuntimeVersion"), "2"),
+        mutate(("getAgentRuntime", "response", "agentRuntimeArn"), RUNTIME_ARN + "x"),
+        mutate(
+            ("getAgentRuntime", "response", "agentRuntimeId"),
+            "mr_lister_phase6-substitut1",
+        ),
+        mutate(("getAgentRuntime", "response", "agentRuntimeVersion"), "2"),
+        mutate(
+            ("getAgentRuntime", "response", "workloadIdentityDetails"),
+            {
+                "workloadIdentityArn": (
+                    f"arn:aws:bedrock-agentcore:us-west-2:{ACCOUNT}:"
+                    "workload-identity-directory/default/workload-identity/"
+                    "mr_lister_phase6-substitut1"
+                )
+            },
+        ),
+        mutate(
+            ("getAgentRuntime", "response", "createdAt"),
+            "2026-08-24T17:59:59+00:00",
+        ),
+        mutate(
+            ("getAgentRuntime", "response", "lastUpdatedAt"),
+            "2026-08-24T18:00:11+00:00",
+        ),
         mutate(("getAgentRuntime", "response", "status"), "UPDATING"),
         mutate(
             ("getAgentRuntime", "response", "roleArn"),

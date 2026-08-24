@@ -1316,10 +1316,10 @@ def _validate_get_runtime_response(
     }
     if any(value.get(name) != expected for name, expected in exact_fields.items()):
         raise ValueError
-    created_at = _parse_utc_timestamp(value.get("createdAt"))
-    if created_at != _parse_utc_timestamp(create_response.get("createdAt")):
-        raise ValueError
-    if _parse_utc_timestamp(value.get("lastUpdatedAt")) < created_at:
+    create_response_created_at = _parse_utc_timestamp(create_response.get("createdAt"))
+    get_response_created_at = _parse_utc_timestamp(value.get("createdAt"))
+    last_updated_at = _parse_utc_timestamp(value.get("lastUpdatedAt"))
+    if not create_response_created_at <= get_response_created_at <= last_updated_at:
         raise ValueError
     _validate_workload_identity(value.get("workloadIdentityDetails"), binding)
     if (

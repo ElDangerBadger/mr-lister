@@ -221,14 +221,17 @@ No step below has been executed merely because these files exist.
    The Get response must reproduce the sealed create input's runtime name, CodeZip S3
    bucket/prefix/literal VersionId, Python runtime and entry point, role ARN, environment,
    lifecycle, network, protocol, and description; it must join the create response's ID, ARN,
-   version, creation time, and workload identity, be `READY`, and contain exactly
+   version, timestamps, and workload identity, be `READY`, and contain exactly
    `metadataConfiguration.requireMMDSV2=true`. Missing, null, or false MMDSv2 configuration is an
    unconditional stop before endpoint rendering or core/full SAM staging. This slice does not
    authorize `UpdateAgentRuntime`: if a new `CreateAgentRuntime` does not return MMDSv2 enabled,
-   stop and design a separately reviewed v2 update flow. The ListTags response must equal the four
-   sealed release tags. Other documented unconfigured optional Get fields may only be absent or
-   their safe empty/default value. Missing configured fields, unknown fields, a different runtime,
-   a noncanonical file, or a symlink fails closed. Store the result outside Git, for example
+   stop and design a separately reviewed v2 update flow. Because Create is asynchronous and AWS
+   does not define cross-operation timestamp equality, both timestamps remain verbatim evidence
+   and must satisfy `Create.createdAt <= Get.createdAt <= Get.lastUpdatedAt`. The ListTags response
+   must equal the four sealed release tags. Other documented unconfigured optional Get fields may
+   only be absent or their safe empty/default value. Missing configured fields, unknown fields, a
+   different runtime, a noncanonical file, or a symlink fails closed. Store the result outside Git,
+   for example
    `.mr_lister_private/phase6-agentcore-runtime-v1-evidence.json`.
 12. Supply that joined evidence—not a runtime ID—and exclusively render/verify the custom endpoint
    input:
