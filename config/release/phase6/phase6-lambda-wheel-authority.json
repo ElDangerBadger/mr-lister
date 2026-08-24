@@ -1,0 +1,99 @@
+{
+  "algorithm": "sha256",
+  "component": "lambda",
+  "dependency_tree_sha256": "1bbaf8ce27e186f7e332c40478fa2cb932157ba8f74b785df321cf147281ad54",
+  "format": "phase6-wheel-authority-v1",
+  "target": {
+    "architecture": "arm64",
+    "implementation": "cpython",
+    "platform": "manylinux2014_aarch64",
+    "python_abi": "cp312",
+    "python_version": "3.12"
+  },
+  "wheels": [
+    {
+      "filename": "annotated_types-0.8.0-py3-none-any.whl",
+      "name": "annotated-types",
+      "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+      "version": "0.8.0"
+    },
+    {
+      "filename": "awscrt-0.36.0-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+      "name": "awscrt",
+      "sha256": "900eb2cf518a3f1c7e9c4ebc320f5a3fac891208992b9428da76e3f0fb0300a5",
+      "version": "0.36.0"
+    },
+    {
+      "filename": "boto3-1.43.78-py3-none-any.whl",
+      "name": "boto3",
+      "sha256": "893f06a171469618e17de78dc927aca6e74fcf45a70d2c5918e9ac9919e96cc9",
+      "version": "1.43.78"
+    },
+    {
+      "filename": "botocore-1.43.78-py3-none-any.whl",
+      "name": "botocore",
+      "sha256": "ddd020493235e264b3bd12606f239a3d3b2dd7cfb1d25a0691061183c290c228",
+      "version": "1.43.78"
+    },
+    {
+      "filename": "jmespath-1.1.0-py3-none-any.whl",
+      "name": "jmespath",
+      "sha256": "a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64",
+      "version": "1.1.0"
+    },
+    {
+      "filename": "pillow-12.2.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+      "name": "pillow",
+      "sha256": "03e7e372d5240cc23e9f07deca4d775c0817bffc641b01e9c3af208dbd300987",
+      "version": "12.2.0"
+    },
+    {
+      "filename": "pydantic-2.13.4-py3-none-any.whl",
+      "name": "pydantic",
+      "sha256": "45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba",
+      "version": "2.13.4"
+    },
+    {
+      "filename": "pydantic_core-2.46.4-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+      "name": "pydantic-core",
+      "sha256": "8233f2947cf85404441fd7e0085f53b10c93e0ee78611099b5c7237e36aacbf7",
+      "version": "2.46.4"
+    },
+    {
+      "filename": "python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+      "name": "python-dateutil",
+      "sha256": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427",
+      "version": "2.9.0.post0"
+    },
+    {
+      "filename": "s3transfer-0.19.2-py3-none-any.whl",
+      "name": "s3transfer",
+      "sha256": "d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25",
+      "version": "0.19.2"
+    },
+    {
+      "filename": "six-1.17.0-py2.py3-none-any.whl",
+      "name": "six",
+      "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+      "version": "1.17.0"
+    },
+    {
+      "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+      "name": "typing-extensions",
+      "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "version": "4.16.0"
+    },
+    {
+      "filename": "typing_inspection-0.4.4-py3-none-any.whl",
+      "name": "typing-inspection",
+      "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+      "version": "0.4.4"
+    },
+    {
+      "filename": "urllib3-2.7.0-py3-none-any.whl",
+      "name": "urllib3",
+      "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
+      "version": "2.7.0"
+    }
+  ]
+}
