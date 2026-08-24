@@ -56,6 +56,52 @@ minutes. The signed GET also fixes the terminal S3 response to
 `Cache-Control: private, no-store, max-age=0`. API Gateway does not carry the artwork bytes, and
 this design adds no KMS dependency.
 
+## Create-only foundation
+
+`foundation.json` is the intentionally narrow first deployment for the eventual Phase 6 stack. It
+contains exactly `OperationalStateTable`, `PrivateArtifactBucket`, and
+`PrivateArtifactBucketPolicy`, with the same logical IDs, physical names, retention controls,
+indexes, encryption, versioning, lifecycle, and deny-only bucket policy as `template.json`. The
+only planned resource difference is that the foundation bucket has no browser CORS configuration:
+the exact application origin does not exist yet. Updating the same stack with the full template
+adds that closed CORS rule once `ApplicationOrigin` is available.
+
+The template declares `FOUNDATION_ONLY` in both metadata and `DeploymentReadiness`. It is valid
+only for a `CREATE` change set against the final Phase 6 stack name. It must never be applied as an
+update: after the full template has added the runtime, reapplying the three-resource template would
+ask CloudFormation to remove those later resources. Run the repository's create-only foundation
+deployment verifier, `tools/verify_phase6_foundation_deployment.py`, immediately before creating
+the reviewed change set; the verifier rejects an existing stack and every non-`CREATE` operation.
+Do not bypass that guard with a direct `sam deploy`. The foundation outputs the table and bucket
+names and ARNs for post-deployment identity checks, but it creates no IAM role, Lambda, API,
+workflow, schedule, identity surface, provider transport, or secret access.
+
+### Root-only foundation IAM bootstrap
+
+`bootstrap.json` is the temporary, root-applied IAM boundary for this one create. Deploy it only as
+the `mr-lister-phase6-foundation-bootstrap` stack in `us-west-2`, with
+`CAPABILITY_NAMED_IAM` and an explicit, near-term UTC `NotAfter` value. The parameter deliberately
+has no default. The stack creates the exact
+`mr-lister-phase6-foundation-cfn-dev` CloudFormation execution role and attaches the expiring
+`mr-lister-phase6-foundation-deployer-dev` policy only to the existing
+`mr-lister-developers` group used by `mr-lister-dev`.
+
+The developer policy can create and execute only the fingerprint-named Phase 6 dev change set,
+must pass the exact execution role, must submit the three foundation resource types and exact
+foundation stack tags, and has only the configuration reads needed by the offline evidence
+verifier. It grants no `CreateStack`, `UpdateStack`, `DeleteStack`, object, item, runtime, provider,
+secret, Lambda, API, or workflow authority. The execution role is limited to creating,
+stabilizing, tagging, and rollback-cleaning the exact retained table and bucket, applying the
+deny-only bucket policy, and expanding the checked Serverless transform.
+
+IAM cannot distinguish a CloudFormation `CREATE` change-set request from an `UPDATE` request: both
+use `cloudformation:CreateChangeSet`. The exact name, stack, service role, tags, resource-type
+conditions, short `NotAfter` window, and repository verifier therefore operate together. The
+verifier must observe stack absence and `ChangeSetType=CREATE` before execution. After the accepted
+evidence capture, root should delete the bootstrap stack to detach and remove the developer managed
+policy; the execution role is intentionally retained because it is recorded on the foundation
+stack. Follow `FOUNDATION_DEPLOYMENT.md` for the exact capture and verification sequence.
+
 ## Deployment gate
 
 This stack is **not ready for cloud deployment**. Every Lambda entrypoint remains fail-closed under

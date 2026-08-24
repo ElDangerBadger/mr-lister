@@ -1,0 +1,177 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Transform": "AWS::Serverless-2016-10-31",
+  "Description": "Mr Lister Phase 6 create-only durable foundation",
+  "Metadata": {
+    "MrListerDeployment": {
+      "DeploymentClass": "FOUNDATION_ONLY",
+      "CreateOnly": true,
+      "UpgradeTemplate": "infra/phase6/template.json"
+    }
+  },
+  "Parameters": {
+    "EnvironmentName": {
+      "Type": "String",
+      "Default": "dev",
+      "AllowedPattern": "^[a-z][a-z0-9-]{1,15}$"
+    }
+  },
+  "Resources": {
+    "PrivateArtifactBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {"Fn::Sub": "mr-lister-phase6-artifacts-${EnvironmentName}-${AWS::AccountId}-${AWS::Region}"},
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {"ServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "AbortIncompleteMultipartUploads",
+              "Status": "Enabled",
+              "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7}
+            },
+            {
+              "Id": "ExpireUnreferencedStagedArtwork",
+              "Status": "Enabled",
+              "TagFilters": [
+                {"Key": "mr-lister-state", "Value": "staged"}
+              ],
+              "ExpirationInDays": 1,
+              "NoncurrentVersionExpiration": {"NoncurrentDays": 1}
+            },
+            {
+              "Id": "RemoveExpiredPrivateSourceDeleteMarkers",
+              "Status": "Enabled",
+              "Prefix": "private/owners/",
+              "ExpiredObjectDeleteMarker": true
+            }
+          ]
+        },
+        "OwnershipControls": {"Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]},
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "VersioningConfiguration": {"Status": "Enabled"},
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "DataClassification", "Value": "PrivateArtwork"}
+        ]
+      }
+    },
+    "PrivateArtifactBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {"Ref": "PrivateArtifactBucket"},
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {"Fn::GetAtt": ["PrivateArtifactBucket", "Arn"]},
+                {"Fn::Sub": "${PrivateArtifactBucket.Arn}/*"}
+              ],
+              "Condition": {"Bool": {"aws:SecureTransport": "false"}}
+            },
+            {
+              "Sid": "DenyStaleBrowserUploadSignatures",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:PutObject",
+              "Resource": {"Fn::Sub": "${PrivateArtifactBucket.Arn}/private/owners/*/jobs/*/source/source.png"},
+              "Condition": {"NumericGreaterThan": {"s3:signatureAge": "300000"}}
+            },
+            {
+              "Sid": "DenyUnencryptedBrowserUploads",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:PutObject",
+              "Resource": {"Fn::Sub": "${PrivateArtifactBucket.Arn}/private/owners/*/jobs/*/source/source.png"},
+              "Condition": {"StringNotEquals": {"s3:x-amz-server-side-encryption": "AES256"}}
+            }
+          ]
+        }
+      }
+    },
+    "OperationalStateTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "TableName": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}"},
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [
+          {"AttributeName": "PK", "AttributeType": "S"},
+          {"AttributeName": "SK", "AttributeType": "S"},
+          {"AttributeName": "dispatch_pk", "AttributeType": "S"},
+          {"AttributeName": "dispatch_sk", "AttributeType": "S"},
+          {"AttributeName": "owner_jobs_pk", "AttributeType": "S"},
+          {"AttributeName": "owner_jobs_sk", "AttributeType": "S"},
+          {"AttributeName": "recovery_pk", "AttributeType": "S"},
+          {"AttributeName": "recovery_sk", "AttributeType": "S"}
+        ],
+        "KeySchema": [
+          {"AttributeName": "PK", "KeyType": "HASH"},
+          {"AttributeName": "SK", "KeyType": "RANGE"}
+        ],
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "DueWorkIndex",
+            "KeySchema": [
+              {"AttributeName": "dispatch_pk", "KeyType": "HASH"},
+              {"AttributeName": "dispatch_sk", "KeyType": "RANGE"}
+            ],
+            "Projection": {"ProjectionType": "ALL"}
+          },
+          {
+            "IndexName": "OwnerJobsIndex",
+            "KeySchema": [
+              {"AttributeName": "owner_jobs_pk", "KeyType": "HASH"},
+              {"AttributeName": "owner_jobs_sk", "KeyType": "RANGE"}
+            ],
+            "Projection": {"ProjectionType": "ALL"}
+          },
+          {
+            "IndexName": "ExecutionRecoveryIndex",
+            "KeySchema": [
+              {"AttributeName": "recovery_pk", "KeyType": "HASH"},
+              {"AttributeName": "recovery_sk", "KeyType": "RANGE"}
+            ],
+            "Projection": {"ProjectionType": "KEYS_ONLY"}
+          }
+        ],
+        "PointInTimeRecoverySpecification": {"PointInTimeRecoveryEnabled": true},
+        "SSESpecification": {"SSEEnabled": true},
+        "StreamSpecification": {"StreamViewType": "KEYS_ONLY"},
+        "TimeToLiveSpecification": {"AttributeName": "expires_at", "Enabled": true},
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "DataClassification", "Value": "OperationalState"}
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "DeploymentReadiness": {
+      "Description": "This create-only stack contains durable Phase 6 foundation resources and must be upgraded with the full template.",
+      "Value": "FOUNDATION_ONLY"
+    },
+    "StateTableName": {"Value": {"Ref": "OperationalStateTable"}},
+    "StateTableArn": {"Value": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}},
+    "ArtifactBucketName": {"Value": {"Ref": "PrivateArtifactBucket"}},
+    "ArtifactBucketArn": {"Value": {"Fn::GetAtt": ["PrivateArtifactBucket", "Arn"]}}
+  }
+}
