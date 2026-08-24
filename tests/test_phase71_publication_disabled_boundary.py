@@ -60,6 +60,16 @@ PHASE73_READ_ONLY_FILES = {
     "query_api.py",
 }
 
+PHASE74_APPLICATION_FILES = {
+    "application.py",
+    "profile_eligibility.py",
+}
+
+PHASE74_CLOUD_FILES = {
+    ROOT / "src/mr_lister/cloud/phase7_composition.py",
+    ROOT / "src/mr_lister/cloud/phase7_entrypoints.py",
+}
+
 EXPECTED_OFFLINE_PUBLICATION_FILES = {
     "__init__.py",
     "commands.py",
@@ -77,6 +87,7 @@ EXPECTED_OFFLINE_PUBLICATION_FILES = {
     | PHASE73_PERSISTENCE_FILES
     | PHASE73_COORDINATOR_FILES
     | PHASE73_READ_ONLY_FILES
+    | PHASE74_APPLICATION_FILES
 )
 
 
@@ -304,7 +315,7 @@ def test_phase6_source_bundles_exclude_publication(tmp_path: Path) -> None:
             ), source_path.relative_to(bundle_root)
 
 
-def test_phase73_offline_publication_runtime_is_not_composed() -> None:
+def test_phase74_publication_runtime_is_only_in_exact_disabled_read_modules() -> None:
     publication_files = {path.name for path in PUBLICATION_ROOT.glob("*.py")}
     assert publication_files == EXPECTED_OFFLINE_PUBLICATION_FILES
     assert set(publication_exports) == {
@@ -321,13 +332,40 @@ def test_phase73_offline_publication_runtime_is_not_composed() -> None:
         *(
             path
             for path in (ROOT / "src" / "mr_lister").rglob("*.py")
-            if PUBLICATION_ROOT not in path.parents
+            if PUBLICATION_ROOT not in path.parents and path not in PHASE74_CLOUD_FILES
         ),
     ]
     for path in runtime_paths:
         assert not any(
             module == "mr_lister.publication" or module.startswith("mr_lister.publication.")
             for module in _imports(path)
+        ), path.relative_to(ROOT)
+
+    publication_importing_cloud_files = {
+        path
+        for path in (ROOT / "src" / "mr_lister" / "cloud").glob("*.py")
+        if any(
+            module == "mr_lister.publication" or module.startswith("mr_lister.publication.")
+            for module in _imports(path)
+        )
+    }
+    assert publication_importing_cloud_files == PHASE74_CLOUD_FILES
+
+    forbidden_phase74_imports = {
+        "mr_lister.agent",
+        "mr_lister.production",
+        "mr_lister.publication.execution_service",
+        "mr_lister.publication.provider_boundary",
+        "mr_lister.publication.provider_coordinator",
+        "mr_lister.publication.service",
+        "mr_lister.workflow",
+    }
+    for path in PHASE74_CLOUD_FILES:
+        imports = _imports(path)
+        assert not any(
+            module == forbidden or module.startswith(f"{forbidden}.")
+            for module in imports
+            for forbidden in forbidden_phase74_imports
         ), path.relative_to(ROOT)
 
 
@@ -346,7 +384,9 @@ def test_phase72_execution_oracle_has_no_provider_or_runtime_capability() -> Non
         "mr_lister.workflow",
     }
 
-    for filename in PHASE72_EXECUTION_ORACLE_FILES | PHASE73_PROVENANCE_FILES:
+    for filename in (
+        PHASE72_EXECUTION_ORACLE_FILES | PHASE73_PROVENANCE_FILES | PHASE74_APPLICATION_FILES
+    ):
         imports = _imports(PUBLICATION_ROOT / filename)
         assert not any(
             module == forbidden or module.startswith(f"{forbidden}.")

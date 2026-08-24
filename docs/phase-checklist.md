@@ -360,7 +360,15 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     owner-first seller projection and exact GET adapter expose disabled status with no-store/ETag
     semantics. None is composed into Phase 6 Lambda, API, IAM, browser, dispatcher, or bundles;
     `publication_enabled` and `request_enabled` remain false and no live provider call ran
-  - [ ] Approval-version and publish guard verification
+  - [x] Phase 7.4 offline draft-profile eligibility and disabled read scaffold: the exact checked
+    Phase 6 profile remains `publish_enabled=false`, while a separate immutable release/profile/
+    channel eligibility record grants neither a seller request nor a provider mutation. Request
+    and execution services require that record, and the capability-free pre-call guard re-reads the
+    exact approval version, snapshot, shop, pricing, profile, release, and eligibility authority.
+    A separate Phase 7 SAM scaffold contains one unregistered query Lambda with only bounded
+    `GetItem`/`Query` authority and exact-false query/request/publication flags; it packages no
+    application bundle and cannot read or mutate provider or application state
+  - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports
   - [ ] Notify the seller only after publication is positively verified complete

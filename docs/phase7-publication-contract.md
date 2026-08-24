@@ -260,6 +260,35 @@ read projection/query adapter. Neither is composed into Lambda, API Gateway, IAM
 the browser, the Phase 6 dispatcher, or a source bundle. Both publication and request enablement
 remain false, and no live provider call is authorized by this checkpoint.
 
+## Offline Phase 7.4 eligibility and disabled read composition
+
+Phase 6 must build an unpublished draft, so its exact checked product profile remains
+`publish_enabled=false`. Phase 7 no longer treats that draft-safety field as publication
+eligibility. A separate immutable eligibility record binds the exact profile ID, version,
+fingerprint, Etsy channel, and sealed release fingerprint. It states that the profile is eligible
+while fixing seller-request and provider-mutation enablement to false. The existing publication
+snapshot already persists every constituent of that decision, so no replaceable policy identifier
+or unbound flag is introduced.
+
+The request service verifies this eligibility before freezing intent. The execution service
+rechecks it against the durable snapshot and current release before reconstructing provider
+authority or consuming the permit. A capability-free pre-call guard additionally re-reads the
+approved job, approval decision, review, synchronized product and owner-bound shop, pricing,
+profile, release, and eligibility joins. Any stale, missing, foreign, or changed value fails before
+an outer provider boundary could be reached.
+
+The Phase 7.4 infrastructure is a separate SAM scaffold with one reserved-concurrency publication-
+status query Lambda. It has no event source or addressable route. Its role has only log writes and
+same-table `dynamodb:GetItem`/`dynamodb:Query` for `JOB#*` and `PUBLICATION#*`; it has no DynamoDB
+write, scan, secret, object-store, workflow, invocation, provider, or network-management authority.
+The checked package contains only a thin shim, and the scaffold, query, request, and publication
+markers are fixed to disabled values. A sealed application bundle, exact runtime environment,
+authenticated route registration, deployment, and read validation remain later gates.
+
+This checkpoint does not compose a request service, coordinator, provider boundary, credential
+resolver, dispatcher, state machine, browser control, or notification delivery surface. It makes
+no AWS or Printify call and does not advance the contract beyond `offline_implementation`.
+
 ## Immutable report and retention
 
 The run report binds only closed statuses, timestamps, aggregate call counts, release/snapshot/
