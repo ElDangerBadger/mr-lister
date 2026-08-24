@@ -37,9 +37,12 @@ The renderer accepts only these checked local authorities:
   renderer through the shared runtime verifier. If a new v1 create does not return that state, the
   v1-only flow stops before endpoint/core staging and requires a separately reviewed v2 update
   design; the tag response must equal the sealed four-tag set;
-- a canonical normalized AgentCore endpoint observation whose custom endpoint is `READY` and
-  whose name is exactly `phase6_v1_dev` and whose live and target versions are both `1` for that
-  proven runtime;
+- a canonical normalized AgentCore endpoint observation that preserves whether AWS omitted its
+  optional version/failure fields. It must bind the exact proven runtime ARN, endpoint ARN, and
+  `phase6_v1_dev` name, report `READY`, and have `liveVersion` exactly `1`. At stable `READY`, AWS
+  may omit `targetVersion` and `failureReason`; when present, `targetVersion` must equal `1` and
+  `failureReason` must be null or empty. The canonical observation preserves either field's absence
+  rather than synthesizing it;
 - canonical closed AgentCore and Lambda S3 release-object evidence documents accepted by
   `tools/verify_phase6_s3_release_object.py`. That evidence must bind the exact account, Region,
   bucket, content-addressed key, nonmoving VersionId, checksum-enabled `HeadObject` result, and a

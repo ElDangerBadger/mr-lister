@@ -274,11 +274,9 @@ def _endpoint_observation(**overrides: object) -> dict[str, object]:
     document: dict[str, object] = {
         "agentRuntimeArn": RUNTIME_ARN,
         "agentRuntimeEndpointArn": ENDPOINT_ARN,
-        "failureReason": None,
         "liveVersion": RUNTIME_VERSION,
         "name": RUNTIME_QUALIFIER,
         "status": "READY",
-        "targetVersion": RUNTIME_VERSION,
     }
     document.update(overrides)
     return document

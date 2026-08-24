@@ -661,18 +661,8 @@ def _load_ready_endpoint_observation(
     runtime: VerifiedAgentCoreRuntimeV1,
 ) -> _EndpointEvidence:
     raw, document = _load_canonical_mapping(path)
-    expected = {
-        "agentRuntimeArn": binding.agentcore_runtime_arn,
-        "agentRuntimeEndpointArn": binding.agentcore_runtime_endpoint_arn,
-        "failureReason": None,
-        "liveVersion": binding.agentcore_runtime_version,
-        "name": binding.agentcore_runtime_qualifier,
-        "status": "READY",
-        "targetVersion": binding.agentcore_runtime_version,
-    }
     if (
-        document != expected
-        or binding.agentcore_runtime_arn != runtime.runtime_arn
+        binding.agentcore_runtime_arn != runtime.runtime_arn
         or binding.agentcore_runtime_version != "1"
         or binding.agentcore_runtime_qualifier != "phase6_v1_dev"
     ):

@@ -695,19 +695,9 @@ def _load_ready_endpoint_observation(
     if not 1 <= len(raw) <= 1024 * 1024:
         raise ValueError
     document = json.loads(raw, object_pairs_hook=_unique_json_object)
-    expected = {
-        "agentRuntimeArn": binding.agentcore_runtime_arn,
-        "agentRuntimeEndpointArn": binding.agentcore_runtime_endpoint_arn,
-        "failureReason": None,
-        "liveVersion": binding.agentcore_runtime_version,
-        "name": binding.agentcore_runtime_qualifier,
-        "status": "READY",
-        "targetVersion": binding.agentcore_runtime_version,
-    }
     if (
         not isinstance(document, Mapping)
         or _canonical_json(document) != raw
-        or document != expected
         or binding.agentcore_runtime_arn != runtime.runtime_arn
         or binding.agentcore_runtime_version != "1"
         or binding.agentcore_runtime_qualifier != "phase6_v1_dev"

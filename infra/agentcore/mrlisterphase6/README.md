@@ -257,16 +257,20 @@ No step below has been executed merely because these files exist.
    After a second separately approved create crossing, submit
    `create-agent-runtime-endpoint.local.json`. It names only `phase6_v1_dev` and pins version `1`.
    Do not call `UpdateAgentRuntimeEndpoint`.
-13. Wait for that custom endpoint to become `READY`, then read it back and prove its runtime ID,
-   exact v1 target, tags, and ARN. A moving or `DEFAULT` qualifier is not acceptance evidence.
+13. Wait for that custom endpoint to become `READY`, then read it back and prove its exact runtime
+   ARN, endpoint ARN, `phase6_v1_dev` name, `liveVersion=1`, and tags. At stable `READY`, AWS may
+   omit `targetVersion` and `failureReason`; preserve either omission in the canonical observation.
+   If present, `targetVersion` must equal `1` and `failureReason` must be null or empty. A moving or
+   `DEFAULT` qualifier, a different live version, or a nonempty failure reason is not acceptance
+   evidence.
 14. Resolve the single standard Phase 6 v1 runtime log group through a separately reviewed read,
     apply exactly `retentionInDays=14` through a separately reviewed write, and read 14 days back.
     The default temporary policy cannot perform or weaken this setting.
 15. Run the same-job canary only through `phase6_v1_dev`, inspect sanitized exact-group logs, stop
     the canary session, and use only the tagged endpoint/runtime deletes if rollback is required.
 16. Preserve the complete closed S3 proof, rendered manifests, role/model/bucket readback, create
-    responses, READY/exact-target evidence, 14-day retention, canary, and rollback decision outside
-    Git.
+    responses, canonical READY/exact-live-version evidence, 14-day retention, canary, and rollback
+    decision outside Git.
 17. As root, delete only `mr-lister-phase6-agentcore-bootstrap`. Prove both temporary managed
     policies no longer exist or attach to `mr-lister-developers`, while the retained runtime role,
     its exact inline policy, and the retained exact-key freeze Deny remain. Do not delete the

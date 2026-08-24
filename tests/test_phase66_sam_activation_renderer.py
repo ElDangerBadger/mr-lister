@@ -248,11 +248,9 @@ def _repository(tmp_path: Path) -> tuple[Path, Path, Path, dict[str, object]]:
             {
                 "agentRuntimeArn": RUNTIME_ARN,
                 "agentRuntimeEndpointArn": ENDPOINT_ARN,
-                "failureReason": None,
                 "liveVersion": VERSION,
                 "name": QUALIFIER,
                 "status": "READY",
-                "targetVersion": VERSION,
             }
         )
     )
