@@ -1,15 +1,16 @@
-"""Verify a closed, offline proof for one Phase 6 S3 release object.
+"""Verify an offline proof for one Phase 6 S3 release object.
 
-The verifier has no AWS client. It consumes a canonical, operator-captured projection of
-PutObject, bucket-state, exact-version readback, upload-authority revocation, and repeated
-post-revocation readback evidence. A VersionId by itself is deliberately insufficient.
+The verifier has no AWS client. It consumes either the original canonical, operator-captured
+PutObject/readback/revocation lifecycle or a narrower manual-root Lambda readback. A VersionId by
+itself is deliberately insufficient.
 
-Two claims are kept distinct:
+The evidence scopes remain distinct:
 
 * byte identity binds the locally sealed bytes to one exact S3 VersionId (it does not prove that
   a separately privileged principal can never delete that version); and
-* collision hygiene proves that the content-addressed key had one current version, no delete
-  marker, and a retained group Deny governing the exact uploading IAM user.
+* common-v2 additionally proves the upload lifecycle and a retained group Deny governing the
+  exact uploading IAM user. The manual-root Lambda format proves only the observed singleton key
+  state and exact-version byte binding; it makes no IAM-revocation claim.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from typing import Final, Literal
 Phase6ReleaseComponent = Literal["agentcore", "lambda"]
 
 EVIDENCE_FORMAT: Final = "mr-lister-phase6-s3-release-object-evidence-v2"
+MANUAL_ROOT_LAMBDA_EVIDENCE_FORMAT: Final = "mr-lister-phase6-s3-manual-root-lambda-evidence-v1"
 _ACCOUNT_ID = re.compile(r"^[0-9]{12}$")
 _ENVIRONMENT = re.compile(r"^[a-z][a-z0-9-]{1,15}$")
 _HEX_32_QUOTED = re.compile(r'^"[A-Fa-f0-9]{32}"$')
@@ -199,7 +201,46 @@ def verify_phase6_s3_release_object_evidence(
     *,
     evidence_path: Path,
 ) -> VerifiedPhase6S3ReleaseObject:
-    """Return a version-bound object only after the complete lifecycle proof validates."""
+    """Return a version-bound object only after the complete v2 lifecycle proof validates."""
+
+    return _verify_phase6_s3_release_object_evidence(
+        expectation,
+        evidence_path=evidence_path,
+        allow_manual_root_lambda=False,
+    )
+
+
+def verify_phase6_lambda_release_object_evidence(
+    expectation: Phase6S3ReleaseObjectExpectation,
+    *,
+    evidence_path: Path,
+) -> VerifiedPhase6S3ReleaseObject:
+    """Verify a Lambda object through either v2 or the narrow manual-root readback format."""
+
+    try:
+        if (
+            not isinstance(expectation, Phase6S3ReleaseObjectExpectation)
+            or expectation.component != "lambda"
+        ):
+            raise ValueError
+        return _verify_phase6_s3_release_object_evidence(
+            expectation,
+            evidence_path=evidence_path,
+            allow_manual_root_lambda=True,
+        )
+    except Phase6S3ReleaseObjectEvidenceError:
+        raise
+    except Exception:
+        raise Phase6S3ReleaseObjectEvidenceError(_GENERIC_ERROR) from None
+
+
+def _verify_phase6_s3_release_object_evidence(
+    expectation: Phase6S3ReleaseObjectExpectation,
+    *,
+    evidence_path: Path,
+    allow_manual_root_lambda: bool,
+) -> VerifiedPhase6S3ReleaseObject:
+    """Return a version-bound object only after one explicitly allowed format validates."""
 
     try:
         if not isinstance(expectation, Phase6S3ReleaseObjectExpectation):
@@ -215,7 +256,13 @@ def verify_phase6_s3_release_object_evidence(
         document = json.loads(raw, object_pairs_hook=_unique_object)
         if not isinstance(document, dict) or canonical_phase6_s3_evidence(document) != raw:
             raise ValueError
-        _validate_closed_evidence(expectation, document)
+        evidence_format = document.get("format")
+        if evidence_format == EVIDENCE_FORMAT:
+            _validate_closed_evidence(expectation, document)
+        elif allow_manual_root_lambda and evidence_format == MANUAL_ROOT_LAMBDA_EVIDENCE_FORMAT:
+            _validate_manual_root_lambda_evidence(expectation, document)
+        else:
+            raise ValueError
         return VerifiedPhase6S3ReleaseObject(
             account_id=expectation.account_id,
             region=expectation.region,
@@ -333,6 +380,48 @@ def _validate_closed_evidence(
         _timestamp(after, "capturedAt"),
     ]
     if any(left >= right for left, right in zip(ordered_times, ordered_times[1:], strict=False)):
+        raise ValueError
+
+
+def _validate_manual_root_lambda_evidence(
+    expectation: Phase6S3ReleaseObjectExpectation,
+    document: Mapping[str, object],
+) -> None:
+    if expectation.component != "lambda" or set(document) != {
+        "accountId",
+        "bucket",
+        "bucketState",
+        "component",
+        "format",
+        "key",
+        "readback",
+        "region",
+        "releaseFingerprint",
+        "versionId",
+    }:
+        raise ValueError
+    version_id = document.get("versionId")
+    validate_phase6_s3_version_id(version_id)  # type: ignore[arg-type]
+    if (
+        document.get("format") != MANUAL_ROOT_LAMBDA_EVIDENCE_FORMAT
+        or document.get("accountId") != expectation.account_id
+        or document.get("region") != expectation.region
+        or document.get("component") != "lambda"
+        or document.get("releaseFingerprint") != expectation.release_fingerprint
+        or document.get("bucket") != expectation.bucket
+        or document.get("key") != expectation.key
+    ):
+        raise ValueError
+
+    bucket_state = _mapping(document, "bucketState")
+    _validate_bucket_state(expectation, bucket_state)
+    readback = _mapping(document, "readback")
+    head = _mapping(readback, "headObject")
+    etag = _mapping(head, "response").get("ETag")
+    if not isinstance(etag, str) or _HEX_32_QUOTED.fullmatch(etag) is None:
+        raise ValueError
+    _validate_readback(expectation, version_id, etag, readback)
+    if _timestamp(bucket_state, "capturedAt") >= _timestamp(readback, "capturedAt"):
         raise ValueError
 
 
@@ -818,11 +907,13 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 __all__ = [
     "EVIDENCE_FORMAT",
+    "MANUAL_ROOT_LAMBDA_EVIDENCE_FORMAT",
     "Phase6ReleaseComponent",
     "Phase6S3ReleaseObjectEvidenceError",
     "Phase6S3ReleaseObjectExpectation",
     "VerifiedPhase6S3ReleaseObject",
     "canonical_phase6_s3_evidence",
     "validate_phase6_s3_version_id",
+    "verify_phase6_lambda_release_object_evidence",
     "verify_phase6_s3_release_object_evidence",
 ]

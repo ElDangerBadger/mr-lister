@@ -1,12 +1,13 @@
 """Render the immutable, release-bound Phase 6 SAM staging template.
 
 This tool is deliberately local and two-stage.  It verifies the already sealed Lambda and
-AgentCore deployment/artifact set, closed S3 upload/readback/revocation evidence for both objects,
-the exact CreateAgentRuntime/GetAgentRuntime/ListTags runtime-v1 join, and a canonical READY
-endpoint observation.  It then replaces every scaffold ``CodeUri`` with the proven exact-version
-Lambda archive coordinate and binds only the proven runtime and endpoint identity.  A bare S3
-VersionId or raw runtime ID is never deployment evidence.  Staging never enables runtime
-execution: the rendered template keeps ``MR_LISTER_PHASE6_SCAFFOLD_ONLY=true`` and advertises only
+AgentCore deployment/artifact set, the closed AgentCore S3 upload/readback/revocation evidence,
+one accepted exact-version Lambda evidence format, the exact
+CreateAgentRuntime/GetAgentRuntime/ListTags runtime-v1 join, and a canonical READY endpoint
+observation.  It then replaces every scaffold ``CodeUri`` with the proven exact-version Lambda
+archive coordinate and binds only the proven runtime and endpoint identity.  A bare S3 VersionId
+or raw runtime ID is never deployment evidence.  Staging never enables runtime execution: the
+rendered template keeps ``MR_LISTER_PHASE6_SCAFFOLD_ONLY=true`` and advertises only
 ``RELEASE_BOUND_STAGED``.  All four SAM schedule/stream events and the standalone recovery rule
 are disabled.  The default HTTP API endpoint and CloudFront distribution are disabled as well, so
 the retained web infrastructure and routes are not externally served by this staged output.
@@ -55,7 +56,10 @@ from tools.verify_phase6_s3_release_object import (
     Phase6S3ReleaseObjectExpectation,
     VerifiedPhase6S3ReleaseObject,
     validate_phase6_s3_version_id,
-    verify_phase6_s3_release_object_evidence,
+    verify_phase6_lambda_release_object_evidence,
+)
+from tools.verify_phase6_s3_release_object import (
+    verify_phase6_s3_release_object_evidence as _verify_phase6_closed_s3_release_object_evidence,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +72,23 @@ DEFAULT_ARTIFACT_ROOT = ROOT / ".mr_lister_private/phase6-artifacts"
 
 _SOURCE_TEMPLATE_SHA256 = "9a110b3e813ed23102033ace67341d9cb4015274d7acc9f0fff6c08439c57ed7"
 _GENERIC_ERROR = "Phase 6 SAM staged deployment configuration is invalid"
+
+
+def verify_phase6_s3_release_object_evidence(
+    expectation: Phase6S3ReleaseObjectExpectation,
+    *,
+    evidence_path: Path,
+) -> VerifiedPhase6S3ReleaseObject:
+    """Use the explicit Lambda-only manual path without weakening AgentCore evidence."""
+
+    verifier = (
+        verify_phase6_lambda_release_object_evidence
+        if expectation.component == "lambda"
+        else _verify_phase6_closed_s3_release_object_evidence
+    )
+    return verifier(expectation, evidence_path=evidence_path)
+
+
 _ACTIVATION_ERROR = (
     "Phase 6 SAM activation requires a separate verified staged-deployment evidence gate"
 )

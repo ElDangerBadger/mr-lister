@@ -48,7 +48,10 @@ from tools.verify_phase6_s3_release_object import (
     Phase6S3ReleaseObjectExpectation,
     VerifiedPhase6S3ReleaseObject,
     validate_phase6_s3_version_id,
-    verify_phase6_s3_release_object_evidence,
+    verify_phase6_lambda_release_object_evidence,
+)
+from tools.verify_phase6_s3_release_object import (
+    verify_phase6_s3_release_object_evidence as _verify_phase6_closed_s3_release_object_evidence,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,6 +82,23 @@ _PLACEHOLDER = re.compile(
     r"\b(?:PLACEHOLDER|REPLACE_ME|CHANGEME)\b",
     re.IGNORECASE,
 )
+
+
+def verify_phase6_s3_release_object_evidence(
+    expectation: Phase6S3ReleaseObjectExpectation,
+    *,
+    evidence_path: Path,
+) -> VerifiedPhase6S3ReleaseObject:
+    """Use the explicit Lambda-only manual path without weakening AgentCore evidence."""
+
+    verifier = (
+        verify_phase6_lambda_release_object_evidence
+        if expectation.component == "lambda"
+        else _verify_phase6_closed_s3_release_object_evidence
+    )
+    return verifier(expectation, evidence_path=evidence_path)
+
+
 _MOVING_VALUES = frozenset({"current", "default", "latest", "mutable", "null", "unversioned"})
 _SUB_TOKEN = re.compile(r"\$\{([^}]+)\}")
 

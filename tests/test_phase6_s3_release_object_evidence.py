@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import base64
 import copy
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
 
 from tools.verify_phase6_s3_release_object import (
     EVIDENCE_FORMAT,
+    MANUAL_ROOT_LAMBDA_EVIDENCE_FORMAT,
     Phase6S3ReleaseObjectEvidenceError,
     Phase6S3ReleaseObjectExpectation,
     canonical_phase6_s3_evidence,
     validate_phase6_s3_version_id,
+    verify_phase6_lambda_release_object_evidence,
     verify_phase6_s3_release_object_evidence,
 )
 
@@ -251,6 +254,25 @@ def _evidence(expectation: Phase6S3ReleaseObjectExpectation | None = None) -> di
     }
 
 
+def _manual_root_lambda_evidence(
+    expectation: Phase6S3ReleaseObjectExpectation | None = None,
+) -> dict:
+    expected = expectation or _expectation(component="lambda")
+    closed = _evidence(expected)
+    return {
+        "accountId": expected.account_id,
+        "bucket": expected.bucket,
+        "bucketState": copy.deepcopy(closed["bucketStateBeforePut"]),
+        "component": expected.component,
+        "format": MANUAL_ROOT_LAMBDA_EVIDENCE_FORMAT,
+        "key": expected.key,
+        "readback": copy.deepcopy(closed["preRevocationReadback"]),
+        "region": expected.region,
+        "releaseFingerprint": expected.release_fingerprint,
+        "versionId": VERSION_ID,
+    }
+
+
 def _write_evidence(tmp_path: Path, document: object, *, canonical: bool = True) -> Path:
     path = tmp_path / "object-binding-evidence.json"
     if canonical:
@@ -313,6 +335,169 @@ def test_closed_evidence_returns_exact_immutable_binding(tmp_path: Path) -> None
     assert binding.key == expected.key
     assert binding.version_id == VERSION_ID
     assert len(binding.evidence_sha256) == 64
+
+
+def test_manual_root_lambda_evidence_returns_exact_version_bound_binding(tmp_path: Path) -> None:
+    expected = _expectation(component="lambda")
+    document = _manual_root_lambda_evidence(expected)
+    path = _write_evidence(tmp_path, document)
+
+    binding = verify_phase6_lambda_release_object_evidence(expected, evidence_path=path)
+
+    assert binding.component == "lambda"
+    assert binding.archive_sha256 == ARCHIVE_SHA
+    assert binding.size_bytes == SIZE
+    assert binding.checksum_sha256_base64 == expected.checksum_sha256_base64
+    assert binding.bucket == expected.bucket
+    assert binding.key == expected.key
+    assert binding.version_id == VERSION_ID
+    assert binding.evidence_sha256 == sha256(path.read_bytes()).hexdigest()
+
+
+def test_manual_root_evidence_format_is_lambda_only(tmp_path: Path) -> None:
+    expected = _expectation()
+    path = _write_evidence(tmp_path, _manual_root_lambda_evidence(expected))
+    with pytest.raises(Phase6S3ReleaseObjectEvidenceError):
+        verify_phase6_lambda_release_object_evidence(expected, evidence_path=path)
+
+
+def test_general_release_object_verifier_remains_v2_only(tmp_path: Path) -> None:
+    expected = _expectation(component="lambda")
+    path = _write_evidence(tmp_path, _manual_root_lambda_evidence(expected))
+    with pytest.raises(Phase6S3ReleaseObjectEvidenceError):
+        verify_phase6_s3_release_object_evidence(expected, evidence_path=path)
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    (
+        (("accountId",), "999999999999"),
+        (("region",), "us-east-1"),
+        (("component",), "agentcore"),
+        (("releaseFingerprint",), "c" * 64),
+        (("bucket",), "other-bucket"),
+        (("key",), "moving.zip"),
+        (("versionId",), "different-version"),
+        (("bucketState", "versioning", "response", "Status"), "Suspended"),
+        (
+            (
+                "bucketState",
+                "ownershipControls",
+                "response",
+                "OwnershipControls",
+                "Rules",
+                0,
+                "ObjectOwnership",
+            ),
+            "ObjectWriter",
+        ),
+        (("readback", "headObject", "request", "checksumMode"), "DISABLED"),
+        (("readback", "headObject", "request", "versionId"), "different-version"),
+        (("readback", "headObject", "response", "ChecksumSHA256"), "wrong"),
+        (("readback", "headObject", "response", "ChecksumType"), "COMPOSITE"),
+        (("readback", "headObject", "response", "ContentLength"), SIZE + 1),
+        (("readback", "headObject", "response", "ETag"), '"wrong"'),
+        (("readback", "headObject", "response", "Metadata"), {}),
+        (("readback", "headObject", "response", "ServerSideEncryption"), "aws:kms"),
+        (("readback", "headObject", "response", "VersionId"), "different-version"),
+        (("readback", "listObjectVersions", "request", "prefix"), "wrong-prefix"),
+        (("readback", "listObjectVersions", "response", "IsTruncated"), True),
+        (
+            ("readback", "listObjectVersions", "response", "DeleteMarkers"),
+            [{"VersionId": "deleted"}],
+        ),
+        (
+            (
+                "readback",
+                "listObjectVersions",
+                "response",
+                "Versions",
+                0,
+                "ChecksumAlgorithm",
+            ),
+            ["CRC32"],
+        ),
+        (
+            (
+                "readback",
+                "listObjectVersions",
+                "response",
+                "Versions",
+                0,
+                "IsLatest",
+            ),
+            False,
+        ),
+        (
+            ("readback", "listObjectVersions", "response", "Versions", 0, "Key"),
+            "wrong-key",
+        ),
+        (
+            ("readback", "listObjectVersions", "response", "Versions", 0, "Size"),
+            SIZE + 1,
+        ),
+        (
+            (
+                "readback",
+                "listObjectVersions",
+                "response",
+                "Versions",
+                0,
+                "VersionId",
+            ),
+            "different-version",
+        ),
+    ),
+)
+def test_manual_root_lambda_evidence_requires_exact_remote_binding(
+    tmp_path: Path,
+    path: tuple[object, ...],
+    value: object,
+) -> None:
+    document = _manual_root_lambda_evidence()
+    target: object = document
+    for part in path[:-1]:
+        target = target[part]  # type: ignore[index]
+    target[path[-1]] = value  # type: ignore[index]
+    evidence_path = _write_evidence(tmp_path, document)
+    with pytest.raises(Phase6S3ReleaseObjectEvidenceError):
+        verify_phase6_lambda_release_object_evidence(
+            _expectation(component="lambda"),
+            evidence_path=evidence_path,
+        )
+
+
+def test_manual_root_lambda_evidence_is_closed_canonical_and_singleton(tmp_path: Path) -> None:
+    expected = _expectation(component="lambda")
+    for name, mutate in (
+        (
+            "multiple",
+            lambda document: document["readback"]["listObjectVersions"]["response"][
+                "Versions"
+            ].append(
+                copy.deepcopy(document["readback"]["listObjectVersions"]["response"]["Versions"][0])
+            ),
+        ),
+        ("extra", lambda document: document.__setitem__("putObject", {})),
+        ("missing", lambda document: document.pop("bucketState")),
+        (
+            "out-of-order",
+            lambda document: document["bucketState"].__setitem__(
+                "capturedAt", document["readback"]["capturedAt"]
+            ),
+        ),
+    ):
+        document = _manual_root_lambda_evidence()
+        mutate(document)
+        path = tmp_path / f"{name}.json"
+        path.write_bytes(canonical_phase6_s3_evidence(document))
+        with pytest.raises(Phase6S3ReleaseObjectEvidenceError):
+            verify_phase6_lambda_release_object_evidence(expected, evidence_path=path)
+
+    noncanonical = tmp_path / "noncanonical.json"
+    noncanonical.write_text("{}", encoding="utf-8")
+    with pytest.raises(Phase6S3ReleaseObjectEvidenceError):
+        verify_phase6_lambda_release_object_evidence(expected, evidence_path=noncanonical)
 
 
 @pytest.mark.parametrize(

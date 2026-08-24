@@ -1,5 +1,10 @@
 # Phase 6 core-runtime UPDATE review gate
 
+> This is the optional audit-grade deployment path. The current one-off demo uses the smaller
+> root-assisted procedure in `SIMPLE_ROOT_RUNTIME_DEPLOYMENT.md`, which preserves exact artifact
+> versions, a least-privilege CloudFormation execution role, and change-set review without
+> attaching temporary policies to the developer group.
+
 This runbook stages and reviews the first inert core-runtime update of the retained Phase 6
 foundation stack. It does not deploy the seller web surface, enable a trigger, authorize
 publication, or execute a change set. The final verifier is offline and proves only its captures.

@@ -43,9 +43,12 @@ The renderer accepts only these checked local authorities:
   may omit `targetVersion` and `failureReason`; when present, `targetVersion` must equal `1` and
   `failureReason` must be null or empty. The canonical observation preserves either field's absence
   rather than synthesizing it;
-- canonical closed AgentCore and Lambda S3 release-object evidence documents accepted by
-  `tools/verify_phase6_s3_release_object.py`. That evidence must bind the exact account, Region,
-  bucket, content-addressed key, nonmoving VersionId, checksum-enabled `HeadObject` result, and a
+- canonical AgentCore and Lambda S3 release-object evidence documents accepted by
+  `tools/verify_phase6_s3_release_object.py`. AgentCore retains the complete common-v2
+  upload/readback/revocation proof. Lambda may use either that proof or the narrower, Lambda-only
+  `mr-lister-phase6-s3-manual-root-lambda-evidence-v1` readback used by
+  `SIMPLE_ROOT_RUNTIME_DEPLOYMENT.md`. Both formats bind the exact account, Region, bucket,
+  content-addressed key, nonmoving VersionId, checksum-enabled `HeadObject` result, and a
   singleton/current `ListObjectVersions` result. The decoded S3 `ChecksumSHA256` must equal the
   corresponding local sealed archive SHA-256 and `ContentLength` must equal its exact size.
 
