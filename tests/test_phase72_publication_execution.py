@@ -14,7 +14,9 @@ from pydantic import ValidationError
 from mr_lister.publication.contract import PublicationPermitState, PublicationState
 from mr_lister.publication.errors import (
     PublicationConflictError,
+    PublicationErrorCode,
 )
+from mr_lister.publication.evidence_provenance import build_provider_evidence_commit
 from mr_lister.publication.execution_commands import (
     ClaimProductGetCommand,
     ClaimPublicationMutationCommand,
@@ -136,17 +138,72 @@ class Harness:
         return self.store.load_execution_authority(OWNER_ID, self.aggregate_id)
 
     def command(self, command_type: type[Any], name: str, **values: object) -> Any:
+        if command_type is RecordPublicationPreflightCommand and "shop_evidence" in values:
+            shop_stage = self.stage_evidence(values.pop("shop_evidence"))
+            product_stage = self.stage_evidence(values.pop("product_evidence"))
+            values.update(
+                shop_evidence_stage_id=shop_stage.stage_id,
+                shop_evidence_stage_fingerprint=shop_stage.fingerprint,
+                product_evidence_stage_id=product_stage.stage_id,
+                product_evidence_stage_fingerprint=product_stage.fingerprint,
+            )
+        elif (
+            command_type
+            in {
+                RecordPublicationPostOutcomeCommand,
+                RecordPublicationProductObservationCommand,
+            }
+            and "evidence" in values
+        ):
+            stage = self.stage_evidence(values.pop("evidence"))
+            values.update(
+                evidence_stage_id=stage.stage_id,
+                evidence_stage_fingerprint=stage.fingerprint,
+            )
         authority = self.authority
         return command_type(
             owner_id=OWNER_ID,
             aggregate_id=self.aggregate_id,
             operation_id=name,
             expected_aggregate_record_version=authority.aggregate.record_version,
+            expected_aggregate_fingerprint=authority.aggregate.fingerprint,
+            expected_provider_evidence_record_version=(
+                authority.aggregate.provider_evidence_record_version
+            ),
             expected_attempt_record_version=authority.attempt.record_version,
             expected_permit_record_version=authority.permit.record_version,
             expected_work_record_version=authority.work.record_version,
             **values,
         )
+
+    def stage_evidence(self, evidence: Any):  # type: ignore[no-untyped-def]
+        authority = self.authority
+        claim = next(
+            candidate
+            for candidate in authority.call_claims
+            if candidate.authorization_id == evidence.call_claim_id
+        )
+        audit = next(
+            (
+                binding
+                for binding in authority.provider_audits
+                if binding.call_claim_id == claim.authorization_id
+            ),
+            None,
+        )
+        if audit is None:
+            raise PublicationConflictError(
+                PublicationErrorCode.INVALID_AUTHORITY,
+                "Provider evidence lacks an allowed audit binding",
+            )
+        commit = build_provider_evidence_commit(
+            authority,
+            claim,
+            audit,
+            evidence,
+            staged_at=self.clock.now,
+        )
+        return self.store.stage_evidence(commit)
 
     def next_operation(self, prefix: str) -> str:
         self.operation_number += 1
@@ -514,19 +571,20 @@ def test_preflight_requires_audited_provider_evidence_and_closes_more_preflight_
     )
     product_evidence = harness.product_evidence(product_claim)
     harness.clock.tick()
-    command = harness.command(
-        RecordPublicationPreflightCommand,
-        "unaudited_preflight",
-        shop_evidence=shop_evidence,
-        product_evidence=product_evidence,
-    )
     with pytest.raises(PublicationConflictError) as error:
-        harness.service.record_preflight(command)
+        harness.stage_evidence(shop_evidence)
     _assert_code(error, "PUBLICATION_INVALID_AUTHORITY")
 
     harness.audit(shop_claim)
     harness.audit(product_claim)
-    harness.service.record_preflight(command)
+    harness.service.record_preflight(
+        harness.command(
+            RecordPublicationPreflightCommand,
+            "audited_preflight",
+            shop_evidence=shop_evidence,
+            product_evidence=product_evidence,
+        )
+    )
     with pytest.raises(PublicationConflictError):
         harness.claim_shop()
     with pytest.raises(PublicationConflictError):

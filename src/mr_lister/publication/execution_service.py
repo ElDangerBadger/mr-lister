@@ -27,6 +27,12 @@ from mr_lister.publication.errors import (
     PublicationErrorCode,
     PublicationIdempotencyConflictError,
 )
+from mr_lister.publication.evidence_provenance import (
+    PublicationProviderEvidenceConsumption,
+    PublicationProviderEvidenceKind,
+    PublicationProviderEvidenceStage,
+    build_provider_evidence_consumption,
+)
 from mr_lister.publication.execution_commands import (
     ClaimProductGetCommand,
     ClaimPublicationMutationCommand,
@@ -38,6 +44,7 @@ from mr_lister.publication.execution_commands import (
     RecordPublicationPreflightCommand,
     RecordPublicationProductObservationCommand,
     RecoverConsumedPublicationClaimCommand,
+    SettleDefinitivePreflightFailureCommand,
     SettlePublicationDeadlineCommand,
 )
 from mr_lister.publication.execution_fingerprints import (
@@ -69,6 +76,7 @@ from mr_lister.publication.execution_models import (
     PublicationPermitRetirementReason,
     PublicationPostObservation,
     PublicationPostOutcome,
+    PublicationPreflightFailureReason,
     PublicationPreflightProof,
     PublicationProductObservation,
     PublicationProviderAuthority,
@@ -288,19 +296,30 @@ class PublicationExecutionService:
             self._permit_unavailable()
         if authority.preflight_proof is not None:
             self._invalid_transition("Preflight proof already exists")
-        shop_evidence = command.shop_evidence
-        product_evidence = command.product_evidence
+        shop_stage = self._load_provider_evidence_stage(
+            command,
+            stage_id=command.shop_evidence_stage_id,
+            stage_fingerprint=command.shop_evidence_stage_fingerprint,
+            expected_kind=PublicationProviderEvidenceKind.SHOP_PREFLIGHT,
+        )
+        product_stage = self._load_provider_evidence_stage(
+            command,
+            stage_id=command.product_evidence_stage_id,
+            stage_fingerprint=command.product_evidence_stage_fingerprint,
+            expected_kind=PublicationProviderEvidenceKind.PRODUCT_PREFLIGHT,
+        )
+        product_evidence = product_stage.evidence
         claims = {claim.authorization_id: claim for claim in authority.call_claims}
-        shop_claim = claims.get(shop_evidence.call_claim_id)
-        product_claim = claims.get(product_evidence.call_claim_id)
+        shop_claim = claims.get(shop_stage.call_claim_id)
+        product_claim = claims.get(product_stage.call_claim_id)
         if (
             shop_claim is None
             or shop_claim.call_kind is not PublicationCallKind.SHOP_GET
-            or shop_claim.fingerprint != shop_evidence.call_claim_fingerprint
+            or shop_claim.fingerprint != shop_stage.call_claim_fingerprint
             or product_claim is None
             or product_claim.call_kind is not PublicationCallKind.PRODUCT_GET
             or product_claim.purpose is not PublicationCallPurpose.PRODUCT_PREFLIGHT
-            or product_claim.fingerprint != product_evidence.call_claim_fingerprint
+            or product_claim.fingerprint != product_stage.call_claim_fingerprint
         ):
             self._invalid_authority("Preflight command does not bind exact GET claims")
         self._require_before_deadline(authority, now)
@@ -308,21 +327,18 @@ class PublicationExecutionService:
         if provider_authority is None:
             self._invalid_authority("Provider authority was not reconstructed")
         if (
-            shop_evidence.provider_authority_id != provider_authority.provider_authority_id
-            or shop_evidence.provider_authority_fingerprint != provider_authority.fingerprint
-            or product_evidence.provider_authority_id != provider_authority.provider_authority_id
-            or product_evidence.provider_authority_fingerprint != provider_authority.fingerprint
-            or shop_evidence.printify_shop_id != authority.snapshot.printify_shop_id
-            or product_evidence.printify_shop_id != authority.snapshot.printify_shop_id
-            or product_evidence.printify_product_id != authority.snapshot.printify_product_id
+            shop_stage.provider_authority_id != provider_authority.provider_authority_id
+            or shop_stage.provider_authority_fingerprint != provider_authority.fingerprint
+            or product_stage.provider_authority_id != provider_authority.provider_authority_id
+            or product_stage.provider_authority_fingerprint != provider_authority.fingerprint
             or product_evidence.canonical_payload_fingerprint
             != provider_authority.product_payload_fingerprint
             or not product_evidence.preflight_satisfied
             or product_evidence.read_outcome is PublicationReadOutcome.POSITIVE_PROOF
-            or shop_evidence.observed_at < shop_claim.authorized_at
-            or product_evidence.observed_at < product_claim.authorized_at
-            or max(shop_evidence.observed_at, product_evidence.observed_at) > now
-            or max(shop_evidence.observed_at, product_evidence.observed_at)
+            or shop_stage.observed_at < shop_claim.authorized_at
+            or product_stage.observed_at < product_claim.authorized_at
+            or max(shop_stage.observed_at, product_stage.observed_at) > now
+            or max(shop_stage.observed_at, product_stage.observed_at)
             >= authority.snapshot.verification_deadline
         ):
             self._invalid_authority("Provider evidence does not prove exact complete preflight")
@@ -334,10 +350,10 @@ class PublicationExecutionService:
             "snapshot_fingerprint": authority.snapshot.fingerprint,
             "provider_authority_id": provider_authority.provider_authority_id,
             "provider_authority_fingerprint": provider_authority.fingerprint,
-            "shop_evidence_fingerprint": shop_evidence.fingerprint,
-            "product_evidence_fingerprint": product_evidence.fingerprint,
-            "shop_observed_at": shop_evidence.observed_at,
-            "product_observed_at": product_evidence.observed_at,
+            "shop_evidence_fingerprint": shop_stage.evidence_fingerprint,
+            "product_evidence_fingerprint": product_stage.evidence_fingerprint,
+            "shop_observed_at": shop_stage.observed_at,
+            "product_observed_at": product_stage.observed_at,
             "shop_call_claim_id": shop_claim.authorization_id,
             "shop_call_claim_fingerprint": shop_claim.fingerprint,
             "product_call_claim_id": product_claim.authorization_id,
@@ -378,6 +394,7 @@ class PublicationExecutionService:
             permit=authority.permit,
             work=work,
             new_preflight_proof=proof,
+            provider_evidence_stages=(shop_stage, product_stage),
         )
 
     def claim_publish(
@@ -477,6 +494,112 @@ class PublicationExecutionService:
             new_mutation_claim=mutation,
         )
 
+    def settle_definitive_preflight_failure(
+        self,
+        command: SettleDefinitivePreflightFailureCommand,
+    ) -> PublicationExecutionCommitResult:
+        context = self._begin(
+            command,
+            PublicationExecutionOperation.SETTLE_DEFINITIVE_PREFLIGHT_FAILURE,
+        )
+        if isinstance(context, PublicationExecutionCommitResult):
+            return context
+        authority, request_fingerprint, now = context
+        self._require_requested_dispatched(authority)
+        self._require_before_deadline(authority, now)
+        if (
+            authority.permit.status is not PublicationPermitState.AVAILABLE
+            or authority.preflight_proof is not None
+            or authority.mutation_claim is not None
+            or authority.post_observation is not None
+            or authority.attempt.publish_post_call_count != 0
+        ):
+            self._invalid_transition(
+                "Definitive preflight failure requires pristine pre-mutation authority"
+            )
+        stage = self._load_provider_evidence_stage(
+            command,
+            stage_id=command.evidence_stage_id,
+            stage_fingerprint=command.evidence_stage_fingerprint,
+            expected_kind=PublicationProviderEvidenceKind.DEFINITIVE_PREFLIGHT_NEGATIVE,
+        )
+        evidence = stage.evidence
+        provider_authority = authority.provider_authority
+        claim = next(
+            (
+                candidate
+                for candidate in authority.call_claims
+                if candidate.authorization_id == stage.call_claim_id
+            ),
+            None,
+        )
+        if (
+            provider_authority is None
+            or claim is None
+            or claim.fingerprint != stage.call_claim_fingerprint
+            or claim.call_kind
+            not in {PublicationCallKind.SHOP_GET, PublicationCallKind.PRODUCT_GET}
+            or claim.purpose
+            not in {
+                PublicationCallPurpose.SHOP_PREFLIGHT,
+                PublicationCallPurpose.PRODUCT_PREFLIGHT,
+            }
+            or stage.provider_authority_id != provider_authority.provider_authority_id
+            or stage.provider_authority_fingerprint != provider_authority.fingerprint
+            or stage.observed_at < claim.authorized_at
+            or stage.observed_at >= authority.snapshot.verification_deadline
+            or stage.observed_at > now
+            or evidence.failure_reason is PublicationPreflightFailureReason.LOCAL_AUTHORITY_INVALID
+        ):
+            self._invalid_authority(
+                "Definitive preflight evidence differs from exact provider authority"
+            )
+        if (
+            claim.call_kind is PublicationCallKind.SHOP_GET
+            and evidence.failure_reason
+            is not PublicationPreflightFailureReason.SHOP_NOT_CONNECTED_TO_ETSY
+        ) or (
+            claim.call_kind is PublicationCallKind.PRODUCT_GET
+            and evidence.failure_reason
+            is PublicationPreflightFailureReason.SHOP_NOT_CONNECTED_TO_ETSY
+        ):
+            self._invalid_authority(
+                "Definitive preflight reason differs from its provider call kind"
+            )
+        permit = self._evolve_permit(
+            authority,
+            status=PublicationPermitState.RETIRED,
+            record_version=1,
+            retired_at=now,
+            retirement_reason=(PublicationPermitRetirementReason.DEFINITIVE_PREFLIGHT_FAILURE),
+        )
+        aggregate, attempt, work, terminal = self._terminal_records(
+            authority,
+            now=now,
+            state=PublicationState.PUBLICATION_FAILED,
+            work_status=PublicationExecutionWorkStatus.FAILED,
+            reason=PublicationTerminalReason.DEFINITIVE_PREFLIGHT_FAILURE,
+            permit=permit,
+            observation=None,
+        )
+        report = terminal["new_report"]
+        return self._commit(
+            command,
+            authority,
+            request_fingerprint,
+            now,
+            operation=(PublicationExecutionOperation.SETTLE_DEFINITIVE_PREFLIGHT_FAILURE),
+            event_name=PublicationExecutionEventName.PUBLICATION_FAILED,
+            authority_record_id=report.report_id,  # type: ignore[union-attr]
+            authority_fingerprint=report.fingerprint,  # type: ignore[union-attr]
+            aggregate=aggregate,
+            attempt=attempt,
+            permit=permit,
+            work=work,
+            provider_evidence_stages=(stage,),
+            **terminal,
+        )
+
     def record_post_outcome(
         self,
         command: RecordPublicationPostOutcomeCommand,
@@ -491,7 +614,13 @@ class PublicationExecutionService:
             or authority.work.status is not PublicationExecutionWorkStatus.DISPATCHED
         ):
             self._invalid_transition("POST outcome can settle only the consumed requested state")
-        evidence = command.evidence
+        evidence_stage = self._load_provider_evidence_stage(
+            command,
+            stage_id=command.evidence_stage_id,
+            stage_fingerprint=command.evidence_stage_fingerprint,
+            expected_kind=PublicationProviderEvidenceKind.PUBLISH_OUTCOME,
+        )
+        evidence = evidence_stage.evidence
         mutation = authority.mutation_claim
         provider_authority = authority.provider_authority
         publish_claim = next(
@@ -506,14 +635,12 @@ class PublicationExecutionService:
             mutation is None
             or provider_authority is None
             or publish_claim is None
-            or mutation.mutation_claim_id != evidence.mutation_claim_id
-            or mutation.fingerprint != evidence.mutation_claim_fingerprint
-            or publish_claim.authorization_id != evidence.call_claim_id
-            or publish_claim.fingerprint != evidence.call_claim_fingerprint
-            or provider_authority.provider_authority_id != evidence.provider_authority_id
-            or provider_authority.fingerprint != evidence.provider_authority_fingerprint
-            or evidence.observed_at < mutation.authorized_at
-            or evidence.observed_at > now
+            or publish_claim.authorization_id != evidence_stage.call_claim_id
+            or publish_claim.fingerprint != evidence_stage.call_claim_fingerprint
+            or provider_authority.provider_authority_id != evidence_stage.provider_authority_id
+            or provider_authority.fingerprint != evidence_stage.provider_authority_fingerprint
+            or evidence_stage.observed_at < mutation.authorized_at
+            or evidence_stage.observed_at > now
         ):
             self._invalid_authority("POST evidence does not bind exact audited mutation authority")
         values = {
@@ -526,12 +653,12 @@ class PublicationExecutionService:
             "mutation_claim_fingerprint": mutation.fingerprint,
             "provider_authority_id": provider_authority.provider_authority_id,
             "provider_authority_fingerprint": provider_authority.fingerprint,
-            "provider_evidence_fingerprint": evidence.fingerprint,
+            "provider_evidence_fingerprint": evidence_stage.evidence_fingerprint,
             "outcome": evidence.outcome,
             "response_category": evidence.response_category,
             "sanitized_response_fingerprint": evidence.sanitized_response_fingerprint,
             "provider_outcome_uncertain": (evidence.outcome is PublicationPostOutcome.AMBIGUOUS),
-            "observed_at": evidence.observed_at,
+            "observed_at": evidence_stage.observed_at,
         }
         observation = self._record(PublicationPostObservation, "post_observation", values)
         if evidence.outcome is PublicationPostOutcome.DEFINITELY_ACCEPTED:
@@ -574,6 +701,7 @@ class PublicationExecutionService:
             permit=authority.permit,
             work=work,
             new_post_observation=observation,
+            provider_evidence_stages=(evidence_stage,),
             **terminal,
         )
 
@@ -678,12 +806,26 @@ class PublicationExecutionService:
         purpose = state_purpose.get(authority.aggregate.state)
         if purpose is None or authority.permit.status is not PublicationPermitState.CONSUMED:
             self._invalid_transition("Product observations require verifying or reconciling state")
-        evidence = command.evidence
+        evidence_kind = {
+            PublicationCallPurpose.VERIFICATION: (
+                PublicationProviderEvidenceKind.PRODUCT_VERIFICATION
+            ),
+            PublicationCallPurpose.RECONCILIATION: (
+                PublicationProviderEvidenceKind.PRODUCT_RECONCILIATION
+            ),
+        }[purpose]
+        evidence_stage = self._load_provider_evidence_stage(
+            command,
+            stage_id=command.evidence_stage_id,
+            stage_fingerprint=command.evidence_stage_fingerprint,
+            expected_kind=evidence_kind,
+        )
+        evidence = evidence_stage.evidence
         claim = next(
             (
                 candidate
                 for candidate in authority.call_claims
-                if candidate.authorization_id == evidence.call_claim_id
+                if candidate.authorization_id == evidence_stage.call_claim_id
             ),
             None,
         )
@@ -691,7 +833,7 @@ class PublicationExecutionService:
             claim is None
             or claim.call_kind is not PublicationCallKind.PRODUCT_GET
             or claim.purpose is not purpose
-            or claim.fingerprint != evidence.call_claim_fingerprint
+            or claim.fingerprint != evidence_stage.call_claim_fingerprint
         ):
             self._invalid_authority("Product observation does not bind a state-specific GET claim")
         if any(
@@ -702,22 +844,20 @@ class PublicationExecutionService:
         provider_authority = authority.provider_authority
         if (
             provider_authority is None
-            or evidence.provider_authority_id != provider_authority.provider_authority_id
-            or evidence.provider_authority_fingerprint != provider_authority.fingerprint
-            or evidence.printify_shop_id != authority.snapshot.printify_shop_id
-            or evidence.printify_product_id != authority.snapshot.printify_product_id
+            or evidence_stage.provider_authority_id != provider_authority.provider_authority_id
+            or evidence_stage.provider_authority_fingerprint != provider_authority.fingerprint
             or (
                 evidence.canonical_content_match
                 and evidence.canonical_payload_fingerprint
                 != provider_authority.product_payload_fingerprint
             )
-            or evidence.observed_at < claim.authorized_at
-            or evidence.observed_at > now
+            or evidence_stage.observed_at < claim.authorized_at
+            or evidence_stage.observed_at > now
         ):
             self._invalid_authority("Product evidence differs from exact provider authority")
         if (
             evidence.read_outcome is PublicationReadOutcome.POSITIVE_PROOF
-            and evidence.observed_at >= authority.snapshot.verification_deadline
+            and evidence_stage.observed_at >= authority.snapshot.verification_deadline
         ):
             self._deadline_expired("Positive proof arrived after the fixed deadline")
         values = {
@@ -730,14 +870,11 @@ class PublicationExecutionService:
             "call_claim_fingerprint": claim.fingerprint,
             "provider_authority_id": provider_authority.provider_authority_id,
             "provider_authority_fingerprint": provider_authority.fingerprint,
-            "provider_evidence_fingerprint": evidence.fingerprint,
+            "provider_evidence_fingerprint": evidence_stage.evidence_fingerprint,
             "sanitized_response_fingerprint": evidence.sanitized_response_fingerprint,
             "outcome": evidence.read_outcome,
-            "exact_shop": evidence.printify_shop_id == authority.snapshot.printify_shop_id,
-            "exact_product": (
-                evidence.product_present
-                and evidence.printify_product_id == authority.snapshot.printify_product_id
-            ),
+            "exact_shop": True,
+            "exact_product": evidence.product_present,
             "unlocked": evidence.is_locked is False,
             "visible": evidence.visible is True,
             "canonical_content_match": evidence.canonical_content_match,
@@ -751,11 +888,11 @@ class PublicationExecutionService:
             ),
             "numeric_listing_id": evidence.numeric_listing_id,
             "verified_product_fingerprint": (
-                evidence.fingerprint
+                evidence_stage.evidence_fingerprint
                 if evidence.read_outcome is PublicationReadOutcome.POSITIVE_PROOF
                 else None
             ),
-            "observed_at": evidence.observed_at,
+            "observed_at": evidence_stage.observed_at,
             "verification_deadline": authority.snapshot.verification_deadline,
             "resulting_aggregate_record_version": authority.aggregate.record_version + 1,
         }
@@ -774,7 +911,7 @@ class PublicationExecutionService:
                     observation.numeric_listing_id  # type: ignore[arg-type]
                 ),
                 "verified_product_fingerprint": observation.verified_product_fingerprint,
-                "verified_at": evidence.observed_at,
+                "verified_at": evidence_stage.observed_at,
             }
             result = self._record(PublicationResult, "publication_result", result_values)
             notification_values = {
@@ -839,6 +976,7 @@ class PublicationExecutionService:
             permit=authority.permit,
             work=work,
             new_product_observation=observation,
+            provider_evidence_stages=(evidence_stage,),
             **terminal,
         )
 
@@ -1029,12 +1167,16 @@ class PublicationExecutionService:
         )
         expected_versions = (
             command.expected_aggregate_record_version,
+            command.expected_aggregate_fingerprint,
+            command.expected_provider_evidence_record_version,
             command.expected_attempt_record_version,
             command.expected_permit_record_version,
             command.expected_work_record_version,
         )
         actual_versions = (
             authority.aggregate.record_version,
+            authority.aggregate.fingerprint,
+            authority.aggregate.provider_evidence_record_version,
             authority.attempt.record_version,
             authority.permit.record_version,
             authority.work.record_version,
@@ -1077,6 +1219,7 @@ class PublicationExecutionService:
         new_report: PublicationTerminalReport | None = None,
         new_tombstone: PublicationAggregateTombstone | None = None,
         terminal_job_update: PublicationTerminalJobUpdate | None = None,
+        provider_evidence_stages: tuple[PublicationProviderEvidenceStage, ...] = (),
     ) -> PublicationExecutionCommitResult:
         event_values = {
             "aggregate_id": aggregate.aggregate_id,
@@ -1112,6 +1255,16 @@ class PublicationExecutionService:
             "execution_receipt",
             receipt_values,
         )
+        evidence_consumptions = tuple(
+            self._provider_evidence_consumption(
+                stage,
+                operation=operation,
+                operation_id=command.operation_id,
+                receipt_id=receipt.receipt_id,
+                consumed_at=now,
+            )
+            for stage in provider_evidence_stages
+        )
         commit = PublicationExecutionCommit(
             expected=authority,
             updated_aggregate=aggregate,
@@ -1129,6 +1282,8 @@ class PublicationExecutionService:
             new_report=new_report,
             new_tombstone=new_tombstone,
             terminal_job_update=terminal_job_update,
+            expected_provider_evidence_stages=provider_evidence_stages,
+            new_provider_evidence_consumptions=evidence_consumptions,
             event=event,
             receipt=receipt,
         )
@@ -1146,6 +1301,49 @@ class PublicationExecutionService:
                     return PublicationExecutionCommitResult(receipt=persisted)
                 raise PublicationIdempotencyConflictError() from None
             raise
+
+    def _load_provider_evidence_stage(
+        self,
+        command: PublicationExecutionCommand,
+        *,
+        stage_id: str,
+        stage_fingerprint: str,
+        expected_kind: PublicationProviderEvidenceKind,
+    ) -> PublicationProviderEvidenceStage:
+        stage = self._store.get_provider_evidence_stage(
+            command.owner_id,
+            command.aggregate_id,
+            stage_id,
+        )
+        try:
+            stage = PublicationProviderEvidenceStage.model_validate(stage.model_dump(mode="python"))
+        except (AttributeError, ValidationError, ValueError):
+            self._invalid_authority("Staged provider evidence is invalid")
+        if (
+            stage.stage_id != stage_id
+            or stage.fingerprint != stage_fingerprint
+            or stage.aggregate_id != command.aggregate_id
+            or stage.evidence_kind is not expected_kind
+        ):
+            self._invalid_authority("Staged provider evidence differs from the command authority")
+        return stage
+
+    @staticmethod
+    def _provider_evidence_consumption(
+        stage: PublicationProviderEvidenceStage,
+        *,
+        operation: PublicationExecutionOperation,
+        operation_id: str,
+        receipt_id: str,
+        consumed_at: datetime,
+    ) -> PublicationProviderEvidenceConsumption:
+        return build_provider_evidence_consumption(
+            stage,
+            operation_id=operation_id,
+            operation=operation,
+            receipt_id=receipt_id,
+            consumed_at=consumed_at,
+        )
 
     def _terminal_records(
         self,

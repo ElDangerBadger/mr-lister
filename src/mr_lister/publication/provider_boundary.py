@@ -13,6 +13,7 @@ import json
 import math
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from threading import Lock
 from typing import Annotated, Any, Literal, Protocol
@@ -32,17 +33,26 @@ from pydantic import (
     model_validator,
 )
 
+from mr_lister.publication.evidence_provenance import (
+    PublicationDefinitivePreflightEvidence,
+    PublicationProviderEvidenceStage,
+    PublicationProviderEvidenceStore,
+    build_provider_evidence_commit,
+)
 from mr_lister.publication.execution_fingerprints import execution_record_fingerprint
 from mr_lister.publication.execution_models import (
     ExpectedVariantEconomics,
     PublicationCallClaim,
     PublicationCallKind,
     PublicationCallPurpose,
+    PublicationExecutionAuthority,
     PublicationExternalEvidenceState,
     PublicationMutationClaim,
     PublicationPostOutcome,
+    PublicationPreflightFailureReason,
     PublicationPreflightProof,
     PublicationProductReadEvidence,
+    PublicationProviderAuditBinding,
     PublicationProviderAuditCategory,
     PublicationProviderAuditDecision,
     PublicationProviderAuditRecord,
@@ -130,13 +140,29 @@ class PublicationProviderPreflightError(PublicationProviderError):
     """Read-only evidence definitively failed a pre-mutation requirement."""
 
 
+class _DefinitiveProviderPreflightFailure(Exception):
+    """Structured internal classifier result; raw provider material is never retained."""
+
+    def __init__(
+        self,
+        *,
+        reason: PublicationPreflightFailureReason,
+        sanitized_response_fingerprint: str,
+        observed_at: datetime,
+    ) -> None:
+        super().__init__(reason.value)
+        self.reason = reason
+        self.sanitized_response_fingerprint = sanitized_response_fingerprint
+        self.observed_at = observed_at
+
+
 class PublicationAuditSink(Protocol):
     def write_allowed(
         self,
         *,
         record: PublicationProviderAuditRecord,
         call_claim: PublicationCallClaim,
-    ) -> None: ...
+    ) -> PublicationProviderAuditBinding | None: ...
 
     def write_rejected(self, record: PublicationProviderAuditRecord) -> None: ...
 
@@ -158,6 +184,14 @@ class PublicationHttpTransport(Protocol):
         body: bytes | None,
         timeout_seconds: float,
     ) -> PublicationHttpResponse: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _AuditedPublicationHttpResponse:
+    """Keep the durable audit binding beside its one wire response inside the boundary."""
+
+    response: PublicationHttpResponse
+    audit_binding: PublicationProviderAuditBinding | None
 
 
 class _RejectRedirectHandler(HTTPRedirectHandler):
@@ -249,6 +283,8 @@ class SanitizedPublicationAuditTransport:
     ) -> None:
         self._transport = transport
         self._audit_sink = audit_sink
+        self._binding_lock = Lock()
+        self._durable_bindings: dict[str, PublicationProviderAuditBinding] = {}
 
     def request(
         self,
@@ -260,6 +296,26 @@ class SanitizedPublicationAuditTransport:
         timeout_seconds: float,
         call_claim: PublicationCallClaim | None = None,
     ) -> PublicationHttpResponse:
+        return self._request_with_audit(
+            method=method,
+            url=url,
+            headers=headers,
+            body=body,
+            timeout_seconds=timeout_seconds,
+            call_claim=call_claim,
+        ).response
+
+    def _request_with_audit(
+        self,
+        *,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        timeout_seconds: float,
+        call_claim: PublicationCallClaim | None = None,
+        require_durable_binding: bool = False,
+    ) -> _AuditedPublicationHttpResponse:
         try:
             route_template = assert_publication_api_url(method=method, url=url, body=body)
         except Exception:
@@ -290,14 +346,31 @@ class SanitizedPublicationAuditTransport:
             raise PublicationProviderInputError(
                 "Printify wire request lacks its exact durable call claim"
             ) from None
-        self._write_allowed(record=record, call_claim=claim)
-        return self._transport.request(
-            method=method,
-            url=url,
-            headers=headers,
-            body=body,
-            timeout_seconds=timeout_seconds,
+        audit_binding = self._write_allowed(record=record, call_claim=claim)
+        if require_durable_binding and audit_binding is None:
+            raise PublicationProviderUnavailableError(
+                "Publication provider audit did not return durable authority"
+            )
+        if audit_binding is not None:
+            with self._binding_lock:
+                self._durable_bindings[claim.authorization_id] = audit_binding
+        return _AuditedPublicationHttpResponse(
+            response=self._transport.request(
+                method=method,
+                url=url,
+                headers=headers,
+                body=body,
+                timeout_seconds=timeout_seconds,
+            ),
+            audit_binding=audit_binding,
         )
+
+    def _take_durable_binding(
+        self,
+        call_claim: PublicationCallClaim,
+    ) -> PublicationProviderAuditBinding | None:
+        with self._binding_lock:
+            return self._durable_bindings.pop(call_claim.authorization_id, None)
 
     def record_rejected(self, category: PublicationProviderAuditCategory) -> None:
         self._write_rejected(_rejected_audit_record(category))
@@ -307,12 +380,20 @@ class SanitizedPublicationAuditTransport:
         *,
         record: PublicationProviderAuditRecord,
         call_claim: PublicationCallClaim,
-    ) -> None:
+    ) -> PublicationProviderAuditBinding | None:
         try:
-            self._audit_sink.write_allowed(record=record, call_claim=call_claim)
+            binding = self._audit_sink.write_allowed(record=record, call_claim=call_claim)
         except Exception:
             raise PublicationProviderUnavailableError(
                 "Publication provider audit is unavailable"
+            ) from None
+        if binding is None:
+            return None
+        try:
+            return PublicationProviderAuditBinding.model_validate(binding.model_dump(mode="python"))
+        except Exception:
+            raise PublicationProviderUnavailableError(
+                "Publication provider audit returned an invalid binding"
             ) from None
 
     def _write_rejected(self, record: PublicationProviderAuditRecord) -> None:
@@ -543,6 +624,51 @@ class PublicationProviderBoundary(Protocol):
     ) -> PrintifyPublishObservation: ...
 
 
+class PublicationExecutionAuthorityReader(Protocol):
+    """Owner-scoped re-read used only after the durable allowed-audit append."""
+
+    def __call__(
+        self,
+        *,
+        owner_id: str,
+        aggregate_id: str,
+    ) -> PublicationExecutionAuthority: ...
+
+
+class StagedPublicationProviderBoundary(Protocol):
+    """Phase 7.3 surface: every provider result is a durable stage, never a loose DTO."""
+
+    def preflight_shop(
+        self,
+        *,
+        call_claim: PublicationCallClaim,
+        fresh_grant: FreshPublicationCallGrant,
+    ) -> PublicationProviderEvidenceStage: ...
+
+    def preflight_exact_product(
+        self,
+        *,
+        call_claim: PublicationCallClaim,
+        fresh_grant: FreshPublicationCallGrant,
+    ) -> PublicationProviderEvidenceStage: ...
+
+    def poll_exact_product(
+        self,
+        *,
+        call_claim: PublicationCallClaim,
+        fresh_grant: FreshPublicationCallGrant,
+    ) -> PublicationProviderEvidenceStage: ...
+
+    def publish_exact_product(
+        self,
+        *,
+        call_claim: PublicationCallClaim,
+        mutation_claim: PublicationMutationClaim,
+        preflight_proof: PublicationPreflightProof,
+        fresh_grant: FreshPublicationMutationGrant,
+    ) -> PublicationProviderEvidenceStage: ...
+
+
 class PrintifyPublicationBoundary:
     """Three-route, exact-authority Printify publication boundary."""
 
@@ -556,6 +682,7 @@ class PrintifyPublicationBoundary:
         clock: Any | None = None,
         timeout_seconds: float = 15.0,
         user_agent: str = "MrLister-Phase7-Offline",
+        _require_durable_audit_binding: bool = False,
     ) -> None:
         try:
             self._authority = PublicationProviderAuthority.model_validate(
@@ -589,11 +716,29 @@ class PrintifyPublicationBoundary:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._timeout_seconds = float(timeout_seconds)
         self._user_agent = user_agent
+        self._require_durable_audit_binding = _require_durable_audit_binding
         self._claim_lock = Lock()
         self._used_call_claim_ids: set[str] = set()
+        self._durable_audit_bindings: dict[str, PublicationProviderAuditBinding] = {}
         self._publish_started = False
 
     def preflight_shop(
+        self,
+        *,
+        call_claim: PublicationCallClaim,
+        fresh_grant: FreshPublicationCallGrant,
+    ) -> PrintifyShopPreflightObservation:
+        try:
+            return self._preflight_shop(
+                call_claim=call_claim,
+                fresh_grant=fresh_grant,
+            )
+        except _DefinitiveProviderPreflightFailure:
+            raise PublicationProviderPreflightError(
+                "Configured Printify shop is not exactly connected to Etsy"
+            ) from None
+
+    def _preflight_shop(
         self,
         *,
         call_claim: PublicationCallClaim,
@@ -639,8 +784,13 @@ class PrintifyPublicationBoundary:
             if shop_id == self._authority.printify_shop_id:
                 matching_channels.append(channel)
         if matching_channels != [self._authority.expected_sales_channel]:
-            raise PublicationProviderPreflightError(
-                "Configured Printify shop is not exactly connected to Etsy"
+            reason = PublicationPreflightFailureReason.SHOP_NOT_CONNECTED_TO_ETSY
+            raise _DefinitiveProviderPreflightFailure(
+                reason=reason,
+                sanitized_response_fingerprint=canonical_fingerprint(
+                    {"preflight_failure_reason": reason}
+                ),
+                observed_at=self._now(),
             )
         values = {
             "call_claim_id": claim.authorization_id,
@@ -665,11 +815,38 @@ class PrintifyPublicationBoundary:
         call_claim: PublicationCallClaim,
         fresh_grant: FreshPublicationCallGrant,
     ) -> PrintifyProductObservation:
+        try:
+            return self._preflight_exact_product(
+                call_claim=call_claim,
+                fresh_grant=fresh_grant,
+            )
+        except _DefinitiveProviderPreflightFailure as error:
+            if error.reason is PublicationPreflightFailureReason.EXACT_PRODUCT_NOT_FOUND:
+                message = "Exact Printify product was not found"
+            else:
+                message = "Exact Printify product failed publication preflight"
+            raise PublicationProviderPreflightError(message) from None
+
+    def _preflight_exact_product(
+        self,
+        *,
+        call_claim: PublicationCallClaim,
+        fresh_grant: FreshPublicationCallGrant,
+    ) -> PrintifyProductObservation:
         observation = self._read_exact_product(
             call_claim=call_claim,
             fresh_grant=fresh_grant,
             allowed_purposes={PublicationCallPurpose.PRODUCT_PREFLIGHT},
         )
+        reason = _definitive_product_preflight_failure(observation)
+        if reason is not None:
+            raise _DefinitiveProviderPreflightFailure(
+                reason=reason,
+                sanitized_response_fingerprint=canonical_fingerprint(
+                    {"preflight_failure_reason": reason}
+                ),
+                observed_at=observation.observed_at,
+            )
         if not observation.preflight_satisfied:
             raise PublicationProviderPreflightError(
                 "Exact Printify product failed publication preflight"
@@ -844,7 +1021,16 @@ class PrintifyPublicationBoundary:
             ),
             body=None,
         )
-        if response.status == 404 and claim.purpose is not PublicationCallPurpose.PRODUCT_PREFLIGHT:
+        if response.status == 404:
+            if claim.purpose is PublicationCallPurpose.PRODUCT_PREFLIGHT:
+                reason = PublicationPreflightFailureReason.EXACT_PRODUCT_NOT_FOUND
+                raise _DefinitiveProviderPreflightFailure(
+                    reason=reason,
+                    sanitized_response_fingerprint=canonical_fingerprint(
+                        {"preflight_failure_reason": reason}
+                    ),
+                    observed_at=self._now(),
+                )
             return self._missing_product_observation(claim)
         payload = self._require_get_json(response, missing_product_is_definitive=True)
         if not isinstance(payload, Mapping):
@@ -1140,24 +1326,45 @@ class PrintifyPublicationBoundary:
         if body is not None:
             headers["Content-Type"] = "application/json"
         try:
-            response = self._transport.request(
+            audited = self._transport._request_with_audit(
                 method=method,
                 url=f"{PRINTIFY_PUBLICATION_API_BASE_URL}{path}",
                 headers=headers,
                 body=body,
                 timeout_seconds=self._timeout_seconds,
                 call_claim=call_claim,
+                require_durable_binding=self._require_durable_audit_binding,
             )
         except PublicationProviderError:
             raise
         except Exception:
             raise PublicationProviderUnavailableError("Printify request did not complete") from None
         try:
-            return PublicationHttpResponse.model_validate(response.model_dump(mode="python"))
+            response = PublicationHttpResponse.model_validate(
+                audited.response.model_dump(mode="python")
+            )
         except Exception:
             raise PublicationProviderResponseError(
                 "Printify transport returned an invalid response"
             ) from None
+        if audited.audit_binding is not None:
+            self._transport._take_durable_binding(call_claim)
+            self._durable_audit_bindings[call_claim.authorization_id] = audited.audit_binding
+        return response
+
+    def _take_durable_audit_binding(
+        self,
+        call_claim: PublicationCallClaim,
+    ) -> PublicationProviderAuditBinding:
+        try:
+            return self._durable_audit_bindings.pop(call_claim.authorization_id)
+        except KeyError:
+            binding = self._transport._take_durable_binding(call_claim)
+            if binding is None:
+                raise PublicationProviderUnavailableError(
+                    "Publication evidence lacks its durable allowed audit"
+                ) from None
+            return binding
 
     @staticmethod
     def _require_get_json(
@@ -1189,6 +1396,203 @@ class PrintifyPublicationBoundary:
         ):
             raise PublicationProviderInputError("Publication provider clock must be UTC-aware")
         return value.astimezone(UTC)
+
+
+class StagedPrintifyPublicationBoundary:
+    """Provider-worker boundary that durably stages every classified wire observation."""
+
+    def __init__(
+        self,
+        *,
+        execution_authority: PublicationExecutionAuthority,
+        credential: OwnerBoundPrintifyCredential,
+        transport: PublicationHttpTransport,
+        audit_sink: PublicationAuditSink,
+        evidence_store: PublicationProviderEvidenceStore,
+        authority_reader: PublicationExecutionAuthorityReader,
+        clock: Any | None = None,
+        timeout_seconds: float = 15.0,
+        user_agent: str = "MrLister-Phase7-Offline",
+    ) -> None:
+        try:
+            exact_execution = PublicationExecutionAuthority.model_validate(
+                execution_authority.model_dump(mode="python")
+            )
+        except Exception:
+            raise PublicationProviderInputError(
+                "Publication execution authority is invalid"
+            ) from None
+        provider_authority = exact_execution.provider_authority
+        if provider_authority is None:
+            raise PublicationProviderInputError(
+                "Publication provider authority was not reconstructed"
+            )
+        self._owner_id = exact_execution.snapshot.owner_id
+        self._aggregate_id = exact_execution.aggregate.aggregate_id
+        self._evidence_store = evidence_store
+        self._authority_reader = authority_reader
+        self._boundary = PrintifyPublicationBoundary(
+            authority=provider_authority,
+            credential=credential,
+            transport=transport,
+            audit_sink=audit_sink,
+            clock=clock,
+            timeout_seconds=timeout_seconds,
+            user_agent=user_agent,
+            _require_durable_audit_binding=True,
+        )
+
+    def preflight_shop(
+        self,
+        *,
+        call_claim: PublicationCallClaim,
+        fresh_grant: FreshPublicationCallGrant,
+    ) -> PublicationProviderEvidenceStage:
+        try:
+            evidence: PrintifyShopPreflightObservation | PublicationDefinitivePreflightEvidence = (
+                self._boundary._preflight_shop(
+                    call_claim=call_claim,
+                    fresh_grant=fresh_grant,
+                )
+            )
+        except _DefinitiveProviderPreflightFailure as failure:
+            evidence = self._negative_evidence(call_claim=call_claim, failure=failure)
+        return self._stage(call_claim=call_claim, evidence=evidence)
+
+    def preflight_exact_product(
+        self,
+        *,
+        call_claim: PublicationCallClaim,
+        fresh_grant: FreshPublicationCallGrant,
+    ) -> PublicationProviderEvidenceStage:
+        try:
+            evidence: PrintifyProductObservation | PublicationDefinitivePreflightEvidence = (
+                self._boundary._preflight_exact_product(
+                    call_claim=call_claim,
+                    fresh_grant=fresh_grant,
+                )
+            )
+        except _DefinitiveProviderPreflightFailure as failure:
+            evidence = self._negative_evidence(call_claim=call_claim, failure=failure)
+        return self._stage(call_claim=call_claim, evidence=evidence)
+
+    def poll_exact_product(
+        self,
+        *,
+        call_claim: PublicationCallClaim,
+        fresh_grant: FreshPublicationCallGrant,
+    ) -> PublicationProviderEvidenceStage:
+        evidence = self._boundary.poll_exact_product(
+            call_claim=call_claim,
+            fresh_grant=fresh_grant,
+        )
+        return self._stage(call_claim=call_claim, evidence=evidence)
+
+    def publish_exact_product(
+        self,
+        *,
+        call_claim: PublicationCallClaim,
+        mutation_claim: PublicationMutationClaim,
+        preflight_proof: PublicationPreflightProof,
+        fresh_grant: FreshPublicationMutationGrant,
+    ) -> PublicationProviderEvidenceStage:
+        evidence = self._boundary.publish_exact_product(
+            call_claim=call_claim,
+            mutation_claim=mutation_claim,
+            preflight_proof=preflight_proof,
+            fresh_grant=fresh_grant,
+        )
+        return self._stage(call_claim=call_claim, evidence=evidence)
+
+    def _negative_evidence(
+        self,
+        *,
+        call_claim: PublicationCallClaim,
+        failure: _DefinitiveProviderPreflightFailure,
+    ) -> PublicationDefinitivePreflightEvidence:
+        authority = self._boundary._authority
+        values = {
+            "call_claim_id": call_claim.authorization_id,
+            "call_claim_fingerprint": call_claim.fingerprint,
+            "provider_authority_id": authority.provider_authority_id,
+            "provider_authority_fingerprint": authority.fingerprint,
+            "failure_reason": failure.reason,
+            "sanitized_response_fingerprint": failure.sanitized_response_fingerprint,
+            "observed_at": failure.observed_at,
+        }
+        return PublicationDefinitivePreflightEvidence(
+            **values,
+            fingerprint=execution_record_fingerprint(
+                "definitive_preflight_evidence",
+                values,
+            ),
+        )
+
+    def _stage(
+        self,
+        *,
+        call_claim: PublicationCallClaim,
+        evidence: (
+            PrintifyShopPreflightObservation
+            | PrintifyProductObservation
+            | PrintifyPublishObservation
+            | PublicationDefinitivePreflightEvidence
+        ),
+    ) -> PublicationProviderEvidenceStage:
+        audit_binding = self._boundary._take_durable_audit_binding(call_claim)
+        staged: PublicationProviderEvidenceStage | None = None
+        staging_failed = False
+        try:
+            authority = self._authority_reader(
+                owner_id=self._owner_id,
+                aggregate_id=self._aggregate_id,
+            )
+            commit = build_provider_evidence_commit(
+                authority,
+                call_claim,
+                audit_binding,
+                evidence,
+                staged_at=self._boundary._now(),
+            )
+            candidate = self._evidence_store.stage_evidence(commit)
+            staged = PublicationProviderEvidenceStage.model_validate(
+                candidate.model_dump(mode="python")
+            )
+            if staged != commit.stage:
+                staged = None
+                staging_failed = True
+        except PublicationProviderError:
+            raise
+        except Exception:
+            staging_failed = True
+        if staging_failed or staged is None:
+            raise PublicationProviderUnavailableError(
+                "Publication provider evidence could not be staged"
+            ) from None
+        return staged
+
+
+def _definitive_product_preflight_failure(
+    observation: PrintifyProductObservation,
+) -> PublicationPreflightFailureReason | None:
+    """Classify only complete structured provider evidence; ambiguity stays retryable."""
+
+    if not observation.canonical_content_match:
+        return PublicationPreflightFailureReason.CANONICAL_CONTENT_MISMATCH
+    if not (
+        observation.exact_variant_economics
+        and observation.exact_placement_image
+        and observation.exact_mockups
+    ):
+        return PublicationPreflightFailureReason.VARIANT_AUTHORITY_MISMATCH
+    if observation.is_locked is True:
+        return PublicationPreflightFailureReason.PRODUCT_LOCKED
+    if (
+        observation.external_evidence
+        is PublicationExternalEvidenceState.SINGLE_NUMERIC_ETSY_REFERENCE
+    ):
+        return PublicationPreflightFailureReason.PRODUCT_ALREADY_PUBLISHED
+    return None
 
 
 def _canonical_product_readback(payload: Mapping[str, Any]) -> CanonicalProductReadback:

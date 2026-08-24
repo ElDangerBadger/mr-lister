@@ -42,6 +42,24 @@ PHASE72_EXECUTION_ORACLE_FILES = {
     "execution_store.py",
 }
 
+PHASE73_PROVENANCE_FILES = {
+    "evidence_provenance.py",
+}
+
+PHASE73_PERSISTENCE_FILES = {
+    "execution_dynamodb.py",
+}
+
+PHASE73_COORDINATOR_FILES = {
+    "provider_coordinator.py",
+}
+
+PHASE73_READ_ONLY_FILES = {
+    "projection.py",
+    "projection_models.py",
+    "query_api.py",
+}
+
 EXPECTED_OFFLINE_PUBLICATION_FILES = {
     "__init__.py",
     "commands.py",
@@ -53,7 +71,13 @@ EXPECTED_OFFLINE_PUBLICATION_FILES = {
     "provider_boundary.py",
     "service.py",
     "store.py",
-} | PHASE72_EXECUTION_ORACLE_FILES
+} | (
+    PHASE72_EXECUTION_ORACLE_FILES
+    | PHASE73_PROVENANCE_FILES
+    | PHASE73_PERSISTENCE_FILES
+    | PHASE73_COORDINATOR_FILES
+    | PHASE73_READ_ONLY_FILES
+)
 
 
 def _imports(path: Path) -> set[str]:
@@ -280,7 +304,7 @@ def test_phase6_source_bundles_exclude_publication(tmp_path: Path) -> None:
             ), source_path.relative_to(bundle_root)
 
 
-def test_phase72_offline_publication_runtime_is_not_composed() -> None:
+def test_phase73_offline_publication_runtime_is_not_composed() -> None:
     publication_files = {path.name for path in PUBLICATION_ROOT.glob("*.py")}
     assert publication_files == EXPECTED_OFFLINE_PUBLICATION_FILES
     assert set(publication_exports) == {
@@ -322,7 +346,7 @@ def test_phase72_execution_oracle_has_no_provider_or_runtime_capability() -> Non
         "mr_lister.workflow",
     }
 
-    for filename in PHASE72_EXECUTION_ORACLE_FILES:
+    for filename in PHASE72_EXECUTION_ORACLE_FILES | PHASE73_PROVENANCE_FILES:
         imports = _imports(PUBLICATION_ROOT / filename)
         assert not any(
             module == forbidden or module.startswith(f"{forbidden}.")
@@ -349,3 +373,80 @@ def test_phase72_provider_boundary_owns_transport_but_not_execution_commands() -
             "mr_lister.workflow",
         }
     )
+
+
+def test_phase73_coordinator_is_the_only_offline_provider_execution_join() -> None:
+    imports = _imports(PUBLICATION_ROOT / "provider_coordinator.py")
+
+    assert "mr_lister.publication.provider_boundary" in imports
+    assert "mr_lister.publication.execution_service" in imports
+    assert not any(
+        module == runtime or module.startswith(f"{runtime}.")
+        for module in imports
+        for runtime in {
+            "boto3",
+            "botocore",
+            "httpx",
+            "requests",
+            "urllib",
+            "mr_lister.agent",
+            "mr_lister.cloud",
+            "mr_lister.production",
+            "mr_lister.workflow",
+        }
+    )
+
+
+def test_phase73_execution_dynamodb_is_injected_and_provider_free() -> None:
+    imports = _imports(PUBLICATION_ROOT / "execution_dynamodb.py")
+
+    assert "botocore.exceptions" in imports
+    assert not any(
+        module == forbidden or module.startswith(f"{forbidden}.")
+        for module in imports
+        for forbidden in {
+            "boto3",
+            "httpx",
+            "requests",
+            "urllib",
+            "mr_lister.agent",
+            "mr_lister.cloud",
+            "mr_lister.production",
+            "mr_lister.publication.provider_boundary",
+            "mr_lister.workflow",
+        }
+    )
+
+
+def test_phase73_read_projection_has_no_write_or_provider_capability() -> None:
+    forbidden_imports = {
+        "boto3",
+        "botocore",
+        "httpx",
+        "requests",
+        "urllib",
+        "mr_lister.agent",
+        "mr_lister.production",
+        "mr_lister.publication.execution_commands",
+        "mr_lister.publication.execution_dynamodb",
+        "mr_lister.publication.execution_service",
+        "mr_lister.publication.execution_store",
+        "mr_lister.publication.provider_boundary",
+        "mr_lister.publication.provider_coordinator",
+        "mr_lister.publication.service",
+        "mr_lister.workflow",
+    }
+
+    for filename in PHASE73_READ_ONLY_FILES:
+        imports = _imports(PUBLICATION_ROOT / filename)
+        assert not any(
+            module == forbidden or module.startswith(f"{forbidden}.")
+            for module in imports
+            for forbidden in forbidden_imports
+        ), filename
+        cloud_imports = {
+            module
+            for module in imports
+            if module == "mr_lister.cloud" or module.startswith("mr_lister.cloud.")
+        }
+        assert cloud_imports <= ({"mr_lister.cloud.auth"} if filename == "query_api.py" else set())
