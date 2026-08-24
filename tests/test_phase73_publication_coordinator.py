@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from pydantic import SecretStr
 
+from mr_lister.publication.application import DurablePublicationPreCallGuard
 from mr_lister.publication.contract import PublicationState
 from mr_lister.publication.errors import PublicationConflictError
 from mr_lister.publication.evidence_provenance import (
@@ -25,10 +26,12 @@ from mr_lister.publication.provider_boundary import (
 from mr_lister.publication.provider_coordinator import (
     PublicationProviderCoordinator,
     PublicationProviderCoordinatorAction,
+    PublicationProviderCoordinatorError,
 )
 from mr_lister.publication.provider_credentials import (
     issue_bound_publication_provider_credential,
 )
+from tests.test_phase71_publication_service import ProfileAuthority, _authority
 from tests.test_phase71_publication_store import OWNER_ID
 from tests.test_phase72_publication_execution import Harness
 from tests.test_phase72_publication_provider_boundary import TOKEN, _json_response
@@ -88,11 +91,27 @@ class ExplodingBoundaryFactory:
         raise RuntimeError("provider worker stopped before a boundary result")
 
 
-def _coordinator(harness: Harness, factory: Any) -> PublicationProviderCoordinator:
+def _pre_call_guard(harness: Harness) -> DurablePublicationPreCallGuard:
+    _, exact = _authority()
+    return DurablePublicationPreCallGuard(
+        store=harness.store,
+        profiles=ProfileAuthority(exact),
+        eligibility=harness.profile_eligibility,  # type: ignore[arg-type]
+        release_manifest_fingerprint="b" * 64,
+    )
+
+
+def _coordinator(
+    harness: Harness,
+    factory: Any,
+    *,
+    pre_call_guard: Any | None = None,
+) -> PublicationProviderCoordinator:
     return PublicationProviderCoordinator(
         store=harness.store,
         execution=harness.service,
         boundary_factory=factory,
+        pre_call_guard=pre_call_guard or _pre_call_guard(harness),
         clock=harness.clock,
     )
 
@@ -153,6 +172,168 @@ def test_coordinator_accepts_only_owner_and_aggregate_not_commands_or_provider_m
         "expected_record_version",
         "stage_id",
     }.isdisjoint(parameters)
+
+
+class RecordingCurrentGuard:
+    def __init__(self, harness: Harness, events: list[str]) -> None:
+        self.harness = harness
+        self.events = events
+
+    def require_current(self, *, owner_id: str, aggregate_id: str):  # type: ignore[no-untyped-def]
+        self.events.append("guard")
+        return self.harness.store.load_execution_authority(owner_id, aggregate_id)
+
+
+class RejectingGuard:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def require_current(self, *, owner_id: str, aggregate_id: str):  # type: ignore[no-untyped-def]
+        self.calls.append((owner_id, aggregate_id))
+        raise RuntimeError("private stale approval material")
+
+
+class FixedGuard:
+    def __init__(self, authority: object) -> None:
+        self.authority = authority
+
+    def require_current(self, *, owner_id: str, aggregate_id: str):  # type: ignore[no-untyped-def]
+        del owner_id, aggregate_id
+        return self.authority
+
+
+class CountingBoundaryFactory:
+    def __init__(self) -> None:
+        self.prepare_calls = 0
+        self.boundary_calls = 0
+
+    def prepare_credential(self, *, execution_authority):  # type: ignore[no-untyped-def]
+        del execution_authority
+        self.prepare_calls += 1
+        raise AssertionError("credential preparation must follow the pre-call guard")
+
+    def __call__(self, **_values: object) -> object:
+        self.boundary_calls += 1
+        raise AssertionError("provider boundary must follow the pre-call guard")
+
+
+def test_pre_call_guard_runs_before_every_transition_credential_claim_audit_and_wire(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = Harness()
+    factory = ShopResponseBoundaryFactory(
+        harness,
+        _json_response(200, [{"id": 987654, "sales_channel": "disconnected"}]),
+    )
+    events = factory.events
+    guard = RecordingCurrentGuard(harness, events)
+
+    def record(name: str, operation):  # type: ignore[no-untyped-def]
+        def wrapped(*args, **kwargs):  # type: ignore[no-untyped-def]
+            events.append(name)
+            return operation(*args, **kwargs)
+
+        return wrapped
+
+    monkeypatch.setattr(
+        harness.service,
+        "dispatch_work",
+        record("dispatch", harness.service.dispatch_work),
+    )
+    monkeypatch.setattr(
+        harness.service,
+        "reconstruct_authority",
+        record("reconstruct", harness.service.reconstruct_authority),
+    )
+    monkeypatch.setattr(
+        harness.service,
+        "claim_shop_get",
+        record("claim", harness.service.claim_shop_get),
+    )
+    prepare = factory.prepare_credential
+
+    def prepare_credential(*, execution_authority):  # type: ignore[no-untyped-def]
+        events.append("credential")
+        return prepare(execution_authority=execution_authority)
+
+    monkeypatch.setattr(factory, "prepare_credential", prepare_credential)
+
+    _coordinator(harness, factory, pre_call_guard=guard).advance(
+        owner_id=OWNER_ID,
+        aggregate_id=harness.aggregate_id,
+    )
+
+    assert events == [
+        "guard",
+        "dispatch",
+        "reconstruct",
+        "credential",
+        "claim",
+        "audit",
+        "wire",
+    ]
+
+
+def test_pre_call_guard_error_fails_closed_before_any_durable_or_provider_work() -> None:
+    harness = Harness()
+    before = harness.authority
+    guard = RejectingGuard()
+    factory = CountingBoundaryFactory()
+
+    with pytest.raises(PublicationProviderCoordinatorError) as captured:
+        _coordinator(harness, factory, pre_call_guard=guard).advance(
+            owner_id=OWNER_ID,
+            aggregate_id=harness.aggregate_id,
+        )
+
+    assert str(captured.value) == "Publication pre-call authority is unavailable"
+    assert captured.value.__cause__ is None
+    assert captured.value.__context__ is None
+    assert "private" not in str(captured.value)
+    assert guard.calls == [(OWNER_ID, harness.aggregate_id)]
+    assert harness.authority == before
+    assert harness.authority.call_claims == ()
+    assert harness.authority.provider_audits == ()
+    assert harness.authority.provider_authority is None
+    assert factory.prepare_calls == 0
+    assert factory.boundary_calls == 0
+
+
+def test_pre_call_guard_cannot_return_a_stale_but_individually_valid_authority() -> None:
+    harness = Harness()
+    harness.dispatch_and_reconstruct()
+    stale = harness.authority
+    harness.claim_shop()
+    before = harness.authority
+    factory = CountingBoundaryFactory()
+
+    with pytest.raises(PublicationProviderCoordinatorError) as captured:
+        _coordinator(harness, factory, pre_call_guard=FixedGuard(stale)).advance(
+            owner_id=OWNER_ID,
+            aggregate_id=harness.aggregate_id,
+        )
+
+    assert str(captured.value) == "Publication pre-call authority is unavailable"
+    assert harness.authority == before
+    assert factory.prepare_calls == 0
+    assert factory.boundary_calls == 0
+
+
+@pytest.mark.parametrize("returned", [None, object()])
+def test_pre_call_guard_return_is_deep_validated(returned: object) -> None:
+    harness = Harness()
+    before = harness.authority
+    factory = CountingBoundaryFactory()
+
+    with pytest.raises(PublicationProviderCoordinatorError):
+        _coordinator(harness, factory, pre_call_guard=FixedGuard(returned)).advance(
+            owner_id=OWNER_ID,
+            aggregate_id=harness.aggregate_id,
+        )
+
+    assert harness.authority == before
+    assert factory.prepare_calls == 0
+    assert factory.boundary_calls == 0
 
 
 def test_coordinator_derives_setup_claim_and_negative_stage_then_recovers_without_rewire() -> None:

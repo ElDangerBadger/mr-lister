@@ -1,12 +1,37 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
   "Transform": "AWS::Serverless-2016-10-31",
-  "Description": "Mr Lister Phase 7.4 disabled publication-status query infrastructure scaffold",
+  "Description": "Mr Lister Phase 7.6 private read-only approval and publication guard verification runtime",
   "Parameters": {
     "EnvironmentName": {
       "Type": "String",
       "Default": "dev",
       "AllowedPattern": "^[a-z][a-z0-9-]{1,15}$"
+    },
+    "GuardCodeS3Bucket": {
+      "Type": "String",
+      "AllowedPattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+      "ConstraintDescription": "Supply the same-region immutable Phase 7 guard artifact bucket."
+    },
+    "GuardCodeS3Key": {
+      "Type": "String",
+      "AllowedPattern": "^phase7/releases/[a-f0-9]{64}/guard\\.zip$",
+      "ConstraintDescription": "Supply the release-fingerprint-bound Phase 7 guard object key."
+    },
+    "GuardCodeS3ObjectVersion": {
+      "Type": "String",
+      "AllowedPattern": "^(?!null$)[A-Za-z0-9._~-]{1,1024}$",
+      "ConstraintDescription": "Supply the exact immutable S3 object version for the guard bundle."
+    },
+    "GuardReleaseFingerprint": {
+      "Type": "String",
+      "AllowedPattern": "^(?!0{64}$)[a-f0-9]{64}$",
+      "ConstraintDescription": "Supply the SHA-256 fingerprint of the sealed Phase 7 guard release manifest."
+    }
+  },
+  "Conditions": {
+    "DeployPublicationStatusQueryScaffold": {
+      "Fn::Equals": [{"Ref": "GuardReleaseFingerprint"}, "0000000000000000000000000000000000000000000000000000000000000000"]
     }
   },
   "Globals": {
@@ -20,6 +45,7 @@
           "MR_LISTER_PHASE7_PUBLICATION_ENABLED": "false",
           "MR_LISTER_PHASE7_REQUEST_ENABLED": "false",
           "MR_LISTER_PHASE7_QUERY_ENABLED": "false",
+          "MR_LISTER_PHASE7_GUARD_ENABLED": "false",
           "MR_LISTER_ENVIRONMENT": {"Ref": "EnvironmentName"},
           "MR_LISTER_AWS_ACCOUNT_ID": {"Ref": "AWS::AccountId"},
           "MR_LISTER_STATE_TABLE": {
@@ -32,6 +58,7 @@
   "Resources": {
     "PublicationStatusQueryFunctionRole": {
       "Type": "AWS::IAM::Role",
+      "Condition": "DeployPublicationStatusQueryScaffold",
       "Properties": {
         "RoleName": {
           "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-query-role"
@@ -86,6 +113,7 @@
     },
     "PublicationStatusQueryLogGroup": {
       "Type": "AWS::Logs::LogGroup",
+      "Condition": "DeployPublicationStatusQueryScaffold",
       "DeletionPolicy": "Retain",
       "UpdateReplacePolicy": "Retain",
       "Properties": {
@@ -102,6 +130,7 @@
     },
     "PublicationStatusQueryFunction": {
       "Type": "AWS::Serverless::Function",
+      "Condition": "DeployPublicationStatusQueryScaffold",
       "DependsOn": "PublicationStatusQueryLogGroup",
       "Properties": {
         "FunctionName": {
@@ -123,6 +152,120 @@
           "Project": "MrLister",
           "Environment": {"Ref": "EnvironmentName"},
           "Phase": "7.4-disabled-read-only"
+        }
+      }
+    },
+    "PublicationGuardVerificationFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-guard-verification-role"
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "lambda.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ReadOnlyApprovalPublicationGuard",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "WritePublicationGuardLogs",
+                  "Effect": "Allow",
+                  "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                  "Resource": {
+                    "Fn::Sub": "${PublicationGuardVerificationLogGroup.Arn}:*"
+                  }
+                },
+                {
+                  "Sid": "ReadExactApprovalPublicationAuthority",
+                  "Effect": "Allow",
+                  "Action": ["dynamodb:GetItem", "dynamodb:Query"],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/mr-lister-phase6-${EnvironmentName}"
+                  },
+                  "Condition": {
+                    "ForAllValues:StringLike": {
+                      "dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "Phase", "Value": "7.6-read-only-guard"}
+        ]
+      }
+    },
+    "PublicationGuardVerificationLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/mr-lister-phase7-${EnvironmentName}-guard-verification"
+        },
+        "RetentionInDays": 14,
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "Phase", "Value": "7.6-read-only-guard"}
+        ]
+      }
+    },
+    "PublicationGuardVerificationFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "PublicationGuardVerificationLogGroup",
+      "Properties": {
+        "FunctionName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-guard-verification"
+        },
+        "CodeUri": {
+          "Bucket": {"Ref": "GuardCodeS3Bucket"},
+          "Key": {"Ref": "GuardCodeS3Key"},
+          "Version": {"Ref": "GuardCodeS3ObjectVersion"}
+        },
+        "Handler": "mr_lister.cloud.phase7_guard_entrypoint.publication_guard_verification_handler",
+        "Role": {
+          "Fn::GetAtt": ["PublicationGuardVerificationFunctionRole", "Arn"]
+        },
+        "ReservedConcurrentExecutions": 1,
+        "MemorySize": 512,
+        "Timeout": 30,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_PHASE7_SCAFFOLD_ONLY": "false",
+            "MR_LISTER_PHASE7_GUARD_ENABLED": "true",
+            "MR_LISTER_PHASE7_GUARD_MODE": "approval_version_read_only",
+            "MR_LISTER_PHASE7_GUARD_RELEASE_FINGERPRINT": {"Ref": "GuardReleaseFingerprint"},
+            "MR_LISTER_RELEASE_FINGERPRINT": {"Ref": "GuardReleaseFingerprint"},
+            "MR_LISTER_PRODUCT_PROFILE_ID": "gildan_64000_swiftpod",
+            "MR_LISTER_PRODUCT_PROFILE_VERSION": "2",
+            "MR_LISTER_PRODUCT_PROFILE_FINGERPRINT": "5de1257141cfdacb1731f68bb9113712957483b33d5b0f7115afdba86eb7476c",
+            "MR_LISTER_PRODUCT_PROFILE_PATH": "/var/task/config/product_profiles/gildan_64000_swiftpod.json"
+          }
+        },
+        "LoggingConfig": {
+          "LogFormat": "JSON",
+          "ApplicationLogLevel": "ERROR",
+          "SystemLogLevel": "WARN"
+        },
+        "Tags": {
+          "Project": "MrLister",
+          "Environment": {"Ref": "EnvironmentName"},
+          "Phase": "7.6-read-only-guard"
         }
       }
     },
@@ -235,6 +378,7 @@
     },
     "PublicationStatusQueryErrorsAlarm": {
       "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "DeployPublicationStatusQueryScaffold",
       "Properties": {
         "AlarmName": {
           "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-errors"
@@ -261,6 +405,7 @@
     },
     "PublicationStatusQueryThrottlesAlarm": {
       "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "DeployPublicationStatusQueryScaffold",
       "Properties": {
         "AlarmName": {
           "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-throttles"
@@ -287,6 +432,7 @@
     },
     "PublicationStatusQueryDurationAlarm": {
       "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "DeployPublicationStatusQueryScaffold",
       "Properties": {
         "AlarmName": {
           "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-duration"
@@ -310,13 +456,96 @@
         "Threshold": 8000,
         "TreatMissingData": "notBreaching"
       }
+    },
+    "PublicationGuardVerificationErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-guard-errors"
+        },
+        "AlarmDescription": "The private read-only publication guard verification Lambda failed.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "PublicationStatusAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Errors",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {"Ref": "PublicationGuardVerificationFunction"}
+          }
+        ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "PublicationGuardVerificationThrottlesAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-guard-throttles"
+        },
+        "AlarmDescription": "The private read-only publication guard verification Lambda was throttled.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "PublicationStatusAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Throttles",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {"Ref": "PublicationGuardVerificationFunction"}
+          }
+        ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "PublicationGuardVerificationDurationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-guard-duration"
+        },
+        "AlarmDescription": "The private read-only publication guard verification Lambda exceeded eighty percent of its timeout.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "PublicationStatusAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Duration",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {"Ref": "PublicationGuardVerificationFunction"}
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 24000,
+        "TreatMissingData": "notBreaching"
+      }
     }
   },
   "Outputs": {
     "DeploymentReadiness": {
-      "Description": "The checked Phase 7.4 package cannot perform a DynamoDB read or publication mutation.",
-      "Value": "SCAFFOLD_ONLY"
+      "Description": "Only the private read-only approval and publication guard runtime is composed.",
+      "Value": "READ_ONLY_GUARD"
     },
+    "PublicationGuardVerificationFunctionArn": {
+      "Value": {"Fn::GetAtt": ["PublicationGuardVerificationFunction", "Arn"]}
+    },
+    "PublicationGuardVerificationEnabled": {"Value": "true"},
+    "PublicationGuardExternalCallsEnabled": {"Value": "false"},
     "PublicationStatusQueryRegistered": {"Value": "false"},
     "PublicationStatusQueryEnabled": {"Value": "false"},
     "PublicationRequestEnabled": {"Value": "false"},

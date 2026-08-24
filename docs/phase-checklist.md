@@ -381,6 +381,17 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     scheduler, deploy, or live provider call. The only IAM change narrowly expands the existing
     Phase 6 retention role's same-table transactional reads from `JOB#*` to `JOB#*` plus
     `PUBLICATION#*`
+  - [x] Phase 7.6 sealed private guard implementation checkpoint: every nonterminal coordinator
+    advance now requires the capability-free durable pre-call guard before credentials, claims,
+    audits, or wire work. A separate direct-IAM-invoke Lambda bundle verifies its complete source,
+    exact SHA-256-pinned Linux ARM64 wheel set, extracted dependency inventory, checked profile,
+    and release manifest before importing its read-only composition. Its exact active tuple keeps
+    query/request/publication disabled, authorizes zero provider calls, strongly reads only the
+    bounded `JOB#*`/`PUBLICATION#*` authority graph, and returns identifier-free status/current/
+    rejected attestations. The SAM role has only logs plus `GetItem`/`Query`, and the function has
+    no route, URL, event source, resource policy, secret, provider transport, or mutation surface.
+    The source-retained Phase 7.4 query scaffold is impossible to instantiate with any valid guard
+    release fingerprint, leaving an exact nine-resource deployed guard topology
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports

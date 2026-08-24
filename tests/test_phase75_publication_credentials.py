@@ -14,6 +14,7 @@ from mr_lister.cloud.phase7_provider_credentials import (
     build_phase7_publication_provider_credential_authority,
 )
 from mr_lister.production.provider_resources import OwnerPrintifyConnection
+from mr_lister.publication.application import DurablePublicationPreCallGuard
 from mr_lister.publication.contract import PublicationPermitState, PublicationState
 from mr_lister.publication.execution_commands import RecordPublicationPostOutcomeCommand
 from mr_lister.publication.execution_fingerprints import execution_record_fingerprint
@@ -42,6 +43,8 @@ from tests.test_phase6_provider_secrets import (
     _response,
     _secret_string,
 )
+from tests.test_phase71_publication_service import ProfileAuthority
+from tests.test_phase71_publication_service import _authority as request_authority
 from tests.test_phase71_publication_store import OWNER_ID
 from tests.test_phase72_publication_execution import Harness
 from tests.test_phase72_publication_provider_boundary import (
@@ -404,10 +407,17 @@ class FailingPrepareFactory:
 
 
 def _coordinator(harness: Harness, factory: object) -> PublicationProviderCoordinator:
+    _, exact = request_authority()
     return PublicationProviderCoordinator(
         store=harness.store,
         execution=harness.service,
         boundary_factory=factory,  # type: ignore[arg-type]
+        pre_call_guard=DurablePublicationPreCallGuard(
+            store=harness.store,
+            profiles=ProfileAuthority(exact),
+            eligibility=harness.profile_eligibility,  # type: ignore[arg-type]
+            release_manifest_fingerprint="b" * 64,
+        ),
         clock=harness.clock,
     )
 
