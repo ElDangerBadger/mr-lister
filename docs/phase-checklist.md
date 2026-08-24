@@ -345,15 +345,21 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     capability-free and caller-computable, so they do not prove provider provenance; package
     exports and Phase 6 bundles, API, UI, SAM, IAM, and state machines remain publication-free,
     publication stays disabled, and no live provider call ran
-  - [ ] Phase 7.3 durable provider-evidence staging/coordinator: only the sealed boundary may stage
-    a claim-, authority-, kind-, and fingerprint-bound observation, either through provider-worker-
-    only provenance or an outer coordinator; seller/API paths must never call execution record
-    commands directly, and each staged binding is consumed at most once
-  - [ ] Phase 7.3 trusted negative-evidence classifier: immediate
-    `DEFINITIVE_PREFLIGHT_FAILURE` retirement remains deliberately inert until a provider-bound
-    structured negative-evidence DTO exists. In 7.2, failed or missing preflight remains requested
-    until the fixed pre-call deadline, then retires as `PRE_CALL_DEADLINE_EXPIRED`; no bare
-    caller-supplied retirement reason is callable
+  - [x] Phase 7.3 offline durable provider-evidence staging/coordinator: the sealed boundary stages
+    only claim-, authority-, kind-, audit-, and fingerprint-bound sanitized evidence, and the outer
+    coordinator derives every command from durable authority. Staging and execution share the same
+    atomic store boundary, each stage is consumed at most once with its state transition, a replay
+    mints no new wire grant, and seller/API paths cannot submit execution-record commands
+  - [x] Phase 7.3 trusted negative-evidence classifier: an exact provider-bound structured negative
+    stage may retire AVAILABLE authority before the deadline only for the closed shop/channel,
+    product-missing, locked, already-published, canonical, variant, placement, or mockup mismatch
+    set. Authentication, throttling, server, malformed-response, and transport failures cannot use
+    this path; absent trusted evidence still waits for `PRE_CALL_DEADLINE_EXPIRED`
+  - [x] Phase 7.3 offline persistence/read checkpoint: the injected DynamoDB adapter renders exact
+    same-key CAS transactions for execution, audit watermarks, stages, and stage consumptions; the
+    owner-first seller projection and exact GET adapter expose disabled status with no-store/ETag
+    semantics. None is composed into Phase 6 Lambda, API, IAM, browser, dispatcher, or bundles;
+    `publication_enabled` and `request_enabled` remain false and no live provider call ran
   - [ ] Approval-version and publish guard verification
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports

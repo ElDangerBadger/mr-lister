@@ -18,6 +18,12 @@ from mr_lister.publication.errors import (
     PublicationIdempotencyConflictError,
     PublicationNotFoundError,
 )
+from mr_lister.publication.evidence_provenance import (
+    PublicationProviderEvidenceCommit,
+    PublicationProviderEvidenceConsumption,
+    PublicationProviderEvidenceKind,
+    PublicationProviderEvidenceStage,
+)
 from mr_lister.publication.execution_fingerprints import execution_record_fingerprint
 from mr_lister.publication.execution_models import (
     ExecutionPublicationAggregate,
@@ -83,6 +89,8 @@ class PublicationExecutionCommit(PublicationModel):
     new_report: PublicationTerminalReport | None = None
     new_tombstone: PublicationAggregateTombstone | None = None
     terminal_job_update: PublicationTerminalJobUpdate | None = None
+    expected_provider_evidence_stages: tuple[PublicationProviderEvidenceStage, ...] = ()
+    new_provider_evidence_consumptions: tuple[PublicationProviderEvidenceConsumption, ...] = ()
     event: PublicationExecutionEvent
     receipt: PublicationExecutionReceipt
 
@@ -123,6 +131,39 @@ class PublicationExecutionCommit(PublicationModel):
             or self.receipt.operation is not self._operation()
         ):
             raise ValueError("Execution event and receipt must bind the exact operation")
+        stages = self.expected_provider_evidence_stages
+        consumptions = self.new_provider_evidence_consumptions
+        if len(stages) != len(consumptions) or len(stages) > 2:
+            raise ValueError("Execution evidence consumption must bind one or two exact stages")
+        if len({stage.stage_id for stage in stages}) != len(stages):
+            raise ValueError("Execution evidence stages must be unique")
+        if len({item.stage_id for item in consumptions}) != len(consumptions):
+            raise ValueError("Execution evidence consumptions must be unique")
+        stages_by_id = {stage.stage_id: stage for stage in stages}
+        for consumption in consumptions:
+            stage = stages_by_id.get(consumption.stage_id)
+            if (
+                stage is None
+                or stage.aggregate_id != aggregate_id
+                or stage.fingerprint != consumption.stage_fingerprint
+                or stage.call_claim_id != consumption.call_claim_id
+                or stage.call_claim_fingerprint != consumption.call_claim_fingerprint
+                or stage.provider_authority_id != consumption.provider_authority_id
+                or stage.provider_authority_fingerprint
+                != consumption.provider_authority_fingerprint
+                or stage.evidence_kind is not consumption.evidence_kind
+                or stage.evidence_id != consumption.evidence_id
+                or stage.evidence_type is not consumption.evidence_type
+                or stage.evidence_fingerprint != consumption.evidence_fingerprint
+                or stage.allowed_audit_binding_fingerprint
+                != consumption.allowed_audit_binding_fingerprint
+                or consumption.aggregate_id != aggregate_id
+                or consumption.operation_id != self.receipt.operation_id
+                or consumption.operation is not self.receipt.operation
+                or consumption.receipt_id != self.receipt.receipt_id
+                or consumption.consumed_at != self.event.occurred_at
+            ):
+                raise ValueError("Execution evidence consumption differs from its staged authority")
         return self
 
     def _operation(self) -> PublicationExecutionOperation:
@@ -369,6 +410,24 @@ class PublicationExecutionStore(Protocol):
         aggregate_id: str,
     ) -> ControlJobRecord: ...
 
+    def get_provider_evidence_stage(
+        self,
+        owner_id: str,
+        aggregate_id: str,
+        stage_id: str,
+    ) -> PublicationProviderEvidenceStage: ...
+
+    def stage_evidence(
+        self,
+        commit: PublicationProviderEvidenceCommit,
+    ) -> PublicationProviderEvidenceStage: ...
+
+    def list_unconsumed_provider_evidence(
+        self,
+        owner_id: str,
+        aggregate_id: str,
+    ) -> tuple[PublicationProviderEvidenceStage, ...]: ...
+
     def commit_execution(
         self,
         commit: PublicationExecutionCommit,
@@ -397,6 +456,10 @@ class InMemoryPublicationExecutionStore:
         self._events: dict[tuple[str, int], PublicationExecutionEvent] = {}
         self._call_claims: dict[tuple[str, str], PublicationCallClaim] = {}
         self._provider_audits: dict[tuple[str, int], PublicationProviderAuditBinding] = {}
+        self._provider_evidence_stages: dict[tuple[str, str], PublicationProviderEvidenceStage] = {}
+        self._provider_evidence_consumptions: dict[
+            tuple[str, str], PublicationProviderEvidenceConsumption
+        ] = {}
         self._preflight: dict[str, PublicationPreflightProof] = {}
         self._provider_authorities: dict[str, PublicationProviderAuthority] = {}
         self._mutation_claims: dict[str, PublicationMutationClaim] = {}
@@ -438,6 +501,18 @@ class InMemoryPublicationExecutionStore:
     @property
     def provider_audits(self) -> Mapping[tuple[str, int], PublicationProviderAuditBinding]:
         return MappingProxyType(self._provider_audits)
+
+    @property
+    def provider_evidence_stages(
+        self,
+    ) -> Mapping[tuple[str, str], PublicationProviderEvidenceStage]:
+        return MappingProxyType(self._provider_evidence_stages)
+
+    @property
+    def provider_evidence_consumptions(
+        self,
+    ) -> Mapping[tuple[str, str], PublicationProviderEvidenceConsumption]:
+        return MappingProxyType(self._provider_evidence_consumptions)
 
     @property
     def jobs(self) -> Mapping[str, ControlJobRecord]:
@@ -618,6 +693,123 @@ class InMemoryPublicationExecutionStore:
                 raise PublicationNotFoundError()
             return job
 
+    def get_provider_evidence_stage(
+        self,
+        owner_id: str,
+        aggregate_id: str,
+        stage_id: str,
+    ) -> PublicationProviderEvidenceStage:
+        with self._lock:
+            aggregate = self._aggregates.get(aggregate_id)
+            stage = self._provider_evidence_stages.get((aggregate_id, stage_id))
+            if (
+                aggregate is None
+                or aggregate.owner_id != owner_id
+                or stage is None
+                or stage.aggregate_id != aggregate_id
+            ):
+                raise PublicationNotFoundError()
+            return stage
+
+    def stage_evidence(
+        self,
+        commit: PublicationProviderEvidenceCommit,
+    ) -> PublicationProviderEvidenceStage:
+        try:
+            revalidated = PublicationProviderEvidenceCommit.model_validate(
+                commit.model_dump(mode="python")
+            )
+        except (AttributeError, ValueError):
+            raise PublicationConflictError(
+                PublicationErrorCode.INVALID_AUTHORITY,
+                "Provider evidence commit failed strict revalidation",
+            ) from None
+        if revalidated != commit:
+            raise PublicationConflictError(
+                PublicationErrorCode.INVALID_AUTHORITY,
+                "Provider evidence commit failed strict revalidation",
+            )
+        stage = commit.stage
+        owner_id = commit.expected.snapshot.owner_id
+        with self._lock:
+            key = (stage.aggregate_id, stage.stage_id)
+            existing = self._provider_evidence_stages.get(key)
+            if existing is not None:
+                if existing == stage:
+                    return existing
+                raise PublicationConflictError(
+                    PublicationErrorCode.CONCURRENT_WRITE,
+                    "Provider evidence stage identity was reused",
+                )
+            prior = next(
+                (
+                    candidate
+                    for (aggregate_id, _), candidate in (self._provider_evidence_stages.items())
+                    if aggregate_id == stage.aggregate_id
+                    and candidate.call_claim_id == stage.call_claim_id
+                ),
+                None,
+            )
+            if prior is not None:
+                if prior == stage:
+                    return prior
+                raise PublicationConflictError(
+                    PublicationErrorCode.CONCURRENT_WRITE,
+                    "Provider call already owns staged evidence",
+                )
+            current = self.load_execution_authority(owner_id, stage.aggregate_id)
+            raw_aggregate = self._aggregates.get(stage.aggregate_id)
+            if (
+                current != commit.expected
+                or current.snapshot.owner_id != owner_id
+                or stage.aggregate_id != current.aggregate.aggregate_id
+                or raw_aggregate != commit.expected_aggregate
+            ):
+                raise PublicationConflictError(
+                    PublicationErrorCode.CONCURRENT_WRITE,
+                    "Provider authority changed before evidence staging",
+                )
+            self._provider_evidence_stages[key] = stage
+            self._aggregates[stage.aggregate_id] = commit.updated_aggregate
+            return stage
+
+    def list_unconsumed_provider_evidence(
+        self,
+        owner_id: str,
+        aggregate_id: str,
+    ) -> tuple[PublicationProviderEvidenceStage, ...]:
+        with self._lock:
+            aggregate = self._aggregates.get(aggregate_id)
+            if aggregate is None or aggregate.owner_id != owner_id:
+                raise PublicationNotFoundError()
+            unconsumed = tuple(
+                stage
+                for (stage_aggregate_id, stage_id), stage in (
+                    self._provider_evidence_stages.items()
+                )
+                if stage_aggregate_id == aggregate_id
+                and (aggregate_id, stage_id) not in self._provider_evidence_consumptions
+            )
+            claim_sequence_by_id = {
+                claim_id: claim.resulting_attempt_record_version
+                for (claim_aggregate_id, claim_id), claim in self._call_claims.items()
+                if claim_aggregate_id == aggregate_id
+            }
+            if any(stage.call_claim_id not in claim_sequence_by_id for stage in unconsumed):
+                raise PublicationConflictError(
+                    PublicationErrorCode.INVALID_AUTHORITY,
+                    "Provider evidence stage lacks its durable call claim",
+                )
+            return tuple(
+                sorted(
+                    unconsumed,
+                    key=lambda stage: (
+                        claim_sequence_by_id[stage.call_claim_id],
+                        stage.stage_id,
+                    ),
+                )
+            )
+
     def commit_execution(
         self,
         commit: PublicationExecutionCommit,
@@ -638,6 +830,7 @@ class InMemoryPublicationExecutionStore:
                     PublicationErrorCode.CONCURRENT_WRITE,
                     "Publication execution authority changed before commit",
                 )
+            self._assert_provider_evidence_consumable(commit)
             self._assert_new_records_absent(commit)
             updated_job = self._terminal_job_update(commit)
             self._aggregates[aggregate_id] = commit.updated_aggregate
@@ -673,6 +866,10 @@ class InMemoryPublicationExecutionStore:
                 self._terminal_job_links[aggregate_id] = commit.terminal_job_update.link
                 assert updated_job is not None
                 self._jobs[updated_job.job_id] = updated_job
+            for consumption in commit.new_provider_evidence_consumptions:
+                self._provider_evidence_consumptions[(aggregate_id, consumption.stage_id)] = (
+                    consumption
+                )
             self._receipts[receipt_key] = receipt
             if commit.new_call_claim is None:
                 return PublicationExecutionCommitResult(receipt=receipt)
@@ -684,6 +881,28 @@ class InMemoryPublicationExecutionStore:
             else:
                 grant = FreshPublicationCallGrant._mint(commit.new_call_claim)
             return PublicationExecutionCommitResult(receipt=receipt, fresh_call_grant=grant)
+
+    def _assert_provider_evidence_consumable(
+        self,
+        commit: PublicationExecutionCommit,
+    ) -> None:
+        aggregate_id = commit.expected.aggregate.aggregate_id
+        for stage, consumption in zip(
+            commit.expected_provider_evidence_stages,
+            commit.new_provider_evidence_consumptions,
+            strict=True,
+        ):
+            current_stage = self._provider_evidence_stages.get((aggregate_id, stage.stage_id))
+            if current_stage != stage:
+                raise PublicationConflictError(
+                    PublicationErrorCode.CONCURRENT_WRITE,
+                    "Provider evidence changed before execution settlement",
+                )
+            if (aggregate_id, consumption.stage_id) in self._provider_evidence_consumptions:
+                raise PublicationConflictError(
+                    PublicationErrorCode.CONCURRENT_WRITE,
+                    "Provider evidence was already consumed",
+                )
 
     def commit_provider_audit(
         self,
@@ -924,6 +1143,7 @@ def validate_execution_commit(commit: PublicationExecutionCommit) -> None:
 
     _validate_stable_execution_fields(commit)
     _validate_operation_write_set(commit)
+    _validate_provider_evidence_consumption(commit)
 
     resulting_claims = current.call_claims + (
         (commit.new_call_claim,) if commit.new_call_claim is not None else ()
@@ -980,6 +1200,90 @@ def validate_execution_commit(commit: PublicationExecutionCommit) -> None:
         raise PublicationConflictError(
             PublicationErrorCode.INVALID_AUTHORITY,
             "Publication execution resulting graph changed during validation",
+        )
+
+
+def _validate_provider_evidence_consumption(commit: PublicationExecutionCommit) -> None:
+    operation = commit.receipt.operation
+    expected_count = {
+        PublicationExecutionOperation.RECORD_PREFLIGHT: 2,
+        PublicationExecutionOperation.RECORD_POST_OUTCOME: 1,
+        PublicationExecutionOperation.RECORD_PRODUCT_OBSERVATION: 1,
+        PublicationExecutionOperation.SETTLE_DEFINITIVE_PREFLIGHT_FAILURE: 1,
+    }.get(operation, 0)
+    stages = commit.expected_provider_evidence_stages
+    consumptions = commit.new_provider_evidence_consumptions
+    if len(stages) != expected_count or len(consumptions) != expected_count:
+        raise PublicationConflictError(
+            PublicationErrorCode.INVALID_AUTHORITY,
+            "Execution transition lacks its exact staged provider evidence",
+        )
+    if not stages:
+        return
+    authority = commit.expected
+    provider_authority = authority.provider_authority
+    if provider_authority is None:
+        raise PublicationConflictError(
+            PublicationErrorCode.INVALID_AUTHORITY,
+            "Staged provider evidence requires reconstructed authority",
+        )
+    claims = {claim.authorization_id: claim for claim in authority.call_claims}
+    audits = {binding.call_claim_id: binding for binding in authority.provider_audits}
+    for stage in stages:
+        try:
+            reparsed_stage = PublicationProviderEvidenceStage.model_validate(
+                stage.model_dump(mode="python")
+            )
+        except (AttributeError, ValueError):
+            raise PublicationConflictError(
+                PublicationErrorCode.INVALID_AUTHORITY,
+                "Staged provider evidence differs from exact provider authority",
+            ) from None
+        if reparsed_stage != stage:
+            raise PublicationConflictError(
+                PublicationErrorCode.INVALID_AUTHORITY,
+                "Staged provider evidence differs from exact provider authority",
+            )
+        claim = claims.get(stage.call_claim_id)
+        audit = audits.get(stage.call_claim_id)
+        if (
+            stage.aggregate_id != authority.aggregate.aggregate_id
+            or claim is None
+            or stage.call_claim_fingerprint != claim.fingerprint
+            or stage.call_kind is not claim.call_kind
+            or stage.call_purpose is not claim.purpose
+            or stage.provider_authority_id != provider_authority.provider_authority_id
+            or stage.provider_authority_fingerprint != provider_authority.fingerprint
+            or audit is None
+            or stage.allowed_audit_binding_fingerprint != audit.fingerprint
+            or stage.observed_at < claim.authorized_at
+            or stage.staged_at < stage.observed_at
+            or stage.staged_at > commit.event.occurred_at
+        ):
+            raise PublicationConflictError(
+                PublicationErrorCode.INVALID_AUTHORITY,
+                "Staged provider evidence differs from exact audited call authority",
+            )
+    kinds = {stage.evidence_kind for stage in stages}
+    if operation is PublicationExecutionOperation.RECORD_PREFLIGHT:
+        valid = kinds == {
+            PublicationProviderEvidenceKind.SHOP_PREFLIGHT,
+            PublicationProviderEvidenceKind.PRODUCT_PREFLIGHT,
+        }
+    elif operation is PublicationExecutionOperation.RECORD_POST_OUTCOME:
+        valid = kinds == {PublicationProviderEvidenceKind.PUBLISH_OUTCOME}
+    elif operation is PublicationExecutionOperation.RECORD_PRODUCT_OBSERVATION:
+        expected_kind = {
+            "publication_verifying": PublicationProviderEvidenceKind.PRODUCT_VERIFICATION,
+            "publication_reconciling": PublicationProviderEvidenceKind.PRODUCT_RECONCILIATION,
+        }.get(authority.aggregate.state.value)
+        valid = expected_kind is not None and kinds == {expected_kind}
+    else:
+        valid = kinds == {PublicationProviderEvidenceKind.DEFINITIVE_PREFLIGHT_NEGATIVE}
+    if not valid:
+        raise PublicationConflictError(
+            PublicationErrorCode.INVALID_AUTHORITY,
+            "Staged provider evidence kind is invalid for this execution transition",
         )
 
 
@@ -1164,7 +1468,11 @@ def _validate_operation_write_set(commit: PublicationExecutionCommit) -> None:
         )
     permit_increment = (
         1
-        if operation is PublicationExecutionOperation.CLAIM_PUBLISH
+        if operation
+        in {
+            PublicationExecutionOperation.CLAIM_PUBLISH,
+            PublicationExecutionOperation.SETTLE_DEFINITIVE_PREFLIGHT_FAILURE,
+        }
         or (
             operation is PublicationExecutionOperation.SETTLE_DEADLINE
             and current.permit.status.value == "available"
@@ -1406,6 +1714,27 @@ def _validate_operation_event_and_authority(commit: PublicationExecutionCommit) 
                 and state == current.aggregate.state
                 and observation.outcome.value != "positive_publication_proof"
             )
+    elif operation is PublicationExecutionOperation.SETTLE_DEFINITIVE_PREFLIGHT_FAILURE:
+        assert commit.new_report is not None
+        authority_record = commit.new_report
+        record_id = commit.new_report.report_id
+        event_name = "PUBLICATION_FAILED"
+        valid = (
+            state.value == "publication_failed"
+            and current.aggregate.state.value == "publication_requested"
+            and current.work.status.value == "dispatched"
+            and current.permit.status.value == "available"
+            and current.preflight_proof is None
+            and current.mutation_claim is None
+            and current.post_observation is None
+            and commit.updated_permit.status.value == "retired"
+            and commit.updated_permit.retirement_reason is not None
+            and commit.updated_permit.retirement_reason.value == "definitive_preflight_failure"
+            and commit.new_report.terminal_reason.value == "definitive_preflight_failure"
+            and commit.updated_aggregate.terminal_at < current.aggregate.verification_deadline
+            and commit.updated_aggregate.terminal_at == commit.event.occurred_at
+            and commit.updated_permit.retired_at == commit.event.occurred_at
+        )
     else:
         assert commit.new_report is not None
         authority_record = commit.new_report

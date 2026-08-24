@@ -126,6 +126,7 @@ class PublicationExecutionOperation(StrEnum):
     RECORD_POST_OUTCOME = "record_post_outcome"
     RECOVER_CONSUMED_CLAIM = "recover_consumed_claim"
     RECORD_PRODUCT_OBSERVATION = "record_product_observation"
+    SETTLE_DEFINITIVE_PREFLIGHT_FAILURE = "settle_definitive_preflight_failure"
     SETTLE_DEADLINE = "settle_deadline"
 
 
@@ -186,6 +187,7 @@ class ExecutionPublicationAggregate(PublicationModel):
     report_id: SafeId | None = None
     tombstone_id: SafeId | None = None
     provider_audit_record_version: StrictInt = Field(ge=0, le=104)
+    provider_evidence_record_version: StrictInt = Field(ge=0, le=104)
     fingerprint: Fingerprint
 
     @classmethod
@@ -213,6 +215,7 @@ class ExecutionPublicationAggregate(PublicationModel):
             "report_id": None,
             "tombstone_id": None,
             "provider_audit_record_version": 0,
+            "provider_evidence_record_version": 0,
             "terminal_at": None,
             "source_release_eligible_at": None,
             "operational_expires_at": None,

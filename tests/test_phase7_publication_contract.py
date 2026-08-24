@@ -318,6 +318,10 @@ def test_publication_persistence_and_service_cannot_acquire_runtime_capability()
             # redirect-safe urllib transport. The disabled-runtime boundary and focused
             # provider tests prove that it remains unexported, uncomposed, and route closed.
             "provider_boundary.py",
+            # Phase 7.3's read-only HTTP adapter deliberately reuses the exact cloud auth error
+            # types. Its focused containment gate permits only mr_lister.cloud.auth and proves
+            # that the adapter is unregistered and exposes no write/provider capability.
+            "query_api.py",
         }
     ]
     assert {path.name for path in adapter_paths}.issuperset({"store.py", "dynamodb.py"})

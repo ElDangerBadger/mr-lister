@@ -11,9 +11,6 @@ from mr_lister.publication.execution_models import (
     OwnerId,
     PublicationCallPurpose,
     PublicationModel,
-    PublicationProductReadEvidence,
-    PublicationPublishEvidence,
-    PublicationShopPreflightEvidence,
     SafeId,
 )
 
@@ -23,6 +20,8 @@ class PublicationExecutionCommand(PublicationModel):
     aggregate_id: SafeId
     operation_id: SafeId
     expected_aggregate_record_version: StrictInt = Field(ge=0)
+    expected_aggregate_fingerprint: Fingerprint
+    expected_provider_evidence_record_version: StrictInt = Field(ge=0, le=104)
     expected_attempt_record_version: StrictInt = Field(ge=0)
     expected_permit_record_version: StrictInt = Field(ge=0, le=1)
     expected_work_record_version: StrictInt = Field(ge=0)
@@ -49,8 +48,10 @@ class ClaimProductGetCommand(PublicationExecutionCommand):
 
 
 class RecordPublicationPreflightCommand(PublicationExecutionCommand):
-    shop_evidence: PublicationShopPreflightEvidence
-    product_evidence: PublicationProductReadEvidence
+    shop_evidence_stage_id: SafeId
+    shop_evidence_stage_fingerprint: Fingerprint
+    product_evidence_stage_id: SafeId
+    product_evidence_stage_fingerprint: Fingerprint
 
 
 class ClaimPublicationMutationCommand(PublicationExecutionCommand):
@@ -59,7 +60,8 @@ class ClaimPublicationMutationCommand(PublicationExecutionCommand):
 
 
 class RecordPublicationPostOutcomeCommand(PublicationExecutionCommand):
-    evidence: PublicationPublishEvidence
+    evidence_stage_id: SafeId
+    evidence_stage_fingerprint: Fingerprint
 
 
 class RecoverConsumedPublicationClaimCommand(PublicationExecutionCommand):
@@ -71,7 +73,16 @@ class RecoverConsumedPublicationClaimCommand(PublicationExecutionCommand):
 
 
 class RecordPublicationProductObservationCommand(PublicationExecutionCommand):
-    evidence: PublicationProductReadEvidence
+    evidence_stage_id: SafeId
+    evidence_stage_fingerprint: Fingerprint
+
+
+class SettleDefinitivePreflightFailureCommand(PublicationExecutionCommand):
+    evidence_stage_id: SafeId
+    evidence_stage_fingerprint: Fingerprint
+    confirmation: Literal["definitive_provider_preflight_failure"] = (
+        "definitive_provider_preflight_failure"
+    )
 
 
 class SettlePublicationDeadlineCommand(PublicationExecutionCommand):

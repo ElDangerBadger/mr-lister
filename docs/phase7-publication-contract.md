@@ -231,6 +231,35 @@ An authenticated in-application notification record is created in the same trans
 commits `PUBLISHED`. It is projected only after positive verification and is idempotent for the
 publication result. Email, SMS, webhooks, and new seller contact data are outside this phase.
 
+## Offline Phase 7.3 provider-evidence provenance
+
+The offline Phase 7.3 checkpoint closes the trust gap between a provider response and the
+provider-free execution service without activating publication. The sealed three-route boundary
+first consumes a fresh one-use call grant, persists its sanitized allowed-route audit record, makes
+at most one wire request, classifies the bounded response, and stages an immutable evidence record.
+The stage binds the exact aggregate, durable call claim, provider authority, evidence kind,
+sanitized evidence fingerprint, audit binding, and observation time. It contains no credential,
+raw request or response, header, owner identity, listing text, or arbitrary provider URL.
+
+Execution commands accept only a stage ID and fingerprint. The store loads the exact stage and
+atomically writes its immutable consumption record with the resulting aggregate transition; a
+caller-computed evidence DTO is not execution authority, a consumed stage cannot be reused, and a
+replayed claim never mints another wire grant. The outer coordinator accepts only owner and
+aggregate identity, derives every internal operation from current durable authority, recovers a
+staged response before making another call, and performs at most one provider request per
+invocation.
+
+Structured negative evidence may retire an available permit before the fixed deadline only for
+the closed provider-derived shop/channel, product-missing, locked, already-published, canonical,
+variant, placement, or mockup mismatch set. Authentication, throttling, server, transport, and
+malformed-response failures cannot prove definitive rejection. Without an exact trusted negative
+stage, pre-call authority remains requested until its original deadline.
+
+This checkpoint also provides an injected offline DynamoDB transaction adapter and an owner-first
+read projection/query adapter. Neither is composed into Lambda, API Gateway, IAM, Step Functions,
+the browser, the Phase 6 dispatcher, or a source bundle. Both publication and request enablement
+remain false, and no live provider call is authorized by this checkpoint.
+
 ## Immutable report and retention
 
 The run report binds only closed statuses, timestamps, aggregate call counts, release/snapshot/
