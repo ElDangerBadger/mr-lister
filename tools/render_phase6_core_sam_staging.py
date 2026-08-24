@@ -27,7 +27,6 @@ from typing import NoReturn, cast
 from mr_lister.agent.runtime_binding import (
     AgentCoreRuntimeBinding,
     load_agentcore_runtime_binding,
-    verify_agentcore_endpoint_observation,
 )
 from mr_lister.release.phase6 import LINUX_ARM64_TARGET, render_manifest
 from tools.build_phase66_source_bundles import (
@@ -41,6 +40,9 @@ from tools.render_phase6_agentcore_direct_codezip import (
     VerifiedAgentCoreArchive,
     VerifiedAgentCoreRuntimeV1,
     verify_phase6_agentcore_runtime_v1_evidence,
+)
+from tools.verify_phase6_agentcore_endpoint_observation import (
+    verify_phase6_agentcore_endpoint_observation,
 )
 from tools.verify_phase6_s3_release_object import (
     Phase6S3ReleaseObjectExpectation,
@@ -667,7 +669,7 @@ def _load_ready_endpoint_observation(
         or binding.agentcore_runtime_qualifier != "phase6_v1_dev"
     ):
         raise ValueError
-    verify_agentcore_endpoint_observation(_runtime_binding(binding), document)
+    verify_phase6_agentcore_endpoint_observation(_runtime_binding(binding), document)
     return _EndpointEvidence(sha256=sha256(raw).hexdigest(), document=document)
 
 

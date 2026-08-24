@@ -34,7 +34,6 @@ from typing import NoReturn
 
 from mr_lister.agent.runtime_binding import (
     load_agentcore_runtime_binding,
-    verify_agentcore_endpoint_observation,
 )
 from mr_lister.release.phase6 import LINUX_ARM64_TARGET, render_manifest
 from tools.build_phase66_source_bundles import (
@@ -48,6 +47,9 @@ from tools.render_phase6_agentcore_direct_codezip import (
     VerifiedAgentCoreArchive,
     VerifiedAgentCoreRuntimeV1,
     verify_phase6_agentcore_runtime_v1_evidence,
+)
+from tools.verify_phase6_agentcore_endpoint_observation import (
+    verify_phase6_agentcore_endpoint_observation,
 )
 from tools.verify_phase6_s3_release_object import (
     Phase6S3ReleaseObjectExpectation,
@@ -718,7 +720,7 @@ def _load_ready_endpoint_observation(
         environment_name=binding.environment,
         release_fingerprint=binding.release_fingerprint,
     )
-    verify_agentcore_endpoint_observation(runtime_binding, document)
+    verify_phase6_agentcore_endpoint_observation(runtime_binding, document)
     return _EndpointEvidence(sha256=sha256(raw).hexdigest(), document=document)
 
 

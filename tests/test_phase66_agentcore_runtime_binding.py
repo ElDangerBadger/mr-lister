@@ -102,52 +102,18 @@ def test_binding_rejects_mutable_or_cross_authority_configuration(
     assert value not in str(captured.value)
 
 
-def test_ready_endpoint_observation_accepts_live_response_with_omitted_optional_fields() -> None:
+def test_ready_endpoint_observation_must_have_same_live_and_target_version() -> None:
     binding = _binding()
     observation = {
         "agentRuntimeArn": RUNTIME_ARN,
         "agentRuntimeEndpointArn": ENDPOINT_ARN,
         "name": QUALIFIER,
         "liveVersion": VERSION,
+        "targetVersion": VERSION,
         "status": "READY",
     }
 
     verify_agentcore_endpoint_observation(binding, observation)
-
-
-@pytest.mark.parametrize(
-    "optional_fields",
-    (
-        {"targetVersion": VERSION},
-        {"failureReason": None},
-        {"failureReason": ""},
-        {"failureReason": None, "targetVersion": VERSION},
-    ),
-)
-def test_ready_endpoint_observation_validates_optional_fields_when_present(
-    optional_fields: dict[str, object],
-) -> None:
-    observation = {
-        "agentRuntimeArn": RUNTIME_ARN,
-        "agentRuntimeEndpointArn": ENDPOINT_ARN,
-        "name": QUALIFIER,
-        "liveVersion": VERSION,
-        "status": "READY",
-        **optional_fields,
-    }
-
-    verify_agentcore_endpoint_observation(_binding(), observation)
-
-
-def test_ready_endpoint_observation_rejects_drift_unknowns_and_missing_required_fields() -> None:
-    binding = _binding()
-    observation = {
-        "agentRuntimeArn": RUNTIME_ARN,
-        "agentRuntimeEndpointArn": ENDPOINT_ARN,
-        "name": QUALIFIER,
-        "liveVersion": VERSION,
-        "status": "READY",
-    }
 
     for field, changed in (
         ("agentRuntimeArn", RUNTIME_ARN.replace(ACCOUNT, "999999999999")),
@@ -163,15 +129,6 @@ def test_ready_endpoint_observation_rejects_drift_unknowns_and_missing_required_
         with pytest.raises(AgentCoreRuntimeBindingError) as captured:
             verify_agentcore_endpoint_observation(binding, drifted)
         assert "private deployment error" not in str(captured.value)
-
-    for missing in observation:
-        incomplete = deepcopy(observation)
-        del incomplete[missing]
-        with pytest.raises(AgentCoreRuntimeBindingError):
-            verify_agentcore_endpoint_observation(binding, incomplete)
-
-    with pytest.raises(AgentCoreRuntimeBindingError):
-        verify_agentcore_endpoint_observation(binding, observation | {"unexpected": "value"})
 
 
 def test_binding_digest_changes_with_every_authority_field() -> None:

@@ -155,27 +155,13 @@ def verify_agentcore_endpoint_observation(
     try:
         if not isinstance(binding, AgentCoreRuntimeBinding) or not isinstance(observation, Mapping):
             raise ValueError
-        required_fields = {
-            "agentRuntimeArn",
-            "agentRuntimeEndpointArn",
-            "liveVersion",
-            "name",
-            "status",
-        }
-        optional_fields = {"failureReason", "targetVersion"}
-        observed_fields = set(observation)
         if (
-            not required_fields.issubset(observed_fields)
-            or not observed_fields.issubset(required_fields | optional_fields)
-            or observation.get("agentRuntimeArn") != binding.runtime_arn
+            observation.get("agentRuntimeArn") != binding.runtime_arn
             or observation.get("agentRuntimeEndpointArn") != binding.endpoint_arn
             or observation.get("name") != binding.qualifier
             or observation.get("liveVersion") != binding.runtime_version
+            or observation.get("targetVersion") != binding.runtime_version
             or observation.get("status") != "READY"
-            or (
-                "targetVersion" in observation
-                and observation.get("targetVersion") != binding.runtime_version
-            )
             or observation.get("failureReason") not in {None, ""}
         ):
             raise ValueError
