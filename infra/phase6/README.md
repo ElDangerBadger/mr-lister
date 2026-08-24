@@ -86,21 +86,26 @@ has no default. The stack creates the exact
 `mr-lister-phase6-foundation-deployer-dev` policy only to the existing
 `mr-lister-developers` group used by `mr-lister-dev`.
 
-The developer policy can create and execute only the fingerprint-named Phase 6 dev change set,
-must pass the exact execution role, must submit the three foundation resource types and exact
+The developer policy can create, execute, and delete only the fingerprint-named Phase 6 dev change
+set, must pass the exact execution role, must submit the three foundation resource types and exact
 foundation stack tags, and has only the configuration reads needed by the offline evidence
-verifier. It grants no `CreateStack`, `UpdateStack`, `DeleteStack`, object, item, runtime, provider,
+verifier. `DescribeChangeSet` is expiry-bound and scoped to the exact foundation stack ARN, but has
+no `cloudformation:ChangeSetName` condition because AWS does not supply that condition key during
+the read. It grants no `CreateStack`, `UpdateStack`, `DeleteStack`, object, item, runtime, provider,
 secret, Lambda, API, or workflow authority. The execution role is limited to creating,
-stabilizing, tagging, and rollback-cleaning the exact retained table and bucket, applying the
-deny-only bucket policy, and expanding the checked Serverless transform.
+stabilizing, tagging, and rollback-cleaning the exact retained table and bucket, tagging only the
+generated table stream, applying the deny-only bucket policy, and expanding the checked Serverless
+transform.
 
 IAM cannot distinguish a CloudFormation `CREATE` change-set request from an `UPDATE` request: both
 use `cloudformation:CreateChangeSet`. The exact name, stack, service role, tags, resource-type
-conditions, short `NotAfter` window, and repository verifier therefore operate together. The
-verifier must observe stack absence and `ChangeSetType=CREATE` before execution. After the accepted
-evidence capture, root should delete the bootstrap stack to detach and remove the developer managed
-policy; the execution role is intentionally retained because it is recorded on the foundation
-stack. Follow `FOUNDATION_DEPLOYMENT.md` for the exact capture and verification sequence.
+conditions, short `NotAfter` window, and repository verifier therefore operate together. Because
+`DescribeChangeSet` does not return `ChangeSetType` or `RoleARN`, the verifier joins the prior stack
+absence to the authoritative empty `REVIEW_IN_PROGRESS` pending stack, including its exact role,
+stack ID, and creation timestamp, before execution. After the accepted evidence capture, root
+should delete the bootstrap stack to detach and remove the developer managed policy; the execution
+role is intentionally retained because it is recorded on the foundation stack. Follow
+`FOUNDATION_DEPLOYMENT.md` for the exact capture and verification sequence.
 
 ## Deployment gate
 

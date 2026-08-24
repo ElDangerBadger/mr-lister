@@ -68,6 +68,14 @@
                   }
                 },
                 {
+                  "Sid": "TagOnlyTheFoundationTableStream",
+                  "Effect": "Allow",
+                  "Action": "dynamodb:TagResource",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:dynamodb:us-west-2:${AWS::AccountId}:table/mr-lister-phase6-dev/stream/*"
+                  }
+                },
+                {
                   "Sid": "CreateOnlyTheFoundationBucketInUsWest2",
                   "Effect": "Allow",
                   "Action": "s3:CreateBucket",
@@ -197,7 +205,6 @@
               "Effect": "Allow",
               "Action": [
                 "cloudformation:DeleteChangeSet",
-                "cloudformation:DescribeChangeSet",
                 "cloudformation:ExecuteChangeSet"
               ],
               "Resource": {
@@ -208,6 +215,17 @@
                 "StringEquals": {
                   "cloudformation:ChangeSetName": "mr-lister-phase6-dev-foundation-create-689897c254c9"
                 }
+              }
+            },
+            {
+              "Sid": "InspectOnlyTheFoundationChangeSet",
+              "Effect": "Allow",
+              "Action": "cloudformation:DescribeChangeSet",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:cloudformation:us-west-2:${AWS::AccountId}:stack/mr-lister-phase6-dev/*"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
               }
             },
             {

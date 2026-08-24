@@ -15,6 +15,12 @@ EXPECTED_TABLE_ARN = {
         "arn:${AWS::Partition}:dynamodb:us-west-2:${AWS::AccountId}:table/mr-lister-phase6-dev"
     )
 }
+EXPECTED_TABLE_STREAM_ARN = {
+    "Fn::Sub": (
+        "arn:${AWS::Partition}:dynamodb:us-west-2:${AWS::AccountId}:"
+        "table/mr-lister-phase6-dev/stream/*"
+    )
+}
 EXPECTED_BUCKET_ARN = {
     "Fn::Sub": (
         "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2"
@@ -89,6 +95,7 @@ def test_execution_role_can_only_build_and_rollback_the_exact_foundation_resourc
     assert set(statements) == {
         "ExpandOnlyTheAwsServerlessTransform",
         "CreateConfigureAndRollbackOnlyTheFoundationTable",
+        "TagOnlyTheFoundationTableStream",
         "CreateOnlyTheFoundationBucketInUsWest2",
         "ConfigureAndRollbackOnlyTheFoundationBucket",
     }
@@ -158,6 +165,24 @@ def test_execution_role_can_only_build_and_rollback_the_exact_foundation_resourc
         assert forbidden not in serialized
 
 
+def test_execution_role_stream_tag_retry_permission_is_exact_and_narrow() -> None:
+    role = load_bootstrap()["Resources"]["CloudFormationExecutionRole"]["Properties"]
+    statements = statements_by_sid(role["Policies"][0]["PolicyDocument"])
+
+    assert statements["TagOnlyTheFoundationTableStream"] == {
+        "Sid": "TagOnlyTheFoundationTableStream",
+        "Effect": "Allow",
+        "Action": "dynamodb:TagResource",
+        "Resource": EXPECTED_TABLE_STREAM_ARN,
+    }
+    stream_scoped = [
+        statement
+        for statement in statements.values()
+        if statement.get("Resource") == EXPECTED_TABLE_STREAM_ARN
+    ]
+    assert stream_scoped == [statements["TagOnlyTheFoundationTableStream"]]
+
+
 def test_developer_policy_is_expiring_and_attached_only_to_the_existing_group() -> None:
     properties = load_bootstrap()["Resources"]["DeveloperDeploymentPolicy"]["Properties"]
 
@@ -214,7 +239,6 @@ def test_developer_mutations_are_only_change_set_execution_protection_and_passro
     change_set = statements["ManageOnlyTheReviewedFoundationChangeSet"]
     assert set(change_set["Action"]) == {
         "cloudformation:DeleteChangeSet",
-        "cloudformation:DescribeChangeSet",
         "cloudformation:ExecuteChangeSet",
     }
     assert change_set["Resource"] == EXPECTED_STACK_ARN
@@ -252,6 +276,11 @@ def test_developer_mutations_are_only_change_set_execution_protection_and_passro
 def test_developer_readback_matches_the_offline_foundation_evidence_captures() -> None:
     policy = load_bootstrap()["Resources"]["DeveloperDeploymentPolicy"]["Properties"]
     statements = statements_by_sid(policy["PolicyDocument"])
+
+    change_set = statements["InspectOnlyTheFoundationChangeSet"]
+    assert change_set["Action"] == "cloudformation:DescribeChangeSet"
+    assert change_set["Resource"] == EXPECTED_STACK_ARN
+    assert change_set["Condition"] == EXPIRY
 
     stack = statements["InspectOnlyTheFoundationStack"]
     assert set(stack["Action"]) == {

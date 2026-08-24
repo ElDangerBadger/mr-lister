@@ -24,6 +24,14 @@ Retain the bootstrap stack's template, events, and the three outputs
 foundation evidence directory. Sign out of root after the bootstrap reaches `CREATE_COMPLETE`.
 Root must not create the foundation stack.
 
+The first live foundation execution exposed one handler retry gap: DynamoDB tags the generated
+table stream as part of creating the configured stream. AWS retried that request without stream
+tags and the stack completed; the required table tags were separately verified. The execution role
+therefore now grants only `dynamodb:TagResource` on
+`arn:aws:dynamodb:us-west-2:<ACCOUNT_ID>:table/mr-lister-phase6-dev/stream/*`; it does not grant any
+other stream action or a broader DynamoDB resource. Apply the current bootstrap before any fresh
+foundation execution. Never rerun an already-created foundation stack.
+
 The bootstrap's developer authority expires at `NotAfter`, including readback and termination
 protection. Complete every remaining step in that window. The exact execution-role output for
 `dev` must be:
@@ -130,7 +138,10 @@ aws cloudformation create-change-set \
   --region us-west-2
 ```
 
-Wait for generation, then capture both the change set and its original template:
+Wait for generation, then capture both the change set and its original template. The expiring
+bootstrap readback permission scopes `DescribeChangeSet` to the exact foundation stack ARN without
+a `cloudformation:ChangeSetName` condition because AWS does not supply that condition key for this
+read. Deletion and execution remain restricted to the exact reviewed change-set name.
 
 ```shell
 aws cloudformation wait change-set-create-complete \
@@ -153,10 +164,27 @@ aws cloudformation get-template \
   --profile mr-lister-dev \
   --region us-west-2 \
   --output json > <EVIDENCE_DIR>/change-set-template.json
+
+aws cloudformation describe-stacks \
+  --stack-name mr-lister-phase6-dev \
+  --profile mr-lister-dev \
+  --region us-west-2 \
+  --output json > <EVIDENCE_DIR>/pending-stack.json
+
+aws cloudformation list-stack-resources \
+  --stack-name mr-lister-phase6-dev \
+  --profile mr-lister-dev \
+  --region us-west-2 \
+  --output json > <EVIDENCE_DIR>/pending-stack-resources.json
 ```
 
-Run the mandatory offline review gate. It rechecks the prior absence, original template, exact
-execution role, `CREATE` type, three `Add` actions, no replacement, and no fourth resource:
+The AWS `DescribeChangeSet` response does not include `ChangeSetType` or `RoleARN`; do not add those
+fields to `change-set.json`. The original-template capture must contain the AWS-returned
+`StagesAvailable` field. The mandatory offline review gate derives the create-only state from the
+prior absence plus an authoritative `REVIEW_IN_PROGRESS` pending stack. It requires the pending
+stack to carry the exact execution role and the same stack ID and creation timestamp as the change
+set, and requires its resource list to be exactly empty. It separately checks the original
+template, three `Add` actions, no replacement, and no fourth resource:
 
 ```shell
 .venv/bin/python -m tools.verify_phase6_foundation_deployment \
@@ -164,6 +192,8 @@ execution role, `CREATE` type, three `Add` actions, no replacement, and no fourt
   --template infra/phase6/foundation.json \
   --absence-observation <EVIDENCE_DIR>/stack-absence.json \
   --observation <EVIDENCE_DIR>/change-set.json \
+  --pending-stack-observation <EVIDENCE_DIR>/pending-stack.json \
+  --pending-stack-resources-observation <EVIDENCE_DIR>/pending-stack-resources.json \
   --template-observation <EVIDENCE_DIR>/change-set-template.json \
   --account-id <ACCOUNT_ID> \
   --region us-west-2 \
@@ -252,6 +282,8 @@ caller-identity.json
 stack-absence.json
 change-set.json
 change-set-template.json
+pending-stack.json
+pending-stack-resources.json
 stack.json
 stack-resources.json
 table.json

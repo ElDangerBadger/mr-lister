@@ -33,6 +33,9 @@ CHANGE_SET_ID = (
     f"arn:aws:cloudformation:{REGION}:{ACCOUNT}:changeSet/{CHANGE_SET}/"
     "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 )
+CREATION_TIME = "2026-08-24T18:00:00.000000+00:00"
+LAST_UPDATED_TIME = "2026-08-24T18:13:15.642000+00:00"
+OPERATION_ID = "97d0ab01-b904-49d3-9dcc-9cc249a90008"
 
 
 def _binding(**overrides: str) -> Phase6FoundationBinding:
@@ -91,7 +94,6 @@ def _change_set() -> dict[str, object]:
         "Capabilities": [],
         "ChangeSetId": CHANGE_SET_ID,
         "ChangeSetName": CHANGE_SET,
-        "ChangeSetType": "CREATE",
         "Changes": [
             {
                 "ResourceChange": {
@@ -108,33 +110,73 @@ def _change_set() -> dict[str, object]:
         "Description": (
             "Mr Lister Phase 6 create-only foundation " + FOUNDATION_TEMPLATE_FINGERPRINT
         ),
+        "CreationTime": CREATION_TIME,
+        "DeploymentConfig": {"DisableRollback": False, "Mode": "STANDARD"},
+        "DeploymentMode": None,
         "ExecutionStatus": "AVAILABLE",
         "IncludeNestedStacks": False,
+        "ImportExistingResources": None,
         "NotificationARNs": [],
         "OnStackFailure": "DO_NOTHING",
         "Parameters": [{"ParameterKey": "EnvironmentName", "ParameterValue": ENVIRONMENT}],
-        "RoleARN": ROLE,
+        "ParentChangeSetId": None,
+        "RootChangeSetId": None,
         "RollbackConfiguration": {"RollbackTriggers": []},
         "StackId": STACK_ID,
+        "StackDriftStatus": None,
         "StackName": STACK,
         "Status": "CREATE_COMPLETE",
+        "StatusReason": None,
         "Tags": _tags(),
     }
 
 
 def _template_observation() -> dict[str, object]:
     return {
-        "Stages": ["Original", "Processed"],
+        "StagesAvailable": ["Original", "Processed"],
         "TemplateBody": json.loads(DEFAULT_TEMPLATE.read_text(encoding="utf-8")),
     }
+
+
+def _pending_stack() -> dict[str, object]:
+    return {
+        "Stacks": [
+            {
+                "CreationTime": CREATION_TIME,
+                "DeploymentConfig": {"DisableRollback": False, "Mode": "STANDARD"},
+                "DisableRollback": False,
+                "DriftInformation": {"StackDriftStatus": "NOT_CHECKED"},
+                "EnableTerminationProtection": False,
+                "NotificationARNs": [],
+                "RoleARN": ROLE,
+                "RollbackConfiguration": {},
+                "StackId": STACK_ID,
+                "StackName": STACK,
+                "StackStatus": "REVIEW_IN_PROGRESS",
+                "StackStatusReason": "User Initiated",
+                "Tags": [],
+            }
+        ]
+    }
+
+
+def _pending_stack_resources() -> dict[str, object]:
+    return {"StackResourceSummaries": []}
 
 
 def _stack() -> dict[str, object]:
     return {
         "Stacks": [
             {
-                "CreationTime": "2026-08-24T18:00:00.000000+00:00",
+                "ChangeSetId": CHANGE_SET_ID,
+                "CreationTime": CREATION_TIME,
+                "DeploymentConfig": {"DisableRollback": True, "Mode": "STANDARD"},
+                "Description": "Mr Lister Phase 6 create-only durable foundation",
+                "DisableRollback": True,
                 "EnableTerminationProtection": True,
+                "LastOperations": [{"OperationId": OPERATION_ID, "OperationType": "CREATE_STACK"}],
+                "LastUpdatedTime": LAST_UPDATED_TIME,
+                "NotificationARNs": [],
                 "Outputs": [
                     {
                         "Description": "Create-only durable foundation",
@@ -162,6 +204,7 @@ def _stack() -> dict[str, object]:
                 ],
                 "Parameters": [{"ParameterKey": "EnvironmentName", "ParameterValue": ENVIRONMENT}],
                 "RoleARN": ROLE,
+                "RollbackConfiguration": {},
                 "StackId": STACK_ID,
                 "StackName": STACK,
                 "StackStatus": "CREATE_COMPLETE",
@@ -303,6 +346,8 @@ def _captures() -> dict[str, dict[str, object]]:
         "stack-absence.json": _absence(),
         "change-set.json": _change_set(),
         "change-set-template.json": _template_observation(),
+        "pending-stack.json": _pending_stack(),
+        "pending-stack-resources.json": _pending_stack_resources(),
         "stack.json": _stack(),
         "stack-resources.json": _stack_resources(),
         "table.json": _table(),
@@ -324,11 +369,15 @@ def _captures() -> dict[str, dict[str, object]]:
         },
         "table-tags.json": {"Tags": _resource_tags("OperationalState", "OperationalStateTable")},
         "bucket-encryption.json": {
-            "ServerSideEncryptionConfiguration": [
-                {
-                    "ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"},
-                }
-            ]
+            "ServerSideEncryptionConfiguration": {
+                "Rules": [
+                    {
+                        "ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"},
+                        "BlockedEncryptionTypes": {"EncryptionType": ["SSE-C"]},
+                        "BucketKeyEnabled": False,
+                    }
+                ]
+            }
         },
         "bucket-versioning.json": {"Status": "Enabled"},
         "bucket-public-access-block.json": {
@@ -343,6 +392,7 @@ def _captures() -> dict[str, dict[str, object]]:
             "OwnershipControls": {"Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]}
         },
         "bucket-lifecycle.json": {
+            "TransitionDefaultMinimumObjectSize": "all_storage_classes_128K",
             "Rules": [
                 {
                     "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7},
@@ -352,7 +402,12 @@ def _captures() -> dict[str, dict[str, object]]:
                 },
                 {
                     "Expiration": {"Days": 1},
-                    "Filter": {"Tag": {"Key": "mr-lister-state", "Value": "staged"}},
+                    "Filter": {
+                        "And": {
+                            "Prefix": "",
+                            "Tags": [{"Key": "mr-lister-state", "Value": "staged"}],
+                        }
+                    },
                     "ID": "ExpireUnreferencedStagedArtwork",
                     "NoncurrentVersionExpiration": {"NoncurrentDays": 1},
                     "Status": "Enabled",
@@ -363,7 +418,7 @@ def _captures() -> dict[str, dict[str, object]]:
                     "ID": "RemoveExpiredPrivateSourceDeleteMarkers",
                     "Status": "Enabled",
                 },
-            ]
+            ],
         },
         "bucket-tags.json": {"TagSet": _resource_tags("PrivateArtwork", "PrivateArtifactBucket")},
         "bucket-policy.json": {
@@ -425,18 +480,26 @@ def test_absence_gate_refuses_an_existing_stack_or_a_different_error() -> None:
             verify_stack_absence_observation(observation, _binding())
 
 
-def test_create_change_set_is_exactly_three_adds_and_original_template() -> None:
+def test_create_change_set_joins_actual_cli_evidence_to_empty_pending_stack() -> None:
     verify_create_change_set_observations(
-        _change_set(), _template_observation(), _absence(), _binding()
+        _change_set(),
+        _template_observation(),
+        _absence(),
+        _binding(),
+        pending_stack_observation=_pending_stack(),
+        pending_stack_resources_observation=_pending_stack_resources(),
     )
 
     mutations = []
-    update = _change_set()
-    update["ChangeSetType"] = "UPDATE"
-    mutations.append(update)
+    synthetic_type = _change_set()
+    synthetic_type["ChangeSetType"] = "CREATE"
+    mutations.append((synthetic_type, _template_observation(), _pending_stack(), {}))
+    synthetic_role = _change_set()
+    synthetic_role["RoleARN"] = ROLE
+    mutations.append((synthetic_role, _template_observation(), _pending_stack(), {}))
     replacement = _change_set()
     replacement["Changes"][0]["ResourceChange"]["Replacement"] = "True"  # type: ignore[index]
-    mutations.append(replacement)
+    mutations.append((replacement, _template_observation(), _pending_stack(), {}))
     extra = _change_set()
     extra["Changes"].append(  # type: ignore[union-attr]
         {
@@ -450,15 +513,45 @@ def test_create_change_set_is_exactly_three_adds_and_original_template() -> None
             },
         }
     )
-    mutations.append(extra)
-    wrong_role = _change_set()
-    wrong_role["RoleARN"] = f"arn:aws:iam::{ACCOUNT}:role/Admin"
-    mutations.append(wrong_role)
+    mutations.append((extra, _template_observation(), _pending_stack(), {}))
+    fabricated_template = _template_observation()
+    fabricated_template["Stages"] = fabricated_template.pop("StagesAvailable")
+    mutations.append((_change_set(), fabricated_template, _pending_stack(), {}))
+    wrong_status = _pending_stack()
+    wrong_status["Stacks"][0]["StackStatus"] = "UPDATE_COMPLETE"  # type: ignore[index]
+    mutations.append((_change_set(), _template_observation(), wrong_status, {}))
+    wrong_role = _pending_stack()
+    wrong_role["Stacks"][0]["RoleARN"] = f"arn:aws:iam::{ACCOUNT}:role/Admin"  # type: ignore[index]
+    mutations.append((_change_set(), _template_observation(), wrong_role, {}))
+    wrong_stack_id = _pending_stack()
+    wrong_stack_id["Stacks"][0]["StackId"] = STACK_ID + "-different"  # type: ignore[index]
+    mutations.append((_change_set(), _template_observation(), wrong_stack_id, {}))
+    wrong_creation_time = _pending_stack()
+    wrong_creation_time["Stacks"][0]["CreationTime"] = (  # type: ignore[index]
+        "2026-08-24T18:01:00.000000+00:00"
+    )
+    mutations.append((_change_set(), _template_observation(), wrong_creation_time, {}))
+    pending_resource = {
+        "StackResourceSummaries": [
+            {
+                "LogicalResourceId": "ExistingResource",
+                "ResourceType": "AWS::S3::Bucket",
+            }
+        ]
+    }
+    mutations.append((_change_set(), _template_observation(), _pending_stack(), pending_resource))
 
-    for observation in mutations:
+    for change_set, template, pending_stack, pending_resources in mutations:
         with pytest.raises(Phase6FoundationDeploymentError, match="evidence is invalid"):
             verify_create_change_set_observations(
-                observation, _template_observation(), _absence(), _binding()
+                change_set,
+                template,
+                _absence(),
+                _binding(),
+                pending_stack_observation=pending_stack,
+                pending_stack_resources_observation=(
+                    pending_resources or _pending_stack_resources()
+                ),
             )
 
 
@@ -492,13 +585,67 @@ def test_deployed_gate_returns_binding_for_later_agentcore_and_sam_verifiers(
     ("filename", "mutate"),
     [
         (
+            "pending-stack.json",
+            lambda value: value["Stacks"][0].__setitem__("RoleARN", f"{ROLE}-wrong"),
+        ),
+        (
+            "pending-stack-resources.json",
+            lambda value: value["StackResourceSummaries"].append(
+                {"LogicalResourceId": "ExistingResource"}
+            ),
+        ),
+        (
             "stack.json",
             lambda value: value["Stacks"][0].__setitem__("StackStatus", "UPDATE_COMPLETE"),
         ),
         (
             "stack.json",
+            lambda value: value["Stacks"][0].__setitem__("StackId", f"{STACK_ID}-recreated"),
+        ),
+        (
+            "stack.json",
+            lambda value: value["Stacks"][0].__setitem__("ChangeSetId", f"{CHANGE_SET_ID}-other"),
+        ),
+        (
+            "stack.json",
+            lambda value: value["Stacks"][0].__setitem__("Description", "Another stack"),
+        ),
+        (
+            "stack.json",
+            lambda value: value["Stacks"][0].__setitem__("DisableRollback", False),
+        ),
+        (
+            "stack.json",
+            lambda value: value["Stacks"][0]["DeploymentConfig"].__setitem__(
+                "DisableRollback", False
+            ),
+        ),
+        (
+            "stack.json",
+            lambda value: value["Stacks"][0]["NotificationARNs"].append(
+                f"arn:aws:sns:{REGION}:{ACCOUNT}:unexpected"
+            ),
+        ),
+        (
+            "stack.json",
             lambda value: value["Stacks"][0].__setitem__(
-                "LastUpdatedTime", "2026-08-24T19:00:00+00:00"
+                "RollbackConfiguration", {"RollbackTriggers": [{"Arn": "unexpected"}]}
+            ),
+        ),
+        (
+            "stack.json",
+            lambda value: value["Stacks"][0].__setitem__("LastUpdatedTime", CREATION_TIME),
+        ),
+        (
+            "stack.json",
+            lambda value: value["Stacks"][0]["LastOperations"][0].__setitem__(
+                "OperationType", "UPDATE_STACK"
+            ),
+        ),
+        (
+            "stack.json",
+            lambda value: value["Stacks"][0]["LastOperations"][0].__setitem__(
+                "OperationId", "not-a-uuid"
             ),
         ),
         (
@@ -529,8 +676,20 @@ def test_deployed_gate_returns_binding_for_later_agentcore_and_sam_verifiers(
             ].__setitem__("PointInTimeRecoveryStatus", "DISABLED"),
         ),
         (
+            "bucket-encryption.json",
+            lambda value: value["ServerSideEncryptionConfiguration"]["Rules"][0][
+                "BlockedEncryptionTypes"
+            ].__setitem__("EncryptionType", ["SSE-KMS"]),
+        ),
+        (
             "bucket-versioning.json",
             lambda value: value.__setitem__("Status", "Suspended"),
+        ),
+        (
+            "bucket-lifecycle.json",
+            lambda value: value.__setitem__(
+                "TransitionDefaultMinimumObjectSize", "varies_by_storage_class"
+            ),
         ),
         (
             "bucket-public-access-block.json",

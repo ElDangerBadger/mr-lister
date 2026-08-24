@@ -2,8 +2,9 @@
 
 The verifier deliberately has no AWS SDK import and never starts a subprocess.  It accepts only
 reviewed local JSON plus normalized CLI observations.  A foundation change set is valid only when
-the named stack was observed absent first, the change-set type is ``CREATE``, and its complete
-surface is the three retained resources frozen in ``infra/phase6/foundation.json``.
+the named stack was observed absent first, its pending stack is an empty ``REVIEW_IN_PROGRESS``
+placeholder bound to the exact execution role, and its complete surface is the three retained
+resources frozen in ``infra/phase6/foundation.json``.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import cast
@@ -39,6 +41,8 @@ _DEPLOYED_EVIDENCE_FILES = {
     "absence": "stack-absence.json",
     "change_set": "change-set.json",
     "change_set_template": "change-set-template.json",
+    "pending_stack": "pending-stack.json",
+    "pending_stack_resources": "pending-stack-resources.json",
     "stack": "stack.json",
     "stack_resources": "stack-resources.json",
     "table": "table.json",
@@ -228,15 +232,23 @@ def verify_create_change_set_observations(
     absence_observation: Mapping[str, object],
     binding: Phase6FoundationBinding,
     *,
+    pending_stack_observation: Mapping[str, object],
+    pending_stack_resources_observation: Mapping[str, object],
     template_path: Path = DEFAULT_TEMPLATE,
 ) -> None:
-    """Verify an exact, executable ``CREATE`` change set and its original template."""
+    """Verify an exact, executable create change set and its authoritative pending stack."""
 
     try:
         verify_foundation_template(template_path)
         verify_stack_absence_observation(absence_observation, binding)
         _verify_change_set_template(template_observation)
         _verify_change_set(change_set_observation, binding)
+        _verify_pending_stack_observations(
+            pending_stack_observation,
+            pending_stack_resources_observation,
+            change_set_observation,
+            binding,
+        )
     except Phase6FoundationDeploymentError:
         raise
     except Exception:
@@ -260,9 +272,17 @@ def verify_deployed_foundation(
             captures["change_set_template"],
             captures["absence"],
             binding,
+            pending_stack_observation=captures["pending_stack"],
+            pending_stack_resources_observation=captures["pending_stack_resources"],
             template_path=template_path,
         )
-        stack_id = _verify_stack_observation(captures["stack"], binding)
+        stack_id = _verify_stack_observation(
+            captures["stack"],
+            binding,
+            expected_change_set_id=cast(str, captures["change_set"]["ChangeSetId"]),
+            expected_stack_id=cast(str, captures["change_set"]["StackId"]),
+            expected_creation_time=cast(str, captures["change_set"]["CreationTime"]),
+        )
         _verify_stack_resources(captures["stack_resources"], binding)
         stream_arn = _verify_table_observation(captures["table"], binding)
         _verify_table_ttl(captures["table_ttl"], binding)
@@ -423,14 +443,13 @@ def _verify_template_outputs(outputs: Mapping[str, object]) -> None:
 
 
 def _verify_change_set_template(observation: Mapping[str, object]) -> None:
-    if set(observation) - {"Stages", "TemplateBody"}:
+    if set(observation) != {"StagesAvailable", "TemplateBody"}:
         raise ValueError
-    stages = observation.get("Stages")
+    stages = observation.get("StagesAvailable")
     body = observation.get("TemplateBody")
     if (
         not isinstance(stages, list)
-        or "Original" not in stages
-        or any(stage not in {"Original", "Processed"} for stage in stages)
+        or stages != ["Original", "Processed"]
         or not isinstance(body, Mapping)
         or _fingerprint(body) != FOUNDATION_TEMPLATE_FINGERPRINT
     ):
@@ -442,10 +461,10 @@ def _verify_change_set(observation: Mapping[str, object], binding: Phase6Foundat
     if (
         observation.get("StackName") != binding.stack_name
         or observation.get("ChangeSetName") != binding.change_set_name
-        or observation.get("ChangeSetType") != "CREATE"
+        or "ChangeSetType" in observation
+        or "RoleARN" in observation
         or observation.get("Status") != "CREATE_COMPLETE"
         or observation.get("ExecutionStatus") != "AVAILABLE"
-        or observation.get("RoleARN") != binding.execution_role_arn
         or observation.get("Description")
         != f"Mr Lister Phase 6 create-only foundation {FOUNDATION_TEMPLATE_FINGERPRINT}"
         or observation.get("IncludeNestedStacks") not in (None, False)
@@ -466,6 +485,7 @@ def _verify_change_set(observation: Mapping[str, object], binding: Phase6Foundat
         raise ValueError
     change_set_id = observation.get("ChangeSetId")
     stack_id = observation.get("StackId")
+    creation_time = observation.get("CreationTime")
     if (
         not isinstance(change_set_id, str)
         or not change_set_id.startswith(
@@ -477,6 +497,8 @@ def _verify_change_set(observation: Mapping[str, object], binding: Phase6Foundat
             f"arn:aws:cloudformation:{binding.region}:{binding.account_id}:"
             f"stack/{binding.stack_name}/"
         )
+        or not isinstance(creation_time, str)
+        or not creation_time.strip()
     ):
         raise ValueError
     changes = observation.get("Changes")
@@ -507,8 +529,48 @@ def _verify_change_set(observation: Mapping[str, object], binding: Phase6Foundat
         raise ValueError
 
 
+def _verify_pending_stack_observations(
+    stack_observation: Mapping[str, object],
+    resources_observation: Mapping[str, object],
+    change_set_observation: Mapping[str, object],
+    binding: Phase6FoundationBinding,
+) -> None:
+    stacks = stack_observation.get("Stacks")
+    if (
+        set(stack_observation) != {"Stacks"}
+        or not isinstance(stacks, list)
+        or len(stacks) != 1
+        or not isinstance(stacks[0], Mapping)
+    ):
+        raise ValueError
+    stack = cast(Mapping[str, object], stacks[0])
+    if (
+        stack.get("StackName") != binding.stack_name
+        or stack.get("StackId") != change_set_observation.get("StackId")
+        or stack.get("CreationTime") != change_set_observation.get("CreationTime")
+        or stack.get("StackStatus") != "REVIEW_IN_PROGRESS"
+        or stack.get("StackStatusReason") != "User Initiated"
+        or stack.get("RoleARN") != binding.execution_role_arn
+        or stack.get("DisableRollback") is not False
+        or stack.get("EnableTerminationProtection") is not False
+        or stack.get("NotificationARNs") != []
+        or stack.get("RollbackConfiguration") != {}
+        or stack.get("Tags") != []
+        or "LastUpdatedTime" in stack
+        or "Outputs" in stack
+    ):
+        raise ValueError
+    if resources_observation != {"StackResourceSummaries": []}:
+        raise ValueError
+
+
 def _verify_stack_observation(
-    observation: Mapping[str, object], binding: Phase6FoundationBinding
+    observation: Mapping[str, object],
+    binding: Phase6FoundationBinding,
+    *,
+    expected_change_set_id: str,
+    expected_stack_id: str,
+    expected_creation_time: str,
 ) -> str:
     stacks = observation.get("Stacks")
     if (
@@ -520,17 +582,31 @@ def _verify_stack_observation(
         raise ValueError
     stack = cast(Mapping[str, object], stacks[0])
     stack_id = stack.get("StackId")
+    last_updated_time = stack.get("LastUpdatedTime")
+    last_operations = stack.get("LastOperations")
+    creation_timestamp = _aws_utc_datetime(expected_creation_time)
+    last_updated_timestamp = _aws_utc_datetime(last_updated_time)
     if (
         stack.get("StackName") != binding.stack_name
+        or stack.get("ChangeSetId") != expected_change_set_id
+        or stack.get("Description") != "Mr Lister Phase 6 create-only durable foundation"
         or stack.get("StackStatus") != "CREATE_COMPLETE"
         or stack.get("RoleARN") != binding.execution_role_arn
         or stack.get("EnableTerminationProtection") is not True
-        or "LastUpdatedTime" in stack
-        or not isinstance(stack_id, str)
-        or not stack_id.startswith(
-            f"arn:aws:cloudformation:{binding.region}:{binding.account_id}:"
-            f"stack/{binding.stack_name}/"
-        )
+        or stack.get("DisableRollback") is not True
+        or stack.get("DeploymentConfig") != {"Mode": "STANDARD", "DisableRollback": True}
+        or stack.get("NotificationARNs") != []
+        or stack.get("RollbackConfiguration") != {}
+        or stack_id != expected_stack_id
+        or stack.get("CreationTime") != expected_creation_time
+        or last_updated_timestamp <= creation_timestamp
+        or not isinstance(last_operations, list)
+        or len(last_operations) != 1
+        or not isinstance(last_operations[0], Mapping)
+        or set(last_operations[0]) != {"OperationId", "OperationType"}
+        or last_operations[0].get("OperationType") != "CREATE_STACK"
+        or not isinstance(last_operations[0].get("OperationId"), str)
+        or _ARN_ID.fullmatch(cast(str, last_operations[0]["OperationId"])) is None
         or _key_value_records(stack.get("Parameters"), "ParameterKey", "ParameterValue")
         != {"EnvironmentName": binding.environment_name}
         or _key_value_records(stack.get("Tags"), "Key", "Value")
@@ -665,18 +741,31 @@ def _verify_bucket_observations(
     stack_id: str,
 ) -> None:
     encryption = captures["bucket_encryption"].get("ServerSideEncryptionConfiguration")
-    if not isinstance(encryption, list) or len(encryption) != 1:
+    if (
+        set(captures["bucket_encryption"]) != {"ServerSideEncryptionConfiguration"}
+        or not isinstance(encryption, Mapping)
+        or set(encryption) != {"Rules"}
+    ):
         raise ValueError
-    [encryption_rule] = encryption
+    encryption_rules = encryption.get("Rules")
+    if not isinstance(encryption_rules, list) or len(encryption_rules) != 1:
+        raise ValueError
+    [encryption_rule] = encryption_rules
     if not isinstance(encryption_rule, Mapping):
         raise ValueError
     encryption_default = encryption_rule.get("ApplyServerSideEncryptionByDefault")
+    blocked_types = encryption_rule.get("BlockedEncryptionTypes")
     if (
-        set(captures["bucket_encryption"]) != {"ServerSideEncryptionConfiguration"}
-        or not isinstance(encryption_default, Mapping)
+        not isinstance(encryption_default, Mapping)
         or encryption_default != {"SSEAlgorithm": "AES256"}
         or encryption_rule.get("BucketKeyEnabled") not in (None, False)
-        or set(encryption_rule) - {"ApplyServerSideEncryptionByDefault", "BucketKeyEnabled"}
+        or blocked_types not in (None, {"EncryptionType": ["SSE-C"]})
+        or set(encryption_rule)
+        - {
+            "ApplyServerSideEncryptionByDefault",
+            "BlockedEncryptionTypes",
+            "BucketKeyEnabled",
+        }
     ):
         raise ValueError
     if captures["bucket_versioning"] != {"Status": "Enabled"}:
@@ -723,6 +812,9 @@ def _verify_bucket_observations(
 def _verify_bucket_lifecycle(observation: Mapping[str, object]) -> None:
     if set(observation) - {"Rules", "TransitionDefaultMinimumObjectSize"}:
         raise ValueError
+    minimum_size = observation.get("TransitionDefaultMinimumObjectSize")
+    if minimum_size not in (None, "all_storage_classes_128K"):
+        raise ValueError
     rules = observation.get("Rules")
     if not isinstance(rules, list) or len(rules) != 3:
         raise ValueError
@@ -741,17 +833,41 @@ def _verify_bucket_lifecycle(observation: Mapping[str, object]) -> None:
     staged = by_id["ExpireUnreferencedStagedArtwork"]
     markers = by_id["RemoveExpiredPrivateSourceDeleteMarkers"]
     if (
-        abort.get("Status") != "Enabled"
+        set(abort)
+        not in (
+            {"AbortIncompleteMultipartUpload", "Filter", "ID", "Status"},
+            {"AbortIncompleteMultipartUpload", "ID", "Prefix", "Status"},
+        )
+        or abort.get("Status") != "Enabled"
         or abort.get("AbortIncompleteMultipartUpload") != {"DaysAfterInitiation": 7}
         or not _empty_prefix_filter(abort.get("Filter"), abort.get("Prefix"))
+        or set(staged)
+        != {
+            "Expiration",
+            "Filter",
+            "ID",
+            "NoncurrentVersionExpiration",
+            "Status",
+        }
         or staged.get("Status") != "Enabled"
         or staged.get("Filter")
         not in (
             {"Tag": {"Key": "mr-lister-state", "Value": "staged"}},
             {"And": {"Tags": [{"Key": "mr-lister-state", "Value": "staged"}]}},
+            {
+                "And": {
+                    "Prefix": "",
+                    "Tags": [{"Key": "mr-lister-state", "Value": "staged"}],
+                }
+            },
         )
         or staged.get("Expiration") != {"Days": 1}
         or staged.get("NoncurrentVersionExpiration") != {"NoncurrentDays": 1}
+        or set(markers)
+        not in (
+            {"Expiration", "Filter", "ID", "Status"},
+            {"Expiration", "ID", "Prefix", "Status"},
+        )
         or markers.get("Status") != "Enabled"
         or not _prefix_filter(
             markers.get("Filter"), markers.get("Prefix"), expected="private/owners/"
@@ -802,6 +918,15 @@ def _load_json_file(path: Path) -> object:
     if path.is_symlink() or not path.is_file():
         raise ValueError
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _aws_utc_datetime(value: object) -> datetime:
+    if not isinstance(value, str) or not value.endswith("+00:00"):
+        raise ValueError
+    parsed = datetime.fromisoformat(value)
+    if parsed.utcoffset() != timedelta(0):
+        raise ValueError
+    return parsed
 
 
 def _fingerprint(value: object) -> str:
@@ -1117,6 +1242,8 @@ def _parser() -> argparse.ArgumentParser:
     change_set.add_argument("--template", type=Path, default=DEFAULT_TEMPLATE)
     change_set.add_argument("--absence-observation", required=True)
     change_set.add_argument("--observation", required=True)
+    change_set.add_argument("--pending-stack-observation", required=True)
+    change_set.add_argument("--pending-stack-resources-observation", required=True)
     change_set.add_argument("--template-observation", required=True)
 
     deployed = subparsers.add_parser("deployed", help="verify all post-create evidence")
@@ -1151,6 +1278,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     _json_mapping(args.template_observation),
                     _json_mapping(args.absence_observation),
                     binding,
+                    pending_stack_observation=_json_mapping(args.pending_stack_observation),
+                    pending_stack_resources_observation=_json_mapping(
+                        args.pending_stack_resources_observation
+                    ),
                     template_path=args.template,
                 )
                 result = {
