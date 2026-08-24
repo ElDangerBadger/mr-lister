@@ -158,8 +158,10 @@ def test_retention_role_enforces_exact_prefix_object_shape_and_checkpoint_partit
     }
 
     authority = statements["StrongReadJobSourceAuthority"]
+    assert authority["Action"] == "dynamodb:TransactGetItems"
+    assert authority["Resource"] == {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}
     assert authority["Condition"] == {
-        "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*"]},
+        "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]},
         "Null": {"dynamodb:LeadingKeys": "false"},
     }
     for sid in ("ReadSourceRetentionCheckpoint", "WriteSourceRetentionCheckpoint"):

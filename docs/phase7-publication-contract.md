@@ -289,6 +289,48 @@ This checkpoint does not compose a request service, coordinator, provider bounda
 resolver, dispatcher, state machine, browser control, or notification delivery surface. It makes
 no AWS or Printify call and does not advance the contract beyond `offline_implementation`.
 
+## Offline Phase 7.5 retention and credential containment
+
+The request transaction now includes one fifteenth, store-derived row under the publication
+partition that binds the direct physical owner-receipt key and exact receipt fingerprint. It is not
+seller input or a command DTO field. Terminal retention can therefore read the one owner receipt by
+exact key without an unbounded owner-partition query.
+
+After terminal settlement, a capability-free service validates the exact closed execution graph
+and delegates to an injected DynamoDB adapter. The adapter strongly and page-boundedly inventories
+the publication partition, rejects every unknown, missing, duplicated, foreign, or drifted row,
+and accepts only a missing TTL or the one exact `operational_expires_at` epoch. Bounded conditional
+transactions assign that top-level +90-day TTL to every publication row, the linked control job,
+and the exact owner receipt. A different prior TTL is a conflict. Only after a second exact
+inventory and TTL proof may the adapter run the nine-action marker-last transaction: eight exact
+condition checks cover the TTL'd aggregate, job, source, report, tombstone, terminal job link,
+store-derived receipt locator, and owner receipt, followed by the
+`JOB#<job>/PUBLICATION_RETENTION` put. That marker has its own +90-day TTL and binds the source
+artifact, aggregate, report, tombstone, terminal job link, row inventory, and assignment counts. It
+is a durable terminal-graph projection, not a loose completion flag. The adapter has no SDK
+construction, delete, source-tag, provider, or network capability.
+
+The existing Phase 6 retention path remains the source-version tag writer. For an approved job,
+absence of the marker keeps the source pinned. A present marker must match the current job and
+source, and the sweeper strongly rereads the exact terminal publication aggregate before release at
+`terminal_at + 30 days`; missing, partial, malformed, foreign, or changed authority fails closed.
+The capability-free marker model enters a rebuilt Phase 6 source bundle, while every publication
+retention module remains excluded. Resealing and deploying that normal Phase 6 bundle, plus future
+retention scheduling/composition, are later gates. The existing source-retention role's
+`dynamodb:TransactGetItems` condition expands only from `JOB#*` to `JOB#*` plus `PUBLICATION#*` on
+the same state table; it gains no write, query, scan, secret, network, or provider authority.
+
+Provider credentials are independently contained. An injected adapter resolves the existing owner
+secret fresh and binds it to the exact owner, Printify shop, aggregate, snapshot, and reconstructed
+provider authority. The coordinator prepares that opaque, immutable, non-serializable capability
+before any GET or POST claim and the staged boundary revalidates it after the claim before wire
+access. The token is never placed in a model, durable row, exception, report, or log.
+
+Nothing in this checkpoint registers a route, exposes a browser control, adds provider or mutation
+IAM, constructs an AWS client, schedules retention, deploys a bundle, or makes a live provider
+call. Request, query, publication, provider-mutation, and seller activation remain false and
+uncomposed.
+
 ## Immutable report and retention
 
 The run report binds only closed statuses, timestamps, aggregate call counts, release/snapshot/

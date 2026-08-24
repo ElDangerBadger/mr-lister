@@ -380,5 +380,10 @@ def test_publication_persistence_and_service_cannot_acquire_runtime_capability()
             for module in imported
             for denied in forbidden_imports
         ), path.name
-        assert called.isdisjoint(forbidden_calls), path.name
+        path_forbidden_calls = forbidden_calls
+        if path.name == "provider_credentials.py":
+            # The capability core may unwrap only its already-injected Pydantic SecretStr;
+            # imports and every other runtime/provider call remain under this legacy gate.
+            path_forbidden_calls = forbidden_calls - {"get_secret_value"}
+        assert called.isdisjoint(path_forbidden_calls), path.name
         assert defined.isdisjoint(forbidden_definitions), path.name

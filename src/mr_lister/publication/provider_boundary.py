@@ -25,7 +25,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    SecretStr,
     StrictBool,
     StrictFloat,
     StrictInt,
@@ -69,7 +68,11 @@ from mr_lister.publication.execution_store import (
 from mr_lister.publication.fingerprints import (
     canonical_fingerprint,
 )
-from mr_lister.publication.models import OwnerId, SafeId
+from mr_lister.publication.models import SafeId
+from mr_lister.publication.provider_credentials import (
+    BoundPublicationProviderCredential,
+    OwnerBoundPrintifyCredential,
+)
 
 PRINTIFY_PUBLICATION_API_ORIGIN = "https://api.printify.com"
 PRINTIFY_PUBLICATION_API_BASE_URL = f"{PRINTIFY_PUBLICATION_API_ORIGIN}/v1/"
@@ -493,26 +496,6 @@ class _ProviderModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-class OwnerBoundPrintifyCredential(_ProviderModel):
-    """An already resolved credential; no secret manager is composed in this module."""
-
-    owner_id: OwnerId
-    bearer_token: SecretStr
-
-    @model_validator(mode="after")
-    def token_is_bounded_without_disclosure(self) -> OwnerBoundPrintifyCredential:
-        token = self.bearer_token.get_secret_value()
-        if (
-            not token
-            or len(token) > 4096
-            or token != token.strip()
-            or not token.isascii()
-            or any(character.isspace() or ord(character) < 33 for character in token)
-        ):
-            raise ValueError("Printify bearer credential is invalid")
-        return self
-
-
 class CanonicalReadVariant(_ProviderModel):
     id: StrictInt = Field(gt=0)
     price: StrictInt = Field(gt=0)
@@ -688,16 +671,21 @@ class PrintifyPublicationBoundary:
             self._authority = PublicationProviderAuthority.model_validate(
                 authority.model_dump(mode="python")
             )
-            self._credential = OwnerBoundPrintifyCredential.model_validate(
-                credential.model_dump(mode="python")
+            self._credential = OwnerBoundPrintifyCredential(
+                owner_id=credential.owner_id,
+                printify_shop_id=credential.printify_shop_id,
+                bearer_token=credential.bearer_token.get_secret_value(),
             )
         except Exception:
             raise PublicationProviderInputError(
                 "Publication provider authority is invalid"
             ) from None
-        if self._credential.owner_id != self._authority.owner_id:
+        if (
+            self._credential.owner_id != self._authority.owner_id
+            or self._credential.printify_shop_id != self._authority.printify_shop_id
+        ):
             raise PublicationProviderInputError(
-                "Publication credential does not match owner authority"
+                "Publication credential does not match owner/shop authority"
             )
         if (
             isinstance(timeout_seconds, bool)
@@ -1405,7 +1393,7 @@ class StagedPrintifyPublicationBoundary:
         self,
         *,
         execution_authority: PublicationExecutionAuthority,
-        credential: OwnerBoundPrintifyCredential,
+        credential: BoundPublicationProviderCredential,
         transport: PublicationHttpTransport,
         audit_sink: PublicationAuditSink,
         evidence_store: PublicationProviderEvidenceStore,
@@ -1427,13 +1415,21 @@ class StagedPrintifyPublicationBoundary:
             raise PublicationProviderInputError(
                 "Publication provider authority was not reconstructed"
             )
+        try:
+            if type(credential) is not BoundPublicationProviderCredential:
+                raise TypeError
+            exact_credential = credential.for_authority(provider_authority)
+        except Exception:
+            raise PublicationProviderInputError(
+                "Publication provider credential authority is invalid"
+            ) from None
         self._owner_id = exact_execution.snapshot.owner_id
         self._aggregate_id = exact_execution.aggregate.aggregate_id
         self._evidence_store = evidence_store
         self._authority_reader = authority_reader
         self._boundary = PrintifyPublicationBoundary(
             authority=provider_authority,
-            credential=credential,
+            credential=exact_credential,
             transport=transport,
             audit_sink=audit_sink,
             clock=clock,
@@ -1850,6 +1846,7 @@ def _valid_publish_success_body(response: PublicationHttpResponse) -> bool:
 
 
 __all__ = [
+    "BoundPublicationProviderCredential",
     "ExpectedVariantEconomics",
     "ExternalEvidenceState",
     "FreshPublicationCallGrant",

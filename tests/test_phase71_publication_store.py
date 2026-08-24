@@ -64,6 +64,9 @@ from mr_lister.publication.models import (
     PublicationSnapshot,
     PublicationWorkRequest,
 )
+from mr_lister.publication.retention_locator import (
+    build_publication_request_receipt_locator,
+)
 from mr_lister.publication.store import (
     InMemoryPublicationStore,
     PublicationRequestAuthority,
@@ -537,6 +540,38 @@ def test_in_memory_exact_replay_changed_body_and_concurrent_key_are_closed() -> 
         store.commit_request(changed_key)
     assert error.value.code is PublicationErrorCode.CONCURRENT_WRITE
     assert len(store.aggregates) == len(store.receipts) == 1
+
+
+@pytest.mark.parametrize("tamper", ["missing", "different"])
+def test_in_memory_replay_requires_exact_derived_receipt_locator(tamper: str) -> None:
+    authority = make_authority()
+    transaction = make_transaction(authority)
+    store = InMemoryPublicationStore((authority,))
+    receipt = store.commit_request(transaction)
+    if tamper == "missing":
+        store._receipt_locators.pop(receipt.aggregate_id)  # noqa: SLF001
+    else:
+        store._receipt_locators[receipt.aggregate_id] = (  # noqa: SLF001
+            build_publication_request_receipt_locator(
+                aggregate_id=receipt.aggregate_id,
+                owner_id=receipt.owner_id,
+                job_id=receipt.job_id,
+                receipt_id=receipt.receipt_id,
+                receipt_fingerprint="f" * 64,
+                idempotency_key_digest=receipt.idempotency_key_digest,
+            )
+        )
+
+    assert (
+        store.resolve_request_receipt(
+            OWNER_ID,
+            authority.current_job.job_id,
+            receipt.idempotency_key_digest,
+        )
+        is None
+    )
+    with pytest.raises(PublicationIdempotencyConflictError):
+        store.commit_request(transaction)
 
 
 def test_in_memory_stale_authority_writes_nothing_and_owner_mismatch_is_not_found() -> None:

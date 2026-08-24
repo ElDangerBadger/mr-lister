@@ -18,6 +18,10 @@ from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 
 from mr_lister.contracts import ContractModel
 from mr_lister.control.models import ControlJobRecord, ControlJobState, SourceArtifactRecord
+from mr_lister.control.publication_retention import (
+    PublicationRetentionCompletionAuthority,
+    validate_publication_retention_completion,
+)
 from mr_lister.control.source_artwork import validate_source_artifact_authority
 from mr_lister.control.upload_models import UPLOAD_INTENT_TTL
 
@@ -92,11 +96,23 @@ class SourceAuthoritySnapshot(RetentionModel):
 
     job: ControlJobRecord | None = None
     source: SourceArtifactRecord | None = None
+    publication_retention: PublicationRetentionCompletionAuthority | None = None
 
     @model_validator(mode="after")
     def rows_are_both_present_or_both_absent(self) -> SourceAuthoritySnapshot:
         if (self.job is None) != (self.source is None):
             raise ValueError("Retention authority rows must be both present or both absent")
+        if self.job is None:
+            if self.publication_retention is not None:
+                raise ValueError("Publication retention requires current job/source authority")
+            return self
+        if self.publication_retention is not None:
+            assert self.source is not None
+            validate_publication_retention_completion(
+                self.job,
+                self.publication_retention,
+                source=self.source,
+            )
         return self
 
 
@@ -460,7 +476,14 @@ class ReferenceAwareSourceVersionSweeper:
     ) -> Literal["pinned", "released", "unchanged"]:
         if version.last_modified > now:
             raise RetentionBoundaryInvalidError("Retention inventory timestamp is invalid")
-        initial_retained = self._is_retained(version, now=now)
+        try:
+            initial_retained = self._is_retained(version, now=now)
+        except RetentionSweepError:
+            # A missing/partial/mismatched publication marker must never leave a staged version
+            # unpinned merely because classification failed before the release write.
+            if observed_state == "staged":
+                self._repair_pinned_after_uncertainty(version)
+            raise
         if initial_retained:
             self._set_state(version, "pinned")
             return "pinned"
@@ -540,8 +563,22 @@ class ReferenceAwareSourceVersionSweeper:
 
         if source.version_id != version.version_id:
             return False
+        if job.state is ControlJobState.APPROVED:
+            completion = snapshot.publication_retention
+            if completion is None:
+                return True
+            try:
+                completion = validate_publication_retention_completion(
+                    job,
+                    completion,
+                    source=source,
+                )
+            except ValueError:
+                raise RetentionBoundaryInvalidError(
+                    "Retention authority response is invalid"
+                ) from None
+            return now < completion.source_release_eligible_at
         if job.state not in {ControlJobState.CANCELLED, ControlJobState.FAILED_TERMINAL}:
-            # APPROVED remains a Phase 7 input and is deliberately retained.
             return True
         return now - job.updated_at < self._terminal_source_retention
 
@@ -631,6 +668,7 @@ __all__ = [
     "RetentionSweepError",
     "RetentionSweepResult",
     "SourceAuthoritySnapshot",
+    "PublicationRetentionCompletionAuthority",
     "SourceVersionInventory",
     "SourceVersionPage",
     "SourceVersionTag",

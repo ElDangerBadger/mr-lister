@@ -45,6 +45,10 @@ from mr_lister.publication.execution_store import (
     PublicationExecutionStore,
 )
 from mr_lister.publication.provider_boundary import StagedPublicationProviderBoundary
+from mr_lister.publication.provider_credentials import (
+    BoundPublicationProviderCredential,
+    build_publication_provider_credential_binding,
+)
 
 
 class PublicationProviderCoordinatorError(RuntimeError):
@@ -77,10 +81,17 @@ class PublicationProviderCoordinatorResult:
 class PublicationProviderBoundaryFactory(Protocol):
     """Trusted composition seam that owns credentials, routes, transport, audit, and staging."""
 
+    def prepare_credential(
+        self,
+        *,
+        execution_authority: PublicationExecutionAuthority,
+    ) -> BoundPublicationProviderCredential: ...
+
     def __call__(
         self,
         *,
         execution_authority: PublicationExecutionAuthority,
+        credential: BoundPublicationProviderCredential,
     ) -> StagedPublicationProviderBoundary: ...
 
 
@@ -334,6 +345,7 @@ class PublicationProviderCoordinator:
             PublicationCallPurpose.SHOP_PREFLIGHT,
         )
         if shop is None:
+            credential = self._prepare_credential(authority)
             operation_id = self._operation_id("claim_shop", authority)
             result = self._execution.claim_shop_get(
                 ClaimShopGetCommand(
@@ -349,6 +361,7 @@ class PublicationProviderCoordinator:
                 )
             candidate = self._boundary_factory(
                 execution_authority=claim_authority,
+                credential=credential,
             ).preflight_shop(call_claim=claim, fresh_grant=grant)
             stage = self._require_durable_stage(
                 claim_authority,
@@ -374,6 +387,7 @@ class PublicationProviderCoordinator:
             PublicationCallPurpose.PRODUCT_PREFLIGHT,
         )
         if product is None:
+            credential = self._prepare_credential(authority)
             operation_id = self._operation_id("claim_product_preflight", authority)
             result = self._execution.claim_product_get(
                 ClaimProductGetCommand(
@@ -390,6 +404,7 @@ class PublicationProviderCoordinator:
                 )
             candidate = self._boundary_factory(
                 execution_authority=claim_authority,
+                credential=credential,
             ).preflight_exact_product(call_claim=claim, fresh_grant=grant)
             stage = self._require_durable_stage(
                 claim_authority,
@@ -422,6 +437,7 @@ class PublicationProviderCoordinator:
             raise PublicationProviderCoordinatorError(
                 "Publication mutation requires durable preflight proof"
             )
+        credential = self._prepare_credential(authority)
         operation_id = self._operation_id("claim_publish", authority)
         result = self._execution.claim_publish(
             ClaimPublicationMutationCommand(
@@ -445,6 +461,7 @@ class PublicationProviderCoordinator:
             )
         candidate = self._boundary_factory(
             execution_authority=claim_authority,
+            credential=credential,
         ).publish_exact_product(
             call_claim=claim,
             mutation_claim=mutation,
@@ -496,6 +513,7 @@ class PublicationProviderCoordinator:
             PublicationState.PUBLICATION_VERIFYING: PublicationCallPurpose.VERIFICATION,
             PublicationState.PUBLICATION_RECONCILING: PublicationCallPurpose.RECONCILIATION,
         }[authority.aggregate.state]
+        credential = self._prepare_credential(authority)
         operation_id = self._operation_id(f"claim_{purpose.value}", authority)
         result = self._execution.claim_product_get(
             ClaimProductGetCommand(
@@ -512,6 +530,7 @@ class PublicationProviderCoordinator:
             )
         candidate = self._boundary_factory(
             execution_authority=claim_authority,
+            credential=credential,
         ).poll_exact_product(call_claim=claim, fresh_grant=grant)
         expected_kind = {
             PublicationCallPurpose.VERIFICATION: (
@@ -542,6 +561,31 @@ class PublicationProviderCoordinator:
             authority.snapshot.owner_id,
             authority.aggregate.aggregate_id,
         )
+
+    def _prepare_credential(
+        self,
+        authority: PublicationExecutionAuthority,
+    ) -> BoundPublicationProviderCredential:
+        try:
+            provider_authority = authority.provider_authority
+            if provider_authority is None:
+                raise ValueError
+            credential = self._boundary_factory.prepare_credential(
+                execution_authority=authority,
+            )
+            if (
+                type(credential) is not BoundPublicationProviderCredential
+                or credential.binding
+                != build_publication_provider_credential_binding(provider_authority)
+            ):
+                raise ValueError
+        except Exception:
+            pass
+        else:
+            return credential
+        raise PublicationProviderCoordinatorError(
+            "Publication provider credential is unavailable"
+        ) from None
 
     def _require_durable_stage(
         self,

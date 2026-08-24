@@ -7,7 +7,13 @@ from typing import Any
 
 import pytest
 
+from mr_lister.control.fingerprints import publication_terminal_summary_fingerprint
 from mr_lister.control.models import ControlJobRecord, ControlJobState, SourceArtifactRecord
+from mr_lister.control.publication_retention import (
+    PublicationRetentionCompletionAuthority,
+    publication_operational_expiry_epoch,
+    publication_retention_completion_fingerprint,
+)
 from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.production.retention import (
     MAX_RETENTION_SCAN_PAGES,
@@ -33,6 +39,9 @@ BUCKET = "mr-lister-phase6-artifacts-dev"
 VERSION_ID = "source-version-exact-1"
 OTHER_VERSION_ID = "source-version-orphan-2"
 OBJECT_KEY = f"private/owners/{OWNER_ID}/jobs/{JOB_ID}/source/source.png"
+PUBLICATION_AGGREGATE_ID = "publication_retention_aggregate"
+PUBLICATION_REPORT_ID = "publication_retention_report"
+PUBLICATION_RESULT_ID = "publication_retention_result"
 
 
 def _source(*, version_id: str = VERSION_ID) -> SourceArtifactRecord:
@@ -110,6 +119,77 @@ def _snapshot(
     return SourceAuthoritySnapshot(
         job=_job(state=state, updated_at=updated_at, source=source),
         source=source,
+    )
+
+
+def _terminal_publication_snapshot(
+    *,
+    terminal_at: datetime,
+) -> SourceAuthoritySnapshot:
+    source = _source()
+    source_release_eligible_at = terminal_at + timedelta(days=30)
+    operational_expires_at = terminal_at + timedelta(days=90)
+    summary_fingerprint = publication_terminal_summary_fingerprint(
+        aggregate_id=PUBLICATION_AGGREGATE_ID,
+        terminal_state="published",
+        terminal_at=terminal_at,
+        source_release_eligible_at=source_release_eligible_at,
+        operational_expires_at=operational_expires_at,
+        report_id=PUBLICATION_REPORT_ID,
+        result_id=PUBLICATION_RESULT_ID,
+    )
+    job_values = _job(
+        state=ControlJobState.APPROVED,
+        updated_at=terminal_at,
+        source=source,
+    ).model_dump(mode="python")
+    job_values.update(
+        {
+            "record_version": 5,
+            "publication_aggregate_id": PUBLICATION_AGGREGATE_ID,
+            "publication_terminal_state": "published",
+            "publication_terminal_at": terminal_at,
+            "publication_source_release_eligible_at": source_release_eligible_at,
+            "publication_operational_expires_at": operational_expires_at,
+            "publication_report_id": PUBLICATION_REPORT_ID,
+            "publication_result_id": PUBLICATION_RESULT_ID,
+            "publication_terminal_summary_fingerprint": summary_fingerprint,
+        }
+    )
+    job = ControlJobRecord.model_validate(job_values)
+    completion_values: dict[str, Any] = {
+        "job_id": job.job_id,
+        "aggregate_id": PUBLICATION_AGGREGATE_ID,
+        "job_record_version": job.record_version,
+        "terminal_state": "published",
+        "terminal_at": terminal_at,
+        "terminal_summary_fingerprint": summary_fingerprint,
+        "source_artifact_fingerprint": source.fingerprint,
+        "aggregate_fingerprint": "3" * 64,
+        "report_id": PUBLICATION_REPORT_ID,
+        "report_fingerprint": "4" * 64,
+        "tombstone_fingerprint": "5" * 64,
+        "terminal_job_link_fingerprint": "6" * 64,
+        "source_release_eligible_at": source_release_eligible_at,
+        "operational_expires_at": operational_expires_at,
+        "expires_at_epoch_seconds": publication_operational_expiry_epoch(operational_expires_at),
+        "publication_row_count": 20,
+        "ttl_assignment_count": 22,
+        "inventory_fingerprint": "7" * 64,
+        "completed_at": terminal_at + timedelta(days=1),
+    }
+    completion_basis = PublicationRetentionCompletionAuthority.model_construct(
+        **completion_values,
+        fingerprint="0" * 64,
+    )
+    completion = PublicationRetentionCompletionAuthority(
+        **completion_values,
+        fingerprint=publication_retention_completion_fingerprint(completion_basis),
+    )
+    return SourceAuthoritySnapshot(
+        job=job,
+        source=source,
+        publication_retention=completion,
     )
 
 
@@ -324,6 +404,66 @@ def test_terminal_grace_and_approved_phase7_authority_control_retention(
     else:
         assert tags.set_calls == [(OBJECT_KEY, VERSION_ID, "pinned")]
         assert result.versions_reasserted_pinned == 1
+
+
+@pytest.mark.parametrize(
+    ("terminal_at", "expected_state"),
+    (
+        (NOW - timedelta(days=30) + timedelta(microseconds=1), "pinned"),
+        (NOW - timedelta(days=30), "staged"),
+    ),
+)
+def test_exact_publication_marker_pins_before_plus_30_and_releases_at_equality(
+    terminal_at: datetime,
+    expected_state: str,
+) -> None:
+    snapshot = _terminal_publication_snapshot(terminal_at=terminal_at)
+    tags = _Tags({(OBJECT_KEY, VERSION_ID): "pinned"})
+    sweeper, _inventory, tags, _authority, checkpoints = _sweeper(
+        tags=tags,
+        authority=_Authority([snapshot]),
+    )
+
+    result = sweeper.sweep()
+
+    assert tags.states[(OBJECT_KEY, VERSION_ID)] == expected_state
+    assert tags.set_calls == [(OBJECT_KEY, VERSION_ID, expected_state)]
+    assert checkpoints.checkpoint == RetentionCheckpoint(revision=1)
+    if expected_state == "pinned":
+        assert result.versions_reasserted_pinned == 1
+        assert result.versions_released_to_staged == 0
+    else:
+        assert result.versions_reasserted_pinned == 0
+        assert result.versions_released_to_staged == 1
+
+
+@pytest.mark.parametrize("observed_state", ("staged", "pinned"))
+def test_invalid_publication_marker_repairs_only_an_initially_staged_source(
+    observed_state: str,
+) -> None:
+    exact = _terminal_publication_snapshot(terminal_at=NOW - timedelta(days=30))
+    assert exact.publication_retention is not None
+    invalid_completion = exact.publication_retention.model_copy(
+        update={"aggregate_id": "foreign_publication_aggregate"}
+    )
+    invalid_snapshot = SourceAuthoritySnapshot.model_construct(
+        job=exact.job,
+        source=exact.source,
+        publication_retention=invalid_completion,
+    )
+    tags = _Tags({(OBJECT_KEY, VERSION_ID): observed_state})
+    sweeper, _inventory, tags, _authority, checkpoints = _sweeper(
+        tags=tags,
+        authority=_Authority([invalid_snapshot]),
+    )
+
+    with pytest.raises(RetentionBoundaryInvalidError, match="authority response is invalid"):
+        sweeper.sweep()
+
+    expected_writes = [(OBJECT_KEY, VERSION_ID, "pinned")] if observed_state == "staged" else []
+    assert tags.set_calls == expected_writes
+    assert tags.states[(OBJECT_KEY, VERSION_ID)] == "pinned"
+    assert checkpoints.saves == []
 
 
 def test_fast_application_clock_cannot_shorten_terminal_source_retention() -> None:

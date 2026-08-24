@@ -66,13 +66,14 @@ from mr_lister.publication.models import (
 from mr_lister.publication.store import PublicationRequestAuthority
 
 MAX_EXECUTION_TRANSACTION_ITEMS = 25
-# Exact largest frozen graph: six roots/initial rows, 208 transition event/receipt pairs,
+# Exact largest frozen graph: six roots/initial rows, one request-receipt locator,
+# 208 transition event/receipt pairs,
 # 104 claims, audits, and stages, 102 consumptions, 99 product observations, four execution
 # singletons, and three terminal singleton rows.  The positive terminal variant replaces the
 # final deadline event/receipt pair with result/notification and has the same total.
-FROZEN_MAX_EXECUTION_AUTHORITY_ITEMS = 6 + (208 * 2) + 104 + 104 + 104 + 102 + 99 + 4 + 3
+FROZEN_MAX_EXECUTION_AUTHORITY_ITEMS = 7 + (208 * 2) + 104 + 104 + 104 + 102 + 99 + 4 + 3
 MAX_EXECUTION_AUTHORITY_ITEMS = 1024
-assert FROZEN_MAX_EXECUTION_AUTHORITY_ITEMS == 942
+assert FROZEN_MAX_EXECUTION_AUTHORITY_ITEMS == 943
 assert FROZEN_MAX_EXECUTION_AUTHORITY_ITEMS <= MAX_EXECUTION_AUTHORITY_ITEMS
 MAX_DYNAMODB_ITEM_BYTES = 400 * 1024
 MAX_DYNAMODB_TRANSACTION_BYTES = 4 * 1024 * 1024

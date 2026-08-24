@@ -244,7 +244,7 @@ def test_fifty_six_product_reads_load_across_strong_query_pages() -> None:
 
     partition_key = f"PUBLICATION#{harness.aggregate_id}"
     assert sum(1 for key in client.items if key[0] == partition_key) >= 531
-    assert FROZEN_MAX_EXECUTION_AUTHORITY_ITEMS == 942
+    assert FROZEN_MAX_EXECUTION_AUTHORITY_ITEMS == 943
     assert FROZEN_MAX_EXECUTION_AUTHORITY_ITEMS <= MAX_EXECUTION_AUTHORITY_ITEMS == 1024
     client.query_page_size = 64
     client.query_requests.clear()

@@ -52,6 +52,10 @@ from mr_lister.publication.models import (
     PublicationSnapshot,
     PublicationWorkRequest,
 )
+from mr_lister.publication.retention_locator import (
+    PublicationRequestReceiptLocator,
+    build_publication_request_receipt_locator,
+)
 
 
 @dataclass(frozen=True)
@@ -397,6 +401,7 @@ class InMemoryPublicationStore:
         self._work_requests: dict[tuple[str, str], PublicationWorkRequest] = {}
         self._events: dict[tuple[str, int], PublicationDomainEvent] = {}
         self._receipts: dict[tuple[str, str, str], PublicationCommandReceipt] = {}
+        self._receipt_locators: dict[str, PublicationRequestReceiptLocator] = {}
         for authority in authorities:
             self.seed_authority(authority)
 
@@ -431,6 +436,10 @@ class InMemoryPublicationStore:
     @property
     def receipts(self) -> Mapping[tuple[str, str, str], PublicationCommandReceipt]:
         return MappingProxyType(self._receipts)
+
+    @property
+    def receipt_locators(self) -> Mapping[str, PublicationRequestReceiptLocator]:
+        return MappingProxyType(self._receipt_locators)
 
     def seed_authority(self, authority: PublicationRequestAuthority) -> None:
         """Seed one complete immutable Phase 6 graph for deterministic tests."""
@@ -481,7 +490,20 @@ class InMemoryPublicationStore:
         key_digest: str,
     ) -> PublicationCommandReceipt | None:
         with self._lock:
-            return self._receipts.get((owner_id, job_id, key_digest))
+            receipt = self._receipts.get((owner_id, job_id, key_digest))
+            if receipt is None:
+                return None
+            expected_locator = build_publication_request_receipt_locator(
+                aggregate_id=receipt.aggregate_id,
+                owner_id=receipt.owner_id,
+                job_id=receipt.job_id,
+                receipt_id=receipt.receipt_id,
+                receipt_fingerprint=receipt.fingerprint,
+                idempotency_key_digest=receipt.idempotency_key_digest,
+            )
+            if self._receipt_locators.get(receipt.aggregate_id) != expected_locator:
+                return None
+            return receipt
 
     def load_request_authority(
         self,
@@ -524,6 +546,14 @@ class InMemoryPublicationStore:
         validate_publication_request_transaction(transaction)
         commit = transaction.commit
         receipt = commit.receipt
+        locator = build_publication_request_receipt_locator(
+            aggregate_id=receipt.aggregate_id,
+            owner_id=receipt.owner_id,
+            job_id=receipt.job_id,
+            receipt_id=receipt.receipt_id,
+            receipt_fingerprint=receipt.fingerprint,
+            idempotency_key_digest=receipt.idempotency_key_digest,
+        )
         with self._lock:
             receipt_key = (
                 receipt.owner_id,
@@ -532,7 +562,11 @@ class InMemoryPublicationStore:
             )
             existing = self._receipts.get(receipt_key)
             if existing is not None:
-                if existing.request_fingerprint == receipt.request_fingerprint:
+                existing_locator = self._receipt_locators.get(existing.aggregate_id)
+                if (
+                    existing.request_fingerprint == receipt.request_fingerprint
+                    and existing_locator == locator
+                ):
                     return existing
                 raise PublicationIdempotencyConflictError()
 
@@ -551,6 +585,7 @@ class InMemoryPublicationStore:
                 (self._permits, (aggregate_id, commit.permit.permit_id)),
                 (self._work_requests, (aggregate_id, commit.work_request.work_request_id)),
                 (self._events, (aggregate_id, commit.event.sequence)),
+                (self._receipt_locators, aggregate_id),
             )
             if any(key in mapping for mapping, key in immutable_keys):
                 raise PublicationConflictError(
@@ -568,6 +603,7 @@ class InMemoryPublicationStore:
             )
             self._events[(aggregate_id, commit.event.sequence)] = commit.event
             self._receipts[receipt_key] = receipt
+            self._receipt_locators[aggregate_id] = locator
             return receipt
 
     def get_aggregate_for_owner(
