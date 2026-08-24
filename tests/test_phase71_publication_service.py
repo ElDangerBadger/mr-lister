@@ -47,6 +47,11 @@ from mr_lister.publication.errors import (
     PublicationNotFoundError,
 )
 from mr_lister.publication.fingerprints import publication_command_receipt_fingerprint
+from mr_lister.publication.profile_eligibility import (
+    PinnedPublicationProfileEligibilityAuthority,
+    PublicationProfileEligibilityError,
+    build_publication_profile_eligibility,
+)
 from mr_lister.publication.service import PublicationRequestService
 from mr_lister.publication.store import (
     InMemoryPublicationStore,
@@ -81,7 +86,7 @@ TAGS = (
 )
 
 
-def _profile(*, publish_enabled: bool = True) -> ProductProfile:
+def _profile(*, publish_enabled: bool = False) -> ProductProfile:
     return ProductProfile(
         profile_id="phase71_profile",
         profile_version=1,
@@ -334,6 +339,28 @@ class ProfileAuthority:
         return self.exact
 
 
+class UnavailableEligibilityAuthority:
+    def get_exact(self, **values: object) -> object:
+        del values
+        raise PublicationProfileEligibilityError("Publication profile eligibility is unavailable")
+
+
+def profile_eligibility_authority(
+    exact_profile: ExactReviewProductProfile,
+    *,
+    release_manifest_fingerprint: str = RELEASE_FINGERPRINT,
+) -> PinnedPublicationProfileEligibilityAuthority:
+    return PinnedPublicationProfileEligibilityAuthority(
+        build_publication_profile_eligibility(
+            profile_id=exact_profile.profile.profile_id,
+            profile_version=exact_profile.profile.profile_version,
+            profile_fingerprint=exact_profile.fingerprint,
+            release_manifest_fingerprint=release_manifest_fingerprint,
+            phase6_profile_publish_enabled=exact_profile.profile.publish_enabled,
+        )
+    )
+
+
 class CountingClock:
     def __init__(self, now: datetime) -> None:
         self.now = now
@@ -413,12 +440,17 @@ def _service(
     exact_profile: ExactReviewProductProfile,
     *,
     clock: CountingClock | None = None,
+    eligibility: object | None = None,
 ) -> tuple[PublicationRequestService, ProfileAuthority, CountingClock]:
     profiles = ProfileAuthority(exact_profile)
     selected_clock = clock or CountingClock(NOW)
+    selected_eligibility = (
+        eligibility if eligibility is not None else profile_eligibility_authority(exact_profile)
+    )
     service = PublicationRequestService(
         store=store,  # type: ignore[arg-type]
         profiles=profiles,
+        profile_eligibility=selected_eligibility,  # type: ignore[arg-type]
         release_manifest_fingerprint=RELEASE_FINGERPRINT,
         clock=selected_clock,
     )
@@ -631,18 +663,33 @@ def test_expired_pricing_is_rejected_at_the_exact_request_instant() -> None:
     assert captured.value.code is PublicationErrorCode.PRICING_NOT_FRESH
 
 
-def test_profile_must_be_exact_and_explicitly_publication_enabled() -> None:
-    disabled_authority, disabled_exact = _authority(profile=_profile(publish_enabled=False))
-    disabled_service, _profiles, _clock = _service(
-        AuthorityStore(disabled_authority),
-        disabled_exact,
+def test_profile_must_be_exact_draft_safe_and_release_eligible() -> None:
+    enabled_authority, enabled_exact = _authority(profile=_profile(publish_enabled=True))
+    safe_profile = _profile(publish_enabled=False)
+    safe_exact = ExactReviewProductProfile(
+        profile=safe_profile,
+        fingerprint=canonical_fingerprint(safe_profile),
     )
-    with pytest.raises(PublicationAuthorityError) as disabled:
-        disabled_service.request_publication(_command(disabled_authority))
-    assert disabled.value.code is PublicationErrorCode.INVALID_AUTHORITY
+    enabled_service, _profiles, _clock = _service(
+        AuthorityStore(enabled_authority),
+        enabled_exact,
+        eligibility=profile_eligibility_authority(safe_exact),
+    )
+    with pytest.raises(PublicationAuthorityError) as enabled:
+        enabled_service.request_publication(_command(enabled_authority))
+    assert enabled.value.code is PublicationErrorCode.INVALID_AUTHORITY
 
-    authority, _exact = _authority()
-    mismatched_profile = _profile(publish_enabled=False)
+    authority, exact = _authority()
+    missing_service, _profiles, _clock = _service(
+        AuthorityStore(authority),
+        exact,
+        eligibility=UnavailableEligibilityAuthority(),
+    )
+    with pytest.raises(PublicationAuthorityError) as missing:
+        missing_service.request_publication(_command(authority))
+    assert missing.value.code is PublicationErrorCode.INVALID_AUTHORITY
+
+    mismatched_profile = _profile().model_copy(update={"retail_price_cents": 3999})
     mismatched_exact = ExactReviewProductProfile(
         profile=mismatched_profile,
         fingerprint=canonical_fingerprint(mismatched_profile),
@@ -682,6 +729,7 @@ def test_release_manifest_and_clock_are_fail_closed_configuration_authority() ->
         PublicationRequestService(
             store=AuthorityStore(authority),
             profiles=ProfileAuthority(exact_profile),
+            profile_eligibility=profile_eligibility_authority(exact_profile),
             release_manifest_fingerprint="0" * 64,
         )
 

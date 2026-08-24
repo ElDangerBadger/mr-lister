@@ -62,7 +62,9 @@ from tests.test_phase71_publication_service import (
     AuthorityStore,
     CountingClock,
     ProfileAuthority,
+    UnavailableEligibilityAuthority,
     _authority,
+    profile_eligibility_authority,
 )
 from tests.test_phase71_publication_service import (
     _command as request_command,
@@ -94,12 +96,24 @@ class CapturingExecutionStore(InMemoryPublicationExecutionStore):
         return super().commit_execution(commit)
 
 
+class SwitchableEligibilityAuthority:
+    def __init__(self, delegate: object) -> None:
+        self.delegate = delegate
+        self.available = True
+
+    def get_exact(self, **values: object):  # type: ignore[no-untyped-def]
+        if not self.available:
+            raise LookupError("Publication profile eligibility is unavailable")
+        return self.delegate.get_exact(**values)  # type: ignore[attr-defined]
+
+
 class Harness:
     def __init__(
         self,
         *,
         short_pricing_window: bool = False,
         capture_commits: bool = False,
+        eligibility: object | None = None,
     ) -> None:
         source, exact = _authority()
         if short_pricing_window:
@@ -125,9 +139,18 @@ class Harness:
             CapturingExecutionStore if capture_commits else InMemoryPublicationExecutionStore
         )
         self.store = store_type((self.transaction,))
+        self.profile_eligibility = (
+            eligibility
+            if eligibility is not None
+            else profile_eligibility_authority(
+                exact,
+                release_manifest_fingerprint=release_fingerprint,
+            )
+        )
         self.service = PublicationExecutionService(
             self.store,
             profiles=ProfileAuthority(exact),
+            profile_eligibility=self.profile_eligibility,  # type: ignore[arg-type]
             release_manifest_fingerprint=release_fingerprint,
             clock=self.clock,
         )
@@ -482,6 +505,58 @@ def test_call_claim_grant_is_fresh_once_and_replay_never_reauthorizes_wire() -> 
     assert replay.receipt == first.receipt
     assert replay.fresh_call_grant is None
     assert harness.authority.attempt.shop_get_call_count == 1
+
+
+def test_missing_eligibility_blocks_authority_reconstruction_before_any_call_claim() -> None:
+    harness = Harness(eligibility=UnavailableEligibilityAuthority())
+    harness.service.dispatch_work(
+        harness.command(DispatchPublicationWorkCommand, "dispatch_without_eligibility")
+    )
+    harness.clock.tick()
+
+    with pytest.raises(PublicationConflictError) as captured:
+        harness.service.reconstruct_authority(
+            harness.command(
+                ReconstructPublicationAuthorityCommand,
+                "reconstruct_without_eligibility",
+            )
+        )
+
+    _assert_code(captured, "PUBLICATION_INVALID_AUTHORITY")
+    assert harness.authority.provider_authority is None
+    assert harness.authority.call_claims == ()
+    assert harness.authority.permit.status is PublicationPermitState.AVAILABLE
+
+
+def test_eligibility_revocation_before_publish_leaves_permit_and_post_budget_unspent() -> None:
+    _, exact = _authority()
+    switchable = SwitchableEligibilityAuthority(
+        profile_eligibility_authority(exact, release_manifest_fingerprint="b" * 64)
+    )
+    harness = Harness(eligibility=switchable)
+    harness.dispatch_and_reconstruct()
+    harness.complete_preflight()
+    switchable.available = False
+    proof = harness.authority.preflight_proof
+    assert proof is not None
+
+    with pytest.raises(PublicationConflictError) as captured:
+        harness.service.claim_publish(
+            harness.command(
+                ClaimPublicationMutationCommand,
+                "publish_after_eligibility_revocation",
+                preflight_proof_id=proof.proof_id,
+                preflight_proof_fingerprint=proof.fingerprint,
+            )
+        )
+
+    _assert_code(captured, "PUBLICATION_INVALID_AUTHORITY")
+    assert harness.authority.permit.status is PublicationPermitState.AVAILABLE
+    assert harness.authority.attempt.publish_post_call_count == 0
+    assert all(
+        claim.call_kind is not PublicationCallKind.PUBLISH_POST
+        for claim in harness.authority.call_claims
+    )
 
 
 def test_same_operation_race_mints_one_grant_and_stale_different_operation_loses() -> None:

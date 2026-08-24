@@ -95,6 +95,11 @@ from mr_lister.publication.execution_store import (
 )
 from mr_lister.publication.fingerprints import publication_body_fingerprint
 from mr_lister.publication.models import PublicationModel
+from mr_lister.publication.profile_eligibility import (
+    PublicationProfileEligibilityAuthority,
+    PublicationProfileEligibilityError,
+    require_exact_publication_profile_eligibility,
+)
 from mr_lister.publication.store import (
     PublicationRequestAuthority,
     validate_publication_request_authority,
@@ -122,6 +127,7 @@ class PublicationExecutionService:
         store: PublicationExecutionStore,
         *,
         profiles: PublicationExecutionProfileAuthority,
+        profile_eligibility: PublicationProfileEligibilityAuthority,
         release_manifest_fingerprint: str,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
@@ -132,6 +138,7 @@ class PublicationExecutionService:
             raise ValueError("A nonzero release manifest fingerprint is required")
         self._store = store
         self._profiles = profiles
+        self._profile_eligibility = profile_eligibility
         self._release_manifest_fingerprint = release_manifest_fingerprint
         self._clock = clock or (lambda: datetime.now(UTC))
 
@@ -1720,7 +1727,7 @@ class PublicationExecutionService:
             or profile.profile_version != snapshot.profile_version
             or exact.fingerprint != expected_profile_fingerprint
             or exact.fingerprint != snapshot.profile_fingerprint
-            or profile.publish_enabled is not True
+            or profile.publish_enabled is not False
             or estimate.blueprint_id != profile.blueprint_id
             or estimate.print_provider_id != profile.print_provider_id
             or any(
@@ -1748,6 +1755,32 @@ class PublicationExecutionService:
             )
         ):
             self._invalid_authority("Current profile and economics differ from the snapshot")
+        try:
+            eligibility = self._profile_eligibility.get_exact(
+                profile_id=snapshot.profile_id,
+                profile_version=snapshot.profile_version,
+                profile_fingerprint=snapshot.profile_fingerprint,
+                expected_sales_channel=snapshot.expected_sales_channel,
+                release_manifest_fingerprint=snapshot.release_manifest_fingerprint,
+                phase6_profile_publish_enabled=profile.publish_enabled,
+            )
+            require_exact_publication_profile_eligibility(
+                eligibility,
+                profile_id=snapshot.profile_id,
+                profile_version=snapshot.profile_version,
+                profile_fingerprint=snapshot.profile_fingerprint,
+                expected_sales_channel=snapshot.expected_sales_channel,
+                release_manifest_fingerprint=snapshot.release_manifest_fingerprint,
+                phase6_profile_publish_enabled=profile.publish_enabled,
+            )
+        except (
+            PublicationProfileEligibilityError,
+            LookupError,
+            TypeError,
+            ValidationError,
+            ValueError,
+        ):
+            self._invalid_authority("Current profile lacks exact publication eligibility")
         return exact
 
     @staticmethod

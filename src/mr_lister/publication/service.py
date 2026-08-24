@@ -69,6 +69,11 @@ from mr_lister.publication.models import (
     PublicationSnapshot,
     PublicationWorkRequest,
 )
+from mr_lister.publication.profile_eligibility import (
+    PublicationProfileEligibilityAuthority,
+    PublicationProfileEligibilityError,
+    require_exact_publication_profile_eligibility,
+)
 from mr_lister.publication.store import (
     PublicationRequestAuthority,
     PublicationRequestTransaction,
@@ -106,6 +111,7 @@ class PublicationRequestService:
         *,
         store: PublicationStore,
         profiles: PublicationProfileAuthority,
+        profile_eligibility: PublicationProfileEligibilityAuthority,
         release_manifest_fingerprint: str,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
@@ -116,6 +122,7 @@ class PublicationRequestService:
             raise ValueError("A nonzero release manifest fingerprint is required")
         self.store = store
         self._profiles = profiles
+        self._profile_eligibility = profile_eligibility
         self._release_manifest_fingerprint = release_manifest_fingerprint
         self._clock = clock or (lambda: datetime.now(UTC))
 
@@ -331,8 +338,36 @@ class PublicationRequestService:
             or exact.fingerprint != authority.review.product_profile_fingerprint
         ):
             raise _authority_error("The approved product profile is not exact")
-        if profile.publish_enabled is not True:
-            raise _authority_error("The approved product profile is not publication enabled")
+        if profile.publish_enabled is not False:
+            raise _authority_error("The approved product profile is not draft safe")
+        try:
+            eligibility = self._profile_eligibility.get_exact(
+                profile_id=profile.profile_id,
+                profile_version=profile.profile_version,
+                profile_fingerprint=exact.fingerprint,
+                expected_sales_channel="etsy",
+                release_manifest_fingerprint=self._release_manifest_fingerprint,
+                phase6_profile_publish_enabled=profile.publish_enabled,
+            )
+            require_exact_publication_profile_eligibility(
+                eligibility,
+                profile_id=profile.profile_id,
+                profile_version=profile.profile_version,
+                profile_fingerprint=exact.fingerprint,
+                expected_sales_channel="etsy",
+                release_manifest_fingerprint=self._release_manifest_fingerprint,
+                phase6_profile_publish_enabled=profile.publish_enabled,
+            )
+        except (
+            PublicationProfileEligibilityError,
+            LookupError,
+            TypeError,
+            ValidationError,
+            ValueError,
+        ):
+            raise _authority_error(
+                "The approved product profile lacks exact publication eligibility"
+            ) from None
 
         estimate = authority.pricing_evidence.estimate
         sync = authority.product_sync

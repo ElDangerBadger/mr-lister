@@ -1,0 +1,328 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Transform": "AWS::Serverless-2016-10-31",
+  "Description": "Mr Lister Phase 7.4 disabled publication-status query infrastructure scaffold",
+  "Parameters": {
+    "EnvironmentName": {
+      "Type": "String",
+      "Default": "dev",
+      "AllowedPattern": "^[a-z][a-z0-9-]{1,15}$"
+    }
+  },
+  "Globals": {
+    "Function": {
+      "Runtime": "python3.12",
+      "Architectures": ["arm64"],
+      "MemorySize": 256,
+      "Environment": {
+        "Variables": {
+          "MR_LISTER_PHASE7_SCAFFOLD_ONLY": "true",
+          "MR_LISTER_PHASE7_PUBLICATION_ENABLED": "false",
+          "MR_LISTER_PHASE7_REQUEST_ENABLED": "false",
+          "MR_LISTER_PHASE7_QUERY_ENABLED": "false",
+          "MR_LISTER_ENVIRONMENT": {"Ref": "EnvironmentName"},
+          "MR_LISTER_AWS_ACCOUNT_ID": {"Ref": "AWS::AccountId"},
+          "MR_LISTER_STATE_TABLE": {
+            "Fn::Sub": "mr-lister-phase6-${EnvironmentName}"
+          }
+        }
+      }
+    }
+  },
+  "Resources": {
+    "PublicationStatusQueryFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-query-role"
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "lambda.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ReadOnlyPublicationStatusProjection",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "WritePublicationStatusQueryLogs",
+                  "Effect": "Allow",
+                  "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                  "Resource": {
+                    "Fn::Sub": "${PublicationStatusQueryLogGroup.Arn}:*"
+                  }
+                },
+                {
+                  "Sid": "ReadExactPhase6OperationalState",
+                  "Effect": "Allow",
+                  "Action": ["dynamodb:GetItem", "dynamodb:Query"],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/mr-lister-phase6-${EnvironmentName}"
+                  },
+                  "Condition": {
+                    "ForAllValues:StringLike": {
+                      "dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "Phase", "Value": "7.4-disabled-read-only"}
+        ]
+      }
+    },
+    "PublicationStatusQueryLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/mr-lister-phase7-${EnvironmentName}-publication-status-query"
+        },
+        "RetentionInDays": 14,
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "Phase", "Value": "7.4-disabled-read-only"}
+        ]
+      }
+    },
+    "PublicationStatusQueryFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "PublicationStatusQueryLogGroup",
+      "Properties": {
+        "FunctionName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-query"
+        },
+        "CodeUri": "lambda/",
+        "Handler": "phase7_lambda.publication_query_api_handler",
+        "Role": {
+          "Fn::GetAtt": ["PublicationStatusQueryFunctionRole", "Arn"]
+        },
+        "ReservedConcurrentExecutions": 1,
+        "Timeout": 10,
+        "LoggingConfig": {
+          "LogFormat": "JSON",
+          "ApplicationLogLevel": "ERROR",
+          "SystemLogLevel": "WARN"
+        },
+        "Tags": {
+          "Project": "MrLister",
+          "Environment": {"Ref": "EnvironmentName"},
+          "Phase": "7.4-disabled-read-only"
+        }
+      }
+    },
+    "PublicationStatusAlarmTopicKey": {
+      "Type": "AWS::KMS::Key",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Description": "Encrypt only the Phase 7 publication-status alarm topic",
+        "EnableKeyRotation": true,
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "RetainAccountKeyAdministration",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                }
+              },
+              "Action": "kms:*",
+              "Resource": "*"
+            },
+            {
+              "Sid": "AllowOnlyPhase7CloudWatchAlarmEncryption",
+              "Effect": "Allow",
+              "Principal": {"Service": "cloudwatch.amazonaws.com"},
+              "Action": ["kms:Decrypt", "kms:GenerateDataKey*"],
+              "Resource": "*",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:mr-lister-phase7-${EnvironmentName}-publication-status-*"
+                  }
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": {"Ref": "AWS::AccountId"}
+                }
+              }
+            },
+            {
+              "Sid": "AllowOnlyPublicationStatusTopicEncryptionContext",
+              "Effect": "Allow",
+              "Principal": {"Service": "sns.amazonaws.com"},
+              "Action": ["kms:Decrypt", "kms:GenerateDataKey*"],
+              "Resource": "*",
+              "Condition": {
+                "StringEquals": {
+                  "kms:EncryptionContext:aws:sns:topicArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:mr-lister-phase7-${EnvironmentName}-publication-status-alarms"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "Phase", "Value": "7.4-disabled-read-only"}
+        ]
+      }
+    },
+    "PublicationStatusAlarmTopic": {
+      "Type": "AWS::SNS::Topic",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "TopicName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-alarms"
+        },
+        "KmsMasterKeyId": {
+          "Fn::GetAtt": ["PublicationStatusAlarmTopicKey", "Arn"]
+        },
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "Phase", "Value": "7.4-disabled-read-only"}
+        ]
+      }
+    },
+    "PublicationStatusAlarmTopicPolicy": {
+      "Type": "AWS::SNS::TopicPolicy",
+      "Properties": {
+        "Topics": [{"Ref": "PublicationStatusAlarmTopic"}],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowOnlyPhase7PublicationStatusAlarmNotifications",
+              "Effect": "Allow",
+              "Principal": {"Service": "cloudwatch.amazonaws.com"},
+              "Action": "sns:Publish",
+              "Resource": {"Ref": "PublicationStatusAlarmTopic"},
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:mr-lister-phase7-${EnvironmentName}-publication-status-*"
+                  }
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": {"Ref": "AWS::AccountId"}
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "PublicationStatusQueryErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-errors"
+        },
+        "AlarmDescription": "The isolated disabled publication-status query Lambda failed.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "PublicationStatusAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Errors",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {"Ref": "PublicationStatusQueryFunction"}
+          }
+        ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "PublicationStatusQueryThrottlesAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-throttles"
+        },
+        "AlarmDescription": "The isolated disabled publication-status query Lambda was throttled.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "PublicationStatusAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Throttles",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {"Ref": "PublicationStatusQueryFunction"}
+          }
+        ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "PublicationStatusQueryDurationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-duration"
+        },
+        "AlarmDescription": "The isolated disabled publication-status query Lambda exceeded eighty percent of its timeout.",
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "PublicationStatusAlarmTopic"}],
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Duration",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {"Ref": "PublicationStatusQueryFunction"}
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 300,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 8000,
+        "TreatMissingData": "notBreaching"
+      }
+    }
+  },
+  "Outputs": {
+    "DeploymentReadiness": {
+      "Description": "The checked Phase 7.4 package cannot perform a DynamoDB read or publication mutation.",
+      "Value": "SCAFFOLD_ONLY"
+    },
+    "PublicationStatusQueryRegistered": {"Value": "false"},
+    "PublicationStatusQueryEnabled": {"Value": "false"},
+    "PublicationRequestEnabled": {"Value": "false"},
+    "PublicationEnabled": {"Value": "false"},
+    "PublicationStatusAlarmTopicArn": {
+      "Value": {"Ref": "PublicationStatusAlarmTopic"}
+    }
+  }
+}

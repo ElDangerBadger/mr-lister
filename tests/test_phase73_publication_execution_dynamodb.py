@@ -12,7 +12,11 @@ from test_phase71_publication_dynamodb import (
     TABLE_NAME,
     MemoryPublicationDynamoClient,
 )
-from test_phase71_publication_service import ProfileAuthority, _authority
+from test_phase71_publication_service import (
+    ProfileAuthority,
+    _authority,
+    profile_eligibility_authority,
+)
 from test_phase71_publication_store import OWNER_ID
 from test_phase72_publication_execution import Harness
 
@@ -175,6 +179,10 @@ def _dynamo_harness(
     harness.service = PublicationExecutionService(
         store,
         profiles=ProfileAuthority(exact),
+        profile_eligibility=profile_eligibility_authority(
+            exact,
+            release_manifest_fingerprint="b" * 64,
+        ),
         release_manifest_fingerprint="b" * 64,
         clock=harness.clock,
     )
@@ -418,6 +426,10 @@ def _stage_deadline_race() -> tuple[
     deadline_service = PublicationExecutionService(
         capture,  # type: ignore[arg-type]
         profiles=ProfileAuthority(exact),
+        profile_eligibility=profile_eligibility_authority(
+            exact,
+            release_manifest_fingerprint="b" * 64,
+        ),
         release_manifest_fingerprint="b" * 64,
         clock=harness.clock,
     )
