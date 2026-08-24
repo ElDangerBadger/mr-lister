@@ -382,7 +382,9 @@ def _boundary(
     boundary = PrintifyPublicationBoundary(
         authority=exact_authority,
         credential=OwnerBoundPrintifyCredential(
-            owner_id=exact_authority.owner_id, bearer_token=TOKEN
+            owner_id=exact_authority.owner_id,
+            printify_shop_id=exact_authority.printify_shop_id,
+            bearer_token=TOKEN,
         ),
         transport=transport,
         audit_sink=audit,
@@ -1070,7 +1072,11 @@ def test_publish_audit_failure_is_ambiguous_and_prevents_the_wire_call() -> None
     transport = ScriptedTransport([_json_response(200, {})])
     boundary = PrintifyPublicationBoundary(
         authority=authority,
-        credential=OwnerBoundPrintifyCredential(owner_id=OWNER, bearer_token=TOKEN),
+        credential=OwnerBoundPrintifyCredential(
+            owner_id=OWNER,
+            printify_shop_id=authority.printify_shop_id,
+            bearer_token=TOKEN,
+        ),
         transport=transport,
         audit_sink=FailingAudit(),
         clock=lambda: NOW + timedelta(seconds=2),
@@ -1417,16 +1423,24 @@ def test_boundary_is_separate_capability_narrow_and_has_no_forbidden_operation()
 
 
 def test_owner_bound_credential_is_redacted_and_mismatch_fails_before_wire() -> None:
-    credential = OwnerBoundPrintifyCredential(owner_id=OWNER, bearer_token=TOKEN)
+    credential = OwnerBoundPrintifyCredential(
+        owner_id=OWNER,
+        printify_shop_id=42,
+        bearer_token=TOKEN,
+    )
     assert TOKEN not in repr(credential)
     assert TOKEN not in credential.model_dump_json()
     transport = ScriptedTransport([])
     audit = MemoryAudit()
 
-    with pytest.raises(PublicationProviderInputError, match="owner authority"):
+    with pytest.raises(PublicationProviderInputError, match="owner/shop authority"):
         PrintifyPublicationBoundary(
             authority=_authority(),
-            credential=OwnerBoundPrintifyCredential(owner_id="9" * 64, bearer_token=TOKEN),
+            credential=OwnerBoundPrintifyCredential(
+                owner_id="9" * 64,
+                printify_shop_id=42,
+                bearer_token=TOKEN,
+            ),
             transport=transport,
             audit_sink=audit,
         )

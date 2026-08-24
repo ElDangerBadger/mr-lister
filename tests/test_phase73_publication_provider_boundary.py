@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from pydantic import SecretStr
 
 from mr_lister.publication.evidence_provenance import (
     PublicationDefinitivePreflightEvidence,
@@ -25,12 +26,14 @@ from mr_lister.publication.execution_models import (
 from mr_lister.publication.execution_store import build_provider_audit_commit
 from mr_lister.publication.fingerprints import canonical_fingerprint
 from mr_lister.publication.provider_boundary import (
-    OwnerBoundPrintifyCredential,
     PublicationHttpResponse,
     PublicationProviderAuthenticationError,
     PublicationProviderResponseError,
     PublicationProviderUnavailableError,
     StagedPrintifyPublicationBoundary,
+)
+from mr_lister.publication.provider_credentials import (
+    issue_bound_publication_provider_credential,
 )
 from tests.test_phase71_publication_store import OWNER_ID
 from tests.test_phase72_publication_execution import Harness
@@ -101,12 +104,14 @@ def _staged_boundary(
     transport = OrderedTransport(responses, order)
     sink = DurableAuditSink(harness, order)
     provider_store = evidence_store or OrderedExecutionStore(harness, order)
+    authority = harness.authority.provider_authority
+    assert authority is not None
     return (
         StagedPrintifyPublicationBoundary(
             execution_authority=harness.authority,
-            credential=OwnerBoundPrintifyCredential(
-                owner_id=OWNER_ID,
-                bearer_token=TOKEN,
+            credential=issue_bound_publication_provider_credential(
+                authority=authority,
+                bearer_token=SecretStr(TOKEN),
             ),
             transport=transport,
             audit_sink=sink,
@@ -375,9 +380,14 @@ def test_missing_durable_audit_binding_blocks_wire_and_staging() -> None:
     result, claim = harness.claim_shop(audit=False)
     assert result.fresh_call_grant is not None
     transport = ScriptedTransport([_json_response(200, [])])
+    authority = harness.authority.provider_authority
+    assert authority is not None
     boundary = StagedPrintifyPublicationBoundary(
         execution_authority=harness.authority,
-        credential=OwnerBoundPrintifyCredential(owner_id=OWNER_ID, bearer_token=TOKEN),
+        credential=issue_bound_publication_provider_credential(
+            authority=authority,
+            bearer_token=SecretStr(TOKEN),
+        ),
         transport=transport,
         audit_sink=MissingDurableAuditSink(),
         evidence_store=harness.store,

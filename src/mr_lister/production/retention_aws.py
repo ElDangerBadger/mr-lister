@@ -15,7 +15,14 @@ from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any, Protocol
 
+from mr_lister.control.fingerprints import canonical_fingerprint
 from mr_lister.control.models import ControlJobRecord, SourceArtifactRecord
+from mr_lister.control.publication_retention import (
+    PUBLICATION_RETENTION_ENTITY_TYPE,
+    PUBLICATION_RETENTION_SORT_KEY,
+    PublicationRetentionCompletionAuthority,
+    validate_publication_retention_completion,
+)
 from mr_lister.control.source_artwork import validate_source_artifact_authority
 from mr_lister.production.retention import (
     PHASE6_SOURCE_PREFIX,
@@ -173,7 +180,7 @@ class S3SourceVersionTagStore:
 
 
 class DynamoDBStrongSourceAuthorityReader:
-    """Read the job and canonical source row in one serializable Dynamo transaction."""
+    """Read job/source/marker and, when present, the exact aggregate in serializable reads."""
 
     __slots__ = ("_client", "_table_name")
 
@@ -186,25 +193,74 @@ class DynamoDBStrongSourceAuthorityReader:
         if not isinstance(job_id, str) or _JOB_ID.fullmatch(job_id) is None:
             raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID)
         partition_key = f"JOB#{job_id}"
-        response = _dependency_call(
+        initial = _dependency_call(
             lambda: self._client.transact_get_items(
-                TransactItems=[
-                    {
-                        "Get": {
-                            "TableName": self._table_name,
-                            "Key": {"PK": _s(partition_key), "SK": _s("META")},
-                        }
-                    },
-                    {
-                        "Get": {
-                            "TableName": self._table_name,
-                            "Key": {"PK": _s(partition_key), "SK": _s("SOURCE")},
-                        }
-                    },
-                ]
+                TransactItems=self._authority_gets(partition_key=partition_key)
             )
         )
-        return _parse_authority_response(response, job_id=job_id)
+        snapshot = _parse_authority_response(initial, job_id=job_id)
+        completion = snapshot.publication_retention
+        if completion is None:
+            return snapshot
+        # The marker supplies the separate aggregate key.  A second serializable read repeats
+        # JOB/SOURCE/marker and adds that exact aggregate root, so the final classification never
+        # trusts a historical marker after aggregate deletion or corruption.
+        final = _dependency_call(
+            lambda: self._client.transact_get_items(
+                TransactItems=self._authority_gets(
+                    partition_key=partition_key,
+                    aggregate_id=completion.aggregate_id,
+                )
+            )
+        )
+        return _parse_authority_response(
+            final,
+            job_id=job_id,
+            expected_aggregate_id=completion.aggregate_id,
+        )
+
+    def _authority_gets(
+        self,
+        *,
+        partition_key: str,
+        aggregate_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        gets = [
+            {
+                "Get": {
+                    "TableName": self._table_name,
+                    "Key": {"PK": _s(partition_key), "SK": _s("META")},
+                }
+            },
+            {
+                "Get": {
+                    "TableName": self._table_name,
+                    "Key": {"PK": _s(partition_key), "SK": _s("SOURCE")},
+                }
+            },
+            {
+                "Get": {
+                    "TableName": self._table_name,
+                    "Key": {
+                        "PK": _s(partition_key),
+                        "SK": _s(PUBLICATION_RETENTION_SORT_KEY),
+                    },
+                }
+            },
+        ]
+        if aggregate_id is not None:
+            gets.append(
+                {
+                    "Get": {
+                        "TableName": self._table_name,
+                        "Key": {
+                            "PK": _s(f"PUBLICATION#{aggregate_id}"),
+                            "SK": _s("META"),
+                        },
+                    }
+                }
+            )
+        return gets
 
 
 class DynamoDBRetentionCheckpointStore:
@@ -396,11 +452,17 @@ def _parse_version_tags(response: object) -> SourceVersionTags:
     raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID) from None
 
 
-def _parse_authority_response(response: object, *, job_id: str) -> SourceAuthoritySnapshot:
+def _parse_authority_response(
+    response: object,
+    *,
+    job_id: str,
+    expected_aggregate_id: str | None = None,
+) -> SourceAuthoritySnapshot:
     if not isinstance(response, Mapping):
         raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID)
     responses = response.get("Responses")
-    if not isinstance(responses, list) or len(responses) != 2:
+    expected_count = 4 if expected_aggregate_id is not None else 3
+    if not isinstance(responses, list) or len(responses) != expected_count:
         raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID)
     envelopes: list[Mapping[str, Any] | None] = []
     for raw in responses:
@@ -413,8 +475,14 @@ def _parse_authority_response(response: object, *, job_id: str) -> SourceAuthori
         if not isinstance(item, Mapping):
             raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID)
         envelopes.append(item)
-    job_item, source_item = envelopes
-    if job_item is None and source_item is None:
+    job_item, source_item, retention_item = envelopes[:3]
+    aggregate_item = envelopes[3] if expected_aggregate_id is not None else None
+    if (
+        job_item is None
+        and source_item is None
+        and retention_item is None
+        and aggregate_item is None
+    ):
         return SourceAuthoritySnapshot()
     if job_item is None or source_item is None:
         raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID)
@@ -423,10 +491,117 @@ def _parse_authority_response(response: object, *, job_id: str) -> SourceAuthori
     if job.owner_id != source.owner_id or job.source_artifact_fingerprint != source.fingerprint:
         raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID)
     try:
-        return SourceAuthoritySnapshot(job=job, source=source)
+        completion = (
+            None
+            if retention_item is None
+            else _parse_publication_retention_item(retention_item, job=job, source=source)
+        )
+        if completion is not None and expected_aggregate_id is not None:
+            if completion.aggregate_id != expected_aggregate_id or aggregate_item is None:
+                raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID)
+            _parse_publication_aggregate_item(
+                aggregate_item,
+                job=job,
+                completion=completion,
+            )
+        return SourceAuthoritySnapshot(
+            job=job,
+            source=source,
+            publication_retention=completion,
+        )
     except Exception:
         pass
     raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID) from None
+
+
+def _parse_publication_aggregate_item(
+    item: Mapping[str, Any],
+    *,
+    job: ControlJobRecord,
+    completion: PublicationRetentionCompletionAuthority,
+) -> None:
+    expected_fields = {
+        "PK",
+        "SK",
+        "entity_type",
+        "contract_version",
+        "payload",
+        "owner_id",
+        "job_id",
+        "publication_state",
+        "record_version",
+        "provider_audit_record_version",
+        "provider_evidence_record_version",
+        "expires_at",
+    }
+    if (
+        set(item) != expected_fields
+        or _av_string(item, "PK") != f"PUBLICATION#{completion.aggregate_id}"
+        or _av_string(item, "SK") != "META"
+        or _av_string(item, "entity_type") != "PUBLICATION_EXECUTION_AGGREGATE"
+        or _av_string(item, "contract_version") != "7.0.1"
+        or _av_string(item, "owner_id") != job.owner_id
+        or _av_string(item, "job_id") != job.job_id
+        or _av_string(item, "publication_state") != completion.terminal_state
+        or _av_number(item, "expires_at") != completion.expires_at_epoch_seconds
+    ):
+        raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID)
+    try:
+        payload = json.loads(_av_string(item, "payload"))
+    except Exception:
+        raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID) from None
+    if not isinstance(payload, dict):
+        raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID)
+    try:
+        terminal_at = _parse_payload_utc(payload.get("terminal_at"))
+        source_release = _parse_payload_utc(payload.get("source_release_eligible_at"))
+        operational_expiry = _parse_payload_utc(payload.get("operational_expires_at"))
+        fingerprint_material = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"contract_version", "fingerprint"}
+        }
+        recomputed_fingerprint = canonical_fingerprint(
+            {
+                "contract_version": "7.0.1",
+                "kind": "execution_aggregate",
+                "payload": fingerprint_material,
+            }
+        )
+    except Exception:
+        raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID) from None
+    if (
+        payload.get("contract_version") != _av_string(item, "contract_version")
+        or payload.get("contract_version") != "7.0.1"
+        or payload.get("aggregate_id") != completion.aggregate_id
+        or payload.get("owner_id") != job.owner_id
+        or payload.get("job_id") != job.job_id
+        or payload.get("state") != completion.terminal_state
+        or payload.get("fingerprint") != completion.aggregate_fingerprint
+        or recomputed_fingerprint != completion.aggregate_fingerprint
+        or payload.get("report_id") != completion.report_id
+        or type(payload.get("record_version")) is not int
+        or _av_number(item, "record_version") != payload.get("record_version")
+        or type(payload.get("provider_audit_record_version")) is not int
+        or _av_number(item, "provider_audit_record_version")
+        != payload.get("provider_audit_record_version")
+        or type(payload.get("provider_evidence_record_version")) is not int
+        or _av_number(item, "provider_evidence_record_version")
+        != payload.get("provider_evidence_record_version")
+        or terminal_at != completion.terminal_at
+        or source_release != completion.source_release_eligible_at
+        or operational_expiry != completion.operational_expires_at
+    ):
+        raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID)
+
+
+def _parse_payload_utc(value: object) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+        raise ValueError
+    return parsed.astimezone(UTC)
 
 
 def _parse_job_item(item: Mapping[str, Any], *, job_id: str) -> ControlJobRecord:
@@ -472,6 +647,59 @@ def _parse_source_item(item: Mapping[str, Any], *, job_id: str) -> SourceArtifac
         ):
             return source
     raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID) from None
+
+
+def _parse_publication_retention_item(
+    item: Mapping[str, Any],
+    *,
+    job: ControlJobRecord,
+    source: SourceArtifactRecord,
+) -> PublicationRetentionCompletionAuthority:
+    expected_fields = {
+        "PK",
+        "SK",
+        "entity_type",
+        "contract_version",
+        "job_id",
+        "aggregate_id",
+        "job_record_version",
+        "terminal_summary_fingerprint",
+        "source_artifact_fingerprint",
+        "expires_at",
+        "payload",
+    }
+    if (
+        set(item) != expected_fields
+        or _av_string(item, "PK") != f"JOB#{job.job_id}"
+        or _av_string(item, "SK") != PUBLICATION_RETENTION_SORT_KEY
+        or _av_string(item, "entity_type") != PUBLICATION_RETENTION_ENTITY_TYPE
+    ):
+        raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID)
+    payload = _av_string(item, "payload")
+    try:
+        completion = PublicationRetentionCompletionAuthority.model_validate_json(
+            payload,
+            strict=True,
+        )
+        completion = validate_publication_retention_completion(
+            job,
+            completion,
+            source=source,
+        )
+    except Exception:
+        raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID) from None
+    if (
+        _av_string(item, "contract_version") != completion.contract_version
+        or _av_string(item, "job_id") != completion.job_id
+        or _av_string(item, "aggregate_id") != completion.aggregate_id
+        or _av_number(item, "job_record_version") != completion.job_record_version
+        or _av_string(item, "terminal_summary_fingerprint")
+        != completion.terminal_summary_fingerprint
+        or _av_string(item, "source_artifact_fingerprint") != completion.source_artifact_fingerprint
+        or _av_number(item, "expires_at") != completion.expires_at_epoch_seconds
+    ):
+        raise RetentionBoundaryInvalidError(_BOUNDARY_INVALID)
+    return completion
 
 
 def _parse_checkpoint_item(item: Mapping[str, Any]) -> RetentionCheckpoint:

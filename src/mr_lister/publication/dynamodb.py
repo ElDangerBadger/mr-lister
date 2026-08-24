@@ -7,6 +7,7 @@ dispatcher, route, or permit-consumption operation.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from hashlib import sha256
 from typing import Any
 
@@ -39,6 +40,12 @@ from mr_lister.publication.models import (
     PublicationAggregate,
     PublicationWorkRequest,
 )
+from mr_lister.publication.retention_locator import (
+    PUBLICATION_REQUEST_RECEIPT_LOCATOR_ENTITY_TYPE,
+    PUBLICATION_REQUEST_RECEIPT_LOCATOR_SORT_KEY,
+    build_publication_request_receipt_locator,
+    publication_request_receipt_sort_key,
+)
 from mr_lister.publication.store import (
     PublicationRequestAuthority,
     PublicationRequestTransaction,
@@ -47,7 +54,7 @@ from mr_lister.publication.store import (
 )
 
 MAX_PUBLICATION_REQUEST_TRANSACTION_ITEMS = 25
-PUBLICATION_REQUEST_TRANSACTION_ITEMS = 14
+PUBLICATION_REQUEST_TRANSACTION_ITEMS = 15
 MAX_DYNAMODB_ITEM_BYTES = 400 * 1024
 MAX_DYNAMODB_TRANSACTION_BYTES = 4 * 1024 * 1024
 
@@ -74,11 +81,6 @@ def _owner_pk(owner_id: str) -> str:
 
 def _publication_pk(aggregate_id: str) -> str:
     return f"PUBLICATION#{aggregate_id}"
-
-
-def _publication_receipt_sk(job_id: str, key_digest: str) -> str:
-    material = f"request_publication\0{job_id}\0{key_digest}".encode()
-    return f"PUBLICATION_RECEIPT#{sha256(material).hexdigest()}"
 
 
 def _payload(model: Any) -> str:
@@ -161,7 +163,7 @@ def _receipt_item(receipt: PublicationCommandReceipt) -> dict[str, dict[str, Any
     return {
         "PK": _s(_owner_pk(receipt.owner_id)),
         "SK": _s(
-            _publication_receipt_sk(
+            publication_request_receipt_sort_key(
                 receipt.job_id,
                 receipt.idempotency_key_digest,
             )
@@ -255,7 +257,7 @@ def _validate_transaction_envelope(items: list[dict[str, Any]]) -> None:
 
 
 class DynamoDBPublicationStore:
-    """Single-table adapter whose request write is exactly fourteen atomic actions."""
+    """Single-table adapter whose request write is exactly fifteen atomic actions."""
 
     def __init__(self, *, client: Any, table_name: str) -> None:
         self._client = client
@@ -269,7 +271,7 @@ class DynamoDBPublicationStore:
     ) -> PublicationCommandReceipt | None:
         item = self._get(
             _owner_pk(owner_id),
-            _publication_receipt_sk(job_id, key_digest),
+            publication_request_receipt_sort_key(job_id, key_digest),
         )
         if item is None:
             return None
@@ -294,6 +296,44 @@ class DynamoDBPublicationStore:
             or receipt.idempotency_key_digest != item["key_digest"]["S"]
             or receipt.request_fingerprint != item.get("request_fingerprint", {}).get("S")
             or receipt.contract_version != item.get("contract_version", {}).get("S")
+        ):
+            return None
+        locator = build_publication_request_receipt_locator(
+            aggregate_id=receipt.aggregate_id,
+            owner_id=receipt.owner_id,
+            job_id=receipt.job_id,
+            receipt_id=receipt.receipt_id,
+            receipt_fingerprint=receipt.fingerprint,
+            idempotency_key_digest=receipt.idempotency_key_digest,
+        )
+        locator_item = self._get(
+            _publication_pk(receipt.aggregate_id),
+            PUBLICATION_REQUEST_RECEIPT_LOCATOR_SORT_KEY,
+        )
+        expected_locator_item = _publication_record_item(
+            aggregate_id=receipt.aggregate_id,
+            sort_key=PUBLICATION_REQUEST_RECEIPT_LOCATOR_SORT_KEY,
+            entity_type=PUBLICATION_REQUEST_RECEIPT_LOCATOR_ENTITY_TYPE,
+            record=locator,
+        )
+        if locator_item is None:
+            return None
+        unexpected_fields = set(locator_item) - {*expected_locator_item, "expires_at"}
+        expires_at = locator_item.get("expires_at")
+        if (
+            unexpected_fields
+            or any(locator_item.get(key) != value for key, value in expected_locator_item.items())
+            or (
+                expires_at is not None
+                and (
+                    not isinstance(expires_at, Mapping)
+                    or set(expires_at) != {"N"}
+                    or not isinstance(expires_at.get("N"), str)
+                    or not expires_at["N"].isdigit()
+                    or int(expires_at["N"]) < 1
+                    or str(int(expires_at["N"])) != expires_at["N"]
+                )
+            )
         ):
             return None
         return receipt
@@ -383,7 +423,7 @@ class DynamoDBPublicationStore:
         commit = transaction.commit
         items = self._request_transaction_items(transaction)
         if len(items) != PUBLICATION_REQUEST_TRANSACTION_ITEMS:
-            raise ValueError("Publication request transaction must contain exactly 14 actions")
+            raise ValueError("Publication request transaction must contain exactly 15 actions")
         if len(items) > MAX_PUBLICATION_REQUEST_TRANSACTION_ITEMS:
             raise ValueError("Publication request transaction exceeds its conservative bound")
         _validate_transaction_envelope(items)
@@ -472,6 +512,14 @@ class DynamoDBPublicationStore:
         authority = transaction.authority
         current = authority.current_job
         commit: PublicationRequestCommit = transaction.commit
+        receipt_locator = build_publication_request_receipt_locator(
+            aggregate_id=commit.receipt.aggregate_id,
+            owner_id=commit.receipt.owner_id,
+            job_id=commit.receipt.job_id,
+            receipt_id=commit.receipt.receipt_id,
+            receipt_fingerprint=commit.receipt.fingerprint,
+            idempotency_key_digest=commit.receipt.idempotency_key_digest,
+        )
         job_put = {
             "Put": {
                 "TableName": self._table_name,
@@ -586,6 +634,15 @@ class DynamoDBPublicationStore:
                 self._table_name,
             ),
             _put_new(_receipt_item(commit.receipt), self._table_name),
+            _put_new(
+                _publication_record_item(
+                    aggregate_id=aggregate_id,
+                    sort_key=PUBLICATION_REQUEST_RECEIPT_LOCATOR_SORT_KEY,
+                    entity_type=PUBLICATION_REQUEST_RECEIPT_LOCATOR_ENTITY_TYPE,
+                    record=receipt_locator,
+                ),
+                self._table_name,
+            ),
         ]
         return [job_put, *authority_checks, *new_records]
 

@@ -338,7 +338,8 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     readable while failing closed for publication when either prerequisite is absent
   - [x] Phase 7.1 offline request authority: strict immutable snapshot/attempt/permit/work/event/
     receipt records, receipt-first idempotency, one separate aggregate, and the exact atomic
-    14-action DynamoDB request transaction; publication remains uncomposed and disabled
+    15-action DynamoDB request transaction, including its store-derived direct receipt locator;
+    publication remains uncomposed and disabled
   - [x] Phase 7.2 offline/uncomposed checkpoint: provider-free one-shot execution models, store,
     and service plus an isolated sealed three-route Printify boundary form an offline oracle only,
     not a runnable or activatable publication path. Shared evidence DTOs and their fingerprints are
@@ -368,6 +369,18 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     A separate Phase 7 SAM scaffold contains one unregistered query Lambda with only bounded
     `GetItem`/`Query` authority and exact-false query/request/publication flags; it packages no
     application bundle and cannot read or mutate provider or application state
+  - [x] Phase 7.5 offline retention and credential containment: after exact terminal settlement, an
+    injected adapter assigns the immutable +90-day TTL to every publication row, the linked job,
+    and the directly located owner receipt before writing one marker-last terminal-graph proof. The
+    existing Phase 6 source sweeper remains the only retention tag writer and requires that marker
+    plus a strong exact terminal-aggregate reread before the +30-day source release. Provider
+    credentials are resolved fresh and bound to the exact owner, shop, aggregate, snapshot, and
+    provider authority before any durable call claim, then revalidated through an opaque,
+    non-serializable capability. The retention and credential adapters remain offline and
+    uncomposed; all activation flags remain false, with no route, UI, provider/mutation IAM,
+    scheduler, deploy, or live provider call. The only IAM change narrowly expands the existing
+    Phase 6 retention role's same-table transactional reads from `JOB#*` to `JOB#*` plus
+    `PUBLICATION#*`
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports

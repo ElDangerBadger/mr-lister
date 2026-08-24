@@ -6,6 +6,7 @@ import inspect
 from typing import Any
 
 import pytest
+from pydantic import SecretStr
 
 from mr_lister.publication.contract import PublicationState
 from mr_lister.publication.errors import PublicationConflictError
@@ -19,12 +20,14 @@ from mr_lister.publication.execution_models import (
     PublicationPreflightFailureReason,
 )
 from mr_lister.publication.provider_boundary import (
-    OwnerBoundPrintifyCredential,
     StagedPrintifyPublicationBoundary,
 )
 from mr_lister.publication.provider_coordinator import (
     PublicationProviderCoordinator,
     PublicationProviderCoordinatorAction,
+)
+from mr_lister.publication.provider_credentials import (
+    issue_bound_publication_provider_credential,
 )
 from tests.test_phase71_publication_store import OWNER_ID
 from tests.test_phase72_publication_execution import Harness
@@ -44,14 +47,20 @@ class ShopResponseBoundaryFactory:
         self.events: list[str] = []
         self.transport = OrderedTransport([response], self.events)
 
-    def __call__(self, *, execution_authority):  # type: ignore[no-untyped-def]
+    @staticmethod
+    def prepare_credential(*, execution_authority):  # type: ignore[no-untyped-def]
+        authority = execution_authority.provider_authority
+        assert authority is not None
+        return issue_bound_publication_provider_credential(
+            authority=authority,
+            bearer_token=SecretStr(TOKEN),
+        )
+
+    def __call__(self, *, execution_authority, credential):  # type: ignore[no-untyped-def]
         self.calls += 1
         return StagedPrintifyPublicationBoundary(
             execution_authority=execution_authority,
-            credential=OwnerBoundPrintifyCredential(
-                owner_id=OWNER_ID,
-                bearer_token=TOKEN,
-            ),
+            credential=credential,
             transport=self.transport,
             audit_sink=DurableAuditSink(self.harness, self.events),
             evidence_store=self.harness.store,
@@ -64,8 +73,17 @@ class ExplodingBoundaryFactory:
     def __init__(self) -> None:
         self.calls = 0
 
-    def __call__(self, *, execution_authority):  # type: ignore[no-untyped-def]
-        del execution_authority
+    @staticmethod
+    def prepare_credential(*, execution_authority):  # type: ignore[no-untyped-def]
+        authority = execution_authority.provider_authority
+        assert authority is not None
+        return issue_bound_publication_provider_credential(
+            authority=authority,
+            bearer_token=SecretStr(TOKEN),
+        )
+
+    def __call__(self, *, execution_authority, credential):  # type: ignore[no-untyped-def]
+        del execution_authority, credential
         self.calls += 1
         raise RuntimeError("provider worker stopped before a boundary result")
 
@@ -448,6 +466,15 @@ def test_coordinator_never_accepts_a_loose_product_dto_as_a_durable_stage() -> N
             return loose
 
     class LooseFactory:
+        @staticmethod
+        def prepare_credential(*, execution_authority):  # type: ignore[no-untyped-def]
+            authority = execution_authority.provider_authority
+            assert authority is not None
+            return issue_bound_publication_provider_credential(
+                authority=authority,
+                bearer_token=SecretStr(TOKEN),
+            )
+
         def __call__(self, **_values: Any) -> LooseBoundary:
             return LooseBoundary()
 

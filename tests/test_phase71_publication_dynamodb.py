@@ -204,7 +204,7 @@ def test_dynamo_loads_owner_first_with_strong_exact_authority_reads() -> None:
     assert len(client.get_requests) == 1
 
 
-def test_dynamo_request_is_exactly_fourteen_bounded_isolated_actions() -> None:
+def test_dynamo_request_is_exactly_fifteen_bounded_isolated_actions() -> None:
     store, client, authority = _store_with_authority()
     transaction = make_transaction(authority)
 
@@ -212,7 +212,7 @@ def test_dynamo_request_is_exactly_fourteen_bounded_isolated_actions() -> None:
     request = client.transactions[0]
     actions = request["TransactItems"]
 
-    assert len(actions) == PUBLICATION_REQUEST_TRANSACTION_ITEMS == 14
+    assert len(actions) == PUBLICATION_REQUEST_TRANSACTION_ITEMS == 15
     assert len(actions) <= MAX_PUBLICATION_REQUEST_TRANSACTION_ITEMS == 25
     assert [next(iter(action)) for action in actions] == [
         "Put",
@@ -222,6 +222,7 @@ def test_dynamo_request_is_exactly_fourteen_bounded_isolated_actions() -> None:
         "ConditionCheck",
         "ConditionCheck",
         "ConditionCheck",
+        "Put",
         "Put",
         "Put",
         "Put",
@@ -251,6 +252,7 @@ def test_dynamo_request_is_exactly_fourteen_bounded_isolated_actions() -> None:
         "PUBLICATION_WORK",
         "EVENT",
         "PUBLICATION_RECEIPT",
+        "REQUEST_RECEIPT_LOCATOR",
     ]
     work_item = next(
         item for item in publication_items if item["SK"]["S"].startswith("PUBLICATION_WORK#")
@@ -457,6 +459,45 @@ def test_receipt_resolution_rejects_metadata_payload_parity_tampering(tamper: st
             OWNER_ID,
             authority.current_job.job_id,
             transaction.commit.receipt.idempotency_key_digest,
+        )
+        is None
+    )
+    with pytest.raises(PublicationConflictError) as error:
+        store.commit_request(transaction)
+    assert error.value.code is PublicationErrorCode.CONCURRENT_WRITE
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ["missing", "entity_type", "payload", "ttl_scalar", "ttl_noncanonical"],
+)
+def test_request_replay_requires_exact_publication_receipt_locator(tamper: str) -> None:
+    store, client, authority = _store_with_authority()
+    transaction = make_transaction(authority)
+    receipt = store.commit_request(transaction)
+    locator_key = (f"PUBLICATION#{receipt.aggregate_id}", "REQUEST_RECEIPT_LOCATOR")
+    if tamper == "missing":
+        client.items.pop(locator_key)
+    elif tamper == "entity_type":
+        client.items[locator_key] = {
+            **client.items[locator_key],
+            "entity_type": {"S": "FOREIGN_LOCATOR"},
+        }
+    elif tamper == "payload":
+        client.items[locator_key] = {
+            **client.items[locator_key],
+            "payload": {"S": client.items[locator_key]["payload"]["S"] + " "},
+        }
+    elif tamper == "ttl_scalar":
+        client.items[locator_key]["expires_at"] = 7
+    else:
+        client.items[locator_key]["expires_at"] = {"N": "01"}
+
+    assert (
+        store.resolve_request_receipt(
+            OWNER_ID,
+            authority.current_job.job_id,
+            receipt.idempotency_key_digest,
         )
         is None
     )

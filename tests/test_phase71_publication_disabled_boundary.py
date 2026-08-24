@@ -24,6 +24,7 @@ from tools.build_phase66_source_bundles import build_source_bundles
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLICATION_ROOT = ROOT / "src" / "mr_lister" / "publication"
+PUBLICATION_RETENTION_CONTROL = ROOT / "src/mr_lister/control/publication_retention.py"
 PHASE6_TEMPLATE = ROOT / "infra" / "phase6" / "template.json"
 PHASE6_LAMBDA = ROOT / "infra" / "phase6" / "lambda" / "phase6_lambda.py"
 
@@ -65,10 +66,26 @@ PHASE74_APPLICATION_FILES = {
     "profile_eligibility.py",
 }
 
+PHASE75_CREDENTIAL_FILES = {
+    "provider_credentials.py",
+}
+
+PHASE75_RETENTION_FILES = {
+    "retention.py",
+    "retention_dynamodb.py",
+    "retention_locator.py",
+}
+
 PHASE74_CLOUD_FILES = {
     ROOT / "src/mr_lister/cloud/phase7_composition.py",
     ROOT / "src/mr_lister/cloud/phase7_entrypoints.py",
 }
+
+PHASE75_OFFLINE_CLOUD_FILES = {
+    ROOT / "src/mr_lister/cloud/phase7_provider_credentials.py",
+}
+
+PHASE7_CLOUD_FILES = PHASE74_CLOUD_FILES | PHASE75_OFFLINE_CLOUD_FILES
 
 EXPECTED_OFFLINE_PUBLICATION_FILES = {
     "__init__.py",
@@ -88,6 +105,8 @@ EXPECTED_OFFLINE_PUBLICATION_FILES = {
     | PHASE73_COORDINATOR_FILES
     | PHASE73_READ_ONLY_FILES
     | PHASE74_APPLICATION_FILES
+    | PHASE75_CREDENTIAL_FILES
+    | PHASE75_RETENTION_FILES
 )
 
 
@@ -298,13 +317,20 @@ def test_phase71_permit_and_stores_expose_no_consumption_api() -> None:
         assert public_operations.isdisjoint(forbidden_operations)
 
 
-def test_phase6_source_bundles_exclude_publication(tmp_path: Path) -> None:
+def test_phase6_source_bundles_exclude_phase7_runtime(tmp_path: Path) -> None:
     lambda_root, agentcore_root = build_source_bundles(
         tmp_path / "disabled-boundary" / "phase6-release"
     )
 
     for bundle_root in (lambda_root, agentcore_root):
         assert not (bundle_root / "mr_lister" / "publication").exists()
+        assert not (bundle_root / "mr_lister/cloud/phase7_provider_credentials.py").exists()
+        marker = bundle_root / "mr_lister/control/publication_retention.py"
+        assert marker.is_file()
+        assert not any(
+            module == "mr_lister.publication" or module.startswith("mr_lister.publication.")
+            for module in _imports(marker)
+        )
         manifest = json.loads((bundle_root / "source-manifest.json").read_text(encoding="utf-8"))
         paths = {record["path"] for record in manifest["files"]}
         assert not any("publication" in Path(path).parts for path in paths)
@@ -315,7 +341,7 @@ def test_phase6_source_bundles_exclude_publication(tmp_path: Path) -> None:
             ), source_path.relative_to(bundle_root)
 
 
-def test_phase74_publication_runtime_is_only_in_exact_disabled_read_modules() -> None:
+def test_phase7_offline_runtime_is_only_in_exact_inventory() -> None:
     publication_files = {path.name for path in PUBLICATION_ROOT.glob("*.py")}
     assert publication_files == EXPECTED_OFFLINE_PUBLICATION_FILES
     assert set(publication_exports) == {
@@ -332,7 +358,7 @@ def test_phase74_publication_runtime_is_only_in_exact_disabled_read_modules() ->
         *(
             path
             for path in (ROOT / "src" / "mr_lister").rglob("*.py")
-            if PUBLICATION_ROOT not in path.parents and path not in PHASE74_CLOUD_FILES
+            if PUBLICATION_ROOT not in path.parents and path not in PHASE7_CLOUD_FILES
         ),
     ]
     for path in runtime_paths:
@@ -349,7 +375,7 @@ def test_phase74_publication_runtime_is_only_in_exact_disabled_read_modules() ->
             for module in _imports(path)
         )
     }
-    assert publication_importing_cloud_files == PHASE74_CLOUD_FILES
+    assert publication_importing_cloud_files == PHASE7_CLOUD_FILES
 
     forbidden_phase74_imports = {
         "mr_lister.agent",
@@ -367,6 +393,148 @@ def test_phase74_publication_runtime_is_only_in_exact_disabled_read_modules() ->
             for module in imports
             for forbidden in forbidden_phase74_imports
         ), path.relative_to(ROOT)
+
+
+def test_phase75_credential_modules_are_capability_narrow_and_uncomposed() -> None:
+    core_module = "mr_lister.publication.provider_credentials"
+    adapter_module = "mr_lister.cloud.phase7_provider_credentials"
+    core_imports = _imports(PUBLICATION_ROOT / "provider_credentials.py")
+    adapter_path = next(iter(PHASE75_OFFLINE_CLOUD_FILES))
+    adapter_imports = _imports(adapter_path)
+
+    assert not any(
+        module == forbidden or module.startswith(f"{forbidden}.")
+        for module in core_imports
+        for forbidden in {
+            "boto3",
+            "botocore",
+            "httpx",
+            "requests",
+            "urllib",
+            "mr_lister.agent",
+            "mr_lister.cloud",
+            "mr_lister.production",
+            "mr_lister.publication.provider_boundary",
+            "mr_lister.publication.provider_coordinator",
+            "mr_lister.workflow",
+        }
+    )
+    assert core_module in adapter_imports
+    assert "mr_lister.production.provider_secrets" in adapter_imports
+    assert not any(
+        module == forbidden or module.startswith(f"{forbidden}.")
+        for module in adapter_imports
+        for forbidden in {
+            "boto3",
+            "botocore",
+            "httpx",
+            "requests",
+            "urllib",
+            "mr_lister.publication.provider_boundary",
+            "mr_lister.publication.provider_coordinator",
+        }
+    )
+
+    for path in (ROOT / "src" / "mr_lister" / "cloud").glob("*.py"):
+        if path == adapter_path:
+            continue
+        imports = _imports(path)
+        assert adapter_module not in imports, path.relative_to(ROOT)
+        assert core_module not in imports, path.relative_to(ROOT)
+
+
+def test_phase75_shared_retention_marker_is_capability_free() -> None:
+    imports = _imports(PUBLICATION_RETENTION_CONTROL)
+
+    assert not any(
+        module == forbidden or module.startswith(f"{forbidden}.")
+        for module in imports
+        for forbidden in {
+            "boto3",
+            "botocore",
+            "httpx",
+            "requests",
+            "urllib",
+            "mr_lister.agent",
+            "mr_lister.cloud",
+            "mr_lister.production",
+            "mr_lister.publication",
+            "mr_lister.workflow",
+        }
+    )
+
+
+def test_phase75_retention_is_offline_injected_and_adds_no_source_tag_writer() -> None:
+    core_modules = {
+        "mr_lister.publication.retention",
+        "mr_lister.publication.retention_locator",
+    }
+    adapter_module = "mr_lister.publication.retention_dynamodb"
+    forbidden_core_imports = {
+        "boto3",
+        "botocore",
+        "httpx",
+        "requests",
+        "urllib",
+        "mr_lister.agent",
+        "mr_lister.cloud",
+        "mr_lister.production",
+        "mr_lister.publication.provider_boundary",
+        "mr_lister.publication.provider_coordinator",
+        "mr_lister.workflow",
+    }
+    for filename in {"retention.py", "retention_locator.py"}:
+        imports = _imports(PUBLICATION_ROOT / filename)
+        assert not any(
+            module == forbidden or module.startswith(f"{forbidden}.")
+            for module in imports
+            for forbidden in forbidden_core_imports
+        ), filename
+
+    adapter_path = PUBLICATION_ROOT / "retention_dynamodb.py"
+    adapter_imports = _imports(adapter_path)
+    assert "botocore.exceptions" in adapter_imports
+    assert "mr_lister.publication.retention" in adapter_imports
+    assert "mr_lister.publication.retention_locator" in adapter_imports
+    assert not any(
+        module == forbidden or module.startswith(f"{forbidden}.")
+        for module in adapter_imports
+        for forbidden in {
+            "boto3",
+            "httpx",
+            "requests",
+            "urllib",
+            "mr_lister.agent",
+            "mr_lister.cloud",
+            "mr_lister.production",
+            "mr_lister.publication.provider_boundary",
+            "mr_lister.publication.provider_coordinator",
+            "mr_lister.workflow",
+        }
+    )
+    adapter_source = adapter_path.read_text(encoding="utf-8")
+    assert "put_object_tagging" not in adapter_source
+    assert "delete_item" not in adapter_source
+    assert "delete_object" not in adapter_source
+    assert "DeleteItem" not in adapter_source
+
+    for path in (ROOT / "src" / "mr_lister" / "cloud").glob("*.py"):
+        imports = _imports(path)
+        assert adapter_module not in imports, path.relative_to(ROOT)
+        assert core_modules.isdisjoint(imports), path.relative_to(ROOT)
+
+    tag_writer_paths = {
+        path.relative_to(ROOT)
+        for path in (ROOT / "src" / "mr_lister").rglob("*.py")
+        if "put_object_tagging" in path.read_text(encoding="utf-8")
+    }
+    assert Path("src/mr_lister/production/retention_aws.py") in tag_writer_paths
+    assert not {
+        path
+        for path in tag_writer_paths
+        if Path("src/mr_lister/publication") in path.parents
+        or path == Path("src/mr_lister/cloud/phase7_provider_credentials.py")
+    }
 
 
 def test_phase72_execution_oracle_has_no_provider_or_runtime_capability() -> None:

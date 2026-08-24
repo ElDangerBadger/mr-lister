@@ -68,6 +68,7 @@ def _provider_boundary(
         authority=authority,
         credential=OwnerBoundPrintifyCredential(
             owner_id=OWNER_ID,
+            printify_shop_id=authority.printify_shop_id,
             bearer_token=TOKEN,
         ),
         transport=transport,

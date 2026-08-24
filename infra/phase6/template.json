@@ -850,7 +850,7 @@
                   "Action": "dynamodb:TransactGetItems",
                   "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]},
                   "Condition": {
-                    "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*"]},
+                    "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]},
                     "Null": {"dynamodb:LeadingKeys": "false"}
                   }
                 },

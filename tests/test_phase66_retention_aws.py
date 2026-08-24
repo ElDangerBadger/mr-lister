@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from hashlib import sha256
@@ -8,7 +9,16 @@ from typing import Any
 
 import pytest
 
+from mr_lister.control.fingerprints import (
+    canonical_fingerprint,
+    publication_terminal_summary_fingerprint,
+)
 from mr_lister.control.models import ControlJobRecord, ControlJobState, SourceArtifactRecord
+from mr_lister.control.publication_retention import (
+    PublicationRetentionCompletionAuthority,
+    publication_operational_expiry_epoch,
+    publication_retention_completion_fingerprint,
+)
 from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.production.retention import (
     PHASE6_SOURCE_PREFIX,
@@ -35,6 +45,9 @@ JOB_ID = "job_phase66_retention_aws"
 OBJECT_KEY = f"private/owners/{OWNER_ID}/jobs/{JOB_ID}/source/source.png"
 VERSION_ID = "source-version-exact-1"
 NEXT_VERSION_ID = "source-version-next-2"
+PUBLICATION_AGGREGATE_ID = "publication_retention_aggregate"
+PUBLICATION_REPORT_ID = "publication_retention_report"
+PUBLICATION_RESULT_ID = "publication_retention_result"
 
 
 class RecordingS3InventoryClient:
@@ -78,7 +91,8 @@ class RecordingS3TaggingClient:
 
 class RecordingDynamoClient:
     def __init__(self) -> None:
-        self.transact_response: object = {"Responses": [{}, {}]}
+        self.transact_response: object = {"Responses": [{}, {}, {}]}
+        self.transact_responses: list[object] | None = None
         self.get_response: object = {}
         self.transact_error: Exception | None = None
         self.get_error: Exception | None = None
@@ -92,7 +106,12 @@ class RecordingDynamoClient:
         self.transact_calls.append(copy.deepcopy(kwargs))
         if self.transact_error is not None:
             raise self.transact_error
-        return copy.deepcopy(self.transact_response)  # type: ignore[return-value]
+        response = (
+            self.transact_responses.pop(0)
+            if self.transact_responses is not None
+            else self.transact_response
+        )
+        return copy.deepcopy(response)  # type: ignore[return-value]
 
     def get_item(self, **kwargs: Any) -> dict[str, Any]:
         self.get_calls.append(copy.deepcopy(kwargs))
@@ -249,6 +268,181 @@ def _source_item(source: SourceArtifactRecord) -> dict[str, Any]:
         "entity_type": _s("SOURCE_ARTIFACT"),
         "contract_version": _s(source.contract_version),
         "payload": _s(source.model_dump_json()),
+    }
+
+
+def _execution_aggregate_payload(
+    *,
+    aggregate_id: str,
+    job_id: str,
+    state: str,
+    terminal_at: datetime,
+    source_release_eligible_at: datetime,
+    operational_expires_at: datetime,
+    report_id: str,
+    record_version: int = 7,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "contract_version": "7.0.1",
+        "aggregate_id": aggregate_id,
+        "owner_id": OWNER_ID,
+        "job_id": job_id,
+        "state": state,
+        "record_version": record_version,
+        "event_sequence": record_version + 1,
+        "provider_audit_record_version": 0,
+        "provider_evidence_record_version": 0,
+        "terminal_at": terminal_at.isoformat(),
+        "source_release_eligible_at": source_release_eligible_at.isoformat(),
+        "operational_expires_at": operational_expires_at.isoformat(),
+        "report_id": report_id,
+    }
+    payload["fingerprint"] = canonical_fingerprint(
+        {
+            "contract_version": "7.0.1",
+            "kind": "execution_aggregate",
+            "payload": {
+                key: value
+                for key, value in payload.items()
+                if key not in {"contract_version", "fingerprint"}
+            },
+        }
+    )
+    return payload
+
+
+def _terminal_publication_authority() -> tuple[
+    SourceArtifactRecord,
+    ControlJobRecord,
+    PublicationRetentionCompletionAuthority,
+]:
+    source = _source()
+    terminal_at = NOW - timedelta(days=1)
+    source_release_eligible_at = terminal_at + timedelta(days=30)
+    operational_expires_at = terminal_at + timedelta(days=90)
+    summary_fingerprint = publication_terminal_summary_fingerprint(
+        aggregate_id=PUBLICATION_AGGREGATE_ID,
+        terminal_state="published",
+        terminal_at=terminal_at,
+        source_release_eligible_at=source_release_eligible_at,
+        operational_expires_at=operational_expires_at,
+        report_id=PUBLICATION_REPORT_ID,
+        result_id=PUBLICATION_RESULT_ID,
+    )
+    job_values = _job(source).model_dump(mode="python")
+    job_values.update(
+        {
+            "record_version": 5,
+            "state": ControlJobState.APPROVED,
+            "product_id": "product_retention",
+            "product_sync_id": "sync_retention",
+            "synchronized_review_version": 1,
+            "product_sync_fingerprint": "f" * 64,
+            "pricing_snapshot_id": "pricing_retention",
+            "pricing_snapshot_fingerprint": "1" * 64,
+            "approval_decision_id": "decision_retention",
+            "approved_review_version": 1,
+            "approved_review_fingerprint": "e" * 64,
+            "approval_fingerprint": "2" * 64,
+            "publication_aggregate_id": PUBLICATION_AGGREGATE_ID,
+            "publication_terminal_state": "published",
+            "publication_terminal_at": terminal_at,
+            "publication_source_release_eligible_at": source_release_eligible_at,
+            "publication_operational_expires_at": operational_expires_at,
+            "publication_report_id": PUBLICATION_REPORT_ID,
+            "publication_result_id": PUBLICATION_RESULT_ID,
+            "publication_terminal_summary_fingerprint": summary_fingerprint,
+            "updated_at": terminal_at,
+        }
+    )
+    job = ControlJobRecord.model_validate(job_values)
+    aggregate_payload = _execution_aggregate_payload(
+        aggregate_id=PUBLICATION_AGGREGATE_ID,
+        job_id=job.job_id,
+        state="published",
+        terminal_at=terminal_at,
+        source_release_eligible_at=source_release_eligible_at,
+        operational_expires_at=operational_expires_at,
+        report_id=PUBLICATION_REPORT_ID,
+    )
+    completion_values: dict[str, Any] = {
+        "job_id": job.job_id,
+        "aggregate_id": PUBLICATION_AGGREGATE_ID,
+        "job_record_version": job.record_version,
+        "terminal_state": "published",
+        "terminal_at": terminal_at,
+        "terminal_summary_fingerprint": summary_fingerprint,
+        "source_artifact_fingerprint": source.fingerprint,
+        "aggregate_fingerprint": aggregate_payload["fingerprint"],
+        "report_id": PUBLICATION_REPORT_ID,
+        "report_fingerprint": "4" * 64,
+        "tombstone_fingerprint": "5" * 64,
+        "terminal_job_link_fingerprint": "6" * 64,
+        "source_release_eligible_at": source_release_eligible_at,
+        "operational_expires_at": operational_expires_at,
+        "expires_at_epoch_seconds": publication_operational_expiry_epoch(operational_expires_at),
+        "publication_row_count": 20,
+        "ttl_assignment_count": 22,
+        "inventory_fingerprint": "7" * 64,
+        "completed_at": terminal_at + timedelta(days=1),
+    }
+    completion_basis = PublicationRetentionCompletionAuthority.model_construct(
+        **completion_values,
+        fingerprint="0" * 64,
+    )
+    completion = PublicationRetentionCompletionAuthority(
+        **completion_values,
+        fingerprint=publication_retention_completion_fingerprint(completion_basis),
+    )
+    return source, job, completion
+
+
+def _publication_retention_item(
+    completion: PublicationRetentionCompletionAuthority,
+) -> dict[str, Any]:
+    return {
+        "PK": _s(f"JOB#{completion.job_id}"),
+        "SK": _s("PUBLICATION_RETENTION"),
+        "entity_type": _s("PUBLICATION_RETENTION_COMPLETION"),
+        "contract_version": _s(completion.contract_version),
+        "job_id": _s(completion.job_id),
+        "aggregate_id": _s(completion.aggregate_id),
+        "job_record_version": _n(completion.job_record_version),
+        "terminal_summary_fingerprint": _s(completion.terminal_summary_fingerprint),
+        "source_artifact_fingerprint": _s(completion.source_artifact_fingerprint),
+        "expires_at": _n(completion.expires_at_epoch_seconds),
+        "payload": _s(completion.model_dump_json()),
+    }
+
+
+def _publication_aggregate_item(
+    completion: PublicationRetentionCompletionAuthority,
+) -> dict[str, Any]:
+    record_version = 7
+    payload = _execution_aggregate_payload(
+        aggregate_id=completion.aggregate_id,
+        job_id=completion.job_id,
+        state=completion.terminal_state,
+        terminal_at=completion.terminal_at,
+        source_release_eligible_at=completion.source_release_eligible_at,
+        operational_expires_at=completion.operational_expires_at,
+        report_id=completion.report_id,
+        record_version=record_version,
+    )
+    assert payload["fingerprint"] == completion.aggregate_fingerprint
+    return {
+        "PK": _s(f"PUBLICATION#{completion.aggregate_id}"),
+        "SK": _s("META"),
+        "entity_type": _s("PUBLICATION_EXECUTION_AGGREGATE"),
+        "contract_version": _s("7.0.1"),
+        "owner_id": _s(OWNER_ID),
+        "job_id": _s(completion.job_id),
+        "publication_state": _s(completion.terminal_state),
+        "record_version": _n(record_version),
+        "provider_audit_record_version": _n(payload["provider_audit_record_version"]),
+        "provider_evidence_record_version": _n(payload["provider_evidence_record_version"]),
+        "expires_at": _n(completion.expires_at_epoch_seconds),
+        "payload": _s(json.dumps(payload, sort_keys=True, separators=(",", ":"))),
     }
 
 
@@ -478,7 +672,7 @@ def test_strong_authority_reader_uses_one_transactional_job_source_read() -> Non
     job = _job(source)
     client = RecordingDynamoClient()
     client.transact_response = {
-        "Responses": [{"Item": _job_item(job)}, {"Item": _source_item(source)}]
+        "Responses": [{"Item": _job_item(job)}, {"Item": _source_item(source)}, {}]
     }
     reader = DynamoDBStrongSourceAuthorityReader(client=client, table_name=TABLE)
 
@@ -501,10 +695,182 @@ def test_strong_authority_reader_uses_one_transactional_job_source_read() -> Non
                         "Key": {"PK": _s(f"JOB#{JOB_ID}"), "SK": _s("SOURCE")},
                     }
                 },
+                {
+                    "Get": {
+                        "TableName": TABLE,
+                        "Key": {
+                            "PK": _s(f"JOB#{JOB_ID}"),
+                            "SK": _s("PUBLICATION_RETENTION"),
+                        },
+                    }
+                },
             ]
         }
     ]
     assert client.get_calls == []
+
+
+def test_strong_authority_reader_parses_exact_publication_retention_marker() -> None:
+    source, job, completion = _terminal_publication_authority()
+    job_row = {"Item": _job_item(job)}
+    source_row = {"Item": _source_item(source)}
+    marker_row = {"Item": _publication_retention_item(completion)}
+    client = RecordingDynamoClient()
+    client.transact_responses = [
+        {"Responses": [job_row, source_row, marker_row]},
+        {
+            "Responses": [
+                job_row,
+                source_row,
+                marker_row,
+                {"Item": _publication_aggregate_item(completion)},
+            ]
+        },
+    ]
+    reader = DynamoDBStrongSourceAuthorityReader(client=client, table_name=TABLE)
+
+    snapshot = reader.read_source_authority_strong(job_id=JOB_ID)
+
+    assert snapshot.job == job
+    assert snapshot.source == source
+    assert snapshot.publication_retention == completion
+    assert len(client.transact_calls) == 2
+    assert client.transact_calls[1]["TransactItems"][-1] == {
+        "Get": {
+            "TableName": TABLE,
+            "Key": {
+                "PK": _s(f"PUBLICATION#{completion.aggregate_id}"),
+                "SK": _s("META"),
+            },
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    ("missing", "identity", "expiry", "claimed_fingerprint", "semantic_payload"),
+)
+def test_strong_authority_reader_rejects_missing_or_changed_terminal_aggregate(
+    corruption: str,
+) -> None:
+    source, job, completion = _terminal_publication_authority()
+    aggregate_item = _publication_aggregate_item(completion)
+    if corruption == "missing":
+        aggregate_row: dict[str, Any] = {}
+    else:
+        if corruption == "identity":
+            aggregate_item["PK"] = _s("PUBLICATION#foreign_aggregate")
+        elif corruption == "expiry":
+            aggregate_item["expires_at"] = _n(completion.expires_at_epoch_seconds + 1)
+        elif corruption == "claimed_fingerprint":
+            payload = json.loads(aggregate_item["payload"]["S"])
+            payload["fingerprint"] = "0" * 64
+            aggregate_item["payload"] = _s(
+                json.dumps(payload, sort_keys=True, separators=(",", ":"))
+            )
+        else:
+            payload = json.loads(aggregate_item["payload"]["S"])
+            payload["event_sequence"] += 1
+            aggregate_item["payload"] = _s(
+                json.dumps(payload, sort_keys=True, separators=(",", ":"))
+            )
+        aggregate_row = {"Item": aggregate_item}
+    job_row = {"Item": _job_item(job)}
+    source_row = {"Item": _source_item(source)}
+    marker_row = {"Item": _publication_retention_item(completion)}
+    client = RecordingDynamoClient()
+    client.transact_responses = [
+        {"Responses": [job_row, source_row, marker_row]},
+        {"Responses": [job_row, source_row, marker_row, aggregate_row]},
+    ]
+    reader = DynamoDBStrongSourceAuthorityReader(client=client, table_name=TABLE)
+
+    with pytest.raises(RetentionBoundaryInvalidError):
+        reader.read_source_authority_strong(job_id=JOB_ID)
+
+    assert len(client.transact_calls) == 2
+
+
+@pytest.mark.parametrize("observed_state", ("staged", "pinned"))
+@pytest.mark.parametrize("aggregate_failure", ("missing", "mutated"))
+def test_source_sweeper_fails_closed_on_missing_or_mutated_terminal_aggregate(
+    observed_state: str,
+    aggregate_failure: str,
+) -> None:
+    source, job, completion = _terminal_publication_authority()
+    aggregate_item = _publication_aggregate_item(completion)
+    if aggregate_failure == "missing":
+        aggregate_row: dict[str, Any] = {}
+    else:
+        aggregate_item["publication_state"] = _s("publication_failed")
+        aggregate_row = {"Item": aggregate_item}
+    job_row = {"Item": _job_item(job)}
+    source_row = {"Item": _source_item(source)}
+    marker_row = {"Item": _publication_retention_item(completion)}
+    dynamo = RecordingDynamoClient()
+    dynamo.transact_responses = [
+        {"Responses": [job_row, source_row, marker_row]},
+        {"Responses": [job_row, source_row, marker_row, aggregate_row]},
+    ]
+    inventory_client = RecordingS3InventoryClient(
+        [_inventory_page(versions=[_version()], max_keys=100)]
+    )
+    tag_client = RecordingS3TaggingClient(
+        {"TagSet": [{"Key": "mr-lister-state", "Value": observed_state}]}
+    )
+    sweeper = ReferenceAwareSourceVersionSweeper(
+        inventory=_inventory(inventory_client),
+        tags=_tags(tag_client),
+        authority=DynamoDBStrongSourceAuthorityReader(client=dynamo, table_name=TABLE),
+        checkpoints=_checkpoint_store(dynamo),
+        artifact_bucket=BUCKET,
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(RetentionDependencyUnavailableError):
+        sweeper.sweep()
+
+    expected_puts = (
+        [
+            {
+                "Bucket": BUCKET,
+                "Key": OBJECT_KEY,
+                "VersionId": VERSION_ID,
+                "Tagging": {"TagSet": [{"Key": "mr-lister-state", "Value": "pinned"}]},
+                "ExpectedBucketOwner": BUCKET_OWNER,
+            }
+        ]
+        if observed_state == "staged"
+        else []
+    )
+    assert tag_client.put_calls == expected_puts
+    assert dynamo.put_calls == []
+
+
+@pytest.mark.parametrize("corruption", ("malformed", "foreign", "mismatched"))
+def test_strong_authority_reader_rejects_invalid_publication_retention_marker(
+    corruption: str,
+) -> None:
+    source, job, completion = _terminal_publication_authority()
+    retention_item = _publication_retention_item(completion)
+    if corruption == "malformed":
+        retention_item["payload"] = _s("{}")
+    elif corruption == "foreign":
+        retention_item["PK"] = _s("JOB#foreign_publication_job")
+    else:
+        retention_item["source_artifact_fingerprint"] = _s("0" * 64)
+    client = RecordingDynamoClient()
+    client.transact_response = {
+        "Responses": [
+            {"Item": _job_item(job)},
+            {"Item": _source_item(source)},
+            {"Item": retention_item},
+        ]
+    }
+    reader = DynamoDBStrongSourceAuthorityReader(client=client, table_name=TABLE)
+
+    with pytest.raises(RetentionBoundaryInvalidError):
+        reader.read_source_authority_strong(job_id=JOB_ID)
 
 
 def test_strong_authority_reader_returns_only_both_absent_and_rejects_partial_rows() -> None:
@@ -512,7 +878,7 @@ def test_strong_authority_reader_returns_only_both_absent_and_rejects_partial_ro
     reader = DynamoDBStrongSourceAuthorityReader(client=client, table_name=TABLE)
 
     assert reader.read_source_authority_strong(job_id=JOB_ID).job is None
-    client.transact_response = {"Responses": [{"Item": _job_item(_job())}, {}]}
+    client.transact_response = {"Responses": [{"Item": _job_item(_job())}, {}, {}]}
 
     with pytest.raises(RetentionBoundaryInvalidError):
         reader.read_source_authority_strong(job_id=JOB_ID)
@@ -524,7 +890,9 @@ def test_strong_authority_reader_rejects_incoherent_payload_and_sanitizes_depend
     bad_item = _job_item(wrong_job)
     bad_item["owner_id"] = _s("b" * 64)
     client = RecordingDynamoClient()
-    client.transact_response = {"Responses": [{"Item": bad_item}, {"Item": _source_item(source)}]}
+    client.transact_response = {
+        "Responses": [{"Item": bad_item}, {"Item": _source_item(source)}, {}]
+    }
     reader = DynamoDBStrongSourceAuthorityReader(client=client, table_name=TABLE)
 
     with pytest.raises(RetentionBoundaryInvalidError):
