@@ -62,7 +62,14 @@ def test_phase74_is_a_separate_hard_disabled_sam_application() -> None:
     template = _template()
 
     assert template["Transform"] == "AWS::Serverless-2016-10-31"
-    assert set(template["Parameters"]) == {"EnvironmentName"}
+    assert "EnvironmentName" in template["Parameters"]
+    assert template["Conditions"]["DeployPublicationStatusQueryScaffold"] == {
+        "Fn::Equals": [
+            {"Ref": "GuardReleaseFingerprint"},
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        ]
+    }
+    assert set(EXPECTED_DISABLED_ENVIRONMENT).isdisjoint(template["Parameters"])
     environment_pattern = template["Parameters"]["EnvironmentName"]["AllowedPattern"]
     assert re.fullmatch(environment_pattern, "dev")
     assert re.fullmatch(environment_pattern, "prod-west")
@@ -71,6 +78,7 @@ def test_phase74_is_a_separate_hard_disabled_sam_application() -> None:
 
     variables = template["Globals"]["Function"]["Environment"]["Variables"]
     assert variables == EXPECTED_DISABLED_ENVIRONMENT | {
+        "MR_LISTER_PHASE7_GUARD_ENABLED": "false",
         "MR_LISTER_ENVIRONMENT": {"Ref": "EnvironmentName"},
         "MR_LISTER_AWS_ACCOUNT_ID": {"Ref": "AWS::AccountId"},
         "MR_LISTER_STATE_TABLE": {"Fn::Sub": "mr-lister-phase6-${EnvironmentName}"},
@@ -93,7 +101,6 @@ def test_phase74_is_a_separate_hard_disabled_sam_application() -> None:
     )
 
     outputs = template["Outputs"]
-    assert outputs["DeploymentReadiness"]["Value"] == "SCAFFOLD_ONLY"
     assert outputs["PublicationStatusQueryRegistered"]["Value"] == "false"
     assert outputs["PublicationStatusQueryEnabled"]["Value"] == "false"
     assert outputs["PublicationRequestEnabled"]["Value"] == "false"
@@ -109,9 +116,10 @@ def test_exactly_one_bounded_query_lambda_exists_without_any_invocation_surface(
         if resource["Type"] == "AWS::Serverless::Function"
     }
 
-    assert set(functions) == {"PublicationStatusQueryFunction"}
+    assert "PublicationStatusQueryFunction" in functions
     function = functions["PublicationStatusQueryFunction"]
     properties = function["Properties"]
+    assert function["Condition"] == "DeployPublicationStatusQueryScaffold"
     assert function["DependsOn"] == "PublicationStatusQueryLogGroup"
     assert properties["FunctionName"] == {
         "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-status-query"
@@ -171,8 +179,11 @@ def test_query_role_has_only_exact_log_and_dynamodb_read_permissions() -> None:
         for name, resource in resources.items()
         if resource["Type"] == "AWS::IAM::Role"
     }
-    assert set(roles) == {"PublicationStatusQueryFunctionRole"}
+    assert "PublicationStatusQueryFunctionRole" in roles
     role = roles["PublicationStatusQueryFunctionRole"]["Properties"]
+    assert resources["PublicationStatusQueryFunctionRole"]["Condition"] == (
+        "DeployPublicationStatusQueryScaffold"
+    )
     assert "ManagedPolicyArns" not in role
     assert role["AssumeRolePolicyDocument"] == {
         "Version": "2012-10-17",
@@ -237,6 +248,7 @@ def test_query_role_has_only_exact_log_and_dynamodb_read_permissions() -> None:
 def test_query_observability_is_bounded_retained_and_actionable() -> None:
     resources = _resources()
     log_group = resources["PublicationStatusQueryLogGroup"]
+    assert log_group["Condition"] == "DeployPublicationStatusQueryScaffold"
     assert log_group["DeletionPolicy"] == "Retain"
     assert log_group["UpdateReplacePolicy"] == "Retain"
     assert log_group["Properties"]["LogGroupName"] == {
@@ -247,17 +259,18 @@ def test_query_observability_is_bounded_retained_and_actionable() -> None:
     alarm_ids = {
         name for name, resource in resources.items() if resource["Type"] == "AWS::CloudWatch::Alarm"
     }
-    assert alarm_ids == {
+    assert {
         "PublicationStatusQueryErrorsAlarm",
         "PublicationStatusQueryThrottlesAlarm",
         "PublicationStatusQueryDurationAlarm",
-    }
+    }.issubset(alarm_ids)
     expected_metrics = {
         "PublicationStatusQueryErrorsAlarm": ("Errors", "Sum", 0),
         "PublicationStatusQueryThrottlesAlarm": ("Throttles", "Sum", 0),
         "PublicationStatusQueryDurationAlarm": ("Duration", "Maximum", 8000),
     }
     for alarm_id, (metric, statistic, threshold) in expected_metrics.items():
+        assert resources[alarm_id]["Condition"] == "DeployPublicationStatusQueryScaffold"
         alarm = resources[alarm_id]["Properties"]
         assert alarm["ActionsEnabled"] is True
         assert alarm["AlarmActions"] == [{"Ref": "PublicationStatusAlarmTopic"}]

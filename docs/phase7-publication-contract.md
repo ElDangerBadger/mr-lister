@@ -332,6 +332,51 @@ IAM, constructs an AWS client, schedules retention, deploys a bundle, or makes a
 call. Request, query, publication, provider-mutation, and seller activation remain false and
 uncomposed.
 
+## Sealed Phase 7.6 private approval guard
+
+Every nonterminal coordinator advance now requires `DurablePublicationPreCallGuard` immediately
+after its first read and before time-based settlement, evidence recovery, credential preparation,
+call claims, provider auditing, boundary construction, or wire access. The returned authority is
+deeply reparsed and must equal that first exact owner/aggregate graph. Missing, malformed, stale,
+or merely different authority fails closed without creating a durable record or external-call
+grant. Terminal replay remains a read-only fast path because terminal authority cannot authorize a
+new call.
+
+The corresponding deployable runtime is a separate private attestor, not the publication worker.
+It accepts only direct IAM invocation for an identifier-free sealed-status attestation or one exact
+owner/aggregate approval check. A status check constructs no DynamoDB client. An authority check
+uses only strongly consistent, bounded `GetItem` and `Query` reads, validates every physical key,
+top-level envelope, payload identity, legal row type, and the frozen 943-row maximum, then delegates
+to the same durable pre-call guard. It returns only `sealed_configuration`, `authority_current`, or
+`authority_rejected`; even a current result fixes `provider_calls_authorized = 0`.
+
+Cold start loads only standard-library bootstrap code until release verification succeeds. The
+sealed bundle has exact zero-byte package initializers before that gate, a closed application import
+graph, the checked false Phase 6 profile, and twelve exact Linux CPython 3.12 ARM64 wheels bound by
+filename and SHA-256. The builder safely extracts those wheels without executing installers,
+requires every extracted byte to match the trusted wheel `RECORD` and the frozen complete tree
+fingerprint, rejects startup hooks and standard-library shadows, and emits deterministic source,
+dependency, deployment, release, and ZIP identities. The Lambda rechecks every packaged byte and
+cross-binds the verified profile fingerprint to its exact environment before importing composition.
+
+The Phase 7 SAM role permits only writes to its predeclared log group and same-table
+`dynamodb:GetItem`/`dynamodb:Query` for `JOB#*` and `PUBLICATION#*`. The function has no API, URL,
+event source, schedule, workflow, resource policy, secret access, provider transport, DynamoDB
+write, or mutation IAM. Its active tuple is exactly guard-enabled with scaffold/query/request/
+publication disabled. Deployment observations must bind the immutable S3 object version and
+checksum, CloudFormation parameters, Lambda code/runtime/architecture/environment/concurrency,
+exact role trust and inline policy, absence of attached policies and invocation surfaces, and
+identifier-free status/rejected direct-invoke results. They must also prove the exact nine-resource
+post-transform stack inventory and the physical absence of the source-retained Phase 7.4 query
+function, role, alarms, and log prefix; an unexpected retained object is drift requiring separate
+operator investigation, never automatic deletion.
+
+This guard deployment does not create Phase 7 request authority, seed a publication aggregate, or
+perform a Printify GET or POST. A positive deployed current-authority result requires pre-existing
+exact table authority or separately authorized synthetic test data. Until the other frozen gates
+pass—including Phase 6 deployed non-destructive acceptance and read-only Etsy preflight—the
+contract remains `offline_implementation` and seller publication remains disabled.
+
 ## Immutable report and retention
 
 The run report binds only closed statuses, timestamps, aggregate call counts, release/snapshot/

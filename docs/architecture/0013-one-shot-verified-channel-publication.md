@@ -82,6 +82,10 @@ or deployment input.
 - Phase 6 activation is independent and remains draft-only. A separately authorized, one-listing
   canary boundary may exercise one permit only after offline and read-only gates pass; it exposes no
   seller route and disables itself when the permit settles.
+- A private read-only approval guard may be sealed and directly invoked before seller activation.
+  It must re-read the exact durable approval/snapshot graph, authorize zero provider calls, expose
+  no route or trigger, and remain a mandatory coordinator prerequisite before credentials or call
+  claims. Deploying that attestor alone does not advance the publication activation phase.
 - Contract `7.0.1` keeps seller-facing publication disabled. Enabling it requires a later reviewed
   contract and release after the Phase 7 domain, provider, API, infrastructure, and live acceptance
   gates all pass.
