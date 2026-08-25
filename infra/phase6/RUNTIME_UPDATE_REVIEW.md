@@ -108,7 +108,10 @@ deployer policy must bind the exact stack, SAM transform,
 `cloudformation:TemplateUrl`, three tags, expiry, exact `iam:PassRole` with
 `iam:PassedToService = cloudformation.amazonaws.com`, and exact-version template read. The runtime
 policy includes the four inert SAM-generated EventBridge rules and the dispatcher event-source
-mapping pinned with `lambda:FunctionArn`; unavoidable wildcard APIs are region-conditioned.
+mapping pinned with `lambda:FunctionArn`; unavoidable wildcard APIs are region-conditioned. The
+three functions with reserved-concurrency caps have exact function-ARN-scoped Get/Put/Delete
+concurrency lifecycle authority so create and rollback cannot strand the stack; no other function
+receives those actions.
 
 ## Evidence and manifest
 

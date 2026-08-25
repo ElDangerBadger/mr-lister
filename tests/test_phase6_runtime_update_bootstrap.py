@@ -9,6 +9,12 @@ BOOTSTRAP_PATH = ROOT / "infra/phase6/runtime-update-bootstrap.json"
 SAM_TRANSFORM_ARN = (
     "arn:${AWS::Partition}:cloudformation:us-west-2:aws:transform/Serverless-2016-10-31"
 )
+CORE_FUNCTION_ARN_PREFIX = "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:"
+CAPPED_CORE_FUNCTION_NAMES = (
+    "mr-lister-phase6-dev-execution-recovery",
+    "mr-lister-phase6-dev-source-retention",
+    "mr-lister-phase6-dev-terminal-cleanup",
+)
 
 
 def _bootstrap() -> dict[str, Any]:
@@ -223,6 +229,18 @@ def test_core_execution_role_is_separate_retained_and_lambda_version_scoped() ->
         "Effect": "Allow",
         "Action": "cloudformation:CreateChangeSet",
         "Resource": {"Fn::Sub": SAM_TRANSFORM_ARN},
+    }
+    assert statements["ManageOnlyCappedCoreLambdaConcurrency"] == {
+        "Sid": "ManageOnlyCappedCoreLambdaConcurrency",
+        "Effect": "Allow",
+        "Action": [
+            "lambda:DeleteFunctionConcurrency",
+            "lambda:GetFunctionConcurrency",
+            "lambda:PutFunctionConcurrency",
+        ],
+        "Resource": [
+            {"Fn::Sub": CORE_FUNCTION_ARN_PREFIX + name} for name in CAPPED_CORE_FUNCTION_NAMES
+        ],
     }
     artifact = statements["ReadOnlyExactLambdaDeploymentArchiveVersion"]
     assert artifact["Action"] == "s3:GetObjectVersion"

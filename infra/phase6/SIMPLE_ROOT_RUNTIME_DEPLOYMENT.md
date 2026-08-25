@@ -68,6 +68,10 @@ policy, reference `mr-lister-developers`, grant upload authority, create a deplo
 use a temporary approval window. The role's transform permission is pinned to
 `arn:${AWS::Partition}:cloudformation:us-west-2:aws:transform/Serverless-2016-10-31`; it does not
 grant `cloudformation:*`, a wildcard CloudFormation resource, or stack/change-set authority.
+The Lambda concurrency lifecycle actions are separately pinned to the three maintenance functions
+that declare `ReservedConcurrentExecutions`; the other four functions receive no concurrency
+authority. S3 CORS apply and rollback both use the existing exact-bucket `s3:PutBucketCORS`
+permission.
 
 Read back the `CoreRuntimeExecutionRoleArn` output and require:
 

@@ -189,6 +189,20 @@
                   "Resource": {"Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:mr-lister-phase6-dev-*"}
                 },
                 {
+                  "Sid": "ManageOnlyCappedCoreLambdaConcurrency",
+                  "Effect": "Allow",
+                  "Action": [
+                    "lambda:DeleteFunctionConcurrency",
+                    "lambda:GetFunctionConcurrency",
+                    "lambda:PutFunctionConcurrency"
+                  ],
+                  "Resource": [
+                    {"Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:mr-lister-phase6-dev-execution-recovery"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:mr-lister-phase6-dev-source-retention"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:mr-lister-phase6-dev-terminal-cleanup"}
+                  ]
+                },
+                {
                   "Sid": "CreateOnlyDispatcherEventSourceMapping",
                   "Effect": "Allow",
                   "Action": "lambda:CreateEventSourceMapping",

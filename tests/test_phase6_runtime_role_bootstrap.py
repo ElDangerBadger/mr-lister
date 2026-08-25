@@ -8,9 +8,19 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP_PATH = ROOT / "infra/phase6/runtime-role-bootstrap.json"
 LEGACY_BOOTSTRAP_PATH = ROOT / "infra/phase6/runtime-update-bootstrap.json"
+CORE_TEMPLATE_PATH = ROOT / "infra/phase6/template.json"
 SAM_TRANSFORM_ARN = (
     "arn:${AWS::Partition}:cloudformation:us-west-2:aws:transform/Serverless-2016-10-31"
 )
+CORE_FUNCTION_ARN_PREFIX = "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:"
+CAPPED_CORE_FUNCTION_NAMES = (
+    "mr-lister-phase6-dev-execution-recovery",
+    "mr-lister-phase6-dev-source-retention",
+    "mr-lister-phase6-dev-terminal-cleanup",
+)
+CAPPED_CORE_FUNCTION_ARNS = [
+    {"Fn::Sub": CORE_FUNCTION_ARN_PREFIX + name} for name in CAPPED_CORE_FUNCTION_NAMES
+]
 
 
 def _document(path: Path) -> dict[str, Any]:
@@ -121,7 +131,7 @@ def test_execution_role_keeps_exact_resource_and_wildcard_boundaries() -> None:
     role = _document(BOOTSTRAP_PATH)["Resources"]["CoreRuntimeExecutionRole"]
     statements = _statements(role)
 
-    assert len(statements) == 15
+    assert len(statements) == 16
     wildcard = {
         sid: statement for sid, statement in statements.items() if statement["Resource"] == "*"
     }
@@ -180,6 +190,42 @@ def test_execution_role_keeps_exact_resource_and_wildcard_boundaries() -> None:
     assert pass_role["Condition"] == {
         "StringEquals": {"iam:PassedToService": ["lambda.amazonaws.com", "states.amazonaws.com"]}
     }
+
+
+def test_execution_role_covers_only_the_three_capped_lambda_concurrency_lifecycles() -> None:
+    role = _document(BOOTSTRAP_PATH)["Resources"]["CoreRuntimeExecutionRole"]
+    statements = _statements(role)
+    core_resources = _document(CORE_TEMPLATE_PATH)["Resources"]
+    capped_names = {
+        resource["Properties"]["FunctionName"]["Fn::Sub"].replace("${EnvironmentName}", "dev")
+        for resource in core_resources.values()
+        if resource["Type"] == "AWS::Serverless::Function"
+        and "ReservedConcurrentExecutions" in resource["Properties"]
+    }
+
+    assert capped_names == set(CAPPED_CORE_FUNCTION_NAMES)
+    concurrency = statements["ManageOnlyCappedCoreLambdaConcurrency"]
+    assert concurrency == {
+        "Sid": "ManageOnlyCappedCoreLambdaConcurrency",
+        "Effect": "Allow",
+        "Action": [
+            "lambda:DeleteFunctionConcurrency",
+            "lambda:GetFunctionConcurrency",
+            "lambda:PutFunctionConcurrency",
+        ],
+        "Resource": CAPPED_CORE_FUNCTION_ARNS,
+    }
+    concurrency_authority = [
+        (sid, action)
+        for sid, statement in statements.items()
+        for action in (
+            statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]]
+        )
+        if action.endswith("FunctionConcurrency")
+    ]
+    assert concurrency_authority == [
+        ("ManageOnlyCappedCoreLambdaConcurrency", action) for action in concurrency["Action"]
+    ]
 
 
 def test_execution_role_has_no_application_runtime_or_web_surface_authority() -> None:
