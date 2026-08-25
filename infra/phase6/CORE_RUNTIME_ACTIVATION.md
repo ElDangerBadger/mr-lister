@@ -387,6 +387,7 @@ both target template stages as canonical JSON. **Do not execute it.**
 ```bash
 MR6_CHANGE_SET_ARN="$(jq -r '.Id' "$MR6_CHANGE_EVIDENCE/create.json")"
 MR6_CHANGE_SET_OBSERVATION="$MR6_CHANGE_EVIDENCE/describe-change-set.json"
+MR6_CHANGE_SET_RESOURCE_OBSERVATION="$MR6_CHANGE_EVIDENCE/describe-change-set-resource-level.json"
 MR6_TARGET_ORIGINAL="$MR6_CHANGE_EVIDENCE/target-original-template.json"
 MR6_TARGET_PROCESSED="$MR6_CHANGE_EVIDENCE/target-processed-template.json"
 
@@ -404,6 +405,15 @@ aws cloudformation describe-change-set \
   --include-property-values \
   --no-paginate \
   --output json | jq -S . > "$MR6_CHANGE_SET_OBSERVATION"
+
+aws cloudformation describe-change-set \
+  --profile "$MR6_PROFILE" \
+  --region "$MR6_REGION" \
+  --stack-name "$MR6_STACK_ID" \
+  --change-set-name "$MR6_CHANGE_SET_ARN" \
+  --no-include-property-values \
+  --no-paginate \
+  --output json | jq -S . > "$MR6_CHANGE_SET_RESOURCE_OBSERVATION"
 
 aws cloudformation get-template \
   --profile "$MR6_PROFILE" \
@@ -431,10 +441,21 @@ The accepted processed resource-change scope for Update 1 is exact:
 Every record must have `Scope=["Properties"]` and one Static/DirectModification/Never detail at
 `/Properties/ReservedConcurrentExecutions`, with change type `Remove` from `0`.
 
-There may be no `Add`, `Remove`, replacement, IAM change, trigger change, function code change,
-role change, foundation change, or web resource. The original target bytes must equal the verified
-capacity template, and the processed template must contain the same closed 40-source/47-live
-resource identity after SAM expansion.
+CloudFormation's resource-level view is deliberately retained as separate evidence. For Update 1,
+it can conservatively report the exact ten-resource dependency closure: the three directly changed
+Lambda functions; the three still-disabled EventBridge rules whose targets reference those Lambda
+ARNs; the three Lambda permissions whose source ARNs reference those rules; and the recovery queue
+policy whose source condition references the recovery rule. The seven dependent records must be
+`Dynamic` `ResourceAttribute` propagation only, and their before/after processed resources must be
+byte-identical. Reject any `Add`, `Remove`, known `Replacement=True`, direct rule `State` change,
+different causing entity, or resource outside that closed set. The `--include-property-values`
+observation remains the semantic authority for the resolved delta and must still contain only the
+three direct concurrency removals above.
+
+In the resolved property-value view there may be no `Add`, `Remove`, replacement, IAM change,
+trigger change, function code change, role change, foundation change, or web resource. The original
+target bytes must equal the verified capacity template, and the processed template must contain the
+same closed 40-source/47-live resource identity after SAM expansion.
 
 `tools/verify_phase6_core_transition_change_set.py` is the offline verifier that joins the canonical
 predecessor Original/Processed observations, sealed local target, full change set, and target
