@@ -1,0 +1,333 @@
+{
+  "algorithm": "sha256",
+  "component": "agentcore",
+  "dependency_tree_sha256": "499c229c105a822049aa682ec6020ff31947921b466fd5ce908b1716d75a85ba",
+  "format": "phase6-wheel-authority-v1",
+  "target": {
+    "architecture": "arm64",
+    "implementation": "cpython",
+    "platform": "manylinux2014_aarch64",
+    "python_abi": "cp312",
+    "python_version": "3.12"
+  },
+  "wheels": [
+    {
+      "filename": "annotated_doc-0.0.5-py3-none-any.whl",
+      "name": "annotated-doc",
+      "sha256": "117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101",
+      "version": "0.0.5"
+    },
+    {
+      "filename": "annotated_types-0.8.0-py3-none-any.whl",
+      "name": "annotated-types",
+      "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+      "version": "0.8.0"
+    },
+    {
+      "filename": "anyio-4.14.2-py3-none-any.whl",
+      "name": "anyio",
+      "sha256": "9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494",
+      "version": "4.14.2"
+    },
+    {
+      "filename": "attrs-26.1.0-py3-none-any.whl",
+      "name": "attrs",
+      "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+      "version": "26.1.0"
+    },
+    {
+      "filename": "awscrt-0.36.0-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+      "name": "awscrt",
+      "sha256": "900eb2cf518a3f1c7e9c4ebc320f5a3fac891208992b9428da76e3f0fb0300a5",
+      "version": "0.36.0"
+    },
+    {
+      "filename": "bedrock_agentcore-1.22.0-py3-none-any.whl",
+      "name": "bedrock-agentcore",
+      "sha256": "b4906b9c2a290e54eccd13bcf99191b890d27eedd3aa28ba756aff61d83a4948",
+      "version": "1.22.0"
+    },
+    {
+      "filename": "boto3-1.43.78-py3-none-any.whl",
+      "name": "boto3",
+      "sha256": "893f06a171469618e17de78dc927aca6e74fcf45a70d2c5918e9ac9919e96cc9",
+      "version": "1.43.78"
+    },
+    {
+      "filename": "botocore-1.43.78-py3-none-any.whl",
+      "name": "botocore",
+      "sha256": "ddd020493235e264b3bd12606f239a3d3b2dd7cfb1d25a0691061183c290c228",
+      "version": "1.43.78"
+    },
+    {
+      "filename": "certifi-2026.7.22-py3-none-any.whl",
+      "name": "certifi",
+      "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
+      "version": "2026.7.22"
+    },
+    {
+      "filename": "cffi-2.1.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+      "name": "cffi",
+      "sha256": "68e62fe11f30d5ca8289242866f0a5291402d8529ca2178ab8afc5c9694ae890",
+      "version": "2.1.1"
+    },
+    {
+      "filename": "click-8.4.2-py3-none-any.whl",
+      "name": "click",
+      "sha256": "e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76",
+      "version": "8.4.2"
+    },
+    {
+      "filename": "cryptography-50.0.0-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+      "name": "cryptography",
+      "sha256": "fd9192b7b70c573d7f214eb1ae35e00d359f6f5e4b27c7e21e30de1fc6204645",
+      "version": "50.0.0"
+    },
+    {
+      "filename": "docstring_parser-0.18.0-py3-none-any.whl",
+      "name": "docstring-parser",
+      "sha256": "b3fcbed555c47d8479be0796ef7e19c2670d428d72e96da63f3a40122860374b",
+      "version": "0.18.0"
+    },
+    {
+      "filename": "fastapi-0.141.1-py3-none-any.whl",
+      "name": "fastapi",
+      "sha256": "bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3",
+      "version": "0.141.1"
+    },
+    {
+      "filename": "h11-0.16.0-py3-none-any.whl",
+      "name": "h11",
+      "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+      "version": "0.16.0"
+    },
+    {
+      "filename": "httpcore-1.0.9-py3-none-any.whl",
+      "name": "httpcore",
+      "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+      "version": "1.0.9"
+    },
+    {
+      "filename": "httpx-0.28.1-py3-none-any.whl",
+      "name": "httpx",
+      "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+      "version": "0.28.1"
+    },
+    {
+      "filename": "httpx_sse-0.4.3-py3-none-any.whl",
+      "name": "httpx-sse",
+      "sha256": "0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc",
+      "version": "0.4.3"
+    },
+    {
+      "filename": "idna-3.19-py3-none-any.whl",
+      "name": "idna",
+      "sha256": "815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4",
+      "version": "3.19"
+    },
+    {
+      "filename": "jmespath-1.1.0-py3-none-any.whl",
+      "name": "jmespath",
+      "sha256": "a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64",
+      "version": "1.1.0"
+    },
+    {
+      "filename": "jsonschema-4.26.0-py3-none-any.whl",
+      "name": "jsonschema",
+      "sha256": "d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce",
+      "version": "4.26.0"
+    },
+    {
+      "filename": "jsonschema_specifications-2025.9.1-py3-none-any.whl",
+      "name": "jsonschema-specifications",
+      "sha256": "98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe",
+      "version": "2025.9.1"
+    },
+    {
+      "filename": "mcp-1.29.0-py3-none-any.whl",
+      "name": "mcp",
+      "sha256": "f5a075bb611f23d6f4d080c6a1699fa62772eebc562ba9e66b306ddde1c755f7",
+      "version": "1.29.0"
+    },
+    {
+      "filename": "opentelemetry_api-1.44.0-py3-none-any.whl",
+      "name": "opentelemetry-api",
+      "sha256": "94b98c893a91b88657eaac1e3ba89618cdb85be6918196705354f34728b2cdef",
+      "version": "1.44.0"
+    },
+    {
+      "filename": "opentelemetry_instrumentation-0.65b0-py3-none-any.whl",
+      "name": "opentelemetry-instrumentation",
+      "sha256": "ea967a72b9939b5fcfdad572753b4306c59dcb99e3f382d95dae04286805e137",
+      "version": "0.65b0"
+    },
+    {
+      "filename": "opentelemetry_instrumentation_threading-0.65b0-py3-none-any.whl",
+      "name": "opentelemetry-instrumentation-threading",
+      "sha256": "d8a1a1f35418a32769d469ef2d7e8401935e097a8553abcfba833da9c74736ce",
+      "version": "0.65b0"
+    },
+    {
+      "filename": "opentelemetry_sdk-1.44.0-py3-none-any.whl",
+      "name": "opentelemetry-sdk",
+      "sha256": "df081c4c6bcfdb1211e3e86140376792643128a25f8d72d1d27675936e7e96ad",
+      "version": "1.44.0"
+    },
+    {
+      "filename": "opentelemetry_semantic_conventions-0.65b0-py3-none-any.whl",
+      "name": "opentelemetry-semantic-conventions",
+      "sha256": "1cacde7b0ad306f84c5ef08c3dbe1bbaf20165bba6f8bff43b670e555a086bcb",
+      "version": "0.65b0"
+    },
+    {
+      "filename": "packaging-26.3-py3-none-any.whl",
+      "name": "packaging",
+      "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+      "version": "26.3"
+    },
+    {
+      "filename": "pillow-12.2.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+      "name": "pillow",
+      "sha256": "03e7e372d5240cc23e9f07deca4d775c0817bffc641b01e9c3af208dbd300987",
+      "version": "12.2.0"
+    },
+    {
+      "filename": "pycparser-3.0-py3-none-any.whl",
+      "name": "pycparser",
+      "sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992",
+      "version": "3.0"
+    },
+    {
+      "filename": "pydantic-2.13.4-py3-none-any.whl",
+      "name": "pydantic",
+      "sha256": "45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba",
+      "version": "2.13.4"
+    },
+    {
+      "filename": "pydantic_core-2.46.4-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+      "name": "pydantic-core",
+      "sha256": "8233f2947cf85404441fd7e0085f53b10c93e0ee78611099b5c7237e36aacbf7",
+      "version": "2.46.4"
+    },
+    {
+      "filename": "pydantic_settings-2.15.0-py3-none-any.whl",
+      "name": "pydantic-settings",
+      "sha256": "0ba092c291c94baceb5eff768aa0d56400a457585bc0175925a5a5510303da42",
+      "version": "2.15.0"
+    },
+    {
+      "filename": "pyjwt-2.13.0-py3-none-any.whl",
+      "name": "pyjwt",
+      "sha256": "66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728",
+      "version": "2.13.0"
+    },
+    {
+      "filename": "python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+      "name": "python-dateutil",
+      "sha256": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427",
+      "version": "2.9.0.post0"
+    },
+    {
+      "filename": "python_dotenv-1.2.3-py3-none-any.whl",
+      "name": "python-dotenv",
+      "sha256": "904552145e8bfed22162c09dab1c2b9b54fefa7b23ba780f4f26ca0316b0f0d9",
+      "version": "1.2.3"
+    },
+    {
+      "filename": "python_multipart-0.0.32-py3-none-any.whl",
+      "name": "python-multipart",
+      "sha256": "ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23",
+      "version": "0.0.32"
+    },
+    {
+      "filename": "pyyaml-6.0.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+      "name": "pyyaml",
+      "sha256": "9149cad251584d5fb4981be1ecde53a1ca46c891a79788c0df828d2f166bda28",
+      "version": "6.0.3"
+    },
+    {
+      "filename": "referencing-0.37.0-py3-none-any.whl",
+      "name": "referencing",
+      "sha256": "381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231",
+      "version": "0.37.0"
+    },
+    {
+      "filename": "rpds_py-2026.6.3-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+      "name": "rpds-py",
+      "sha256": "55927d532399c2c646100ff7feb48eaa940ad70f42cd68e1328f3ded9f81ca24",
+      "version": "2026.6.3"
+    },
+    {
+      "filename": "s3transfer-0.19.2-py3-none-any.whl",
+      "name": "s3transfer",
+      "sha256": "d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25",
+      "version": "0.19.2"
+    },
+    {
+      "filename": "six-1.17.0-py2.py3-none-any.whl",
+      "name": "six",
+      "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+      "version": "1.17.0"
+    },
+    {
+      "filename": "sse_starlette-3.4.8-py3-none-any.whl",
+      "name": "sse-starlette",
+      "sha256": "6e82314c786709a3cd9520f2285cf9fff90e181e598e8a357b0cf80f66afba0d",
+      "version": "3.4.8"
+    },
+    {
+      "filename": "starlette-1.6.0-py3-none-any.whl",
+      "name": "starlette",
+      "sha256": "a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c",
+      "version": "1.6.0"
+    },
+    {
+      "filename": "strands_agents-1.53.0-py3-none-any.whl",
+      "name": "strands-agents",
+      "sha256": "35b28436208486320ed121cbfe425368318847193d57c175823e82e5cc7700de",
+      "version": "1.53.0"
+    },
+    {
+      "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+      "name": "typing-extensions",
+      "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "version": "4.16.0"
+    },
+    {
+      "filename": "typing_inspection-0.4.4-py3-none-any.whl",
+      "name": "typing-inspection",
+      "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+      "version": "0.4.4"
+    },
+    {
+      "filename": "urllib3-2.7.0-py3-none-any.whl",
+      "name": "urllib3",
+      "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
+      "version": "2.7.0"
+    },
+    {
+      "filename": "uvicorn-0.52.4-py3-none-any.whl",
+      "name": "uvicorn",
+      "sha256": "f86e41a149d7d05a9969337e3946a9c171c06a5d42680896daaba624aeac8da1",
+      "version": "0.52.4"
+    },
+    {
+      "filename": "watchdog-6.0.0-py3-none-manylinux2014_aarch64.whl",
+      "name": "watchdog",
+      "sha256": "7607498efa04a3542ae3e05e64da8202e58159aa1fa4acddf7678d34a35d4f13",
+      "version": "6.0.0"
+    },
+    {
+      "filename": "websockets-17.0.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+      "name": "websockets",
+      "sha256": "8848c207049ad49d318e5f64a3d4d7bb189f8328d0d98e65647788f2a085785c",
+      "version": "17.0.1"
+    },
+    {
+      "filename": "wrapt-2.3.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+      "name": "wrapt",
+      "sha256": "392158c9a7f2ab1b8699418bfc0fe6f83548788c418b27d7bf2019ad3405cebb",
+      "version": "2.3.0"
+    }
+  ]
+}

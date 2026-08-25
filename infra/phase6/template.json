@@ -847,7 +847,7 @@
                 {
                   "Sid": "StrongReadJobSourceAuthority",
                   "Effect": "Allow",
-                  "Action": "dynamodb:TransactGetItems",
+                  "Action": "dynamodb:GetItem",
                   "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]},
                   "Condition": {
                     "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]},
@@ -909,7 +909,7 @@
                 {
                   "Sid": "ReadAndAssignExactOperationalExpiry",
                   "Effect": "Allow",
-                  "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems"],
+                  "Action": ["dynamodb:ConditionCheckItem", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:UpdateItem"],
                   "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]},
                   "Condition": {
                     "ForAllValues:StringLike": {
@@ -961,7 +961,7 @@
                 {
                   "Sid": "StrongReadAndSettleExactJobAuthority",
                   "Effect": "Allow",
-                  "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:TransactGetItems", "dynamodb:TransactWriteItems"],
+                  "Action": ["dynamodb:GetItem", "dynamodb:PutItem"],
                   "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]},
                   "Condition": {
                     "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "OWNER#*"]},
@@ -1014,7 +1014,7 @@
                 {
                   "Sid": "ClaimAndAcknowledgeDueWork",
                   "Effect": "Allow",
-                  "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems"],
+                  "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query"],
                   "Resource": [
                     {"Fn::GetAtt": ["OperationalStateTable", "Arn"]},
                     {"Fn::Sub": "${OperationalStateTable.Arn}/index/DueWorkIndex"}
@@ -1094,7 +1094,7 @@
               "Version": "2012-10-17",
               "Statement": [
                 {"Sid": "WriteProviderLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::GetAtt": ["ProviderDraftLogGroup", "Arn"]}},
-                {"Sid": "ReadAndCommitProviderEvidence", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:TransactWriteItems"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}},
+                {"Sid": "ReadAndCommitProviderEvidence", "Effect": "Allow", "Action": ["dynamodb:ConditionCheckItem", "dynamodb:GetItem", "dynamodb:PutItem"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}},
                 {"Sid": "ReadPinnedArtworkForProvider", "Effect": "Allow", "Action": "s3:GetObjectVersion", "Resource": {"Fn::Sub": "${PrivateArtifactBucket.Arn}/private/owners/*/jobs/*/source/source.png"}},
                 {"Sid": "ReadExactProviderCredential", "Effect": "Allow", "Action": ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"], "Resource": {"Ref": "PrintifySecretArn"}}
               ]
@@ -1118,7 +1118,7 @@
               "Version": "2012-10-17",
               "Statement": [
                 {"Sid": "WriteSettlementLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::GetAtt": ["SettlementLogGroup", "Arn"]}},
-                {"Sid": "ReadAndCommitSettlement", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:TransactWriteItems"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}}
+                {"Sid": "ReadAndCommitSettlement", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem"], "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}}
               ]
             }
           }
@@ -1143,7 +1143,7 @@
                 {
                   "Sid": "CommitOwnerScopedUploadIntake",
                   "Effect": "Allow",
-                  "Action": ["dynamodb:GetItem", "dynamodb:TransactWriteItems"],
+                  "Action": ["dynamodb:GetItem", "dynamodb:PutItem"],
                   "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}
                 },
                 {
@@ -1218,7 +1218,7 @@
                 {
                   "Sid": "CommitOwnerVersionCheckedCommands",
                   "Effect": "Allow",
-                  "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems"],
+                  "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query"],
                   "Resource": {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}
                 }
               ]

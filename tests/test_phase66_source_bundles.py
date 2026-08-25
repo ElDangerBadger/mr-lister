@@ -46,6 +46,12 @@ def test_manifest_has_only_relative_sha256_size_records(tmp_path: Path) -> None:
             assert item["size_bytes"] == (root / item["path"]).stat().st_size
         assert (root / "dependency-build-request.json").is_file()
         assert (root / "mr_lister/release/phase6.py").is_file()
+        assert (root / "mr_lister/__init__.py").read_bytes() == b""
+        assert (root / "mr_lister/release/__init__.py").read_bytes() == b""
+        assert {path.name for path in (root / "mr_lister/release").glob("*.py")} == {
+            "__init__.py",
+            "phase6.py",
+        }
         assert not (root / "release-manifest.json").exists()
 
 

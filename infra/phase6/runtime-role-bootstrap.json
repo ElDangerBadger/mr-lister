@@ -1,0 +1,321 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Root-applied least-privilege CloudFormation execution role for the Mr Lister Phase 6 dev core runtime",
+  "Metadata": {
+    "MrListerDeployment": {
+      "DeploymentClass": "CORE_RUNTIME_CFN_ROLE_BOOTSTRAP_ONLY",
+      "Environment": "dev",
+      "Region": "us-west-2",
+      "RootApplied": true
+    }
+  },
+  "Parameters": {
+    "ReleaseFingerprint": {
+      "Type": "String",
+      "AllowedPattern": "^(?!0{64}$)[a-f0-9]{64}$",
+      "Description": "Exact sealed Phase 6 release fingerprint"
+    },
+    "LambdaArchiveSha256": {
+      "Type": "String",
+      "AllowedPattern": "^(?!0{64}$)[a-f0-9]{64}$",
+      "Description": "Exact SHA-256 of phase6-lambda.zip"
+    },
+    "LambdaVersionId": {
+      "Type": "String",
+      "AllowedPattern": "^(?!(?i:PENDING|current|default|latest|moving|null|none|unversioned)$)[A-Za-z0-9._~+/=-]{3,1024}$",
+      "Description": "Exact immutable S3 VersionId of the Lambda deployment archive"
+    }
+  },
+  "Rules": {
+    "OnlyUsWest2": {
+      "Assertions": [
+        {
+          "Assert": {"Fn::Equals": [{"Ref": "AWS::Region"}, "us-west-2"]},
+          "AssertDescription": "This dev-only bootstrap must be created in us-west-2"
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "CoreRuntimeExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "RoleName": "mr-lister-phase6-runtime-cfn-dev",
+        "Description": "Retained core-scoped CloudFormation execution role for the Phase 6 dev runtime transition",
+        "MaxSessionDuration": 3600,
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "cloudformation.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "mr-lister-phase6-runtime-execution-dev",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "UseOnlyPhase6SamTransform",
+                  "Effect": "Allow",
+                  "Action": "cloudformation:CreateChangeSet",
+                  "Resource": {"Fn::Sub": "arn:${AWS::Partition}:cloudformation:us-west-2:aws:transform/Serverless-2016-10-31"}
+                },
+                {
+                  "Sid": "ManageOnlyCoreRuntimeRoles",
+                  "Effect": "Allow",
+                  "Action": [
+                    "iam:CreateRole",
+                    "iam:DeleteRole",
+                    "iam:DeleteRolePolicy",
+                    "iam:GetRole",
+                    "iam:GetRolePolicy",
+                    "iam:ListAttachedRolePolicies",
+                    "iam:ListRolePolicies",
+                    "iam:PutRolePolicy",
+                    "iam:TagRole",
+                    "iam:UntagRole",
+                    "iam:UpdateAssumeRolePolicy",
+                    "iam:UpdateRole"
+                  ],
+                  "Resource": {"Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/mr-lister-phase6-dev-*"}
+                },
+                {
+                  "Sid": "PassOnlyCoreRuntimeRoles",
+                  "Effect": "Allow",
+                  "Action": "iam:PassRole",
+                  "Resource": {"Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/mr-lister-phase6-dev-*"},
+                  "Condition": {
+                    "StringEquals": {
+                      "iam:PassedToService": ["lambda.amazonaws.com", "states.amazonaws.com"]
+                    }
+                  }
+                },
+                {
+                  "Sid": "ManageOnlyCoreLambdaFunctions",
+                  "Effect": "Allow",
+                  "Action": [
+                    "lambda:AddPermission",
+                    "lambda:CreateFunction",
+                    "lambda:DeleteFunction",
+                    "lambda:GetFunction",
+                    "lambda:GetFunctionConfiguration",
+                    "lambda:GetPolicy",
+                    "lambda:ListTags",
+                    "lambda:RemovePermission",
+                    "lambda:TagResource",
+                    "lambda:UntagResource",
+                    "lambda:UpdateFunctionCode",
+                    "lambda:UpdateFunctionConfiguration"
+                  ],
+                  "Resource": {"Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:mr-lister-phase6-dev-*"}
+                },
+                {
+                  "Sid": "ManageOnlyCappedCoreLambdaConcurrency",
+                  "Effect": "Allow",
+                  "Action": [
+                    "lambda:DeleteFunctionConcurrency",
+                    "lambda:GetFunctionConcurrency",
+                    "lambda:PutFunctionConcurrency"
+                  ],
+                  "Resource": [
+                    {"Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:mr-lister-phase6-dev-execution-recovery"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:mr-lister-phase6-dev-source-retention"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:mr-lister-phase6-dev-terminal-cleanup"}
+                  ]
+                },
+                {
+                  "Sid": "CreateOnlyDispatcherEventSourceMapping",
+                  "Effect": "Allow",
+                  "Action": "lambda:CreateEventSourceMapping",
+                  "Resource": "*",
+                  "Condition": {
+                    "ArnEquals": {
+                      "lambda:FunctionArn": {
+                        "Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:mr-lister-phase6-dev-dispatcher"
+                      }
+                    },
+                    "StringEquals": {"aws:RequestedRegion": "us-west-2"}
+                  }
+                },
+                {
+                  "Sid": "ManageOnlyDispatcherEventSourceMapping",
+                  "Effect": "Allow",
+                  "Action": [
+                    "lambda:DeleteEventSourceMapping",
+                    "lambda:GetEventSourceMapping",
+                    "lambda:UpdateEventSourceMapping"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:event-source-mapping:*"
+                  },
+                  "Condition": {
+                    "ArnEquals": {
+                      "lambda:FunctionArn": {
+                        "Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:mr-lister-phase6-dev-dispatcher"
+                      }
+                    },
+                    "StringEquals": {"aws:RequestedRegion": "us-west-2"}
+                  }
+                },
+                {
+                  "Sid": "TagOnlyCoreEventSourceMappings",
+                  "Effect": "Allow",
+                  "Action": ["lambda:ListTags", "lambda:TagResource", "lambda:UntagResource"],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:event-source-mapping:*"
+                  },
+                  "Condition": {"StringEquals": {"aws:RequestedRegion": "us-west-2"}}
+                },
+                {
+                  "Sid": "ManageOnlyCoreLogGroups",
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:DeleteLogGroup",
+                    "logs:DeleteRetentionPolicy",
+                    "logs:DescribeLogStreams",
+                    "logs:ListTagsForResource",
+                    "logs:PutRetentionPolicy",
+                    "logs:TagResource",
+                    "logs:UntagResource"
+                  ],
+                  "Resource": [
+                    {"Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:/aws/lambda/mr-lister-phase6-dev-*"},
+                    {"Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:/aws/vendedlogs/states/mr-lister-phase6-dev-*"}
+                  ]
+                },
+                {
+                  "Sid": "ConfigureOnlyRegionalStepFunctionsLogDelivery",
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogDelivery",
+                    "logs:DeleteLogDelivery",
+                    "logs:DescribeLogGroups",
+                    "logs:DescribeResourcePolicies",
+                    "logs:GetLogDelivery",
+                    "logs:ListLogDeliveries",
+                    "logs:PutResourcePolicy",
+                    "logs:UpdateLogDelivery"
+                  ],
+                  "Resource": "*",
+                  "Condition": {"StringEquals": {"aws:RequestedRegion": "us-west-2"}}
+                },
+                {
+                  "Sid": "ManageOnlyCoreStateMachines",
+                  "Effect": "Allow",
+                  "Action": [
+                    "states:CreateStateMachine",
+                    "states:DeleteStateMachine",
+                    "states:DescribeStateMachine",
+                    "states:ListTagsForResource",
+                    "states:TagResource",
+                    "states:UntagResource",
+                    "states:UpdateStateMachine"
+                  ],
+                  "Resource": {"Fn::Sub": "arn:${AWS::Partition}:states:us-west-2:${AWS::AccountId}:stateMachine:mr-lister-phase6-dev-*"}
+                },
+                {
+                  "Sid": "ManageOnlyCoreEventRules",
+                  "Effect": "Allow",
+                  "Action": [
+                    "events:DeleteRule",
+                    "events:DescribeRule",
+                    "events:ListTagsForResource",
+                    "events:ListTargetsByRule",
+                    "events:PutRule",
+                    "events:PutTargets",
+                    "events:RemoveTargets",
+                    "events:TagResource",
+                    "events:UntagResource"
+                  ],
+                  "Resource": {"Fn::Sub": "arn:${AWS::Partition}:events:us-west-2:${AWS::AccountId}:rule/mr-lister-phase6-dev-*"}
+                },
+                {
+                  "Sid": "ManageOnlyRecoveryDeadLetterQueue",
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:CreateQueue",
+                    "sqs:DeleteQueue",
+                    "sqs:GetQueueAttributes",
+                    "sqs:GetQueueUrl",
+                    "sqs:ListQueueTags",
+                    "sqs:SetQueueAttributes",
+                    "sqs:TagQueue",
+                    "sqs:UntagQueue"
+                  ],
+                  "Resource": {"Fn::Sub": "arn:${AWS::Partition}:sqs:us-west-2:${AWS::AccountId}:mr-lister-phase6-dev-execution-recovery-dlq"}
+                },
+                {
+                  "Sid": "InspectAndPreserveFoundationTable",
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:DescribeContinuousBackups",
+                    "dynamodb:DescribeTable",
+                    "dynamodb:DescribeTimeToLive",
+                    "dynamodb:ListTagsOfResource",
+                    "dynamodb:TagResource",
+                    "dynamodb:UntagResource",
+                    "dynamodb:UpdateContinuousBackups",
+                    "dynamodb:UpdateTable",
+                    "dynamodb:UpdateTimeToLive"
+                  ],
+                  "Resource": {"Fn::Sub": "arn:${AWS::Partition}:dynamodb:us-west-2:${AWS::AccountId}:table/mr-lister-phase6-dev"}
+                },
+                {
+                  "Sid": "UpdateOnlyFoundationArtifactBucketConfiguration",
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:DeleteBucketPolicy",
+                    "s3:DeleteBucketWebsite",
+                    "s3:GetBucketCORS",
+                    "s3:GetBucketLocation",
+                    "s3:GetBucketPolicy",
+                    "s3:GetBucketTagging",
+                    "s3:GetBucketVersioning",
+                    "s3:GetEncryptionConfiguration",
+                    "s3:GetLifecycleConfiguration",
+                    "s3:GetBucketPublicAccessBlock",
+                    "s3:PutBucketCORS",
+                    "s3:PutBucketPolicy",
+                    "s3:PutBucketTagging",
+                    "s3:PutBucketVersioning",
+                    "s3:PutEncryptionConfiguration",
+                    "s3:PutLifecycleConfiguration",
+                    "s3:PutBucketPublicAccessBlock"
+                  ],
+                  "Resource": {"Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2"}
+                },
+                {
+                  "Sid": "ReadOnlyExactLambdaDeploymentArchiveVersion",
+                  "Effect": "Allow",
+                  "Action": "s3:GetObjectVersion",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2/private/deployments/lambda/releases/${ReleaseFingerprint}/phase6-lambda-${LambdaArchiveSha256}.zip"
+                  },
+                  "Condition": {"StringEquals": {"s3:VersionId": {"Ref": "LambdaVersionId"}}}
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {"Key": "DeploymentClass", "Value": "RUNTIME_CFN_EXECUTION"},
+          {"Key": "Environment", "Value": "dev"},
+          {"Key": "Project", "Value": "MrLister"}
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "CoreRuntimeExecutionRoleArn": {
+      "Value": {"Fn::GetAtt": ["CoreRuntimeExecutionRole", "Arn"]}
+    }
+  }
+}

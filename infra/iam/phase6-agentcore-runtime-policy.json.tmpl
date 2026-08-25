@@ -8,13 +8,13 @@
         "logs:DescribeLogStreams",
         "logs:CreateLogGroup"
       ],
-      "Resource": "arn:aws:logs:<AWS_REGION>:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/*"
+      "Resource": "arn:aws:logs:<AWS_REGION>:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/mr_lister_phase6-*"
     },
     {
       "Sid": "ConfigureOnlyPhase6AgentCoreRuntimeLogs",
       "Effect": "Allow",
       "Action": "logs:PutResourcePolicy",
-      "Resource": "arn:aws:logs:<AWS_REGION>:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/*mr_lister_phase6-*"
+      "Resource": "arn:aws:logs:<AWS_REGION>:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/mr_lister_phase6-*"
     },
     {
       "Sid": "DiscoverOnlyAccountLogGroups",
@@ -29,15 +29,15 @@
         "logs:CreateLogStream",
         "logs:PutLogEvents"
       ],
-      "Resource": "arn:aws:logs:<AWS_REGION>:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/*mr_lister_phase6-*:log-stream:*"
+      "Resource": "arn:aws:logs:<AWS_REGION>:<AWS_ACCOUNT_ID>:log-group:/aws/bedrock-agentcore/runtimes/mr_lister_phase6-*:log-stream:*"
     },
     {
       "Sid": "ReadAndCommitOnlyPhase6PreparationState",
       "Effect": "Allow",
       "Action": [
+        "dynamodb:ConditionCheckItem",
         "dynamodb:GetItem",
-        "dynamodb:PutItem",
-        "dynamodb:TransactWriteItems"
+        "dynamodb:PutItem"
       ],
       "Resource": "arn:aws:dynamodb:<AWS_REGION>:<AWS_ACCOUNT_ID>:table/mr-lister-phase6-<ENVIRONMENT>",
       "Condition": {

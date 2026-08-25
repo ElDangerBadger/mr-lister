@@ -186,7 +186,8 @@ def test_terminal_cleanup_is_daily_serial_and_dynamodb_ttl_only() -> None:
         "dynamodb:GetItem",
         "dynamodb:PutItem",
         "dynamodb:Query",
-        "dynamodb:TransactWriteItems",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:UpdateItem",
     }
     data_statements = {
         name: statement
@@ -200,7 +201,8 @@ def test_terminal_cleanup_is_daily_serial_and_dynamodb_ttl_only() -> None:
     serialized = json.dumps(statements, sort_keys=True).casefold()
     for forbidden in (
         "deleteitem",
-        "updateitem",
+        "transactgetitems",
+        "transactwriteitems",
         "s3:",
         "states:",
         "secret",
@@ -298,8 +300,6 @@ def test_execution_recovery_index_schedule_dlq_and_closed_role_are_exact() -> No
     assert set(settle["Action"]) == {
         "dynamodb:GetItem",
         "dynamodb:PutItem",
-        "dynamodb:TransactGetItems",
-        "dynamodb:TransactWriteItems",
     }
     assert settle["Condition"] == {
         "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "OWNER#*"]},
@@ -322,6 +322,9 @@ def test_execution_recovery_index_schedule_dlq_and_closed_role_are_exact() -> No
         "cloudwatch:putmetricdata",
         "dynamodb:deleteitem",
         "dynamodb:updateitem",
+        "dynamodb:conditioncheckitem",
+        "dynamodb:transactgetitems",
+        "dynamodb:transactwriteitems",
         "sqs:",
     ):
         assert forbidden not in serialized

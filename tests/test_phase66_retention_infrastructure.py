@@ -120,7 +120,6 @@ def test_retention_role_has_only_closed_inventory_tag_authority_and_checkpoint_a
         "s3:ListBucketVersions",
         "s3:GetObjectVersionTagging",
         "s3:PutObjectVersionTagging",
-        "dynamodb:TransactGetItems",
         "dynamodb:GetItem",
         "dynamodb:PutItem",
     }
@@ -135,6 +134,7 @@ def test_retention_role_has_only_closed_inventory_tag_authority_and_checkpoint_a
         "bedrock",
         "states:",
         "execute-api",
+        "transactgetitems",
         "transactwriteitems",
         "updateitem",
         "query",
@@ -158,7 +158,7 @@ def test_retention_role_enforces_exact_prefix_object_shape_and_checkpoint_partit
     }
 
     authority = statements["StrongReadJobSourceAuthority"]
-    assert authority["Action"] == "dynamodb:TransactGetItems"
+    assert authority["Action"] == "dynamodb:GetItem"
     assert authority["Resource"] == {"Fn::GetAtt": ["OperationalStateTable", "Arn"]}
     assert authority["Condition"] == {
         "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]},

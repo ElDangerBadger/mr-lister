@@ -527,7 +527,7 @@ def _validate_deployment_plan(
         != {
             "retentionInDays": 14,
             "logGroupNamePattern": (
-                "/aws/bedrock-agentcore/runtimes/*mr_lister_phase6-??????????-"
+                "/aws/bedrock-agentcore/runtimes/mr_lister_phase6-??????????-"
                 f"{binding.endpoint_name}"
             ),
             "applyAction": "logs:PutRetentionPolicy",
@@ -582,9 +582,9 @@ def _validate_runtime_policy(
         "logs:DescribeLogGroups",
         "logs:CreateLogStream",
         "logs:PutLogEvents",
+        "dynamodb:ConditionCheckItem",
         "dynamodb:GetItem",
         "dynamodb:PutItem",
-        "dynamodb:TransactWriteItems",
         "s3:GetObjectVersion",
         "bedrock:InvokeModel",
     }:
@@ -594,14 +594,14 @@ def _validate_runtime_policy(
             "actions": {"logs:DescribeLogStreams", "logs:CreateLogGroup"},
             "resource": (
                 f"arn:aws:logs:{binding.region}:{binding.account_id}:log-group:"
-                "/aws/bedrock-agentcore/runtimes/*"
+                "/aws/bedrock-agentcore/runtimes/mr_lister_phase6-*"
             ),
         },
         "ConfigureOnlyPhase6AgentCoreRuntimeLogs": {
             "actions": {"logs:PutResourcePolicy"},
             "resource": (
                 f"arn:aws:logs:{binding.region}:{binding.account_id}:log-group:"
-                "/aws/bedrock-agentcore/runtimes/*mr_lister_phase6-*"
+                "/aws/bedrock-agentcore/runtimes/mr_lister_phase6-*"
             ),
         },
         "DiscoverOnlyAccountLogGroups": {
@@ -612,7 +612,7 @@ def _validate_runtime_policy(
             "actions": {"logs:CreateLogStream", "logs:PutLogEvents"},
             "resource": (
                 f"arn:aws:logs:{binding.region}:{binding.account_id}:log-group:"
-                "/aws/bedrock-agentcore/runtimes/*mr_lister_phase6-*:log-stream:*"
+                "/aws/bedrock-agentcore/runtimes/mr_lister_phase6-*:log-stream:*"
             ),
         },
     }
@@ -628,9 +628,9 @@ def _validate_runtime_policy(
     if (
         set(_actions(dynamodb.get("Action")))
         != {
+            "dynamodb:ConditionCheckItem",
             "dynamodb:GetItem",
             "dynamodb:PutItem",
-            "dynamodb:TransactWriteItems",
         }
         or dynamodb.get("Resource")
         != (
@@ -696,7 +696,7 @@ def _validate_runtime_trust(
                     "ArnLike": {
                         "aws:SourceArn": (
                             f"arn:aws:bedrock-agentcore:{binding.region}:"
-                            f"{binding.account_id}:runtime/*mr_lister_phase6-*"
+                            f"{binding.account_id}:runtime/mr_lister_phase6-*"
                         )
                     },
                 },
@@ -726,7 +726,7 @@ def _validate_log_retention_policy(
                 "Action": "logs:PutRetentionPolicy",
                 "Resource": (
                     f"arn:aws:logs:{binding.region}:{binding.account_id}:log-group:"
-                    "/aws/bedrock-agentcore/runtimes/*mr_lister_phase6-??????????-"
+                    "/aws/bedrock-agentcore/runtimes/mr_lister_phase6-??????????-"
                     f"{binding.endpoint_name}:*"
                 ),
             },
