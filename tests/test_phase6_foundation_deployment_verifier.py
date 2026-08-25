@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from mr_lister.release.phase6 import render_manifest
 from tools.verify_phase6_foundation_deployment import (
     DEFAULT_TEMPLATE,
     FOUNDATION_EVIDENCE_FORMAT,
@@ -722,11 +723,48 @@ def test_deployed_gate_fails_closed_on_update_or_security_drift(
 
 def test_cli_template_gate_emits_canonical_descriptor(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["template", "--template", str(DEFAULT_TEMPLATE)]) == 0
-    output = json.loads(capsys.readouterr().out)
-    assert output == {
+    expected = {
         "format": FOUNDATION_EVIDENCE_FORMAT,
         "foundation_template_fingerprint": FOUNDATION_TEMPLATE_FINGERPRINT,
     }
+    output = capsys.readouterr().out
+    assert output.encode("utf-8") == render_manifest(expected)
+    assert json.loads(output) == expected
+
+
+def test_cli_deployed_gate_emits_consumer_canonical_binding(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    evidence = tmp_path / "evidence"
+    _write_captures(evidence)
+    expected = verify_deployed_foundation(evidence, _binding())
+
+    assert (
+        main(
+            [
+                "deployed",
+                "--account-id",
+                ACCOUNT,
+                "--region",
+                REGION,
+                "--environment-name",
+                ENVIRONMENT,
+                "--stack-name",
+                STACK,
+                "--execution-role-arn",
+                ROLE,
+                "--deployer-arn",
+                DEPLOYER,
+                "--evidence-directory",
+                str(evidence),
+            ]
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert output.encode("utf-8") == render_manifest(expected)
+    assert json.loads(output) == expected
 
 
 def test_verifier_has_no_aws_sdk_or_subprocess_surface() -> None:

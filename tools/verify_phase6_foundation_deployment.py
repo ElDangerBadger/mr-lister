@@ -1296,7 +1296,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                     binding,
                     template_path=args.template,
                 )
-        print(json.dumps(result, allow_nan=False, separators=(",", ":"), sort_keys=True))
+        # Downstream release renderers consume this descriptor as byte-canonical evidence.
+        # Match ``mr_lister.release.phase6.render_manifest`` rather than emitting a second,
+        # compact JSON dialect that is semantically equal but fails the sealed-byte check.
+        print(
+            json.dumps(
+                result,
+                allow_nan=False,
+                indent=2,
+                separators=(",", ": "),
+                sort_keys=True,
+            )
+        )
         return 0
     except Phase6FoundationDeploymentError as error:
         raise SystemExit(str(error)) from None
