@@ -327,6 +327,15 @@ def _change_set(
     ):
         before_context = deepcopy(cast(dict[str, object], before_resources[logical_id]))
         after_context = deepcopy(cast(dict[str, object], after_resources[logical_id]))
+        before_leaf = before_context
+        for component in path[:-1]:
+            before_leaf = cast(dict[str, object], before_leaf[component])
+        before_leaf[path[-1]] = verifier._detail_value(before_value)
+        if after_present:
+            after_leaf = after_context
+            for component in path[:-1]:
+                after_leaf = cast(dict[str, object], after_leaf[component])
+            after_leaf[path[-1]] = verifier._detail_value(after_value)
         target_detail: dict[str, object] = {
             "Attribute": "Properties",
             "AttributeChangeType": "Modify" if after_present else "Remove",

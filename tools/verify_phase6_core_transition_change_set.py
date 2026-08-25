@@ -1022,7 +1022,16 @@ def _verify_change_contexts(
     after = _decode_context(after_raw)
     changes = _changes(before, after)
     expected = {
-        expected_path: _Diff(True, before_value, after_present, after_value),
+        # CloudFormation's include-property-values contexts encode leaf property values as
+        # strings even when the processed template value is a JSON number or boolean. The
+        # processed-template diff above remains the type authority; this comparison binds the
+        # exact documented wire representation without weakening that semantic check.
+        expected_path: _Diff(
+            True,
+            _detail_value(before_value),
+            after_present,
+            _detail_value(after_value) if after_present else None,
+        ),
     }
     if changes != expected:
         raise ValueError
