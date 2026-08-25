@@ -128,10 +128,10 @@ headroom above Lambda's required unreserved minimum. The checked source intentio
 three singleton values at `1`; both staging renderers prove the exact `1` to `0` transition rather
 than silently accepting source drift.
 
-`--activate` always fails. A separate reviewed CloudFormation UPDATE gate, runtime-trigger
-activation gate, and later web-surface deployment are still required. The future activation
-sequence must first remove reserved concurrency from exactly these three functions while scaffold
-mode and every trigger remain inert, verify that the live concurrency configuration is absent,
-and only then enable execution in a separate reviewed update. If strict singleton execution is
-required instead, increase account quota headroom and restore the reviewed value `1` before
-enabling triggers.
+`--activate` always fails. The separate reviewed transition renderer, live-state verifier,
+change-set verifier, and two-update operator sequence are defined in
+[`CORE_RUNTIME_ACTIVATION.md`](CORE_RUNTIME_ACTIVATION.md). They first remove reserved concurrency
+from exactly these three functions while scaffold mode and every trigger remain inert, verify that
+the live concurrency configuration is absent, and only then enable execution in a separately
+reviewed update. If strict singleton execution is required instead, increase account quota
+headroom and restore the reviewed value `1` before enabling triggers.

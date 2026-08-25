@@ -325,9 +325,14 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       resources, seven exact-release Lambdas, four active Standard state machines, five disabled
       triggers, exact zero concurrency on the three maintenance functions, retained private
       foundation resources, and no public web surface
-    - [ ] Implement and review the activation evidence gate: remove the exact three zero
-      concurrency settings while triggers remain disabled, verify their live absence, and only
-      then remove `SCAFFOLD_ONLY` and enable the reviewed triggers in a later update
+    - [ ] Complete the activation evidence gate
+      - [x] Implement deterministic capacity-released and active-draft-only renderers, canonical
+        live-state lineage with fresh COUNT-only preflight evidence, exact processed change-set
+        verification, and the two-approval operator runbook
+      - [ ] Remove the exact three zero concurrency settings while scaffold mode and all five
+        triggers remain disabled, then verify their live absence
+      - [ ] From that proven inert state, remove `SCAFFOLD_ONLY`, enable only the five reviewed
+        triggers in a later update, and verify the active draft-only backend remains idle and safe
     - [ ] Run explicitly authorized deployed non-destructive, double-gated unpublished Printify,
       and moderated first-time-seller acceptance and attach sanitized evidence
     - Evidence: the quota-compatible deployment checkpoint at source commit `678ea4f` passed 2,318
