@@ -114,5 +114,24 @@ five trigger states to inert values. Missing state fields, active values, omitte
 additional asynchronous triggers are rejected, and the exact set is repeated in template
 metadata. Therefore creating this staging segment cannot start scheduled or DynamoDB-stream work.
 
+Staging also changes `ReservedConcurrentExecutions` from `1` to `0` on exactly these three
+maintenance functions, while rejecting a missing cap or a cap on any other function:
+
+- `SourceVersionRetentionFunction`;
+- `TerminalOperationalCleanupFunction`; and
+- `StuckExecutionRecoveryFunction`.
+
+Zero reserved concurrency gives those functions no invocation capacity without consuming from the
+account's unreserved concurrency pool. This is independent fail-closed protection in addition to
+the disabled triggers, and lets the inert stack deploy in accounts whose concurrency quota has no
+headroom above Lambda's required unreserved minimum. The checked source intentionally keeps the
+three singleton values at `1`; both staging renderers prove the exact `1` to `0` transition rather
+than silently accepting source drift.
+
 `--activate` always fails. A separate reviewed CloudFormation UPDATE gate, runtime-trigger
-activation gate, and later web-surface deployment are still required.
+activation gate, and later web-surface deployment are still required. The future activation
+sequence must first remove reserved concurrency from exactly these three functions while scaffold
+mode and every trigger remain inert, verify that the live concurrency configuration is absent,
+and only then enable execution in a separate reviewed update. If strict singleton execution is
+required instead, increase account quota headroom and restore the reviewed value `1` before
+enabling triggers.

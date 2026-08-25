@@ -52,7 +52,10 @@ secret ARN, and the intended future lowercase HTTPS application origin.
 
 DNS and ACM are not required for this inert core deployment. The origin is used only for the
 private artifact bucket's exact CORS rule at this stage. The output remains scaffold-only and all
-five asynchronous triggers remain disabled.
+five asynchronous triggers remain disabled. The renderer also requires exactly the three checked
+maintenance-function concurrency caps at `1`, rewrites them to `0`, and rejects any cap on the
+other four functions. This adds a no-capacity guard without reducing the account's unreserved
+concurrency pool.
 
 Write the template once, then rerun the renderer with `--verify-staged` before uploading it.
 
@@ -70,8 +73,9 @@ use a temporary approval window. The role's transform permission is pinned to
 grant `cloudformation:*`, a wildcard CloudFormation resource, or stack/change-set authority.
 The Lambda concurrency lifecycle actions are separately pinned to the three maintenance functions
 that declare `ReservedConcurrentExecutions`; the other four functions receive no concurrency
-authority. S3 CORS apply and rollback both use the existing exact-bucket `s3:PutBucketCORS`
-permission.
+authority. Staging needs `PutFunctionConcurrency` for the exact zero caps, and a later separately
+reviewed activation transition needs `DeleteFunctionConcurrency` before triggers can be enabled.
+S3 CORS apply and rollback both use the existing exact-bucket `s3:PutBucketCORS` permission.
 
 Read back the `CoreRuntimeExecutionRoleArn` output and require:
 
@@ -84,11 +88,16 @@ arn:aws:iam::<account-id>:role/mr-lister-phase6-runtime-cfn-dev
 Upload the byte-verified rendered template as root to:
 
 ```text
-private/deployments/cloudformation/core/releases/<release>/core-template.json
+private/deployments/cloudformation/core/releases/<release>/core-template-<raw-template-sha256>.json
 ```
 
 Use an explicit SHA-256 checksum, AES256, the expected bucket owner, and `If-None-Match: *`.
-Record the returned non-null VersionId and perform an exact-version checksum-enabled readback.
+Record the returned non-null VersionId and perform an exact-version checksum-enabled readback plus
+an unpaginated singleton `ListObjectVersions` capture for that exact key. If a correction changes
+the rendered bytes, keep the same sealed runtime release but use the new raw-template SHA-256 key;
+never add another version at an earlier template key. Preserve the earlier key, VersionId, change
+set, and outcome as deployment-attempt evidence. If bytes are unchanged, reuse the already proven
+exact VersionId and create only a fresh change set.
 
 Create an `UPDATE` change set for the existing `mr-lister-phase6-dev` stack with:
 

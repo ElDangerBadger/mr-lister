@@ -9,8 +9,9 @@ archive coordinate and binds only the proven runtime and endpoint identity.  A b
 or raw runtime ID is never deployment evidence.  Staging never enables runtime execution: the
 rendered template keeps ``MR_LISTER_PHASE6_SCAFFOLD_ONLY=true`` and advertises only
 ``RELEASE_BOUND_STAGED``.  All four SAM schedule/stream events and the standalone recovery rule
-are disabled.  The default HTTP API endpoint and CloudFront distribution are disabled as well, so
-the retained web infrastructure and routes are not externally served by this staged output.
+are disabled, and the exact three maintenance functions are zero-throttled.  The default HTTP API
+endpoint and CloudFront distribution are disabled as well, so the retained web infrastructure and
+routes are not externally served by this staged output.
 
 Activation is intentionally unavailable here.  A later activation gate must consume independent
 live evidence that binds the reviewed stack, this rendered template and its proof hashes, the
@@ -118,6 +119,13 @@ _FUNCTION_HANDLERS = {
     "TerminalOperationalCleanupFunction": "phase6_lambda.terminal_operational_cleanup_handler",
     "UploadApiFunction": "phase6_lambda.upload_api_handler",
 }
+
+_SOURCE_RESERVED_CONCURRENCY = {
+    "SourceVersionRetentionFunction": 1,
+    "StuckExecutionRecoveryFunction": 1,
+    "TerminalOperationalCleanupFunction": 1,
+}
+_STAGED_RESERVED_CONCURRENCY = {logical_id: 0 for logical_id in _SOURCE_RESERVED_CONCURRENCY}
 
 _DISABLED_SAM_TRIGGER_SPECS = (
     ("DispatcherFunction", "DueWorkSweep", "Schedule"),
@@ -477,9 +485,10 @@ def reject_phase6_sam_activation() -> NoReturn:
 
 
 def verify_phase6_sam_staged_inertness(document: Mapping[str, object]) -> None:
-    """Require the exact closed trigger and external-serving disablement sets."""
+    """Require exact zero concurrency, closed triggers, and external serving."""
 
     try:
+        _require_exact_staged_reserved_concurrency(document)
         _require_exact_disabled_triggers(document)
         _require_exact_disabled_external_serving(document)
     except Exception:
@@ -766,6 +775,8 @@ def _load_scaffold_template(repository: Path) -> dict[str, object]:
             or properties.get("CodeUri") != "lambda/"
         ):
             raise ValueError
+    if _reserved_concurrency_inventory(document) != _SOURCE_RESERVED_CONCURRENCY:
+        raise ValueError
     state_machines = _state_machine_resources(document)
     if set(state_machines) != set(_STATE_MACHINE_AUTHORITIES):
         raise ValueError
@@ -928,10 +939,12 @@ def _render_staged_document(
         "Key": binding.lambda_artifact_key,
         "Version": binding.lambda_artifact_version,
     }
-    for function in _function_resources(rendered).values():
+    for logical_id, function in _function_resources(rendered).items():
         properties = function["Properties"]
         assert isinstance(properties, dict)
         properties["CodeUri"] = deepcopy(code_uri)
+        if logical_id in _STAGED_RESERVED_CONCURRENCY:
+            properties["ReservedConcurrentExecutions"] = _STAGED_RESERVED_CONCURRENCY[logical_id]
 
     rendered_state_machines = _state_machine_resources(rendered)
     if set(rendered_state_machines) != set(state_machine_definitions):
@@ -1029,6 +1042,7 @@ def _validate_staged_document(
         != {"Ref": "ReleaseFingerprint"}
     ):
         raise ValueError
+    _require_exact_staged_reserved_concurrency(document)
     _require_exact_disabled_triggers(document)
     _require_exact_disabled_external_serving(document)
     state_machines = _state_machine_resources(document)
@@ -1176,6 +1190,11 @@ def _disable_external_serving(document: Mapping[str, object]) -> None:
 
 def _require_exact_disabled_triggers(document: Mapping[str, object]) -> None:
     if _automatic_trigger_inventory(document) != _expected_disabled_trigger_metadata():
+        raise ValueError
+
+
+def _require_exact_staged_reserved_concurrency(document: Mapping[str, object]) -> None:
+    if _reserved_concurrency_inventory(document) != _STAGED_RESERVED_CONCURRENCY:
         raise ValueError
 
 
@@ -1344,6 +1363,17 @@ def _function_resources(document: Mapping[str, object]) -> dict[str, Mapping[str
         if resource.get("Type") == "AWS::Serverless::Function":
             functions[name] = resource
     return functions
+
+
+def _reserved_concurrency_inventory(document: Mapping[str, object]) -> dict[str, object]:
+    inventory: dict[str, object] = {}
+    for logical_id, function in _function_resources(document).items():
+        properties = function.get("Properties")
+        if not isinstance(properties, Mapping):
+            raise ValueError
+        if "ReservedConcurrentExecutions" in properties:
+            inventory[logical_id] = properties["ReservedConcurrentExecutions"]
+    return inventory
 
 
 def _state_machine_resources(

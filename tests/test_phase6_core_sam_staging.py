@@ -87,6 +87,13 @@ FUNCTION_HANDLERS = {
     "StuckExecutionRecoveryFunction": "phase6_lambda.stuck_execution_recovery_handler",
     "TerminalOperationalCleanupFunction": "phase6_lambda.terminal_operational_cleanup_handler",
 }
+MAINTENANCE_FUNCTIONS = frozenset(
+    {
+        "SourceVersionRetentionFunction",
+        "StuckExecutionRecoveryFunction",
+        "TerminalOperationalCleanupFunction",
+    }
+)
 
 RESOURCE_TYPES = {
     "DispatcherFunction": "AWS::Serverless::Function",
@@ -519,6 +526,15 @@ def _trigger_state_properties(
     return properties["Events"][event_name]["Properties"]
 
 
+def _maintenance_concurrency_inventory(document: dict[str, object]) -> dict[str, int]:
+    return {
+        logical_id: resource["Properties"]["ReservedConcurrentExecutions"]
+        for logical_id, resource in document["Resources"].items()  # type: ignore[union-attr]
+        if resource["Type"] == "AWS::Serverless::Function"
+        and "ReservedConcurrentExecutions" in resource["Properties"]
+    }
+
+
 def test_exact_core_resource_allowlist_types_count_and_dependency_closure(
     tmp_path: Path,
 ) -> None:
@@ -635,6 +651,13 @@ def test_checked_source_is_active_but_rendered_core_is_exactly_inert(tmp_path: P
             "DISABLED",
         }
 
+    assert _maintenance_concurrency_inventory(source) == {
+        logical_id: 1 for logical_id in MAINTENANCE_FUNCTIONS
+    }
+    assert _maintenance_concurrency_inventory(rendered) == {
+        logical_id: 0 for logical_id in MAINTENANCE_FUNCTIONS
+    }
+
     metadata = rendered["Metadata"]["MrListerPhase6CoreRuntimeStaging"]
     assert metadata["DisabledTriggers"] == DISABLED_TRIGGER_METADATA
     verify_phase6_core_sam_staged_inertness(rendered)
@@ -671,6 +694,58 @@ def test_every_core_trigger_flip_or_missing_state_fails_closed(
         properties[field] = active_value
     else:
         properties.pop(field)
+
+    with pytest.raises(Phase6CoreSamStagingError):
+        verify_phase6_core_sam_staged_inertness(rendered)
+
+
+@pytest.mark.parametrize("logical_id", sorted(MAINTENANCE_FUNCTIONS))
+@pytest.mark.parametrize("mutation", ("one", "missing"))
+def test_each_staged_maintenance_concurrency_drift_fails_closed(
+    tmp_path: Path,
+    logical_id: str,
+    mutation: str,
+) -> None:
+    repository, deployment, artifacts, foundation, endpoint, lambda_object, descriptor = (
+        _repository(tmp_path)
+    )
+    rendered = json.loads(
+        _render(
+            repository,
+            deployment,
+            artifacts,
+            foundation,
+            endpoint,
+            lambda_object,
+            descriptor,
+        )
+    )
+    properties = rendered["Resources"][logical_id]["Properties"]
+    if mutation == "one":
+        properties["ReservedConcurrentExecutions"] = 1
+    else:
+        properties.pop("ReservedConcurrentExecutions")
+
+    with pytest.raises(Phase6CoreSamStagingError):
+        verify_phase6_core_sam_staged_inertness(rendered)
+
+
+def test_extra_staged_function_concurrency_fails_closed(tmp_path: Path) -> None:
+    repository, deployment, artifacts, foundation, endpoint, lambda_object, descriptor = (
+        _repository(tmp_path)
+    )
+    rendered = json.loads(
+        _render(
+            repository,
+            deployment,
+            artifacts,
+            foundation,
+            endpoint,
+            lambda_object,
+            descriptor,
+        )
+    )
+    rendered["Resources"]["DispatcherFunction"]["Properties"]["ReservedConcurrentExecutions"] = 0
 
     with pytest.raises(Phase6CoreSamStagingError):
         verify_phase6_core_sam_staged_inertness(rendered)

@@ -97,6 +97,13 @@ FUNCTION_HANDLERS = {
     "UploadApiFunction": "phase6_lambda.upload_api_handler",
 }
 
+SOURCE_RESERVED_CONCURRENCY = {
+    "SourceVersionRetentionFunction": 1,
+    "StuckExecutionRecoveryFunction": 1,
+    "TerminalOperationalCleanupFunction": 1,
+}
+STAGED_RESERVED_CONCURRENCY = {logical_id: 0 for logical_id in SOURCE_RESERVED_CONCURRENCY}
+
 STATE_MACHINE_IDENTITIES = {
     "PrepareStateMachine": (
         Path("infra/phase6/statemachine/prepare.asl.json"),
@@ -474,6 +481,15 @@ def _functions(document: dict[str, object]) -> dict[str, dict[str, object]]:
     }
 
 
+def _reserved_concurrency_inventory(document: dict[str, object]) -> dict[str, object]:
+    inventory: dict[str, object] = {}
+    for logical_id, function in _functions(document).items():
+        properties = function["Properties"]
+        if "ReservedConcurrentExecutions" in properties:
+            inventory[logical_id] = properties["ReservedConcurrentExecutions"]
+    return inventory
+
+
 def _trigger_state_properties(
     document: dict[str, object], logical_id: str, event_name: str | None
 ) -> dict[str, object]:
@@ -555,6 +571,9 @@ def test_checked_source_serves_and_triggers_but_full_render_is_exactly_inert(
     source = json.loads((repository / SOURCE_TEMPLATE).read_bytes())
     rendered = json.loads(_render(repository, deployment, artifacts, descriptor))
 
+    assert _reserved_concurrency_inventory(source) == SOURCE_RESERVED_CONCURRENCY
+    assert _reserved_concurrency_inventory(rendered) == STAGED_RESERVED_CONCURRENCY
+
     for logical_id, event_name, field, active_value in TRIGGER_STATE_LOCATIONS:
         source_properties = _trigger_state_properties(source, logical_id, event_name)
         if logical_id == "DispatcherFunction" and event_name == "OperationalStateChanges":
@@ -585,6 +604,30 @@ def test_checked_source_serves_and_triggers_but_full_render_is_exactly_inert(
     assert metadata["DisabledTriggers"] == DISABLED_TRIGGER_METADATA
     assert metadata["DisabledExternalServing"] == DISABLED_EXTERNAL_SERVING_METADATA
     verify_phase6_sam_staged_inertness(rendered)
+
+
+@pytest.mark.parametrize("mutation", ("one", "missing", "extra"))
+def test_staged_reserved_concurrency_drift_fails_closed(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    repository, deployment, artifacts, descriptor = _repository(tmp_path)
+    rendered = json.loads(_render(repository, deployment, artifacts, descriptor))
+    if mutation == "one":
+        rendered["Resources"]["SourceVersionRetentionFunction"]["Properties"][  # type: ignore[index]
+            "ReservedConcurrentExecutions"
+        ] = 1
+    elif mutation == "missing":
+        rendered["Resources"]["StuckExecutionRecoveryFunction"]["Properties"].pop(  # type: ignore[index]
+            "ReservedConcurrentExecutions"
+        )
+    else:
+        rendered["Resources"]["DispatcherFunction"]["Properties"][  # type: ignore[index]
+            "ReservedConcurrentExecutions"
+        ] = 0
+
+    with pytest.raises(Phase6SamStagingError):
+        verify_phase6_sam_staged_inertness(rendered)
 
 
 @pytest.mark.parametrize(

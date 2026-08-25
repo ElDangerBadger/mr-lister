@@ -5,10 +5,10 @@ seven non-web Lambda functions, four Step Functions workflows, and their exact s
 resources from the checked full Phase 6 SAM authority.  It never builds, packages, uploads,
 contacts AWS, or enables runtime execution.
 
-The resulting template keeps ``MR_LISTER_PHASE6_SCAFFOLD_ONLY=true`` and disables the exact closed
-set of four SAM schedule/stream events plus the standalone recovery rule.  It may be used only to
-review and stage the backend slice; runtime-trigger activation and the seller web surface remain
-separate later gates.
+The resulting template keeps ``MR_LISTER_PHASE6_SCAFFOLD_ONLY=true``, disables the exact closed
+set of four SAM schedule/stream events plus the standalone recovery rule, and zero-throttles the
+exact three maintenance functions.  It may be used only to review and stage the backend slice;
+runtime-trigger activation and the seller web surface remain separate later gates.
 """
 
 from __future__ import annotations
@@ -199,6 +199,13 @@ _OUTPUTS = frozenset(
 )
 _FOUNDATION_RESOURCES = frozenset(
     {"OperationalStateTable", "PrivateArtifactBucket", "PrivateArtifactBucketPolicy"}
+)
+_MAINTENANCE_FUNCTIONS = frozenset(
+    {
+        "SourceVersionRetentionFunction",
+        "StuckExecutionRecoveryFunction",
+        "TerminalOperationalCleanupFunction",
+    }
 )
 _DISABLED_SAM_TRIGGER_SPECS = (
     ("DispatcherFunction", "DueWorkSweep", "Schedule"),
@@ -495,10 +502,11 @@ def verify_core_runtime_dependency_closure(document: Mapping[str, object]) -> No
 
 
 def verify_phase6_core_sam_staged_inertness(document: Mapping[str, object]) -> None:
-    """Require the exact closed set of staged backend triggers to be disabled."""
+    """Require exact trigger disablement and zero-throttled maintenance functions."""
 
     try:
         _require_exact_disabled_triggers(document)
+        _require_exact_staged_maintenance_concurrency(document)
     except Exception:
         raise Phase6CoreSamStagingError(_GENERIC_ERROR) from None
 
@@ -909,6 +917,7 @@ def _render_document(
         if properties.pop("DefinitionUri", None) is None:
             raise ValueError
         properties["Definition"] = deepcopy(dict(definition))
+    _zero_staging_maintenance_concurrency(resources)
     _disable_staging_triggers(resources)
 
     outputs = {name: deepcopy(source_outputs[name]) for name in sorted(_OUTPUTS)}
@@ -992,6 +1001,7 @@ def _validate_rendered_document(
     if _global_variables(document).get("MR_LISTER_PHASE6_SCAFFOLD_ONLY") != "true":
         raise ValueError
     _require_exact_disabled_triggers(document)
+    _require_exact_staged_maintenance_concurrency(document)
     parameters = document.get("Parameters")
     if not isinstance(parameters, Mapping) or set(parameters) != set(_PARAMETER_FIELDS):
         raise ValueError
@@ -1136,6 +1146,52 @@ def _disable_staging_triggers(resources: Mapping[str, object]) -> None:
             raise ValueError
         properties["State"] = "DISABLED"
     _require_exact_disabled_triggers(source_document)
+
+
+def _zero_staging_maintenance_concurrency(resources: Mapping[str, object]) -> None:
+    document = {"Resources": resources}
+    if _maintenance_concurrency_inventory(document) != {
+        logical_id: 1 for logical_id in _MAINTENANCE_FUNCTIONS
+    }:
+        raise ValueError
+    for logical_id in _MAINTENANCE_FUNCTIONS:
+        resource = resources.get(logical_id)
+        if not isinstance(resource, Mapping):
+            raise ValueError
+        properties = resource.get("Properties")
+        if not isinstance(properties, dict):
+            raise ValueError
+        properties["ReservedConcurrentExecutions"] = 0
+    _require_exact_staged_maintenance_concurrency(document)
+
+
+def _require_exact_staged_maintenance_concurrency(document: Mapping[str, object]) -> None:
+    if _maintenance_concurrency_inventory(document) != {
+        logical_id: 0 for logical_id in _MAINTENANCE_FUNCTIONS
+    }:
+        raise ValueError
+
+
+def _maintenance_concurrency_inventory(document: Mapping[str, object]) -> dict[str, int]:
+    resources = document.get("Resources")
+    if not isinstance(resources, Mapping):
+        raise ValueError
+    inventory: dict[str, int] = {}
+    for logical_id, resource in resources.items():
+        if not isinstance(logical_id, str) or not isinstance(resource, Mapping):
+            raise ValueError
+        if resource.get("Type") != "AWS::Serverless::Function":
+            continue
+        properties = resource.get("Properties")
+        if not isinstance(properties, Mapping):
+            raise ValueError
+        if "ReservedConcurrentExecutions" not in properties:
+            continue
+        value = properties["ReservedConcurrentExecutions"]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError
+        inventory[logical_id] = value
+    return inventory
 
 
 def _require_exact_disabled_triggers(document: Mapping[str, object]) -> None:
