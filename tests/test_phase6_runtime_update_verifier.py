@@ -93,6 +93,16 @@ def _times() -> tuple[datetime, datetime, datetime]:
     return event, created, expires
 
 
+def _policy_statement(value: dict[str, Any], sid: str) -> dict[str, Any]:
+    matches = [
+        statement
+        for statement in value["PolicyDocument"]["Statement"]
+        if statement.get("Sid") == sid
+    ]
+    assert len(matches) == 1
+    return matches[0]
+
+
 @pytest.fixture(autouse=True)
 def _closed_local_lambda_artifact_verifiers(monkeypatch: pytest.MonkeyPatch) -> None:
     def verify_artifacts(
@@ -1078,13 +1088,15 @@ def test_foundation_old_role_and_new_authority_cannot_be_conflated(
         ),
         (
             "execution-policy.json",
-            lambda value: value["PolicyDocument"]["Statement"][0].__setitem__("Action", "*"),
+            lambda value: _policy_statement(value, "UseOnlyPhase6SamTransform").__setitem__(
+                "Action", "*"
+            ),
         ),
         (
             "execution-policy.json",
-            lambda value: value["PolicyDocument"]["Statement"][1]["Condition"][
-                "StringEquals"
-            ].__setitem__("s3:VersionId", "other-version"),
+            lambda value: _policy_statement(value, "ReadOnlyExactLambdaDeploymentArchiveVersion")[
+                "Condition"
+            ]["StringEquals"].__setitem__("s3:VersionId", "other-version"),
         ),
         (
             "deployer-role.json",

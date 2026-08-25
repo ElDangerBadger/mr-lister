@@ -11,7 +11,9 @@ Root is used only for the two actions that require broad control:
 
 CloudFormation still runs through `mr-lister-phase6-runtime-cfn-dev`, not with root's ambient
 authority. That retained role can manage only the named Phase 6 dev backend resources and can read
-only the exact Lambda object key and S3 VersionId supplied to its bootstrap.
+only the exact Lambda object key and S3 VersionId supplied to its bootstrap. Its sole
+CloudFormation action is `CreateChangeSet` on the exact regional
+`AWS::Serverless-2016-10-31` transform so CloudFormation can expand the staged SAM template.
 
 ## 1. Upload and read back the Lambda archive
 
@@ -63,7 +65,9 @@ VersionId.
 
 The bootstrap contains exactly one retained IAM role. It does not create or attach a managed
 policy, reference `mr-lister-developers`, grant upload authority, create a deployer identity, or
-use a temporary approval window.
+use a temporary approval window. The role's transform permission is pinned to
+`arn:${AWS::Partition}:cloudformation:us-west-2:aws:transform/Serverless-2016-10-31`; it does not
+grant `cloudformation:*`, a wildcard CloudFormation resource, or stack/change-set authority.
 
 Read back the `CoreRuntimeExecutionRoleArn` output and require:
 

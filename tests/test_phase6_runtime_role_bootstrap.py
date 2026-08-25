@@ -8,6 +8,9 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP_PATH = ROOT / "infra/phase6/runtime-role-bootstrap.json"
 LEGACY_BOOTSTRAP_PATH = ROOT / "infra/phase6/runtime-update-bootstrap.json"
+SAM_TRANSFORM_ARN = (
+    "arn:${AWS::Partition}:cloudformation:us-west-2:aws:transform/Serverless-2016-10-31"
+)
 
 
 def _document(path: Path) -> dict[str, Any]:
@@ -118,7 +121,7 @@ def test_execution_role_keeps_exact_resource_and_wildcard_boundaries() -> None:
     role = _document(BOOTSTRAP_PATH)["Resources"]["CoreRuntimeExecutionRole"]
     statements = _statements(role)
 
-    assert len(statements) == 14
+    assert len(statements) == 15
     wildcard = {
         sid: statement for sid, statement in statements.items() if statement["Resource"] == "*"
     }
@@ -130,6 +133,30 @@ def test_execution_role_keeps_exact_resource_and_wildcard_boundaries() -> None:
         statement["Condition"]["StringEquals"]["aws:RequestedRegion"] == "us-west-2"
         for statement in wildcard.values()
     )
+
+    assert statements["UseOnlyPhase6SamTransform"] == {
+        "Sid": "UseOnlyPhase6SamTransform",
+        "Effect": "Allow",
+        "Action": "cloudformation:CreateChangeSet",
+        "Resource": {"Fn::Sub": SAM_TRANSFORM_ARN},
+    }
+    cloudformation_authority = []
+    for sid, statement in statements.items():
+        actions = (
+            statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]]
+        )
+        cloudformation_authority.extend(
+            (sid, action, statement["Resource"])
+            for action in actions
+            if action.startswith("cloudformation:")
+        )
+    assert cloudformation_authority == [
+        (
+            "UseOnlyPhase6SamTransform",
+            "cloudformation:CreateChangeSet",
+            {"Fn::Sub": SAM_TRANSFORM_ARN},
+        )
+    ]
 
     artifact = statements["ReadOnlyExactLambdaDeploymentArchiveVersion"]
     assert artifact == {

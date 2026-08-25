@@ -134,6 +134,12 @@
               "Version": "2012-10-17",
               "Statement": [
                 {
+                  "Sid": "UseOnlyPhase6SamTransform",
+                  "Effect": "Allow",
+                  "Action": "cloudformation:CreateChangeSet",
+                  "Resource": {"Fn::Sub": "arn:${AWS::Partition}:cloudformation:us-west-2:aws:transform/Serverless-2016-10-31"}
+                },
+                {
                   "Sid": "ManageOnlyCoreRuntimeRoles",
                   "Effect": "Allow",
                   "Action": [

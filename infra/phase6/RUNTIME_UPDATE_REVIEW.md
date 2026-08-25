@@ -18,7 +18,10 @@ Keep these roles distinct:
 | Change-set caller | `mr-lister-phase6-runtime-update-deployer-dev` | Expiring isolated creator/reader |
 
 The bootstrap never edits or broadens the foundation role. The deployer cannot call
-`cloudformation:ExecuteChangeSet`.
+`cloudformation:ExecuteChangeSet`. Its caller-side permission to use the SAM transform is distinct
+from the runtime execution role's own exact `cloudformation:CreateChangeSet` permission on
+`arn:${AWS::Partition}:cloudformation:us-west-2:aws:transform/Serverless-2016-10-31`; both are
+required for transformed-template review, and neither grants change-set execution.
 
 ## Root-applied two-stage bootstrap
 

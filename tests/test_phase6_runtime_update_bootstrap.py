@@ -6,6 +6,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP_PATH = ROOT / "infra/phase6/runtime-update-bootstrap.json"
+SAM_TRANSFORM_ARN = (
+    "arn:${AWS::Partition}:cloudformation:us-west-2:aws:transform/Serverless-2016-10-31"
+)
 
 
 def _bootstrap() -> dict[str, Any]:
@@ -215,6 +218,12 @@ def test_core_execution_role_is_separate_retained_and_lambda_version_scoped() ->
     assert len(properties["Policies"]) == 1
     assert properties["Policies"][0]["PolicyName"] == ("mr-lister-phase6-runtime-execution-dev")
     statements = _statements(properties["Policies"][0])
+    assert statements["UseOnlyPhase6SamTransform"] == {
+        "Sid": "UseOnlyPhase6SamTransform",
+        "Effect": "Allow",
+        "Action": "cloudformation:CreateChangeSet",
+        "Resource": {"Fn::Sub": SAM_TRANSFORM_ARN},
+    }
     artifact = statements["ReadOnlyExactLambdaDeploymentArchiveVersion"]
     assert artifact["Action"] == "s3:GetObjectVersion"
     assert artifact["Condition"] == {"StringEquals": {"s3:VersionId": {"Ref": "LambdaVersionId"}}}
