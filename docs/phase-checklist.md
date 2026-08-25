@@ -316,17 +316,25 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [x] Bind both sealed source trees and an immutable versioned AgentCore endpoint into release
       authority; add deterministic Linux ARM64 build requests, native-artifact inspection, and
       cross-component release sealing
-    - [ ] Produce the real controlled Linux ARM64 dependency artifacts, run target import smoke,
-      wire the sealed Lambda `CodeUri` and AgentCore release, and deploy the composed handlers
+    - [x] Produce the real controlled Linux ARM64 dependency artifacts, run target import smoke,
+      wire the sealed Lambda `CodeUri` and AgentCore release, and deploy the composed handlers in
+      fail-closed inert core staging
     - [x] Add read-before-settle stuck-execution recovery, bounded schedules/DLQ, and closed
       operational alarms without workflow-redrive or provider authority
-    - [ ] Complete release/deploy execution and smoke tooling; only then remove `SCAFFOLD_ONLY`
+    - [x] Complete the reviewed inert core deployment: `CORE_RELEASE_BOUND_STAGED`, 47 complete
+      resources, seven exact-release Lambdas, four active Standard state machines, five disabled
+      triggers, exact zero concurrency on the three maintenance functions, retained private
+      foundation resources, and no public web surface
+    - [ ] Implement and review the activation evidence gate: remove the exact three zero
+      concurrency settings while triggers remain disabled, verify their live absence, and only
+      then remove `SCAFFOLD_ONLY` and enable the reviewed triggers in a later update
     - [ ] Run explicitly authorized deployed non-destructive, double-gated unpublished Printify,
       and moderated first-time-seller acceptance and attach sanitized evidence
-    - Evidence: 1,419 full Python tests passed with 11 gated live-Bedrock skips; 697 Phase 6 and
-      490 Phase 6.6 tests passed; the 62-test web gate, tri-engine exact-bundle harness, Ruff,
-      formatting, compileall, both contract drift checks, npm audit, SAM lint/build, and diff
-      hygiene passed. Details: [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
+    - Evidence: the quota-compatible deployment checkpoint at source commit `678ea4f` passed 2,318
+      Python tests with 11 gated live-Bedrock skips plus the 62-test web gate, lint, strict
+      typecheck, production build, SAM lint, and diff hygiene. The live `us-west-2` stack reached
+      `UPDATE_COMPLETE` with no failure or rollback event and remains deliberately unactivated.
+      Acceptance details: [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
 - [ ] Phase 7 — Etsy publication through Printify
   - [x] Freeze publication-disabled contract 7.0.1: separate aggregate authority, complete
     one-shot permit semantics, positive-proof-only GET reconciliation, verified safe link,
