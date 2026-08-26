@@ -576,11 +576,20 @@ scope for Update 2 is:
 All twelve records must have `Scope=["Properties"]` and exactly one
 Static/DirectModification/Never detail at the named path.
 
-There may be no `Add`, `Remove`, replacement, code or role change, IAM expansion, concurrency
-change, state-machine definition change, foundation change, or web resource. The transition
-change-set verifier must accept the current capacity Original/Processed template observations and
-enforce this exact scope. Separately, the live-state verifier must accept a fresh capacity document
-whose immutable lineage links to staged.
+Retain the separate resource-level observation for this update as well. CloudFormation may report
+an exact 25-resource conservative closure: the twelve resolved direct changes above plus four
+Lambda permissions, four state-machine roles, four state machines, and the recovery queue policy.
+Those thirteen additional processed resources must be byte-identical before and after and appear
+only through `Dynamic` `ResourceAttribute` propagation from the directly changed functions or
+rules. Reject any resource outside that closed set, `Add`, `Remove`, known `Replacement=True`, or
+additional direct modification. The property-value observation remains authoritative for the
+resolved twelve-resource semantic delta.
+
+In the resolved property-value view there may be no `Add`, `Remove`, replacement, code or role
+change, IAM expansion, concurrency change, state-machine definition change, foundation change, or
+web resource. The transition change-set verifier must accept the current capacity
+Original/Processed template observations and enforce this exact scope. Separately, the live-state
+verifier must accept a fresh capacity document whose immutable lineage links to staged.
 
 Run the same six-file verifier invocation from section 4 with
 `--target backend-active-draft-only`, `--target-template "$MR6_ACTIVE_TEMPLATE"`, and the newly
