@@ -71,7 +71,7 @@ STAGED_TEMPLATE_OUTPUT = Path(
 DEFAULT_DEPLOYMENT_ROOT = ROOT / ".mr_lister_private/phase6-deployment"
 DEFAULT_ARTIFACT_ROOT = ROOT / ".mr_lister_private/phase6-artifacts"
 
-_SOURCE_TEMPLATE_SHA256 = "9a110b3e813ed23102033ace67341d9cb4015274d7acc9f0fff6c08439c57ed7"
+_SOURCE_TEMPLATE_SHA256 = "6b8221fd526cd06cf76cf0029d9c2cd6baf81662aeaa280aa573391e0dfdec3b"
 _GENERIC_ERROR = "Phase 6 SAM staged deployment configuration is invalid"
 
 

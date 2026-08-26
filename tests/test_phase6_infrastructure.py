@@ -364,9 +364,10 @@ def test_functions_have_distinct_explicit_roles_and_scaffold_gate() -> None:
     )
     assert template["Outputs"]["DeploymentReadiness"]["Value"] == "SCAFFOLD_ONLY"
     assert all("ManagedPolicyArns" not in resources[role]["Properties"] for role in roles)
+    assert functions["DispatcherFunction"]["Properties"]["Timeout"] == 120
     assert functions["PreparationDispatchFunction"]["Properties"]["Timeout"] == 600
     assert functions["ProviderDraftFunction"]["Properties"]["Timeout"] == 600
-    assert functions["SettlementFunction"]["Properties"]["Timeout"] == 30
+    assert functions["SettlementFunction"]["Properties"]["Timeout"] == 120
     assert functions["SourceVersionRetentionFunction"]["Properties"]["Timeout"] == 300
     assert functions["TerminalOperationalCleanupFunction"]["Properties"]["Timeout"] == 300
     assert functions["StuckExecutionRecoveryFunction"]["Properties"]["Timeout"] == 120

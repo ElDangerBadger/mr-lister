@@ -610,6 +610,8 @@ def test_all_seven_handlers_and_four_inline_state_machines_are_exact(
         if resource["Type"] == "AWS::Serverless::Function"
     } == FUNCTION_HANDLERS
     assert all(resources[name]["Properties"]["CodeUri"] == code_uri for name in FUNCTION_HANDLERS)
+    assert resources["DispatcherFunction"]["Properties"]["Timeout"] == 120
+    assert resources["SettlementFunction"]["Properties"]["Timeout"] == 120
     for logical_id, relative in STATE_MACHINES.items():
         properties = resources[logical_id]["Properties"]
         assert "DefinitionUri" not in properties

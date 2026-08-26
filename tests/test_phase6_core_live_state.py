@@ -64,6 +64,44 @@ TRIGGERS = (
     ("stuck-execution-recovery-schedule", "eventbridge-rule"),
     ("terminal-operational-cleanup-schedule", "eventbridge-rule"),
 )
+FUNCTION_TIMEOUT_SECONDS = {
+    "mr-lister-phase6-dev-dispatcher": 120,
+    "mr-lister-phase6-dev-execution-recovery": 120,
+    "mr-lister-phase6-dev-preparation-dispatch": 600,
+    "mr-lister-phase6-dev-provider-draft": 600,
+    "mr-lister-phase6-dev-settlement": 120,
+    "mr-lister-phase6-dev-source-retention": 300,
+    "mr-lister-phase6-dev-terminal-cleanup": 300,
+}
+CHECKPOINT_FILTER_EXPRESSION = (
+    "NOT ((#pk = :source_pk AND #sk = :checkpoint_sk AND "
+    "#entity_type = :source_entity_type AND #contract_version = :contract_version AND "
+    "attribute_type(#revision, :number_type) AND #revision >= :minimum_revision AND "
+    "attribute_type(#payload, :string_type)) OR "
+    "(#pk = :cleanup_pk AND #sk = :checkpoint_sk AND "
+    "#entity_type = :cleanup_entity_type AND #contract_version = :contract_version AND "
+    "attribute_type(#revision, :number_type) AND #revision >= :minimum_revision AND "
+    "attribute_type(#payload, :string_type)))"
+)
+CHECKPOINT_FILTER_ATTRIBUTE_NAMES = {
+    "#contract_version": "contract_version",
+    "#entity_type": "entity_type",
+    "#payload": "payload",
+    "#pk": "PK",
+    "#revision": "revision",
+    "#sk": "SK",
+}
+CHECKPOINT_FILTER_ATTRIBUTE_VALUES = {
+    ":checkpoint_sk": {"S": "CHECKPOINT"},
+    ":cleanup_entity_type": {"S": "TERMINAL_OPERATIONAL_CLEANUP_CHECKPOINT"},
+    ":cleanup_pk": {"S": "SYSTEM#TERMINAL_OPERATIONAL_CLEANUP"},
+    ":contract_version": {"S": "1.0.0"},
+    ":minimum_revision": {"N": "1"},
+    ":number_type": {"S": "N"},
+    ":source_entity_type": {"S": "SOURCE_VERSION_RETENTION_CHECKPOINT"},
+    ":source_pk": {"S": "SYSTEM#SOURCE_VERSION_RETENTION"},
+    ":string_type": {"S": "S"},
+}
 
 
 def _mode_values(mode: str) -> tuple[str, str, bool, bool, int | None, str | None]:
@@ -107,24 +145,48 @@ def _predecessor_evidence(mode: str | None) -> dict[str, object] | None:
     }
 
 
-def _preflight(captured_at: str = CAPTURE_TIME) -> dict[str, object]:
+def _preflight(
+    captured_at: str = CAPTURE_TIME,
+    *,
+    evidence_format: str = live.EVIDENCE_FORMAT,
+    total_count: int = 0,
+) -> dict[str, object]:
+    request: dict[str, object] = {
+        "ConsistentRead": True,
+        "Select": "COUNT",
+        "TableName": "mr-lister-phase6-dev",
+    }
+    if evidence_format == live.EVIDENCE_FORMAT_V2:
+        request.update(
+            {
+                "ExpressionAttributeNames": dict(CHECKPOINT_FILTER_ATTRIBUTE_NAMES),
+                "ExpressionAttributeValues": {
+                    key: dict(value) for key, value in CHECKPOINT_FILTER_ATTRIBUTE_VALUES.items()
+                },
+                "FilterExpression": CHECKPOINT_FILTER_EXPRESSION,
+            }
+        )
     return {
         "captured_at": captured_at,
         "running_executions": [
             {"name": name, "running_execution_count": 0} for name in STATE_MACHINE_NAMES
         ],
         "table_scan": {
-            "request": {
-                "ConsistentRead": True,
-                "Select": "COUNT",
-                "TableName": "mr-lister-phase6-dev",
+            "request": request,
+            "response": {
+                "Count": 0,
+                "LastEvaluatedKey": None,
+                "ScannedCount": total_count,
             },
-            "response": {"Count": 0, "LastEvaluatedKey": None, "ScannedCount": 0},
         },
     }
 
 
-def _document(mode: str = "staged") -> dict[str, object]:
+def _document(
+    mode: str = "staged",
+    *,
+    evidence_format: str = live.EVIDENCE_FORMAT,
+) -> dict[str, object]:
     readiness, deployment_mode, scaffold, triggers_enabled, concurrency, predecessor = _mode_values(
         mode
     )
@@ -143,7 +205,7 @@ def _document(mode: str = "staged") -> dict[str, object]:
             "runtime_version": "1",
         },
         "capture_time": CAPTURE_TIME,
-        "format": live.EVIDENCE_FORMAT,
+        "format": evidence_format,
         "foundation": {
             "artifact_bucket": {
                 "all_public_access_blocks_enabled": True,
@@ -181,6 +243,11 @@ def _document(mode: str = "staged") -> dict[str, object]:
                     "runtime": "python3.12",
                     "scaffold_only": scaffold,
                     "state": "Active",
+                    **(
+                        {"timeout_seconds": FUNCTION_TIMEOUT_SECONDS[name]}
+                        if evidence_format == live.EVIDENCE_FORMAT_V2
+                        else {}
+                    ),
                 }
                 for name in FUNCTION_NAMES
             ],
@@ -197,7 +264,7 @@ def _document(mode: str = "staged") -> dict[str, object]:
         },
         "mode": mode,
         "predecessor_evidence": _predecessor_evidence(predecessor),
-        "preflight": _preflight(),
+        "preflight": _preflight(evidence_format=evidence_format),
         "public_web_surface": {
             "acm": False,
             "api_gateway": False,
@@ -386,6 +453,56 @@ def test_accepts_each_exact_mode_and_returns_frozen_canonical_record(
     assert set(maintenance.values()) == {maintenance_concurrency}
     with pytest.raises(FrozenInstanceError):
         verified.mode = "staged"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ["staged", "capacity-released-inert", "backend-active-draft-only"],
+)
+@pytest.mark.parametrize("total_count", [0, 1, 2])
+def test_v2_accepts_only_checkpoint_totals_with_exact_timeouts_and_v1_lineage(
+    tmp_path: Path,
+    mode: str,
+    total_count: int,
+) -> None:
+    document = _document(mode, evidence_format=live.EVIDENCE_FORMAT_V2)
+    document["preflight"] = _preflight(
+        evidence_format=live.EVIDENCE_FORMAT_V2,
+        total_count=total_count,
+    )
+    # DescribeTable ItemCount is approximate and need not equal the authoritative strong scan.
+    document["foundation"]["table"]["item_count"] = 2 - total_count  # type: ignore[index]
+
+    verified = _verify(tmp_path, document)
+
+    assert verified.format == live.EVIDENCE_FORMAT_V2
+    assert verified.mode == mode
+    assert {
+        function["name"]: function["timeout_seconds"]
+        for function in document["lambda"]["functions"]  # type: ignore[index]
+    } == FUNCTION_TIMEOUT_SECONDS
+
+
+def test_v2_uses_exact_count_only_unexpected_checkpoint_filter(tmp_path: Path) -> None:
+    document = _document(
+        "backend-active-draft-only",
+        evidence_format=live.EVIDENCE_FORMAT_V2,
+    )
+    request = document["preflight"]["table_scan"]["request"]  # type: ignore[index]
+    response = document["preflight"]["table_scan"]["response"]  # type: ignore[index]
+
+    assert request == {
+        "ConsistentRead": True,
+        "ExpressionAttributeNames": CHECKPOINT_FILTER_ATTRIBUTE_NAMES,
+        "ExpressionAttributeValues": CHECKPOINT_FILTER_ATTRIBUTE_VALUES,
+        "FilterExpression": CHECKPOINT_FILTER_EXPRESSION,
+        "Select": "COUNT",
+        "TableName": live.TABLE_NAME,
+    }
+    assert response == {"Count": 0, "LastEvaluatedKey": None, "ScannedCount": 0}
+    assert "Item" not in response
+    assert "Items" not in response
+    _verify(tmp_path, document)
 
 
 @pytest.mark.parametrize("mode", ["capacity-released-inert", "backend-active-draft-only"])
@@ -785,6 +902,112 @@ def test_rejects_predecessor_captured_after_its_successor(tmp_path: Path) -> Non
         )
 
 
+def test_v2_active_accepts_fully_validated_v1_capacity_and_staged_lineage(
+    tmp_path: Path,
+) -> None:
+    active = _document(
+        "backend-active-draft-only",
+        evidence_format=live.EVIDENCE_FORMAT_V2,
+    )
+    path, capacity_path, staged_path = _write_validation_set(tmp_path, active)
+    assert capacity_path is not None
+    assert staged_path is not None
+    assert json.loads(capacity_path.read_text(encoding="utf-8"))["format"] == live.EVIDENCE_FORMAT
+    assert json.loads(staged_path.read_text(encoding="utf-8"))["format"] == live.EVIDENCE_FORMAT
+
+    verified = verify_phase6_core_live_state(
+        path,
+        now=NOW,
+        predecessor_evidence_path=capacity_path,
+        staged_ancestor_evidence_path=staged_path,
+    )
+
+    assert verified.format == live.EVIDENCE_FORMAT_V2
+
+
+def test_v2_active_accepts_v2_capacity_and_staged_lineage(tmp_path: Path) -> None:
+    staged = _document("staged", evidence_format=live.EVIDENCE_FORMAT_V2)
+    _set_capture_time(staged, "2026-08-25T22:55:00Z")
+    staged_path = _write(tmp_path, staged, name="v2-staged.json")
+
+    capacity = _document(
+        "capacity-released-inert",
+        evidence_format=live.EVIDENCE_FORMAT_V2,
+    )
+    _set_capture_time(capacity, PREDECESSOR_TIME)
+    capacity_link = capacity["predecessor_evidence"]
+    assert isinstance(capacity_link, dict)
+    capacity_link["captured_at"] = staged["capture_time"]
+    capacity_link["evidence_sha256"] = sha256(staged_path.read_bytes()).hexdigest()
+    capacity_path = _write(tmp_path, capacity, name="v2-capacity.json")
+
+    active = _document(
+        "backend-active-draft-only",
+        evidence_format=live.EVIDENCE_FORMAT_V2,
+    )
+    active_link = active["predecessor_evidence"]
+    assert isinstance(active_link, dict)
+    active_link["captured_at"] = capacity["capture_time"]
+    active_link["evidence_sha256"] = sha256(capacity_path.read_bytes()).hexdigest()
+    active_path = _write(tmp_path, active, name="v2-active.json")
+
+    verified = verify_phase6_core_live_state(
+        active_path,
+        now=NOW,
+        predecessor_evidence_path=capacity_path,
+        staged_ancestor_evidence_path=staged_path,
+    )
+
+    assert verified.mode == "backend-active-draft-only"
+    assert verified.format == live.EVIDENCE_FORMAT_V2
+
+
+def test_v1_lineage_rejects_v2_predecessor_and_v2_revalidates_v1_predecessor(
+    tmp_path: Path,
+) -> None:
+    staged_v2 = _document("staged", evidence_format=live.EVIDENCE_FORMAT_V2)
+    _set_capture_time(staged_v2, PREDECESSOR_TIME)
+    staged_v2_path = _write(tmp_path, staged_v2, name="v2-predecessor.json")
+    capacity_v1 = _document("capacity-released-inert")
+    capacity_v1_link = capacity_v1["predecessor_evidence"]
+    assert isinstance(capacity_v1_link, dict)
+    capacity_v1_link["evidence_sha256"] = sha256(staged_v2_path.read_bytes()).hexdigest()
+    capacity_v1_path = _write(tmp_path, capacity_v1, name="v1-capacity.json")
+    with pytest.raises(Phase6CoreLiveStateError):
+        verify_phase6_core_live_state(
+            capacity_v1_path,
+            now=NOW,
+            predecessor_evidence_path=staged_v2_path,
+        )
+
+    staged_v1 = _document("staged")
+    _set_capture_time(staged_v1, "2026-08-25T22:55:00Z")
+    staged_v1_path = _write(tmp_path, staged_v1, name="malformed-v1-staged.json")
+    capacity_v1 = _document("capacity-released-inert")
+    _set_capture_time(capacity_v1, PREDECESSOR_TIME)
+    capacity_v1["preflight"]["table_scan"]["response"]["Count"] = 1  # type: ignore[index]
+    capacity_v1_link = capacity_v1["predecessor_evidence"]
+    assert isinstance(capacity_v1_link, dict)
+    capacity_v1_link["captured_at"] = staged_v1["capture_time"]
+    capacity_v1_link["evidence_sha256"] = sha256(staged_v1_path.read_bytes()).hexdigest()
+    malformed_capacity_path = _write(tmp_path, capacity_v1, name="malformed-v1-capacity.json")
+    active_v2 = _document(
+        "backend-active-draft-only",
+        evidence_format=live.EVIDENCE_FORMAT_V2,
+    )
+    active_link = active_v2["predecessor_evidence"]
+    assert isinstance(active_link, dict)
+    active_link["evidence_sha256"] = sha256(malformed_capacity_path.read_bytes()).hexdigest()
+    active_path = _write(tmp_path, active_v2, name="active-with-malformed-v1-lineage.json")
+    with pytest.raises(Phase6CoreLiveStateError):
+        verify_phase6_core_live_state(
+            active_path,
+            now=NOW,
+            predecessor_evidence_path=malformed_capacity_path,
+            staged_ancestor_evidence_path=staged_v1_path,
+        )
+
+
 @pytest.mark.parametrize(
     ("path", "bad_value"),
     [
@@ -819,6 +1042,214 @@ def test_rejects_item_content_field_or_running_preflight_execution(tmp_path: Pat
     running = document["preflight"]["running_executions"]  # type: ignore[index]
     running[0]["running_execution_count"] = 1
     _reject(tmp_path, document)
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("ConsistentRead", False),
+        ("ConsistentRead", 1),
+        ("FilterExpression", CHECKPOINT_FILTER_EXPRESSION + " "),
+        ("Select", "ALL_ATTRIBUTES"),
+        ("TableName", "mr-lister-phase6-other"),
+    ],
+)
+def test_v2_rejects_checkpoint_scan_request_key_or_filter_drift(
+    tmp_path: Path,
+    field: str,
+    bad_value: object,
+) -> None:
+    document = _document(
+        "backend-active-draft-only",
+        evidence_format=live.EVIDENCE_FORMAT_V2,
+    )
+    request = document["preflight"]["table_scan"]["request"]  # type: ignore[index]
+    request[field] = bad_value
+    _reject(tmp_path, document)
+
+
+@pytest.mark.parametrize(
+    "missing_key",
+    [
+        "ConsistentRead",
+        "ExpressionAttributeNames",
+        "ExpressionAttributeValues",
+        "FilterExpression",
+        "Select",
+        "TableName",
+    ],
+)
+def test_v2_rejects_every_missing_checkpoint_scan_request_key(
+    tmp_path: Path,
+    missing_key: str,
+) -> None:
+    document = _document("staged", evidence_format=live.EVIDENCE_FORMAT_V2)
+    request = document["preflight"]["table_scan"]["request"]  # type: ignore[index]
+    request.pop(missing_key)
+    _reject(tmp_path, document)
+
+
+def test_v2_rejects_extra_checkpoint_scan_request_key(tmp_path: Path) -> None:
+    document = _document("staged", evidence_format=live.EVIDENCE_FORMAT_V2)
+    request = document["preflight"]["table_scan"]["request"]  # type: ignore[index]
+    request["Limit"] = 2
+    _reject(tmp_path, document)
+
+
+@pytest.mark.parametrize(
+    ("name", "bad_value"),
+    [
+        ("#contract_version", "contractVersion"),
+        ("#entity_type", "entity"),
+        ("#payload", "checkpoint_payload"),
+        ("#pk", "partition_key"),
+        ("#revision", "record_version"),
+        ("#sk", "sort_key"),
+    ],
+)
+def test_v2_rejects_every_checkpoint_filter_attribute_name_drift(
+    tmp_path: Path,
+    name: str,
+    bad_value: str,
+) -> None:
+    document = _document("staged", evidence_format=live.EVIDENCE_FORMAT_V2)
+    names = document["preflight"]["table_scan"]["request"][  # type: ignore[index]
+        "ExpressionAttributeNames"
+    ]
+    names[name] = bad_value
+    _reject(tmp_path, document)
+
+
+@pytest.mark.parametrize(
+    ("name", "bad_value"),
+    [
+        (":checkpoint_sk", {"S": "OTHER"}),
+        (":cleanup_entity_type", {"S": "SOURCE_VERSION_RETENTION_CHECKPOINT"}),
+        (":cleanup_pk", {"S": "SYSTEM#OTHER"}),
+        (":contract_version", {"S": "2.0.0"}),
+        (":minimum_revision", {"N": "0"}),
+        (":number_type", {"S": "S"}),
+        (":source_entity_type", {"S": "TERMINAL_OPERATIONAL_CLEANUP_CHECKPOINT"}),
+        (":source_pk", {"S": "SYSTEM#OTHER"}),
+        (":string_type", {"S": "N"}),
+    ],
+)
+def test_v2_rejects_every_checkpoint_filter_attribute_value_drift(
+    tmp_path: Path,
+    name: str,
+    bad_value: dict[str, str],
+) -> None:
+    document = _document("staged", evidence_format=live.EVIDENCE_FORMAT_V2)
+    values = document["preflight"]["table_scan"]["request"][  # type: ignore[index]
+        "ExpressionAttributeValues"
+    ]
+    values[name] = bad_value
+    _reject(tmp_path, document)
+
+
+@pytest.mark.parametrize("name", list(CHECKPOINT_FILTER_ATTRIBUTE_VALUES))
+def test_v2_rejects_every_checkpoint_filter_attribute_value_type_drift(
+    tmp_path: Path,
+    name: str,
+) -> None:
+    document = _document("staged", evidence_format=live.EVIDENCE_FORMAT_V2)
+    values = document["preflight"]["table_scan"]["request"][  # type: ignore[index]
+        "ExpressionAttributeValues"
+    ]
+    original = values[name]
+    assert isinstance(original, dict)
+    if "S" in original:
+        values[name] = {"N": "1"}
+    else:
+        values[name] = {"S": "1"}
+    _reject(tmp_path, document)
+
+
+@pytest.mark.parametrize("member", ["ExpressionAttributeNames", "ExpressionAttributeValues"])
+@pytest.mark.parametrize("mutation", ["missing", "extra"])
+def test_v2_rejects_missing_or_extra_checkpoint_filter_members(
+    tmp_path: Path,
+    member: str,
+    mutation: str,
+) -> None:
+    document = _document("staged", evidence_format=live.EVIDENCE_FORMAT_V2)
+    request = document["preflight"]["table_scan"]["request"]  # type: ignore[index]
+    target = request[member]
+    assert isinstance(target, dict)
+    if mutation == "missing":
+        target.pop(next(iter(target)))
+    else:
+        target["#unexpected" if member.endswith("Names") else ":unexpected"] = {"S": "x"}
+    _reject(tmp_path, document)
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("Count", 1),
+        ("Count", False),
+        ("ScannedCount", -1),
+        ("ScannedCount", 3),
+        ("ScannedCount", True),
+        ("LastEvaluatedKey", {"PK": {"S": "SYSTEM#SOURCE_VERSION_RETENTION"}}),
+    ],
+)
+def test_v2_rejects_unexpected_count_type_range_or_pagination(
+    tmp_path: Path,
+    field: str,
+    bad_value: object,
+) -> None:
+    document = _document(
+        "backend-active-draft-only",
+        evidence_format=live.EVIDENCE_FORMAT_V2,
+    )
+    response = document["preflight"]["table_scan"]["response"]  # type: ignore[index]
+    response[field] = bad_value
+    _reject(tmp_path, document)
+
+
+@pytest.mark.parametrize("content_key", ["Item", "Items"])
+def test_v2_rejects_any_item_content_field(tmp_path: Path, content_key: str) -> None:
+    document = _document("staged", evidence_format=live.EVIDENCE_FORMAT_V2)
+    response = document["preflight"]["table_scan"]["response"]  # type: ignore[index]
+    response[content_key] = {} if content_key == "Item" else []
+    _reject(tmp_path, document)
+
+
+@pytest.mark.parametrize("bad_value", [-1, 3, True])
+def test_v2_rejects_approximate_table_item_count_outside_closed_range(
+    tmp_path: Path,
+    bad_value: object,
+) -> None:
+    document = _document("staged", evidence_format=live.EVIDENCE_FORMAT_V2)
+    document["foundation"]["table"]["item_count"] = bad_value  # type: ignore[index]
+    _reject(tmp_path, document)
+
+
+@pytest.mark.parametrize(("name", "expected"), list(FUNCTION_TIMEOUT_SECONDS.items()))
+def test_v2_rejects_every_lambda_timeout_drift(
+    tmp_path: Path,
+    name: str,
+    expected: int,
+) -> None:
+    document = _document(
+        "backend-active-draft-only",
+        evidence_format=live.EVIDENCE_FORMAT_V2,
+    )
+    functions = document["lambda"]["functions"]  # type: ignore[index]
+    function = next(item for item in functions if item["name"] == name)
+    function["timeout_seconds"] = expected + 1
+    _reject(tmp_path, document)
+
+
+def test_v2_requires_timeout_member_while_v1_rejects_it(tmp_path: Path) -> None:
+    v2 = _document("staged", evidence_format=live.EVIDENCE_FORMAT_V2)
+    v2["lambda"]["functions"][0].pop("timeout_seconds")  # type: ignore[index]
+    _reject(tmp_path, v2)
+
+    v1 = _document("staged")
+    v1["lambda"]["functions"][0]["timeout_seconds"] = 120  # type: ignore[index]
+    _reject(tmp_path, v1)
 
 
 @pytest.mark.parametrize("bad_hash", ["0" * 64, "A" * 64, "abc", "<SHA256>"])
@@ -869,7 +1300,7 @@ def test_rejects_naive_or_non_utc_injected_now(tmp_path: Path) -> None:
         ("source_commit", "a" * 40),
         ("source_commit", "<SOURCE_COMMIT>"),
         ("mode", "active"),
-        ("format", "mr-lister-phase6-core-live-state-v2"),
+        ("format", "mr-lister-phase6-core-live-state-v3"),
     ],
 )
 def test_rejects_malformed_or_placeholder_top_level_identifiers(

@@ -95,6 +95,8 @@ def _staged_document() -> dict[str, object]:
             "Role": {"Fn::GetAtt": [f"{logical_id}Role", "Arn"]},
             "Runtime": "python3.12",
         }
+        if logical_id in {"DispatcherFunction", "SettlementFunction"}:
+            properties["Timeout"] = 120
         if logical_id in MAINTENANCE_FUNCTIONS:
             properties["ReservedConcurrentExecutions"] = 0
         resources[logical_id] = {
@@ -268,6 +270,12 @@ def _assert_trigger_state(document: Mapping[str, object], *, enabled: bool) -> N
     )
 
 
+def _assert_timeout_authority(document: Mapping[str, object]) -> None:
+    resources = document["Resources"]
+    assert resources["DispatcherFunction"]["Properties"]["Timeout"] == 120  # type: ignore[index]
+    assert resources["SettlementFunction"]["Properties"]["Timeout"] == 120  # type: ignore[index]
+
+
 def test_capacity_released_inert_is_an_exact_sealed_staging_derivative(
     tmp_path: Path,
 ) -> None:
@@ -296,6 +304,7 @@ def test_capacity_released_inert_is_an_exact_sealed_staging_derivative(
     inertness.assert_called_once_with(staged)
     assert _concurrency(rendered) == {}
     _assert_trigger_state(rendered, enabled=False)
+    _assert_timeout_authority(rendered)
     assert (
         rendered["Globals"]["Function"]["Environment"]["Variables"][  # type: ignore[index]
             "MR_LISTER_PHASE6_SCAFFOLD_ONLY"
@@ -354,6 +363,7 @@ def test_backend_active_is_derived_through_capacity_and_only_enables_reviewed_co
 
     assert _concurrency(rendered) == {}
     _assert_trigger_state(rendered, enabled=True)
+    _assert_timeout_authority(rendered)
     assert (
         rendered["Globals"]["Function"]["Environment"]["Variables"][  # type: ignore[index]
             "MR_LISTER_PHASE6_SCAFFOLD_ONLY"

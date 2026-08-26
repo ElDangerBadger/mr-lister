@@ -408,6 +408,16 @@ def test_alarm_fabric_covers_every_function_workflow_and_shared_dependency() -> 
             if "MetricStat" in metric
         } == {metric_name}
 
+    duration_expression = next(
+        metric["Expression"]
+        for metric in _alarm("Phase6LambdaDurationAlarm")["Metrics"]
+        if metric["Id"] == "timeout_fraction"
+    )
+    assert duration_expression == (
+        "MAX([d1/240000,d2/240000,d3/96000,d4/480000,d5/480000,"
+        "d6/96000,d7/24000,d8/12000,d9/24000,d10/96000])"
+    )
+
     expected_workflows = {
         "PrepareStateMachine",
         "SynchronizeProductStateMachine",

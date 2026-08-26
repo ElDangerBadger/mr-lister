@@ -1,9 +1,11 @@
 """Verify one canonical, freshly captured Phase 6 core live-state document.
 
 This verifier is deliberately offline. It imports no AWS SDK, starts no subprocess, and makes no
-network request. Operators normalize read-only AWS observations into the closed
-``mr-lister-phase6-core-live-state-v1`` format and write the document with
-``canonical_phase6_core_live_state`` before calling :func:`verify_phase6_core_live_state`.
+network request. Operators normalize read-only AWS observations into a closed Phase 6 live-state
+format and write the document with ``canonical_phase6_core_live_state`` before calling
+:func:`verify_phase6_core_live_state`. Version 1 remains the immutable empty-table transition
+contract. Version 2 permits only the two exact maintenance checkpoint envelopes by using a
+strongly consistent, COUNT-only filtered scan that returns no item content.
 
 The format has three modes:
 
@@ -21,11 +23,12 @@ The format has three modes:
 
 Every object is closed: missing and additional members fail. The canonical source document is
 sorted, two-space-indented JSON with one trailing newline. Its SHA-256 is returned in a frozen
-verified record. The preflight scan uses ``Select=COUNT`` and never captures item content. Its
-normalized response has exact zero ``Count`` and ``ScannedCount`` values plus an explicit null
-``LastEvaluatedKey``. Only the top-level evidence under review must be fresh relative to verifier
-time. Hash-bound predecessor and ancestor documents may be older, but remain fully validated and
-must never be temporally later than their successors.
+verified record. Every preflight scan uses ``Select=COUNT`` and never captures item content.
+Version 1 requires an exact empty scan. Version 2 filters for unexpected rows: ``Count`` must be
+zero, ``ScannedCount`` is the total and must be between zero and two, and ``LastEvaluatedKey`` must
+be null. Only the top-level evidence under review must be fresh relative to verifier time.
+Hash-bound predecessor and ancestor documents may be older, but remain fully validated and must
+never be temporally later than their successors.
 """
 
 from __future__ import annotations
@@ -48,6 +51,7 @@ Phase6CoreLiveMode = Literal[
 ]
 
 EVIDENCE_FORMAT: Final = "mr-lister-phase6-core-live-state-v1"
+EVIDENCE_FORMAT_V2: Final = "mr-lister-phase6-core-live-state-v2"
 ACCOUNT_ID: Final = "384627057108"
 REGION: Final = "us-west-2"
 STACK_NAME: Final = "mr-lister-phase6-dev"
@@ -70,6 +74,46 @@ AGENTCORE_ENDPOINT_ARN: Final = f"{AGENTCORE_RUNTIME_ARN}/runtime-endpoint/{AGEN
 TABLE_NAME: Final = "mr-lister-phase6-dev"
 ARTIFACT_BUCKET_NAME: Final = "mr-lister-phase6-artifacts-dev-384627057108-us-west-2"
 RECOVERY_QUEUE_NAME: Final = "mr-lister-phase6-dev-execution-recovery-dlq"
+
+_CHECKPOINT_FILTER_EXPRESSION: Final = (
+    "NOT ((#pk = :source_pk AND #sk = :checkpoint_sk AND "
+    "#entity_type = :source_entity_type AND #contract_version = :contract_version AND "
+    "attribute_type(#revision, :number_type) AND #revision >= :minimum_revision AND "
+    "attribute_type(#payload, :string_type)) OR "
+    "(#pk = :cleanup_pk AND #sk = :checkpoint_sk AND "
+    "#entity_type = :cleanup_entity_type AND #contract_version = :contract_version AND "
+    "attribute_type(#revision, :number_type) AND #revision >= :minimum_revision AND "
+    "attribute_type(#payload, :string_type)))"
+)
+_CHECKPOINT_FILTER_ATTRIBUTE_NAMES: Final = {
+    "#contract_version": "contract_version",
+    "#entity_type": "entity_type",
+    "#payload": "payload",
+    "#pk": "PK",
+    "#revision": "revision",
+    "#sk": "SK",
+}
+_CHECKPOINT_FILTER_ATTRIBUTE_VALUES: Final = {
+    ":checkpoint_sk": {"S": "CHECKPOINT"},
+    ":cleanup_entity_type": {"S": "TERMINAL_OPERATIONAL_CLEANUP_CHECKPOINT"},
+    ":cleanup_pk": {"S": "SYSTEM#TERMINAL_OPERATIONAL_CLEANUP"},
+    ":contract_version": {"S": "1.0.0"},
+    ":minimum_revision": {"N": "1"},
+    ":number_type": {"S": "N"},
+    ":source_entity_type": {"S": "SOURCE_VERSION_RETENTION_CHECKPOINT"},
+    ":source_pk": {"S": "SYSTEM#SOURCE_VERSION_RETENTION"},
+    ":string_type": {"S": "S"},
+}
+
+_FUNCTION_TIMEOUT_SECONDS: Final = {
+    "mr-lister-phase6-dev-dispatcher": 120,
+    "mr-lister-phase6-dev-execution-recovery": 120,
+    "mr-lister-phase6-dev-preparation-dispatch": 600,
+    "mr-lister-phase6-dev-provider-draft": 600,
+    "mr-lister-phase6-dev-settlement": 120,
+    "mr-lister-phase6-dev-source-retention": 300,
+    "mr-lister-phase6-dev-terminal-cleanup": 300,
+}
 
 _MAX_FRESHNESS = timedelta(minutes=15)
 _MAX_EVIDENCE_BYTES = 256 * 1024
@@ -238,7 +282,7 @@ def verify_phase6_core_live_state(
             now=current_time,
         )
         return VerifiedPhase6CoreLiveState(
-            format=EVIDENCE_FORMAT,
+            format=cast(str, document["format"]),
             mode=mode,
             capture_time=capture_time,
             source_commit=cast(str, document["source_commit"]),
@@ -281,14 +325,27 @@ def _load_validated_document(
     capture_time = _capture_time(document.get("capture_time"))
     if require_fresh:
         _require_fresh(capture_time, now)
-    _validate_document(
-        document,
-        mode,
-        contract,
-        capture_time,
-        now,
-        require_fresh=require_fresh,
-    )
+    evidence_format = document.get("format")
+    if evidence_format == EVIDENCE_FORMAT:
+        _validate_document(
+            document,
+            mode,
+            contract,
+            capture_time,
+            now,
+            require_fresh=require_fresh,
+        )
+    elif evidence_format == EVIDENCE_FORMAT_V2:
+        _validate_document_v2(
+            document,
+            mode,
+            contract,
+            capture_time,
+            now,
+            require_fresh=require_fresh,
+        )
+    else:
+        raise ValueError
     return raw, document, mode, capture_time
 
 
@@ -311,6 +368,7 @@ def _validate_predecessor_documents(
         now=now,
         require_fresh=False,
     )
+    _require_lineage_format(document, predecessor)
     _require_predecessor_link(
         document,
         predecessor_raw=predecessor_raw,
@@ -330,12 +388,31 @@ def _validate_predecessor_documents(
     )
     if staged_mode != "staged":
         raise ValueError
+    _require_lineage_format(predecessor, _staged)
     _require_predecessor_link(
         predecessor,
         predecessor_raw=staged_raw,
         predecessor_mode=staged_mode,
         predecessor_time=staged_time,
     )
+
+
+def _require_lineage_format(
+    successor: Mapping[str, object],
+    predecessor: Mapping[str, object],
+) -> None:
+    successor_format = successor.get("format")
+    predecessor_format = predecessor.get("format")
+    if successor_format == EVIDENCE_FORMAT:
+        if predecessor_format != EVIDENCE_FORMAT:
+            raise ValueError
+        return
+    if successor_format == EVIDENCE_FORMAT_V2 and predecessor_format in {
+        EVIDENCE_FORMAT,
+        EVIDENCE_FORMAT_V2,
+    }:
+        return
+    raise ValueError
 
 
 def _require_predecessor_link(
@@ -417,6 +494,69 @@ def _validate_document(
     )
 
 
+def _validate_document_v2(
+    document: Mapping[str, object],
+    mode: Phase6CoreLiveMode,
+    contract: _ModeContract,
+    capture_time: datetime,
+    now: datetime,
+    *,
+    require_fresh: bool,
+) -> None:
+    _exact_keys(
+        document,
+        {
+            "account_id",
+            "agentcore",
+            "capture_time",
+            "format",
+            "foundation",
+            "lambda",
+            "logs",
+            "mode",
+            "predecessor_evidence",
+            "preflight",
+            "public_web_surface",
+            "recovery_queue",
+            "region",
+            "safety",
+            "source_commit",
+            "stack",
+            "step_functions",
+            "triggers",
+        },
+    )
+    if (
+        document.get("format") != EVIDENCE_FORMAT_V2
+        or document.get("account_id") != ACCOUNT_ID
+        or document.get("region") != REGION
+        or document.get("mode") != mode
+        or document.get("source_commit") != SOURCE_COMMIT
+    ):
+        raise ValueError
+    _validate_stack(_mapping(document, "stack"), contract)
+    _validate_lambda_v2(_mapping(document, "lambda"), contract)
+    _validate_triggers(_mapping(document, "triggers"), contract)
+    _validate_state_machines(_mapping(document, "step_functions"))
+    _validate_logs(_mapping(document, "logs"))
+    _validate_foundation_v2(_mapping(document, "foundation"))
+    _validate_recovery_queue(_mapping(document, "recovery_queue"))
+    _validate_agentcore(_mapping(document, "agentcore"))
+    _validate_public_web(_mapping(document, "public_web_surface"))
+    _validate_safety(_mapping(document, "safety"), mode)
+    _validate_predecessor_evidence(
+        document.get("predecessor_evidence"),
+        contract,
+        capture_time,
+    )
+    _validate_preflight_v2(
+        document.get("preflight"),
+        capture_time,
+        now,
+        require_fresh=require_fresh,
+    )
+
+
 def _validate_stack(stack: Mapping[str, object], contract: _ModeContract) -> None:
     _exact_keys(
         stack,
@@ -477,6 +617,69 @@ def _validate_lambda(value: Mapping[str, object], contract: _ModeContract) -> No
     for function in functions:
         normalized = _mapping_value(function)
         if type(normalized.get("scaffold_only")) is not bool:
+            raise ValueError
+        concurrency = normalized.get("reserved_concurrency")
+        if concurrency is not None:
+            _exact_int(concurrency)
+    try:
+        decoded_code_hash = base64.b64decode(LAMBDA_CODE_SHA256_BASE64, validate=True)
+    except Exception:
+        raise ValueError from None
+    if len(decoded_code_hash) != 32:
+        raise ValueError
+    binding = _mapping(value, "preparation_agentcore_binding")
+    _exact_keys(
+        binding,
+        {
+            "binding_fingerprint",
+            "live_binding_matches_reviewed_template",
+            "qualifier",
+            "runtime_version",
+        },
+    )
+    if binding != {
+        "binding_fingerprint": AGENTCORE_BINDING_FINGERPRINT,
+        "live_binding_matches_reviewed_template": True,
+        "qualifier": AGENTCORE_QUALIFIER,
+        "runtime_version": "1",
+    }:
+        raise ValueError
+    if binding.get("live_binding_matches_reviewed_template") is not True:
+        raise ValueError
+
+
+def _validate_lambda_v2(value: Mapping[str, object], contract: _ModeContract) -> None:
+    _exact_keys(value, {"function_count", "functions", "preparation_agentcore_binding"})
+    functions = _list(value, "functions")
+    if _exact_int(value.get("function_count")) != 7 or len(functions) != 7:
+        raise ValueError
+    expected_functions: list[dict[str, object]] = []
+    for name in _FUNCTION_NAMES:
+        expected_functions.append(
+            {
+                "architecture": "arm64",
+                "code_sha256_base64": LAMBDA_CODE_SHA256_BASE64,
+                "last_update_status": "Successful",
+                "name": name,
+                "release_fingerprint": RELEASE_FINGERPRINT,
+                "reserved_concurrency": (
+                    contract.maintenance_concurrency if name in _MAINTENANCE_FUNCTIONS else None
+                ),
+                "runtime": "python3.12",
+                "scaffold_only": contract.scaffold_only,
+                "state": "Active",
+                "timeout_seconds": _FUNCTION_TIMEOUT_SECONDS[name],
+            }
+        )
+    if functions != expected_functions:
+        raise ValueError
+    for function in functions:
+        normalized = _mapping_value(function)
+        if (
+            type(normalized.get("scaffold_only")) is not bool
+            or _exact_int(normalized.get("timeout_seconds"))
+            != _FUNCTION_TIMEOUT_SECONDS[_exact_string(normalized.get("name"))]
+        ):
             raise ValueError
         concurrency = normalized.get("reserved_concurrency")
         if concurrency is not None:
@@ -593,6 +796,68 @@ def _validate_foundation(value: Mapping[str, object]) -> None:
         or _exact_int(table.get("item_count")) != 0
         or table.get("stream_enabled") is not True
     ):
+        raise ValueError
+    bucket = _mapping(value, "artifact_bucket")
+    _exact_keys(
+        bucket,
+        {
+            "all_public_access_blocks_enabled",
+            "bucket_policy_is_public",
+            "cors_allowed_methods",
+            "cors_allowed_origin",
+            "name",
+        },
+    )
+    if bucket != {
+        "all_public_access_blocks_enabled": True,
+        "bucket_policy_is_public": False,
+        "cors_allowed_methods": ["GET", "POST"],
+        "cors_allowed_origin": "https://massskutiny.com",
+        "name": ARTIFACT_BUCKET_NAME,
+    }:
+        raise ValueError
+    if (
+        bucket.get("all_public_access_blocks_enabled") is not True
+        or bucket.get("bucket_policy_is_public") is not False
+    ):
+        raise ValueError
+
+
+def _validate_foundation_v2(value: Mapping[str, object]) -> None:
+    _exact_keys(value, {"artifact_bucket", "table"})
+    table = _mapping(value, "table")
+    _exact_keys(
+        table,
+        {
+            "billing_mode",
+            "continuous_backups",
+            "item_count",
+            "name",
+            "point_in_time_recovery",
+            "sse",
+            "status",
+            "stream_enabled",
+            "stream_view_type",
+            "ttl_attribute",
+            "ttl_status",
+        },
+    )
+    approximate_item_count = _exact_int(table.get("item_count"))
+    if approximate_item_count < 0 or approximate_item_count > 2:
+        raise ValueError
+    if table != {
+        "billing_mode": "PAY_PER_REQUEST",
+        "continuous_backups": "ENABLED",
+        "item_count": approximate_item_count,
+        "name": TABLE_NAME,
+        "point_in_time_recovery": "ENABLED",
+        "sse": "ENABLED",
+        "status": "ACTIVE",
+        "stream_enabled": True,
+        "stream_view_type": "KEYS_ONLY",
+        "ttl_attribute": "expires_at",
+        "ttl_status": "ENABLED",
+    }:
         raise ValueError
     bucket = _mapping(value, "artifact_bucket")
     _exact_keys(
@@ -815,6 +1080,72 @@ def _validate_preflight(
     if (
         _exact_int(response.get("Count")) != 0
         or _exact_int(response.get("ScannedCount")) != 0
+        or response.get("LastEvaluatedKey") is not None
+    ):
+        raise ValueError
+    running = value.get("running_executions")
+    if not isinstance(running, list):
+        raise ValueError
+    expected_running = [
+        {"name": name, "running_execution_count": 0} for name in _STATE_MACHINE_NAMES
+    ]
+    if running != expected_running:
+        raise ValueError
+    for machine in running:
+        if _exact_int(_mapping_value(machine).get("running_execution_count")) != 0:
+            raise ValueError
+
+
+def _validate_preflight_v2(
+    value: object,
+    capture_time: datetime,
+    now: datetime,
+    *,
+    require_fresh: bool,
+) -> None:
+    if not isinstance(value, Mapping):
+        raise ValueError
+    _exact_keys(value, {"captured_at", "running_executions", "table_scan"})
+    preflight_time = _capture_time(value.get("captured_at"))
+    if preflight_time > capture_time or capture_time - preflight_time > _MAX_FRESHNESS:
+        raise ValueError
+    if require_fresh:
+        _require_fresh(preflight_time, now)
+    scan = _mapping(value, "table_scan")
+    _exact_keys(scan, {"request", "response"})
+    request = _mapping(scan, "request")
+    response = _mapping(scan, "response")
+    _exact_keys(
+        request,
+        {
+            "ConsistentRead",
+            "ExpressionAttributeNames",
+            "ExpressionAttributeValues",
+            "FilterExpression",
+            "Select",
+            "TableName",
+        },
+    )
+    _exact_keys(response, {"Count", "LastEvaluatedKey", "ScannedCount"})
+    if (
+        request
+        != {
+            "ConsistentRead": True,
+            "ExpressionAttributeNames": _CHECKPOINT_FILTER_ATTRIBUTE_NAMES,
+            "ExpressionAttributeValues": _CHECKPOINT_FILTER_ATTRIBUTE_VALUES,
+            "FilterExpression": _CHECKPOINT_FILTER_EXPRESSION,
+            "Select": "COUNT",
+            "TableName": TABLE_NAME,
+        }
+        or request.get("ConsistentRead") is not True
+    ):
+        raise ValueError
+    unexpected_count = _exact_int(response.get("Count"))
+    total_count = _exact_int(response.get("ScannedCount"))
+    if (
+        unexpected_count != 0
+        or total_count < 0
+        or total_count > 2
         or response.get("LastEvaluatedKey") is not None
     ):
         raise ValueError

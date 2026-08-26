@@ -11,9 +11,9 @@ from typing import cast
 import pytest
 
 import tools.verify_phase6_core_transition_change_set as verifier
-from tools.render_phase6_core_runtime_transition import Phase6CoreRuntimeTransitionTarget
 from tools.verify_phase6_core_transition_change_set import (
     FORMAT,
+    Phase6CoreRuntimeTransitionTarget,
     Phase6CoreTransitionChangeSetError,
     canonical_phase6_core_transition_change_set,
     verify_phase6_core_transition_change_set,
@@ -32,6 +32,11 @@ FUNCTIONS = verifier._FUNCTIONS
 MAINTENANCE = verifier._MAINTENANCE_FUNCTIONS
 RULES = verifier._PROCESSED_EVENT_RULES
 MAPPING = verifier._DISPATCHER_MAPPING
+TIMEOUT_CORRECTION = "capacity-timeout-correction"
+PRE_TIMEOUT_SOURCE_SHA256 = verifier._PRE_TIMEOUT_SOURCE_TEMPLATE_SHA256
+CORRECTED_SOURCE_SHA256 = verifier._TIMEOUT_CORRECTED_SOURCE_TEMPLATE_SHA256
+PRE_TIMEOUT_STAGED_SHA256 = verifier._PRE_TIMEOUT_STAGED_TEMPLATE_SHA256
+CORRECTED_STAGED_SHA256 = verifier._TIMEOUT_CORRECTED_STAGED_TEMPLATE_SHA256
 
 
 def _canonical(value: object) -> bytes:
@@ -89,7 +94,12 @@ def _trigger_inventory(enabled: bool) -> dict[str, dict[str, object]]:
     }
 
 
-def _metadata(mode: str, *, staged_sha256: str | None = None) -> dict[str, object]:
+def _metadata(
+    mode: str,
+    *,
+    staged_sha256: str | None = None,
+    source_sha256: str = PRE_TIMEOUT_SOURCE_SHA256,
+) -> dict[str, object]:
     contracts = {
         "staged": (
             "mr-lister-phase6-core-sam-staged-v1",
@@ -120,6 +130,10 @@ def _metadata(mode: str, *, staged_sha256: str | None = None) -> dict[str, objec
         "Mode": deployment_mode,
         "Readiness": readiness,
         "ReleaseFingerprint": "2" * 64,
+        "SourceTemplate": {
+            "Path": verifier._SOURCE_TEMPLATE_PATH,
+            "Sha256": source_sha256,
+        },
         "Target": {
             "AccountId": "384627057108",
             "Environment": "dev",
@@ -134,7 +148,7 @@ def _metadata(mode: str, *, staged_sha256: str | None = None) -> dict[str, objec
     return {"MrListerPhase6CoreRuntimeStaging": value}
 
 
-def _original_resources(mode: str) -> dict[str, object]:
+def _original_resources(mode: str, *, timeout_seconds: int = 30) -> dict[str, object]:
     enabled = mode == "backend-active-draft-only"
     resources: dict[str, object] = {
         logical_id: {"Properties": {"Fixture": logical_id}, "Type": resource_type}
@@ -171,6 +185,12 @@ def _original_resources(mode: str) -> dict[str, object]:
             "Type": "DynamoDB",
         },
     }
+    dispatcher["Timeout"] = timeout_seconds
+    settlement = cast(
+        dict[str, object],
+        cast(dict[str, object], resources["SettlementFunction"])["Properties"],
+    )
+    settlement["Timeout"] = timeout_seconds
     source = cast(
         dict[str, object],
         cast(dict[str, object], resources["SourceVersionRetentionFunction"])["Properties"],
@@ -199,7 +219,13 @@ def _original_resources(mode: str) -> dict[str, object]:
     return resources
 
 
-def _original(mode: str, *, staged_sha256: str | None = None) -> dict[str, object]:
+def _original(
+    mode: str,
+    *,
+    staged_sha256: str | None = None,
+    source_sha256: str = PRE_TIMEOUT_SOURCE_SHA256,
+    timeout_seconds: int = 30,
+) -> dict[str, object]:
     contracts = {
         "staged": (
             "CORE_RELEASE_BOUND_STAGED",
@@ -229,13 +255,17 @@ def _original(mode: str, *, staged_sha256: str | None = None) -> dict[str, objec
                 }
             }
         },
-        "Metadata": _metadata(mode, staged_sha256=staged_sha256),
+        "Metadata": _metadata(
+            mode,
+            staged_sha256=staged_sha256,
+            source_sha256=source_sha256,
+        ),
         "Outputs": {
             "DeploymentReadiness": {"Description": description, "Value": readiness},
             "StateTableName": {"Value": "mr-lister-phase6-dev"},
         },
         "Parameters": _parameters(),
-        "Resources": _original_resources(mode),
+        "Resources": _original_resources(mode, timeout_seconds=timeout_seconds),
         "Transform": "AWS::Serverless-2016-10-31",
     }
 
@@ -420,13 +450,40 @@ def _fixture(tmp_path: Path, target: str) -> dict[str, object]:
     staged_sha = sha256(_canonical(staged)).hexdigest()
     capacity = _original("capacity-released-inert", staged_sha256=staged_sha)
     active = _original("backend-active-draft-only", staged_sha256=staged_sha)
-    predecessor = staged if target == "capacity-released-inert" else capacity
-    target_original = capacity if target == "capacity-released-inert" else active
-    predecessor_processed = _processed(
-        predecessor,
-        "staged" if target == "capacity-released-inert" else "capacity-released-inert",
-    )
-    target_processed = _processed(target_original, target)
+    if target == "capacity-released-inert":
+        predecessor_mode = "staged"
+        target_mode = "capacity-released-inert"
+        predecessor = staged
+        target_original = capacity
+    elif target == "backend-active-draft-only":
+        predecessor_mode = "capacity-released-inert"
+        target_mode = "backend-active-draft-only"
+        predecessor = capacity
+        target_original = active
+    elif target == "freeze-to-capacity-released-inert":
+        predecessor_mode = "backend-active-draft-only"
+        target_mode = "capacity-released-inert"
+        predecessor = active
+        target_original = capacity
+    elif target == TIMEOUT_CORRECTION:
+        predecessor_mode = "capacity-released-inert"
+        target_mode = "capacity-released-inert"
+        predecessor = _original(
+            predecessor_mode,
+            staged_sha256=PRE_TIMEOUT_STAGED_SHA256,
+            source_sha256=PRE_TIMEOUT_SOURCE_SHA256,
+            timeout_seconds=30,
+        )
+        target_original = _original(
+            target_mode,
+            staged_sha256=CORRECTED_STAGED_SHA256,
+            source_sha256=CORRECTED_SOURCE_SHA256,
+            timeout_seconds=120,
+        )
+    else:
+        raise ValueError
+    predecessor_processed = _processed(predecessor, predecessor_mode)
+    target_processed = _processed(target_original, target_mode)
     change_set = _change_set(target, predecessor_processed, target_processed, target_original)
     paths = {
         "predecessor_original_template_observation_path": _write(
@@ -476,6 +533,18 @@ def _verify(fixture: dict[str, object]):
             "backend-active-draft-only",
             12,
         ),
+        (
+            "freeze-to-capacity-released-inert",
+            "backend-active-draft-only",
+            "capacity-released-inert",
+            12,
+        ),
+        (
+            TIMEOUT_CORRECTION,
+            "capacity-released-inert",
+            "capacity-released-inert",
+            2,
+        ),
     ],
 )
 def test_accepts_exact_transition(
@@ -499,6 +568,365 @@ def test_accepts_exact_transition(
     assert len(verified.canonical_sha256) == 64
 
 
+def test_freeze_contract_has_exact_inverse_twelve_resource_paths(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, "freeze-to-capacity-released-inert")
+    verified = _verify(fixture)
+    expected_resources = set(FUNCTIONS) | set(RULES) | {MAPPING}
+    assert set(verified.changed_resources) == expected_resources
+    paths = verifier._resource_change_paths("freeze-to-capacity-released-inert")
+    assert set(paths) == expected_resources
+    for logical_id in FUNCTIONS:
+        assert paths[logical_id] == (
+            ("Properties", "Environment", "Variables", "MR_LISTER_PHASE6_SCAFFOLD_ONLY"),
+            "false",
+            True,
+            "true",
+        )
+    for logical_id in RULES:
+        assert paths[logical_id] == (
+            ("Properties", "State"),
+            "ENABLED",
+            True,
+            "DISABLED",
+        )
+    assert paths[MAPPING] == (("Properties", "Enabled"), True, True, False)
+
+
+def test_freeze_rejects_capacity_predecessor(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, "freeze-to-capacity-released-inert")
+    paths = cast(dict[str, Path], fixture["paths"])
+    _write(
+        paths["predecessor_original_template_observation_path"],
+        _observation(deepcopy(cast(dict[str, object], fixture["target_original"]))),
+    )
+    _write(
+        paths["predecessor_processed_template_observation_path"],
+        _observation(deepcopy(cast(dict[str, object], fixture["target_processed"]))),
+    )
+    with pytest.raises(Phase6CoreTransitionChangeSetError):
+        _verify(fixture)
+
+
+@pytest.mark.parametrize(
+    "logical_id,path,value",
+    [
+        (
+            "SettlementFunction",
+            ("Properties", "Environment", "Variables", "MR_LISTER_PHASE6_SCAFFOLD_ONLY"),
+            "false",
+        ),
+        (
+            "StuckExecutionRecoveryScheduleRule",
+            ("Properties", "State"),
+            "ENABLED",
+        ),
+        (
+            MAPPING,
+            ("Properties", "Enabled"),
+            True,
+        ),
+    ],
+)
+def test_freeze_rejects_one_missing_inverse_resource_change(
+    tmp_path: Path,
+    logical_id: str,
+    path: tuple[str, ...],
+    value: object,
+) -> None:
+    fixture = _fixture(tmp_path, "freeze-to-capacity-released-inert")
+    capture = cast(dict[str, Path], fixture["paths"])["target_processed_template_observation_path"]
+
+    def mutate(document: dict[str, object]) -> None:
+        current = document["TemplateBody"]["Resources"][logical_id]
+        for component in path[:-1]:
+            current = current[component]
+        current[path[-1]] = value
+
+    _rewrite(capture, mutate)
+    with pytest.raises(Phase6CoreTransitionChangeSetError):
+        _verify(fixture)
+
+
+def test_freeze_rejects_reintroduced_maintenance_concurrency(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, "freeze-to-capacity-released-inert")
+    paths = cast(dict[str, Path], fixture["paths"])
+    logical_id = MAINTENANCE[0]
+    local = paths["target_template_path"]
+    target_original = paths["target_original_template_observation_path"]
+    target_processed = paths["target_processed_template_observation_path"]
+    _rewrite(
+        local,
+        lambda document: document["Resources"][logical_id]["Properties"].update(
+            {"ReservedConcurrentExecutions": 0}
+        ),
+    )
+    _rewrite(
+        target_original,
+        lambda document: document["TemplateBody"]["Resources"][logical_id]["Properties"].update(
+            {"ReservedConcurrentExecutions": 0}
+        ),
+    )
+    _rewrite(
+        target_processed,
+        lambda document: document["TemplateBody"]["Resources"][logical_id]["Properties"].update(
+            {"ReservedConcurrentExecutions": 0}
+        ),
+    )
+    with pytest.raises(Phase6CoreTransitionChangeSetError):
+        _verify(fixture)
+
+
+def test_freeze_rejects_forward_property_values_in_change_set(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, "freeze-to-capacity-released-inert")
+    path = cast(dict[str, Path], fixture["paths"])["change_set_observation_path"]
+
+    def mutate(document: dict[str, object]) -> None:
+        resource = next(
+            change["ResourceChange"]
+            for change in document["Changes"]
+            if change["ResourceChange"]["LogicalResourceId"] == "DispatcherFunction"
+        )
+        target = resource["Details"][0]["Target"]
+        target["BeforeValue"] = "true"
+        target["AfterValue"] = "false"
+
+    _rewrite(path, mutate)
+    with pytest.raises(Phase6CoreTransitionChangeSetError):
+        _verify(fixture)
+
+
+def test_timeout_correction_contract_has_exact_two_resource_paths_and_four_template_paths(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path, TIMEOUT_CORRECTION)
+    verified = _verify(fixture)
+    assert verified.changed_resources == ("DispatcherFunction", "SettlementFunction")
+    paths = verifier._resource_change_paths(TIMEOUT_CORRECTION)
+    assert paths == {
+        "DispatcherFunction": (("Properties", "Timeout"), 30, True, 120),
+        "SettlementFunction": (("Properties", "Timeout"), 30, True, 120),
+    }
+    expected = verifier._expected_original_changes(
+        Phase6CoreRuntimeTransitionTarget.CAPACITY_TIMEOUT_CORRECTION,
+        staged_sha256="f" * 64,
+    )
+    metadata_path = ("Metadata", "MrListerPhase6CoreRuntimeStaging")
+    assert set(expected) == {
+        ("Resources", "DispatcherFunction", "Properties", "Timeout"),
+        ("Resources", "SettlementFunction", "Properties", "Timeout"),
+        (*metadata_path, "SourceTemplate", "Sha256"),
+        (*metadata_path, "StagedTemplateSha256"),
+    }
+    assert expected[(*metadata_path, "SourceTemplate", "Sha256")] == verifier._Diff(
+        True,
+        PRE_TIMEOUT_SOURCE_SHA256,
+        True,
+        CORRECTED_SOURCE_SHA256,
+    )
+    assert expected[(*metadata_path, "StagedTemplateSha256")] == verifier._Diff(
+        True,
+        PRE_TIMEOUT_STAGED_SHA256,
+        True,
+        CORRECTED_STAGED_SHA256,
+    )
+    assert not any(path[0] == "Outputs" for path in expected)
+
+
+@pytest.mark.parametrize(
+    "endpoint,value",
+    [("predecessor", 30.0), ("target", 120.0)],
+)
+def test_timeout_correction_rejects_non_integer_timeout_endpoint(
+    tmp_path: Path, endpoint: str, value: float
+) -> None:
+    fixture = _fixture(tmp_path, TIMEOUT_CORRECTION)
+    paths = cast(dict[str, Path], fixture["paths"])
+    captures = (
+        [
+            (paths["predecessor_original_template_observation_path"], True),
+            (paths["predecessor_processed_template_observation_path"], True),
+        ]
+        if endpoint == "predecessor"
+        else [
+            (paths["target_template_path"], False),
+            (paths["target_original_template_observation_path"], True),
+            (paths["target_processed_template_observation_path"], True),
+        ]
+    )
+
+    for capture, wrapped in captures:
+
+        def mutate(document: dict[str, object], *, wrapped: bool = wrapped) -> None:
+            body = document["TemplateBody"] if wrapped else document
+            body["Resources"]["DispatcherFunction"]["Properties"]["Timeout"] = value
+
+        _rewrite(capture, mutate)
+    with pytest.raises(Phase6CoreTransitionChangeSetError):
+        _verify(fixture)
+
+
+@pytest.mark.parametrize(
+    "endpoint,field,value",
+    [
+        ("predecessor", "SourceTemplate", "a" * 64),
+        ("target", "SourceTemplate", "b" * 64),
+        ("predecessor", "StagedTemplateSha256", "c" * 64),
+        ("target", "StagedTemplateSha256", "d" * 64),
+    ],
+)
+def test_timeout_correction_rejects_unbound_source_or_staged_hash(
+    tmp_path: Path,
+    endpoint: str,
+    field: str,
+    value: str,
+) -> None:
+    fixture = _fixture(tmp_path, TIMEOUT_CORRECTION)
+    paths = cast(dict[str, Path], fixture["paths"])
+    captures = (
+        [
+            (paths["predecessor_original_template_observation_path"], True),
+            (paths["predecessor_processed_template_observation_path"], True),
+        ]
+        if endpoint == "predecessor"
+        else [
+            (paths["target_template_path"], False),
+            (paths["target_original_template_observation_path"], True),
+            (paths["target_processed_template_observation_path"], True),
+        ]
+    )
+
+    for capture, wrapped in captures:
+
+        def mutate(document: dict[str, object], *, wrapped: bool = wrapped) -> None:
+            body = document["TemplateBody"] if wrapped else document
+            metadata = body["Metadata"]["MrListerPhase6CoreRuntimeStaging"]
+            if field == "SourceTemplate":
+                metadata[field]["Sha256"] = value
+            else:
+                metadata[field] = value
+
+        _rewrite(capture, mutate)
+    with pytest.raises(Phase6CoreTransitionChangeSetError):
+        _verify(fixture)
+
+
+def test_timeout_correction_rejects_wrong_source_template_path(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, TIMEOUT_CORRECTION)
+    paths = cast(dict[str, Path], fixture["paths"])
+    for capture, wrapped in (
+        (paths["predecessor_original_template_observation_path"], True),
+        (paths["predecessor_processed_template_observation_path"], True),
+        (paths["target_template_path"], False),
+        (paths["target_original_template_observation_path"], True),
+        (paths["target_processed_template_observation_path"], True),
+    ):
+
+        def mutate(document: dict[str, object], *, wrapped: bool = wrapped) -> None:
+            body = document["TemplateBody"] if wrapped else document
+            body["Metadata"]["MrListerPhase6CoreRuntimeStaging"]["SourceTemplate"]["Path"] = (
+                "infra/phase6/unreviewed.json"
+            )
+
+        _rewrite(capture, mutate)
+    with pytest.raises(Phase6CoreTransitionChangeSetError):
+        _verify(fixture)
+
+
+def test_timeout_correction_rejects_missing_one_timeout_change(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, TIMEOUT_CORRECTION)
+    paths = cast(dict[str, Path], fixture["paths"])
+    for capture, wrapped in (
+        (paths["target_template_path"], False),
+        (paths["target_original_template_observation_path"], True),
+        (paths["target_processed_template_observation_path"], True),
+    ):
+
+        def mutate(document: dict[str, object], *, wrapped: bool = wrapped) -> None:
+            body = document["TemplateBody"] if wrapped else document
+            body["Resources"]["SettlementFunction"]["Properties"]["Timeout"] = 30
+
+        _rewrite(capture, mutate)
+    with pytest.raises(Phase6CoreTransitionChangeSetError):
+        _verify(fixture)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["scaffold", "trigger", "concurrency", "code", "iam", "state-machine"],
+)
+def test_timeout_correction_rejects_unreviewed_authority_change(
+    tmp_path: Path, mutation: str
+) -> None:
+    fixture = _fixture(tmp_path, TIMEOUT_CORRECTION)
+    paths = cast(dict[str, Path], fixture["paths"])
+    for capture, wrapped, processed in (
+        (paths["target_template_path"], False, False),
+        (paths["target_original_template_observation_path"], True, False),
+        (paths["target_processed_template_observation_path"], True, True),
+    ):
+
+        def mutate(
+            document: dict[str, object],
+            *,
+            wrapped: bool = wrapped,
+            processed: bool = processed,
+        ) -> None:
+            body = document["TemplateBody"] if wrapped else document
+            resources = body["Resources"]
+            if mutation == "scaffold":
+                if processed:
+                    for logical_id in FUNCTIONS:
+                        resources[logical_id]["Properties"]["Environment"]["Variables"][
+                            "MR_LISTER_PHASE6_SCAFFOLD_ONLY"
+                        ] = "false"
+                else:
+                    body["Globals"]["Function"]["Environment"]["Variables"][
+                        "MR_LISTER_PHASE6_SCAFFOLD_ONLY"
+                    ] = "false"
+            elif mutation == "trigger":
+                resources["StuckExecutionRecoveryScheduleRule"]["Properties"]["State"] = "ENABLED"
+            elif mutation == "concurrency":
+                resources[MAINTENANCE[0]]["Properties"]["ReservedConcurrentExecutions"] = 1
+            elif mutation == "code":
+                resources["DispatcherFunction"]["Properties"]["CodeUri"]["Key"] = (
+                    "private/unreviewed.zip"
+                )
+            elif mutation == "iam":
+                resources["DispatcherFunctionRole"]["Properties"]["Fixture"] = "drift"
+            else:
+                resources["PrepareStateMachine"]["Properties"]["Fixture"] = "drift"
+
+        _rewrite(capture, mutate)
+    with pytest.raises(Phase6CoreTransitionChangeSetError):
+        _verify(fixture)
+
+
+def test_timeout_correction_rejects_output_change(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, TIMEOUT_CORRECTION)
+    paths = cast(dict[str, Path], fixture["paths"])
+    for capture, wrapped in (
+        (paths["target_template_path"], False),
+        (paths["target_original_template_observation_path"], True),
+        (paths["target_processed_template_observation_path"], True),
+    ):
+
+        def mutate(document: dict[str, object], *, wrapped: bool = wrapped) -> None:
+            body = document["TemplateBody"] if wrapped else document
+            body["Outputs"]["DeploymentReadiness"]["Description"] = "drift"
+
+        _rewrite(capture, mutate)
+    with pytest.raises(Phase6CoreTransitionChangeSetError):
+        _verify(fixture)
+
+
+def test_timeout_correction_rejects_missing_direct_change(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, TIMEOUT_CORRECTION)
+    path = cast(dict[str, Path], fixture["paths"])["change_set_observation_path"]
+    _rewrite(path, lambda document: document["Changes"].pop())
+    with pytest.raises(Phase6CoreTransitionChangeSetError):
+        _verify(fixture)
+
+
 def test_accepts_enum_and_returns_deterministic_frozen_record(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path, "capacity-released-inert")
     kwargs = cast(dict[str, object], fixture["kwargs"])
@@ -510,7 +938,10 @@ def test_accepts_enum_and_returns_deterministic_frozen_record(tmp_path: Path) ->
         first.stack_id = "changed"  # type: ignore[misc]
 
 
-@pytest.mark.parametrize("target", ["", "unknown", " capacity-released-inert", True, None])
+@pytest.mark.parametrize(
+    "target",
+    ["", "unknown", " capacity-released-inert", "freeze-to-capacity-released-inert ", True, None],
+)
 def test_rejects_invalid_target(tmp_path: Path, target: object) -> None:
     fixture = _fixture(tmp_path, "capacity-released-inert")
     cast(dict[str, object], fixture["kwargs"])["target"] = target
@@ -928,15 +1359,16 @@ def test_rejects_non_utc_creation_time(tmp_path: Path, value: object) -> None:
         _verify(fixture)
 
 
+@pytest.mark.parametrize("target", ["capacity-released-inert", TIMEOUT_CORRECTION])
 def test_cli_emits_canonical_verified_record(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], target: str
 ) -> None:
-    fixture = _fixture(tmp_path, "capacity-released-inert")
+    fixture = _fixture(tmp_path, target)
     paths = cast(dict[str, Path], fixture["paths"])
     result = verifier.main(
         [
             "--target",
-            "capacity-released-inert",
+            target,
             "--predecessor-original-template-observation",
             str(paths["predecessor_original_template_observation_path"]),
             "--predecessor-processed-template-observation",

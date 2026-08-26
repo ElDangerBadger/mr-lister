@@ -530,6 +530,8 @@ def test_render_stages_all_ten_functions_without_activating_runtime(tmp_path: Pa
         assert properties["Handler"] == handler
         assert properties["CodeUri"] == expected_code_uri
         assert properties["CodeUri"] != "lambda/"
+    assert functions["DispatcherFunction"]["Properties"]["Timeout"] == 120
+    assert functions["SettlementFunction"]["Properties"]["Timeout"] == 120
 
     resources = document["Resources"]
     state_machines = {

@@ -3,15 +3,18 @@
 The verifier joins six canonical JSON files: the predecessor Original and Processed
 ``get-template`` observations, the locally rendered target template, the raw
 ``describe-change-set --include-property-values`` observation, and the target Original and
-Processed ``get-template`` observations.  It accepts only the two renderer-owned transitions:
+Processed ``get-template`` observations. It accepts only these closed transitions:
 
 * ``staged`` -> ``capacity-released-inert``;
-* ``capacity-released-inert`` -> ``backend-active-draft-only``.
+* ``capacity-released-inert`` -> ``backend-active-draft-only``;
+* ``backend-active-draft-only`` -> ``capacity-released-inert`` as the explicit freeze path; and
+* ``capacity-released-inert`` -> corrected ``capacity-released-inert`` for the exact reviewed
+  dispatcher and settlement timeout correction.
 
 All input files use sorted, two-space-indented JSON with one trailing newline.  Every AWS response
 wrapper is closed, every template has the exact reviewed resource inventory, and the only accepted
-processed-template resource changes are the three capacity removals or the twelve activation
-changes described by :mod:`tools.render_phase6_core_runtime_transition`.
+processed-template resource changes are the three capacity removals, the twelve activation
+changes, their exact twelve-change freeze inverse, or the exact two-function timeout correction.
 
 ``DescribeChangeSet`` does not return the create request's ``ChangeSetType``.  UPDATE is therefore
 proved structurally: the capture names the exact existing stack, contains only ``Modify`` resource
@@ -67,6 +70,19 @@ _CAPACITY_DESCRIPTION = (
 _ACTIVE_DESCRIPTION = (
     "The exact sealed backend release is active for draft-only execution; publication, order, "
     "fulfillment, and the seller web surface remain absent."
+)
+_SOURCE_TEMPLATE_PATH = "infra/phase6/template.json"
+_PRE_TIMEOUT_SOURCE_TEMPLATE_SHA256 = (
+    "9a110b3e813ed23102033ace67341d9cb4015274d7acc9f0fff6c08439c57ed7"
+)
+_TIMEOUT_CORRECTED_SOURCE_TEMPLATE_SHA256 = (
+    "6b8221fd526cd06cf76cf0029d9c2cd6baf81662aeaa280aa573391e0dfdec3b"
+)
+_PRE_TIMEOUT_STAGED_TEMPLATE_SHA256 = (
+    "4fc83dd40a4af764a1c56330ffeaf091e9b0b729aec04602c0daccf9877e52df"
+)
+_TIMEOUT_CORRECTED_STAGED_TEMPLATE_SHA256 = (
+    "71628d54d4c5b6280ae4ef4e159374ed98dfbe179cfa385a8f8c304d15e18406"
 )
 
 _FUNCTIONS: Final = (
@@ -270,6 +286,8 @@ class Phase6CoreRuntimeTransitionTarget(StrEnum):
 
     CAPACITY_RELEASED_INERT = "capacity-released-inert"
     BACKEND_ACTIVE_DRAFT_ONLY = "backend-active-draft-only"
+    FREEZE_TO_CAPACITY_RELEASED_INERT = "freeze-to-capacity-released-inert"
+    CAPACITY_TIMEOUT_CORRECTION = "capacity-timeout-correction"
 
 
 @dataclass(frozen=True, slots=True)
@@ -475,7 +493,13 @@ def _transition_modes(
 ) -> tuple[str, str]:
     if target is Phase6CoreRuntimeTransitionTarget.CAPACITY_RELEASED_INERT:
         return "staged", "capacity-released-inert"
-    return "capacity-released-inert", "backend-active-draft-only"
+    if target is Phase6CoreRuntimeTransitionTarget.BACKEND_ACTIVE_DRAFT_ONLY:
+        return "capacity-released-inert", "backend-active-draft-only"
+    if target is Phase6CoreRuntimeTransitionTarget.FREEZE_TO_CAPACITY_RELEASED_INERT:
+        return "backend-active-draft-only", "capacity-released-inert"
+    if target is Phase6CoreRuntimeTransitionTarget.CAPACITY_TIMEOUT_CORRECTION:
+        return "capacity-released-inert", "capacity-released-inert"
+    raise ValueError
 
 
 def _target(
@@ -633,6 +657,13 @@ def _verify_mode_metadata_and_output(document: Mapping[str, object], mode: str) 
     foundation = _mapping(metadata, "Foundation")
     if foundation.get("StackId") != STACK_ID or foundation.get("StackName") != STACK_NAME:
         raise ValueError
+    source_template = _mapping(metadata, "SourceTemplate")
+    if (
+        set(source_template) != {"Path", "Sha256"}
+        or source_template.get("Path") != _SOURCE_TEMPLATE_PATH
+        or _HEX_64.fullmatch(cast(str, source_template.get("Sha256", ""))) is None
+    ):
+        raise ValueError
     disabled = _trigger_inventory(False)
     active = _trigger_inventory(True)
     if mode == "staged":
@@ -684,6 +715,8 @@ def _verify_original_transition(
     *,
     selected: Phase6CoreRuntimeTransitionTarget,
 ) -> None:
+    if selected is Phase6CoreRuntimeTransitionTarget.CAPACITY_TIMEOUT_CORRECTION:
+        _verify_timeout_correction_endpoints(predecessor, target)
     changes = _changes(predecessor, target)
     expected = _expected_original_changes(
         selected,
@@ -700,6 +733,8 @@ def _verify_processed_transition(
     selected: Phase6CoreRuntimeTransitionTarget,
     predecessor_original: Mapping[str, object],
 ) -> tuple[str, ...]:
+    if selected is Phase6CoreRuntimeTransitionTarget.CAPACITY_TIMEOUT_CORRECTION:
+        _verify_timeout_correction_endpoints(predecessor, target)
     changes = _changes(predecessor, target)
     expected = _expected_processed_changes(
         selected,
@@ -727,6 +762,14 @@ def _expected_original_changes(
             }
         )
         return outside
+    if selected is Phase6CoreRuntimeTransitionTarget.CAPACITY_TIMEOUT_CORRECTION:
+        outside.update(_timeout_correction_resource_changes())
+        return outside
+    activating = selected is Phase6CoreRuntimeTransitionTarget.BACKEND_ACTIVE_DRAFT_ONLY
+    if not activating and selected is not (
+        Phase6CoreRuntimeTransitionTarget.FREEZE_TO_CAPACITY_RELEASED_INERT
+    ):
+        raise ValueError
     outside[
         (
             "Globals",
@@ -735,7 +778,12 @@ def _expected_original_changes(
             "Variables",
             "MR_LISTER_PHASE6_SCAFFOLD_ONLY",
         )
-    ] = _Diff(True, "true", True, "false")
+    ] = _Diff(
+        True,
+        "true" if activating else "false",
+        True,
+        "false" if activating else "true",
+    )
     for logical_id, event_name, _event_type in _ORIGINAL_TRIGGER_PATHS:
         outside[
             (
@@ -747,9 +795,12 @@ def _expected_original_changes(
                 "Properties",
                 "Enabled",
             )
-        ] = _Diff(True, False, True, True)
+        ] = _Diff(True, not activating, True, activating)
     outside[("Resources", "StuckExecutionRecoveryScheduleRule", "Properties", "State")] = _Diff(
-        True, "DISABLED", True, "ENABLED"
+        True,
+        "DISABLED" if activating else "ENABLED",
+        True,
+        "ENABLED" if activating else "DISABLED",
     )
     return outside
 
@@ -770,6 +821,14 @@ def _expected_processed_changes(
             }
         )
         return outside
+    if selected is Phase6CoreRuntimeTransitionTarget.CAPACITY_TIMEOUT_CORRECTION:
+        outside.update(_timeout_correction_resource_changes())
+        return outside
+    activating = selected is Phase6CoreRuntimeTransitionTarget.BACKEND_ACTIVE_DRAFT_ONLY
+    if not activating and selected is not (
+        Phase6CoreRuntimeTransitionTarget.FREEZE_TO_CAPACITY_RELEASED_INERT
+    ):
+        raise ValueError
     for logical_id in _FUNCTIONS:
         outside[
             (
@@ -780,13 +839,21 @@ def _expected_processed_changes(
                 "Variables",
                 "MR_LISTER_PHASE6_SCAFFOLD_ONLY",
             )
-        ] = _Diff(True, "true", True, "false")
+        ] = _Diff(
+            True,
+            "true" if activating else "false",
+            True,
+            "false" if activating else "true",
+        )
     for logical_id in _PROCESSED_EVENT_RULES:
         outside[("Resources", logical_id, "Properties", "State")] = _Diff(
-            True, "DISABLED", True, "ENABLED"
+            True,
+            "DISABLED" if activating else "ENABLED",
+            True,
+            "ENABLED" if activating else "DISABLED",
         )
     outside[("Resources", _DISPATCHER_MAPPING, "Properties", "Enabled")] = _Diff(
-        True, False, True, True
+        True, not activating, True, activating
     )
     return outside
 
@@ -812,20 +879,71 @@ def _expected_outside_resource_changes(
                 True, "CORE_RELEASE_BOUND_STAGED", True, "CORE_CAPACITY_RELEASED_INERT"
             ),
         }
+    if selected is Phase6CoreRuntimeTransitionTarget.CAPACITY_TIMEOUT_CORRECTION:
+        return {
+            (*path, "SourceTemplate", "Sha256"): _Diff(
+                True,
+                _PRE_TIMEOUT_SOURCE_TEMPLATE_SHA256,
+                True,
+                _TIMEOUT_CORRECTED_SOURCE_TEMPLATE_SHA256,
+            ),
+            (*path, "StagedTemplateSha256"): _Diff(
+                True,
+                _PRE_TIMEOUT_STAGED_TEMPLATE_SHA256,
+                True,
+                _TIMEOUT_CORRECTED_STAGED_TEMPLATE_SHA256,
+            ),
+        }
+    if selected is Phase6CoreRuntimeTransitionTarget.BACKEND_ACTIVE_DRAFT_ONLY:
+        return {
+            (*path, "ActiveTriggers"): _Diff(False, None, True, _trigger_inventory(True)),
+            (*path, "DisabledTriggers"): _Diff(True, _trigger_inventory(False), False, None),
+            (*path, "Mode"): _Diff(True, "CAPACITY_RELEASED_INERT", True, "ACTIVE_DRAFT_ONLY"),
+            (*path, "Readiness"): _Diff(
+                True, "CORE_CAPACITY_RELEASED_INERT", True, "CORE_RUNTIME_ACTIVE_DRAFT_ONLY"
+            ),
+            ("Outputs", "DeploymentReadiness", "Description"): _Diff(
+                True, _CAPACITY_DESCRIPTION, True, _ACTIVE_DESCRIPTION
+            ),
+            ("Outputs", "DeploymentReadiness", "Value"): _Diff(
+                True, "CORE_CAPACITY_RELEASED_INERT", True, "CORE_RUNTIME_ACTIVE_DRAFT_ONLY"
+            ),
+        }
+    if selected is Phase6CoreRuntimeTransitionTarget.FREEZE_TO_CAPACITY_RELEASED_INERT:
+        return {
+            (*path, "ActiveTriggers"): _Diff(True, _trigger_inventory(True), False, None),
+            (*path, "DisabledTriggers"): _Diff(False, None, True, _trigger_inventory(False)),
+            (*path, "Mode"): _Diff(True, "ACTIVE_DRAFT_ONLY", True, "CAPACITY_RELEASED_INERT"),
+            (*path, "Readiness"): _Diff(
+                True, "CORE_RUNTIME_ACTIVE_DRAFT_ONLY", True, "CORE_CAPACITY_RELEASED_INERT"
+            ),
+            ("Outputs", "DeploymentReadiness", "Description"): _Diff(
+                True, _ACTIVE_DESCRIPTION, True, _CAPACITY_DESCRIPTION
+            ),
+            ("Outputs", "DeploymentReadiness", "Value"): _Diff(
+                True, "CORE_RUNTIME_ACTIVE_DRAFT_ONLY", True, "CORE_CAPACITY_RELEASED_INERT"
+            ),
+        }
+    raise ValueError
+
+
+def _timeout_correction_resource_changes() -> dict[tuple[str, ...], _Diff]:
     return {
-        (*path, "ActiveTriggers"): _Diff(False, None, True, _trigger_inventory(True)),
-        (*path, "DisabledTriggers"): _Diff(True, _trigger_inventory(False), False, None),
-        (*path, "Mode"): _Diff(True, "CAPACITY_RELEASED_INERT", True, "ACTIVE_DRAFT_ONLY"),
-        (*path, "Readiness"): _Diff(
-            True, "CORE_CAPACITY_RELEASED_INERT", True, "CORE_RUNTIME_ACTIVE_DRAFT_ONLY"
-        ),
-        ("Outputs", "DeploymentReadiness", "Description"): _Diff(
-            True, _CAPACITY_DESCRIPTION, True, _ACTIVE_DESCRIPTION
-        ),
-        ("Outputs", "DeploymentReadiness", "Value"): _Diff(
-            True, "CORE_CAPACITY_RELEASED_INERT", True, "CORE_RUNTIME_ACTIVE_DRAFT_ONLY"
-        ),
+        ("Resources", logical_id, "Properties", "Timeout"): _Diff(True, 30, True, 120)
+        for logical_id in ("DispatcherFunction", "SettlementFunction")
     }
+
+
+def _verify_timeout_correction_endpoints(
+    predecessor: Mapping[str, object], target: Mapping[str, object]
+) -> None:
+    for document, expected in ((predecessor, 30), (target, 120)):
+        resources = _mapping(document, "Resources")
+        for logical_id in ("DispatcherFunction", "SettlementFunction"):
+            if not _exact_int_equal(
+                _resource_properties(resources, logical_id).get("Timeout"), expected
+            ):
+                raise ValueError
 
 
 def _verify_change_set(
@@ -957,22 +1075,37 @@ def _resource_change_paths(
             logical_id: (("Properties", "ReservedConcurrentExecutions"), 0, False, None)
             for logical_id in _MAINTENANCE_FUNCTIONS
         }
+    if selected is Phase6CoreRuntimeTransitionTarget.CAPACITY_TIMEOUT_CORRECTION:
+        return {
+            logical_id: (("Properties", "Timeout"), 30, True, 120)
+            for logical_id in ("DispatcherFunction", "SettlementFunction")
+        }
+    activating = selected is Phase6CoreRuntimeTransitionTarget.BACKEND_ACTIVE_DRAFT_ONLY
+    if not activating and selected is not (
+        Phase6CoreRuntimeTransitionTarget.FREEZE_TO_CAPACITY_RELEASED_INERT
+    ):
+        raise ValueError
     result = {
         logical_id: (
             ("Properties", "Environment", "Variables", "MR_LISTER_PHASE6_SCAFFOLD_ONLY"),
-            "true",
+            "true" if activating else "false",
             True,
-            "false",
+            "false" if activating else "true",
         )
         for logical_id in _FUNCTIONS
     }
     result.update(
         {
-            logical_id: (("Properties", "State"), "DISABLED", True, "ENABLED")
+            logical_id: (
+                ("Properties", "State"),
+                "DISABLED" if activating else "ENABLED",
+                True,
+                "ENABLED" if activating else "DISABLED",
+            )
             for logical_id in _PROCESSED_EVENT_RULES
         }
     )
-    result[_DISPATCHER_MAPPING] = (("Properties", "Enabled"), False, True, True)
+    result[_DISPATCHER_MAPPING] = (("Properties", "Enabled"), not activating, True, activating)
     return result
 
 
