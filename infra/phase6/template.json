@@ -1354,7 +1354,7 @@
         "CodeUri": "lambda/",
         "Handler": "phase6_lambda.dispatcher_handler",
         "Role": {"Fn::GetAtt": ["DispatcherFunctionRole", "Arn"]},
-        "Timeout": 30,
+        "Timeout": 120,
         "Environment": {
           "Variables": {
             "MR_LISTER_PREPARE_MACHINE_ARN": {"Ref": "PrepareStateMachine"},
@@ -1440,7 +1440,7 @@
         "CodeUri": "lambda/",
         "Handler": "phase6_lambda.settlement_handler",
         "Role": {"Fn::GetAtt": ["SettlementFunctionRole", "Arn"]},
-        "Timeout": 30
+        "Timeout": 120
       }
     },
     "UploadApiFunction": {
@@ -1818,7 +1818,7 @@
           {"Id": "d8", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "ReviewQueryApiFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
           {"Id": "d9", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "SellerCommandApiFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
           {"Id": "d10", "ReturnData": false, "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Duration", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "StuckExecutionRecoveryFunction"}}]}, "Period": 300, "Stat": "Maximum"}},
-          {"Id": "timeout_fraction", "Expression": "MAX([d1/240000,d2/240000,d3/24000,d4/480000,d5/480000,d6/24000,d7/24000,d8/12000,d9/24000,d10/96000])", "Label": "Maximum Phase 6 Lambda timeout fraction", "ReturnData": true}
+          {"Id": "timeout_fraction", "Expression": "MAX([d1/240000,d2/240000,d3/96000,d4/480000,d5/480000,d6/96000,d7/24000,d8/12000,d9/24000,d10/96000])", "Label": "Maximum Phase 6 Lambda timeout fraction", "ReturnData": true}
         ]
       }
     },

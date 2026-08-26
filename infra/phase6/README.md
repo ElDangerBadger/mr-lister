@@ -107,16 +107,22 @@ should delete the bootstrap stack to detach and remove the developer managed pol
 role is intentionally retained because it is recorded on the foundation stack. Follow
 `FOUNDATION_DEPLOYMENT.md` for the exact capture and verification sequence.
 
-## Deployment gate
+## Full-stack deployment gate
 
-This stack is **not ready for cloud deployment**. Every Lambda entrypoint remains fail-closed under
-the checked `MR_LISTER_PHASE6_SCAFFOLD_ONLY=true` marker. The thin shim now has closed delegation
-surfaces for the API, dispatcher, preparation, provider, settlement, source-retention,
-terminal-operational-cleanup, and stuck-execution-recovery roles,
-but the checked `CodeUri` still contains only the scaffold package rather than the tested
-application source and Linux ARM64 dependencies. The public health route therefore returns `503`
-with only `{"status":"scaffold_only"}`. The stack output `DeploymentReadiness=SCAFFOLD_ONLY` makes
-this condition inspectable.
+The domain-independent core slice is now deployed to `mr-lister-phase6-dev` as
+`CORE_RELEASE_BOUND_STAGED`. It contains the exact sealed Linux ARM64 application release, seven
+healthy Lambda functions, four active Standard workflows, and the pinned AgentCore v1 endpoint,
+but remains deliberately inert: `MR_LISTER_PHASE6_SCAFFOLD_ONLY=true`, all five reviewed triggers
+are disabled, and the three maintenance functions have zero reserved concurrency. The stack has
+no Cognito, API Gateway, CloudFront, ACM, Route 53, or seller-web resource.
+
+The complete template in this directory is therefore **not yet a direct deployment target**. The
+next domain-independent gate is the two-update sequence in
+[`CORE_RUNTIME_ACTIVATION.md`](CORE_RUNTIME_ACTIVATION.md): first
+remove only the three zero concurrency settings while every handler and trigger remains inert;
+then, after fresh empty-state evidence and a separately reviewed change set, remove scaffold mode
+and enable only the five checked triggers. The later web update must preserve that verified active
+core instead of reapplying a fail-closed staging renderer.
 
 Role-separated composition roots now construct the tested API, dispatcher, preparation, provider,
 settlement, reference-aware source-retention, terminal operational-cleanup, and execution-recovery
@@ -125,16 +131,15 @@ entrypoint visibly keeps Strands as controller over the pinned Gemma intelligenc
 and reproducible narrow source manifests isolate ordinary Lambda code from the AgentCore runtime.
 The cleanup/recovery schedules, encrypted recovery DLQ, release/runtime bindings, least-capability
 IAM, and closed alarm/SNS transport are present in this template. Recovery can describe an exact
-execution and settle durable authority, but cannot start, stop, or redrive workflows. None of that
-is a deployment claim while the application bundles and dependencies are absent from `CodeUri` and
-the scaffold marker remains true.
+execution and settle durable authority, but cannot start, stop, or redrive workflows. The sealed
+application code and the core recovery boundary are deployed; the scaffold marker and disabled
+triggers still prevent execution, while the full alarm, API, and web surfaces remain undeployed.
 
-Before deployment, produce the real controlled Linux ARM64 dependency artifacts, run their target
-import smoke, seal both runtime trees, and wire those exact bytes into SAM and the separate
-versioned AgentCore deployment. Then deploy through a reviewed change set, verify the configured
-endpoint observation, alarms, cleanup/recovery schedules, static assets, and non-destructive smoke.
-Remove the scaffold marker and change the readiness output only after those controls and explicitly
-authorized live acceptance pass.
+The controlled Linux ARM64 artifacts, target import smoke, sealed Lambda and AgentCore trees,
+versioned S3 objects, runtime v1, endpoint, and inert core deployment are complete. Remaining
+deployment work still uses reviewed change sets and explicit execution approvals. Backend
+activation does not authorize publication, orders, or fulfillment; web-edge deployment and the
+deployed non-destructive acceptance gates remain separate later steps.
 
 The query role may read and presign only the exact pinned S3 object version after application
 ownership checks. It cannot write DynamoDB, call KMS, read a secret, or proxy artwork bytes through
