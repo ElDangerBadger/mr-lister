@@ -76,6 +76,10 @@ PHASE75_RETENTION_FILES = {
     "retention_locator.py",
 }
 
+PHASE76_GUARD_FILES = {
+    "guard_verification.py",
+}
+
 PHASE74_CLOUD_FILES = {
     ROOT / "src/mr_lister/cloud/phase7_composition.py",
     ROOT / "src/mr_lister/cloud/phase7_entrypoints.py",
@@ -85,7 +89,13 @@ PHASE75_OFFLINE_CLOUD_FILES = {
     ROOT / "src/mr_lister/cloud/phase7_provider_credentials.py",
 }
 
-PHASE7_CLOUD_FILES = PHASE74_CLOUD_FILES | PHASE75_OFFLINE_CLOUD_FILES
+PHASE76_GUARD_CLOUD_FILES = {
+    ROOT / "src/mr_lister/cloud/phase7_guard_composition.py",
+    ROOT / "src/mr_lister/cloud/phase7_guard_entrypoint.py",
+}
+PHASE76_GUARD_ENTRYPOINT = ROOT / "src/mr_lister/cloud/phase7_guard_entrypoint.py"
+
+PHASE7_CLOUD_FILES = PHASE74_CLOUD_FILES | PHASE75_OFFLINE_CLOUD_FILES | PHASE76_GUARD_CLOUD_FILES
 
 EXPECTED_OFFLINE_PUBLICATION_FILES = {
     "__init__.py",
@@ -107,6 +117,7 @@ EXPECTED_OFFLINE_PUBLICATION_FILES = {
     | PHASE74_APPLICATION_FILES
     | PHASE75_CREDENTIAL_FILES
     | PHASE75_RETENTION_FILES
+    | PHASE76_GUARD_FILES
 )
 
 
@@ -375,7 +386,9 @@ def test_phase7_offline_runtime_is_only_in_exact_inventory() -> None:
             for module in _imports(path)
         )
     }
-    assert publication_importing_cloud_files == PHASE7_CLOUD_FILES
+    # The sealed guard entrypoint is deliberately stdlib/release-only until its manifest gate
+    # passes; only its lazily imported composition root imports publication modules.
+    assert publication_importing_cloud_files == PHASE7_CLOUD_FILES - {PHASE76_GUARD_ENTRYPOINT}
 
     forbidden_phase74_imports = {
         "mr_lister.agent",
@@ -521,6 +534,11 @@ def test_phase75_retention_is_offline_injected_and_adds_no_source_tag_writer() -
     for path in (ROOT / "src" / "mr_lister" / "cloud").glob("*.py"):
         imports = _imports(path)
         assert adapter_module not in imports, path.relative_to(ROOT)
+        if path in PHASE76_GUARD_CLOUD_FILES:
+            assert imports.intersection(core_modules) <= {
+                "mr_lister.publication.retention_locator"
+            }, path.relative_to(ROOT)
+            continue
         assert core_modules.isdisjoint(imports), path.relative_to(ROOT)
 
     tag_writer_paths = {
@@ -535,6 +553,56 @@ def test_phase75_retention_is_offline_injected_and_adds_no_source_tag_writer() -
         if Path("src/mr_lister/publication") in path.parents
         or path == Path("src/mr_lister/cloud/phase7_provider_credentials.py")
     }
+
+
+def test_phase76_guard_runtime_is_read_only_and_provider_free() -> None:
+    core_imports = _imports(PUBLICATION_ROOT / "guard_verification.py")
+    assert not any(
+        module == forbidden or module.startswith(f"{forbidden}.")
+        for module in core_imports
+        for forbidden in {
+            "boto3",
+            "botocore",
+            "httpx",
+            "requests",
+            "urllib",
+            "mr_lister.agent",
+            "mr_lister.cloud",
+            "mr_lister.production",
+            "mr_lister.publication.execution_service",
+            "mr_lister.publication.provider_boundary",
+            "mr_lister.publication.provider_coordinator",
+            "mr_lister.publication.provider_credentials",
+            "mr_lister.publication.service",
+            "mr_lister.workflow",
+        }
+    )
+
+    composition = ROOT / "src/mr_lister/cloud/phase7_guard_composition.py"
+    entrypoint = ROOT / "src/mr_lister/cloud/phase7_guard_entrypoint.py"
+    composition_imports = _imports(composition)
+    entrypoint_imports = _imports(entrypoint)
+    assert "boto3" in composition_imports
+    assert "mr_lister.release.phase7" in entrypoint_imports
+    assert "mr_lister.cloud.phase7_guard_composition" in entrypoint_imports
+    for imports in (composition_imports, entrypoint_imports):
+        assert not any(
+            module == forbidden or module.startswith(f"{forbidden}.")
+            for module in imports
+            for forbidden in {
+                "httpx",
+                "requests",
+                "urllib",
+                "mr_lister.agent",
+                "mr_lister.production",
+                "mr_lister.publication.execution_service",
+                "mr_lister.publication.provider_boundary",
+                "mr_lister.publication.provider_coordinator",
+                "mr_lister.publication.provider_credentials",
+                "mr_lister.publication.service",
+                "mr_lister.workflow",
+            }
+        )
 
 
 def test_phase72_execution_oracle_has_no_provider_or_runtime_capability() -> None:

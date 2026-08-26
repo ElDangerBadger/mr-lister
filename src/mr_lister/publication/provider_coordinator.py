@@ -95,6 +95,17 @@ class PublicationProviderBoundaryFactory(Protocol):
     ) -> StagedPublicationProviderBoundary: ...
 
 
+class PublicationPreCallAuthorityGuard(Protocol):
+    """Re-read the exact application authority before any coordinator transition."""
+
+    def require_current(
+        self,
+        *,
+        owner_id: str,
+        aggregate_id: str,
+    ) -> PublicationExecutionAuthority: ...
+
+
 class PublicationProviderCoordinator:
     """Advance one publication using durable authority and at most one provider request."""
 
@@ -110,11 +121,13 @@ class PublicationProviderCoordinator:
         store: PublicationExecutionStore,
         execution: PublicationExecutionService,
         boundary_factory: PublicationProviderBoundaryFactory,
+        pre_call_guard: PublicationPreCallAuthorityGuard,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._store = store
         self._execution = execution
         self._boundary_factory = boundary_factory
+        self._pre_call_guard = pre_call_guard
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def advance(
@@ -128,6 +141,11 @@ class PublicationProviderCoordinator:
         authority = self._store.load_execution_authority(owner_id, aggregate_id)
         if authority.aggregate.state in self._TERMINAL_STATES:
             return self._result(PublicationProviderCoordinatorAction.TERMINAL, authority)
+        authority = self._require_current_pre_call_authority(
+            authority,
+            owner_id=owner_id,
+            aggregate_id=aggregate_id,
+        )
 
         now = self._now()
         stages = self._store.list_unconsumed_provider_evidence(owner_id, aggregate_id)
@@ -178,6 +196,38 @@ class PublicationProviderCoordinator:
         raise PublicationProviderCoordinatorError(
             "Publication coordinator found an unsupported nonterminal state"
         )
+
+    def _require_current_pre_call_authority(
+        self,
+        observed: PublicationExecutionAuthority,
+        *,
+        owner_id: str,
+        aggregate_id: str,
+    ) -> PublicationExecutionAuthority:
+        guarded: PublicationExecutionAuthority | None = None
+        try:
+            candidate = self._pre_call_guard.require_current(
+                owner_id=owner_id,
+                aggregate_id=aggregate_id,
+            )
+            exact = PublicationExecutionAuthority.model_validate(
+                candidate.model_dump(mode="python")
+            )
+            if (
+                exact != candidate
+                or exact != observed
+                or exact.snapshot.owner_id != owner_id
+                or exact.aggregate.aggregate_id != aggregate_id
+            ):
+                raise ValueError
+            guarded = exact
+        except Exception:
+            pass
+        if guarded is None:
+            raise PublicationProviderCoordinatorError(
+                "Publication pre-call authority is unavailable"
+            ) from None
+        return guarded
 
     def _prepare_local_authority(
         self,
