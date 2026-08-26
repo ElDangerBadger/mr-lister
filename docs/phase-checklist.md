@@ -325,21 +325,26 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       resources, seven exact-release Lambdas, four active Standard state machines, five disabled
       triggers, exact zero concurrency on the three maintenance functions, retained private
       foundation resources, and no public web surface
-    - [ ] Complete the activation evidence gate
+    - [x] Complete the activation evidence gate
       - [x] Implement deterministic capacity-released and active-draft-only renderers, canonical
         live-state lineage with fresh COUNT-only preflight evidence, exact processed change-set
         verification, and the two-approval operator runbook
-      - [ ] Remove the exact three zero concurrency settings while scaffold mode and all five
+      - [x] Remove the exact three zero concurrency settings while scaffold mode and all five
         triggers remain disabled, then verify their live absence
-      - [ ] From that proven inert state, remove `SCAFFOLD_ONLY`, enable only the five reviewed
+      - [x] From that proven inert state, remove `SCAFFOLD_ONLY`, enable only the five reviewed
         triggers in a later update, and verify the active draft-only backend remains idle and safe
     - [ ] Run explicitly authorized deployed non-destructive, double-gated unpublished Printify,
       and moderated first-time-seller acceptance and attach sanitized evidence
     - Evidence: the quota-compatible deployment checkpoint at source commit `678ea4f` passed 2,318
       Python tests with 11 gated live-Bedrock skips plus the 62-test web gate, lint, strict
       typecheck, production build, SAM lint, and diff hygiene. The live `us-west-2` stack reached
-      `UPDATE_COMPLETE` with no failure or rollback event and remains deliberately unactivated.
-      Acceptance details: [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
+      `UPDATE_COMPLETE` with no failure or rollback event. The activation correction retained the
+      sealed code and raised only dispatcher and settlement timeouts from 30 to 120 seconds before
+      enabling the reviewed draft-only backend. Two scheduled dispatcher runs then completed with
+      zero errors (35.2-second cold start and 14.9-millisecond warm run), zero provider-draft
+      invocations, zero running workflows, an empty recovery queue, and zero unexpected table
+      rows. Acceptance details:
+      [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
 - [ ] Phase 7 — Etsy publication through Printify
   - [x] Freeze publication-disabled contract 7.0.1: separate aggregate authority, complete
     one-shot permit semantics, positive-proof-only GET reconciliation, verified safe link,
