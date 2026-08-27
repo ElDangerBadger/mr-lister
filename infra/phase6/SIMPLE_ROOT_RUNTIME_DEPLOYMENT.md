@@ -76,6 +76,10 @@ that declare `ReservedConcurrentExecutions`; the other four functions receive no
 authority. Staging needs `PutFunctionConcurrency` for the exact zero caps, and a later separately
 reviewed activation transition needs `DeleteFunctionConcurrency` before triggers can be enabled.
 S3 CORS apply and rollback both use the existing exact-bucket `s3:PutBucketCORS` permission.
+After the seller edge exists, the role keeps only `cloudfront:GetDistribution` on the exact
+`EXC2KQ0RRVWF0` distribution. CloudFormation needs that read to resolve the retained
+`SellerWebDistributionDomainName` output during later stack updates; the role has no CloudFront
+list, configuration-read, invalidation, create, update, tag, or delete authority.
 
 Read back the `CoreRuntimeExecutionRoleArn` output and require:
 

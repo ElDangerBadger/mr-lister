@@ -13,6 +13,9 @@ SAM_TRANSFORM_ARN = (
     "arn:${AWS::Partition}:cloudformation:us-west-2:aws:transform/Serverless-2016-10-31"
 )
 CORE_FUNCTION_ARN_PREFIX = "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:"
+SELLER_WEB_DISTRIBUTION_ARN = (
+    "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/EXC2KQ0RRVWF0"
+)
 CAPPED_CORE_FUNCTION_NAMES = (
     "mr-lister-phase6-dev-execution-recovery",
     "mr-lister-phase6-dev-source-retention",
@@ -131,7 +134,7 @@ def test_execution_role_keeps_exact_resource_and_wildcard_boundaries() -> None:
     role = _document(BOOTSTRAP_PATH)["Resources"]["CoreRuntimeExecutionRole"]
     statements = _statements(role)
 
-    assert len(statements) == 16
+    assert len(statements) == 17
     wildcard = {
         sid: statement for sid, statement in statements.items() if statement["Resource"] == "*"
     }
@@ -228,7 +231,7 @@ def test_execution_role_covers_only_the_three_capped_lambda_concurrency_lifecycl
     ]
 
 
-def test_execution_role_has_no_application_runtime_or_web_surface_authority() -> None:
+def test_execution_role_has_only_exact_web_read_and_no_application_runtime_authority() -> None:
     role = _document(BOOTSTRAP_PATH)["Resources"]["CoreRuntimeExecutionRole"]
     statements = _statements(role)
     actions = {
@@ -248,11 +251,19 @@ def test_execution_role_has_no_application_runtime_or_web_surface_authority() ->
         "secretsmanager:GetSecretValue",
         "states:StartExecution",
     }.isdisjoint(actions)
+    assert statements["ReadOnlyExactSellerWebDistribution"] == {
+        "Sid": "ReadOnlyExactSellerWebDistribution",
+        "Effect": "Allow",
+        "Action": "cloudfront:GetDistribution",
+        "Resource": {"Fn::Sub": SELLER_WEB_DISTRIBUTION_ARN},
+    }
+    assert {action for action in actions if action.startswith("cloudfront:")} == {
+        "cloudfront:GetDistribution"
+    }
     for service in (
         "apigateway",
         "bedrock",
         "bedrock-agentcore",
-        "cloudfront",
         "cognito",
         "kms",
         "secretsmanager",

@@ -365,6 +365,14 @@
                   "Resource": {"Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2"}
                 },
                 {
+                  "Sid": "ReadOnlyExactSellerWebDistribution",
+                  "Effect": "Allow",
+                  "Action": "cloudfront:GetDistribution",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/EXC2KQ0RRVWF0"
+                  }
+                },
+                {
                   "Sid": "ReadOnlyExactLambdaDeploymentArchiveVersion",
                   "Effect": "Allow",
                   "Action": "s3:GetObjectVersion",

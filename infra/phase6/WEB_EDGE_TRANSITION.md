@@ -95,6 +95,11 @@ remain bounded by all of the following together:
 5. execution is absent in `PREPARE` and requires a separate root-applied `EXECUTE` stage;
 6. every permission expires and the bootstrap is deleted after evidence capture.
 
+After that temporary bootstrap is deleted, the retained CloudFormation execution role keeps only
+`cloudfront:GetDistribution` on the exact deployed `EXC2KQ0RRVWF0` distribution. This read-only
+exception lets later core updates resolve the existing `SellerWebDistributionDomainName` output;
+it grants no CloudFront configuration read, invalidation, list, create, update, tag, or delete.
+
 API Gateway resource paths, regional CloudWatch Logs delivery, and most CloudFront resources also
 receive physical IDs only during creation. Their temporary control-plane permissions therefore
 cannot all be pre-scoped to final ARNs. API stage tag-on-create authority is isolated in a separate

@@ -1099,6 +1099,18 @@ def test_foundation_old_role_and_new_authority_cannot_be_conflated(
             ]["StringEquals"].__setitem__("s3:VersionId", "other-version"),
         ),
         (
+            "execution-policy.json",
+            lambda value: _policy_statement(value, "ReadOnlyExactSellerWebDistribution").__setitem__(
+                "Action", "cloudfront:GetDistributionConfig"
+            ),
+        ),
+        (
+            "execution-policy.json",
+            lambda value: _policy_statement(value, "ReadOnlyExactSellerWebDistribution").__setitem__(
+                "Resource", f"arn:aws:cloudfront::{ACCOUNT}:distribution/OTHER"
+            ),
+        ),
+        (
             "deployer-role.json",
             lambda value: value["Role"].__setitem__("PermissionsBoundary", {"x": "y"}),
         ),

@@ -10,6 +10,9 @@ SAM_TRANSFORM_ARN = (
     "arn:${AWS::Partition}:cloudformation:us-west-2:aws:transform/Serverless-2016-10-31"
 )
 CORE_FUNCTION_ARN_PREFIX = "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:"
+SELLER_WEB_DISTRIBUTION_ARN = (
+    "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/EXC2KQ0RRVWF0"
+)
 CAPPED_CORE_FUNCTION_NAMES = (
     "mr-lister-phase6-dev-execution-recovery",
     "mr-lister-phase6-dev-source-retention",
@@ -249,9 +252,21 @@ def test_core_execution_role_is_separate_retained_and_lambda_version_scoped() ->
         "/private/deployments/lambda/releases/${ReleaseFingerprint}/"
         "phase6-lambda-${LambdaArchiveSha256}.zip"
     )
-    assert all(
-        "cloudfront" not in json.dumps(statement).lower() for statement in statements.values()
-    )
+    assert statements["ReadOnlyExactSellerWebDistribution"] == {
+        "Sid": "ReadOnlyExactSellerWebDistribution",
+        "Effect": "Allow",
+        "Action": "cloudfront:GetDistribution",
+        "Resource": {"Fn::Sub": SELLER_WEB_DISTRIBUTION_ARN},
+    }
+    cloudfront_actions = {
+        action
+        for statement in statements.values()
+        for action in (
+            statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]]
+        )
+        if action.startswith("cloudfront:")
+    }
+    assert cloudfront_actions == {"cloudfront:GetDistribution"}
     assert all("cognito" not in json.dumps(statement).lower() for statement in statements.values())
 
 
