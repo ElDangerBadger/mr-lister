@@ -124,7 +124,7 @@ exact active predecessor (SHA-256
 resource subtrees byte-for-byte, and adds exactly 62 source resources. After the SAM transform,
 the review gate requires `47 -> 125` resources with exactly 78 additions and no modification,
 removal, import, or replacement. The final canonical web-edge target is fixed at SHA-256
-`0ab2c8f016afb513d7de5dd65aefd975eeaf827800aa19ceb31d0f64c02748c8`.
+`74560fb066f66759f5baa8a3be15c6370e20bfa884a50e0b4b7e0457592ebff4`.
 
 Role-separated composition roots now construct the tested API, dispatcher, preparation, provider,
 settlement, reference-aware source-retention, terminal operational-cleanup, and execution-recovery

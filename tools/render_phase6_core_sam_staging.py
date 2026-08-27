@@ -62,7 +62,10 @@ CORE_STAGED_TEMPLATE_OUTPUT = Path(
 DEFAULT_DEPLOYMENT_ROOT = ROOT / ".mr_lister_private/phase6-deployment"
 DEFAULT_ARTIFACT_ROOT = ROOT / ".mr_lister_private/phase6-artifacts"
 
-_SOURCE_TEMPLATE_SHA256 = "6b8221fd526cd06cf76cf0029d9c2cd6baf81662aeaa280aa573391e0dfdec3b"
+_SOURCE_TEMPLATE_SHA256 = "dbe27c19ff41625d6f004c39e0520ae01af5cf110dc55521b0c86ee92f0a0a87"
+_SEALED_CORE_SOURCE_TEMPLATE_SHA256 = (
+    "6b8221fd526cd06cf76cf0029d9c2cd6baf81662aeaa280aa573391e0dfdec3b"
+)
 _FOUNDATION_TEMPLATE_FINGERPRINT = (
     "689897c254c9db97aa75d508f140980f9b6a5129c0c1fa0121eb8d6ef1e64874"
 )
@@ -1101,7 +1104,10 @@ def _expected_metadata(
             "ReleaseFingerprint": binding.release_fingerprint,
             "SourceTemplate": {
                 "Path": SOURCE_TEMPLATE.as_posix(),
-                "Sha256": _SOURCE_TEMPLATE_SHA256,
+                # Preserve the exact provenance embedded in the already deployed active-core
+                # predecessor. The current source hash is checked separately before rendering;
+                # only web-edge resources changed, so core reconstruction must remain byte exact.
+                "Sha256": _SEALED_CORE_SOURCE_TEMPLATE_SHA256,
             },
             "StateMachineDefinitions": {
                 name: {"Path": path.as_posix(), "Sha256": fingerprint}

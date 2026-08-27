@@ -51,8 +51,13 @@ The target binds these public identifiers exactly:
 - certificate:
   `arn:aws:acm:us-east-1:384627057108:certificate/28b8cddb-a0d7-4dc8-98de-26fd87cb5b79`;
 - canonical target SHA-256:
-  `0ab2c8f016afb513d7de5dd65aefd975eeaf827800aa19ceb31d0f64c02748c8`;
-- change-set name: `mr-lister-phase6-dev-web-edge-0ab2c8f016af`.
+  `74560fb066f66759f5baa8a3be15c6370e20bfa884a50e0b4b7e0457592ebff4`;
+- change-set name: `mr-lister-phase6-dev-web-edge-74560fb066f6`.
+
+Both custom no-store cache policies use minimum/default/maximum TTLs of `0/0/1`. The positive
+one-second ceiling keeps CloudFront from applying its restricted all-zero caching-disabled shape,
+while the zero minimum/default and origin `no-store` contract preserve the intended no-cache
+behavior and the exact API header/query forwarding rules.
 
 ## What the temporary bootstrap grants
 
@@ -67,6 +72,12 @@ log groups, and Lambda permissions. The temporary policies add only the missing 
   the named API access-log group, and regional log-delivery configuration;
 - a tagged KMS alarm key, exact SNS alarm topic, and only alarms named
   `mr-lister-phase6-dev-*`.
+
+Tagged Cognito and KMS creation requires the three exact resource tags while allowing only the
+closed tag-key set formed by those tags, the preserved `DeploymentClass` stack tag, and
+CloudFormation's three `aws:cloudformation:*` system tags. The policy contains no tag wildcard.
+Tag-on-create permission is colocated with the corresponding create action; post-create authority
+still requires the exact project, environment, and data-classification resource tags.
 
 Every temporary statement expires at the exclusive UTC `NotAfter` value. The only global
 CloudFront create permissions are actions whose resource IDs do not exist until creation. They
@@ -141,6 +152,10 @@ Apply the bootstrap only as stack `mr-lister-phase6-web-edge-bootstrap-dev` in `
 `CAPABILITY_NAMED_IAM`, an explicit near-term `NotAfter`, `BootstrapStage=PREPARE`, and
 `ReviewedChangeSetId=PREPARE_NOT_REVIEWED`. Supply every other parameter explicitly; none of the
 identity, version, fingerprint, origin, certificate, or stage parameters has a permissive default.
+After every bootstrap create or update, allow IAM propagation, acquire a fresh role session, and
+read back the attached default policy versions before using them. Simulate the Cognito and KMS
+create context with the complete closed tag-key set and require tagged create/readback authority;
+a readable managed-policy version alone is not a live authorization result.
 
 ## Repository-controlled artifact sequence
 
@@ -152,7 +167,7 @@ write only beneath `.mr_lister_private`, and do not call AWS, a browser, or a pr
    target is
    `.mr_lister_private/phase6-web-edge-transition/template.web-edge-active-draft-only.local.json`;
    its canonical SHA-256 must be
-   `0ab2c8f016afb513d7de5dd65aefd975eeaf827800aa19ceb31d0f64c02748c8`.
+   `74560fb066f66759f5baa8a3be15c6370e20bfa884a50e0b4b7e0457592ebff4`.
 2. Re-run the same renderer with `--verify` before uploading that target. Uploading the template is
    its own approval boundary; retain the returned object VersionId and bind it into the bootstrap.
 3. After the `PREPARE` change set reaches `CREATE_COMPLETE`, normalize the original template,
@@ -202,7 +217,7 @@ Create the application change set with all of these exact request bindings:
 
 - stack ID: the supplied `FoundationStackId`;
 - type: `UPDATE`;
-- name: `mr-lister-phase6-dev-web-edge-0ab2c8f016af`;
+- name: `mr-lister-phase6-dev-web-edge-74560fb066f6`;
 - service role: `mr-lister-phase6-runtime-cfn-dev`;
 - template URL: the bootstrap-computed HTTPS URL including the exact encoded S3 VersionId;
 - capability: `CAPABILITY_NAMED_IAM`;
@@ -235,6 +250,15 @@ Wait for the application stack to reach `UPDATE_COMPLETE`. Capture the new physi
 that the core runtime is still active and draft-only before doing anything with static assets or
 DNS. If CloudFormation rolls back, wait for rollback to finish and inspect events before cleanup;
 do not extend the expiry or broaden permissions merely to force progress.
+
+After a rollback, inventory every attempted logical resource before preparing another change set.
+Any resource protected by `DeletionPolicy: Retain` can survive outside the stack and collide with
+the corrected retry. Before the normal additive retry continues, prove that each retained resource
+is absent or separately approved for removal. If adoption or import is required, stop and reseal a
+separately reviewed recovery closure; the normal verifier allows no import or modification. Render
+and verify the immutable target again. Corrected bytes require a new SHA-256 fingerprint; unchanged
+bytes retain their canonical fingerprint. In either case, use a fresh uploaded object VersionId and
+a freshly created change-set ARN. Never execute an already consumed or failed change set.
 
 Once the application update and readback evidence are complete, delete only
 `mr-lister-phase6-web-edge-bootstrap-dev` and wait for `DELETE_COMPLETE`. Confirm that all three

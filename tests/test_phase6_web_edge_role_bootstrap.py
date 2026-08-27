@@ -12,8 +12,8 @@ APPLICATION_ORIGIN = "https://massskutiny.com"
 CERTIFICATE_ARN = (
     "arn:aws:acm:us-east-1:384627057108:certificate/28b8cddb-a0d7-4dc8-98de-26fd87cb5b79"
 )
-TARGET_TEMPLATE_FINGERPRINT = "0ab2c8f016afb513d7de5dd65aefd975eeaf827800aa19ceb31d0f64c02748c8"
-CHANGE_SET_NAME = "mr-lister-phase6-dev-web-edge-0ab2c8f016af"
+TARGET_TEMPLATE_FINGERPRINT = "74560fb066f66759f5baa8a3be15c6370e20bfa884a50e0b4b7e0457592ebff4"
+CHANGE_SET_NAME = "mr-lister-phase6-dev-web-edge-74560fb066f6"
 REVIEWED_CHANGE_SET_ID = (
     "arn:aws:cloudformation:us-west-2:384627057108:changeSet/"
     f"{CHANGE_SET_NAME}/12345678-1234-1234-1234-123456789abc"
@@ -250,6 +250,7 @@ def test_private_web_bucket_authority_has_no_object_data_plane() -> None:
         "s3:GetBucketPublicAccessBlock",
         "s3:GetBucketVersioning",
         "s3:GetEncryptionConfiguration",
+        "s3:GetLifecycleConfiguration",
         "s3:PutBucketOwnershipControls",
         "s3:PutBucketPolicy",
         "s3:PutBucketPublicAccessBlock",
@@ -308,7 +309,7 @@ def test_cognito_authority_is_tagged_control_plane_without_seller_admin() -> Non
     create = statements["CreateOnlyTaggedSellerUserPool"]
     manage = statements["ManageOnlyTaggedSellerUserPoolsAndChildren"]
 
-    assert create["Action"] == "cognito-idp:CreateUserPool"
+    assert _actions(create) == {"cognito-idp:CreateUserPool", "cognito-idp:TagResource"}
     assert create["Resource"] == "*"
     assert create["Condition"]["StringEquals"] == {
         "aws:RequestTag/DataClassification": "SellerIdentity",
@@ -316,6 +317,18 @@ def test_cognito_authority_is_tagged_control_plane_without_seller_admin() -> Non
         "aws:RequestTag/Project": "MrLister",
         "aws:RequestedRegion": "us-west-2",
     }
+    assert create["Condition"]["ForAllValues:StringEquals"] == {
+        "aws:TagKeys": [
+            "DataClassification",
+            "DeploymentClass",
+            "Environment",
+            "Project",
+            "aws:cloudformation:logical-id",
+            "aws:cloudformation:stack-id",
+            "aws:cloudformation:stack-name",
+        ]
+    }
+    assert create["Condition"]["Null"] == {"aws:TagKeys": "false"}
     assert manage["Resource"] == {
         "Fn::Sub": ("arn:${AWS::Partition}:cognito-idp:us-west-2:${AWS::AccountId}:userpool/*")
     }
@@ -373,7 +386,7 @@ def test_observability_authority_is_tag_or_name_scoped() -> None:
 
     key_create = statements["CreateOnlyTaggedOperationalAlarmKey"]
     key_manage = statements["ManageOnlyTaggedOperationalAlarmKeys"]
-    assert key_create["Action"] == "kms:CreateKey"
+    assert _actions(key_create) == {"kms:CreateKey", "kms:TagResource"}
     assert key_create["Condition"]["StringEquals"] == {
         "aws:RequestTag/DataClassification": "OperationalAlarmTransport",
         "aws:RequestTag/Environment": "dev",
@@ -381,8 +394,17 @@ def test_observability_authority_is_tag_or_name_scoped() -> None:
         "aws:RequestedRegion": "us-west-2",
     }
     assert key_create["Condition"]["ForAllValues:StringEquals"] == {
-        "aws:TagKeys": ["DataClassification", "Environment", "Project"]
+        "aws:TagKeys": [
+            "DataClassification",
+            "DeploymentClass",
+            "Environment",
+            "Project",
+            "aws:cloudformation:logical-id",
+            "aws:cloudformation:stack-id",
+            "aws:cloudformation:stack-name",
+        ]
     }
+    assert key_create["Condition"]["Null"] == {"aws:TagKeys": "false"}
     assert key_manage["Resource"] == {
         "Fn::Sub": "arn:${AWS::Partition}:kms:us-west-2:${AWS::AccountId}:key/*"
     }

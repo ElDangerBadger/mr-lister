@@ -195,7 +195,14 @@ def test_cache_behaviors_separate_immutable_assets_runtime_config_and_api() -> N
         31536000,
     )
     no_store = resources["SellerWebNoStoreCachePolicy"]["Properties"]["CachePolicyConfig"]
-    assert (no_store["MinTTL"], no_store["DefaultTTL"], no_store["MaxTTL"]) == (0, 0, 0)
+    assert (no_store["MinTTL"], no_store["DefaultTTL"], no_store["MaxTTL"]) == (0, 0, 1)
+    assert no_store["ParametersInCacheKeyAndForwardedToOrigin"] == {
+        "CookiesConfig": {"CookieBehavior": "none"},
+        "EnableAcceptEncodingBrotli": True,
+        "EnableAcceptEncodingGzip": True,
+        "HeadersConfig": {"HeaderBehavior": "none"},
+        "QueryStringsConfig": {"QueryStringBehavior": "none"},
+    }
 
     health = behaviors["/health"]
     assert health == {
@@ -225,7 +232,7 @@ def test_cache_behaviors_separate_immutable_assets_runtime_config_and_api() -> N
     ]
 
     api_cache = resources["SellerApiNoStoreCachePolicy"]["Properties"]["CachePolicyConfig"]
-    assert (api_cache["MinTTL"], api_cache["DefaultTTL"], api_cache["MaxTTL"]) == (0, 0, 0)
+    assert (api_cache["MinTTL"], api_cache["DefaultTTL"], api_cache["MaxTTL"]) == (0, 0, 1)
     forwarded = api_cache["ParametersInCacheKeyAndForwardedToOrigin"]
     assert forwarded["CookiesConfig"] == {"CookieBehavior": "none"}
     assert forwarded["EnableAcceptEncodingBrotli"] is False

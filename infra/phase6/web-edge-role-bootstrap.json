@@ -55,7 +55,7 @@
     "TargetTemplateFingerprint": {
       "Type": "String",
       "AllowedValues": [
-        "0ab2c8f016afb513d7de5dd65aefd975eeaf827800aa19ceb31d0f64c02748c8"
+        "74560fb066f66759f5baa8a3be15c6370e20bfa884a50e0b4b7e0457592ebff4"
       ],
       "Description": "Exact canonical SHA-256 of the active-core-preserving web-edge template"
     },
@@ -71,12 +71,12 @@
     },
     "ExactChangeSetName": {
       "Type": "String",
-      "AllowedValues": ["mr-lister-phase6-dev-web-edge-0ab2c8f016af"],
+      "AllowedValues": ["mr-lister-phase6-dev-web-edge-74560fb066f6"],
       "Description": "Fingerprint-derived exact web-edge change-set name"
     },
     "ReviewedChangeSetId": {
       "Type": "String",
-      "AllowedPattern": "^(?:PREPARE_NOT_REVIEWED|arn:aws:cloudformation:us-west-2:384627057108:changeSet/mr-lister-phase6-dev-web-edge-0ab2c8f016af/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
+      "AllowedPattern": "^(?:PREPARE_NOT_REVIEWED|arn:aws:cloudformation:us-west-2:384627057108:changeSet/mr-lister-phase6-dev-web-edge-74560fb066f6/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
       "Description": "PREPARE sentinel or exact full reviewed change-set ARN required for EXECUTE"
     },
     "ApplicationOrigin": {
@@ -165,6 +165,7 @@
                 "s3:GetBucketTagging",
                 "s3:GetBucketVersioning",
                 "s3:GetEncryptionConfiguration",
+                "s3:GetLifecycleConfiguration",
                 "s3:ListBucket",
                 "s3:PutBucketOwnershipControls",
                 "s3:PutBucketPolicy",
@@ -192,7 +193,7 @@
             {
               "Sid": "CreateOnlyTaggedSellerUserPool",
               "Effect": "Allow",
-              "Action": "cognito-idp:CreateUserPool",
+              "Action": ["cognito-idp:CreateUserPool", "cognito-idp:TagResource"],
               "Resource": "*",
               "Condition": {
                 "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
@@ -203,7 +204,15 @@
                   "aws:RequestedRegion": "us-west-2"
                 },
                 "ForAllValues:StringEquals": {
-                  "aws:TagKeys": ["DataClassification", "Environment", "Project"]
+                  "aws:TagKeys": [
+                    "DataClassification",
+                    "DeploymentClass",
+                    "Environment",
+                    "Project",
+                    "aws:cloudformation:logical-id",
+                    "aws:cloudformation:stack-id",
+                    "aws:cloudformation:stack-name"
+                  ]
                 },
                 "Null": {"aws:TagKeys": "false"}
               }
@@ -413,7 +422,7 @@
             {
               "Sid": "CreateOnlyTaggedOperationalAlarmKey",
               "Effect": "Allow",
-              "Action": "kms:CreateKey",
+              "Action": ["kms:CreateKey", "kms:TagResource"],
               "Resource": "*",
               "Condition": {
                 "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
@@ -424,7 +433,15 @@
                   "aws:RequestedRegion": "us-west-2"
                 },
                 "ForAllValues:StringEquals": {
-                  "aws:TagKeys": ["DataClassification", "Environment", "Project"]
+                  "aws:TagKeys": [
+                    "DataClassification",
+                    "DeploymentClass",
+                    "Environment",
+                    "Project",
+                    "aws:cloudformation:logical-id",
+                    "aws:cloudformation:stack-id",
+                    "aws:cloudformation:stack-name"
+                  ]
                 },
                 "Null": {"aws:TagKeys": "false"}
               }

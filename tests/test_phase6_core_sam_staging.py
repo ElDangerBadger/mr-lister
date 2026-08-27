@@ -40,6 +40,9 @@ ROOT = Path(__file__).parents[1]
 ACCOUNT = "123456789012"
 REGION = "us-west-2"
 ENVIRONMENT = "dev"
+SEALED_CORE_SOURCE_SHA256 = (
+    "6b8221fd526cd06cf76cf0029d9c2cd6baf81662aeaa280aa573391e0dfdec3b"
+)
 STACK_ID = (
     f"arn:aws:cloudformation:{REGION}:{ACCOUNT}:stack/mr-lister-phase6-dev/"
     "11111111-2222-3333-4444-555555555555"
@@ -867,6 +870,10 @@ def test_exact_binding_metadata_canonical_determinism_and_no_source_mutation(
         "AccountId": ACCOUNT,
         "Environment": ENVIRONMENT,
         "Region": REGION,
+    }
+    assert metadata["SourceTemplate"] == {
+        "Path": SOURCE_TEMPLATE.as_posix(),
+        "Sha256": SEALED_CORE_SOURCE_SHA256,
     }
     assert metadata["Foundation"]["StackId"] == STACK_ID
     assert metadata["AgentCore"]["Status"] == "READY"
