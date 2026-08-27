@@ -1500,7 +1500,8 @@
         "CodeUri": "lambda/",
         "Handler": "phase6_lambda.review_query_api_handler",
         "Role": {"Fn::GetAtt": ["ReviewQueryApiFunctionRole", "Arn"]},
-        "Timeout": 15,
+        "MemorySize": 512,
+        "Timeout": 30,
         "Environment": {
           "Variables": {
             "MR_LISTER_COGNITO_ISSUER": {"Fn::Sub": "https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${SellerUserPool}"},
