@@ -50,6 +50,13 @@ _PLACEHOLDER = re.compile(
     r"\b(?:PLACEHOLDER|REPLACE_ME|CHANGEME)\b",
     re.IGNORECASE,
 )
+_SAM_API_GATEWAY_SOURCE_ARN_PREFIX: Final = (
+    "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${__ApiId__}/${__Stage__}/"
+)
+_SAM_API_GATEWAY_SUBSTITUTIONS: Final = {
+    "__ApiId__": {"Ref": "SellerHttpApi"},
+    "__Stage__": "*",
+}
 
 _ORIGINAL_PREDECESSOR_COUNT = 40
 _ORIGINAL_TARGET_COUNT = 102
@@ -318,7 +325,9 @@ def verify_phase6_web_edge_change_set(
             target_original_template_observation_path, repository
         )
         target_processed_raw, target_processed_observation = _load_mapping(
-            target_processed_template_observation_path, repository
+            target_processed_template_observation_path,
+            repository,
+            allow_sam_api_gateway_source_arns=True,
         )
 
         predecessor_original = _template_body(predecessor_original_observation)
@@ -624,7 +633,11 @@ def _decode_context(value: object) -> Mapping[str, object]:
     decoded = json.loads(value, object_pairs_hook=_unique_object, parse_constant=_bad_constant)
     if not isinstance(decoded, Mapping):
         raise ValueError
-    _reject_placeholders(decoded)
+    _reject_placeholders(
+        decoded,
+        allow_sam_api_gateway_source_arns=False,
+        path=(),
+    )
     return decoded
 
 
@@ -659,7 +672,12 @@ def _repository(path: Path) -> Path:
     return resolved
 
 
-def _load_mapping(path: Path, repository: Path) -> tuple[bytes, Mapping[str, object]]:
+def _load_mapping(
+    path: Path,
+    repository: Path,
+    *,
+    allow_sam_api_gateway_source_arns: bool = False,
+) -> tuple[bytes, Mapping[str, object]]:
     if not isinstance(path, Path):
         raise ValueError
     candidate = path if path.is_absolute() else repository / path
@@ -683,7 +701,11 @@ def _load_mapping(path: Path, repository: Path) -> tuple[bytes, Mapping[str, obj
     value = json.loads(raw, object_pairs_hook=_unique_object, parse_constant=_bad_constant)
     if not isinstance(value, Mapping) or canonical_phase6_web_edge_change_set(value) != raw:
         raise ValueError
-    _reject_placeholders(value)
+    _reject_placeholders(
+        value,
+        allow_sam_api_gateway_source_arns=allow_sam_api_gateway_source_arns,
+        path=(),
+    )
     return raw, value
 
 
@@ -700,18 +722,63 @@ def _bad_constant(_value: str) -> object:
     raise ValueError
 
 
-def _reject_placeholders(value: object) -> None:
+def _reject_placeholders(
+    value: object,
+    *,
+    allow_sam_api_gateway_source_arns: bool,
+    path: tuple[str, ...],
+) -> None:
     if isinstance(value, str):
         if _PLACEHOLDER.search(value):
             raise ValueError
     elif isinstance(value, Mapping):
+        if allow_sam_api_gateway_source_arns and _is_sam_api_gateway_source_arn(value, path):
+            return
         for key, nested in value.items():
             if not isinstance(key, str) or _PLACEHOLDER.search(key):
                 raise ValueError
-            _reject_placeholders(nested)
+            _reject_placeholders(
+                nested,
+                allow_sam_api_gateway_source_arns=allow_sam_api_gateway_source_arns,
+                path=(*path, key),
+            )
     elif isinstance(value, list):
-        for nested in value:
-            _reject_placeholders(nested)
+        for index, nested in enumerate(value):
+            _reject_placeholders(
+                nested,
+                allow_sam_api_gateway_source_arns=allow_sam_api_gateway_source_arns,
+                path=(*path, f"[{index}]"),
+            )
+
+
+def _is_sam_api_gateway_source_arn(value: Mapping[str, object], path: tuple[str, ...]) -> bool:
+    """Recognize only SAM's fully bound API permission ``Fn::Sub`` form."""
+
+    if len(path) != 5 or path[:2] != ("TemplateBody", "Resources"):
+        return False
+    logical_id = path[2]
+    if (
+        path[3:] != ("Properties", "SourceArn")
+        or _PROCESSED_ADDITION_TYPES.get(logical_id) != "AWS::Lambda::Permission"
+        or set(value) != {"Fn::Sub"}
+    ):
+        return False
+    substitution = value["Fn::Sub"]
+    if not isinstance(substitution, list) or len(substitution) != 2:
+        return False
+    template, substitutions = substitution
+    if not isinstance(template, str) or not isinstance(substitutions, Mapping):
+        return False
+    if dict(substitutions) != _SAM_API_GATEWAY_SUBSTITUTIONS:
+        return False
+    if not template.startswith(_SAM_API_GATEWAY_SOURCE_ARN_PREFIX):
+        return False
+    if len(template) == len(_SAM_API_GATEWAY_SOURCE_ARN_PREFIX):
+        return False
+    if template.count("${__ApiId__}") != 1 or template.count("${__Stage__}") != 1:
+        return False
+    remainder = template.replace("${__ApiId__}", "").replace("${__Stage__}", "")
+    return _PLACEHOLDER.search(remainder) is None
 
 
 def _parser() -> argparse.ArgumentParser:

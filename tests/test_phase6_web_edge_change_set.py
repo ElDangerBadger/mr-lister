@@ -215,6 +215,30 @@ def _rewrite(path: Path, mutation: Any) -> None:
     _write(path, value)
 
 
+def _sam_api_gateway_source_arn(
+    *,
+    template: str | None = None,
+    substitutions: dict[str, object] | None = None,
+) -> dict[str, object]:
+    return {
+        "Fn::Sub": [
+            (
+                verifier._SAM_API_GATEWAY_SOURCE_ARN_PREFIX + "POST/v1/jobs/*/approve"
+                if template is None
+                else template
+            ),
+            (
+                {
+                    "__ApiId__": {"Ref": "SellerHttpApi"},
+                    "__Stage__": "*",
+                }
+                if substitutions is None
+                else substitutions
+            ),
+        ]
+    }
+
+
 def test_accepts_only_the_exact_additive_web_edge_join(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -230,6 +254,150 @@ def test_accepts_only_the_exact_additive_web_edge_join(
     assert first.change_set_name.endswith(first.target_local_sha256[:12])
     assert len(first.canonical_sha256) == 64
     assert canonical_phase6_web_edge_change_set(asdict(first))
+
+
+def test_accepts_sam_generated_api_permission_substitution_variables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = _fixture(tmp_path, monkeypatch)
+    path: Path = fixture["paths"]["target-processed.json"]
+    _rewrite(
+        path,
+        lambda document: document["TemplateBody"]["Resources"][
+            "SellerCommandApiFunctionApproveReviewPermission"
+        ]["Properties"].__setitem__("SourceArn", _sam_api_gateway_source_arn()),
+    )
+
+    assert verify_phase6_web_edge_change_set(**_kwargs(fixture))
+
+
+@pytest.mark.parametrize(
+    "source_arn",
+    [
+        _sam_api_gateway_source_arn(
+            substitutions={
+                "__ApiId__": {"Ref": "WrongApi"},
+                "__Stage__": "*",
+            }
+        ),
+        _sam_api_gateway_source_arn(
+            substitutions={
+                "__ApiId__": {"Ref": "SellerHttpApi"},
+                "__Stage__": "dev",
+            }
+        ),
+        _sam_api_gateway_source_arn(substitutions={"__ApiId__": {"Ref": "SellerHttpApi"}}),
+        _sam_api_gateway_source_arn(
+            template=(verifier._SAM_API_GATEWAY_SOURCE_ARN_PREFIX + "${__Stage__}/POST/v1/jobs")
+        ),
+        _sam_api_gateway_source_arn(
+            template=(verifier._SAM_API_GATEWAY_SOURCE_ARN_PREFIX + "POST/${__Unresolved__}"),
+            substitutions={
+                "__ApiId__": {"Ref": "SellerHttpApi"},
+                "__Stage__": "*",
+                "__Unresolved__": "approve",
+            },
+        ),
+        {
+            "NotFn::Sub": [
+                verifier._SAM_API_GATEWAY_SOURCE_ARN_PREFIX + "POST/v1/jobs",
+                {
+                    "__ApiId__": {"Ref": "SellerHttpApi"},
+                    "__Stage__": "*",
+                },
+            ]
+        },
+    ],
+)
+def test_rejects_sam_like_variables_outside_the_exact_generated_structure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_arn: dict[str, object],
+) -> None:
+    fixture = _fixture(tmp_path, monkeypatch)
+    path: Path = fixture["paths"]["target-processed.json"]
+    _rewrite(
+        path,
+        lambda document: document["TemplateBody"]["Resources"][
+            "SellerCommandApiFunctionApproveReviewPermission"
+        ]["Properties"].__setitem__("SourceArn", source_arn),
+    )
+
+    with pytest.raises(Phase6WebEdgeChangeSetError):
+        verify_phase6_web_edge_change_set(**_kwargs(fixture))
+
+
+@pytest.mark.parametrize(
+    ("logical_id", "property_name"),
+    [
+        ("SellerWebDistribution", "SourceArn"),
+        ("SellerCommandApiFunctionApproveReviewPermission", "OtherProperty"),
+    ],
+)
+def test_rejects_exact_sam_substitution_at_an_unapproved_processed_template_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    logical_id: str,
+    property_name: str,
+) -> None:
+    fixture = _fixture(tmp_path, monkeypatch)
+    path: Path = fixture["paths"]["target-processed.json"]
+    _rewrite(
+        path,
+        lambda document: document["TemplateBody"]["Resources"][logical_id][
+            "Properties"
+        ].__setitem__(property_name, _sam_api_gateway_source_arn()),
+    )
+
+    with pytest.raises(Phase6WebEdgeChangeSetError):
+        verify_phase6_web_edge_change_set(**_kwargs(fixture))
+
+
+def test_rejects_sam_substitution_variables_in_other_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = _fixture(tmp_path, monkeypatch)
+    path: Path = fixture["paths"]["target-original.json"]
+    _rewrite(
+        path,
+        lambda document: document["TemplateBody"]["Resources"]["SellerCommandApiFunction"][
+            "Properties"
+        ].__setitem__("SourceArn", _sam_api_gateway_source_arn()),
+    )
+
+    with pytest.raises(Phase6WebEdgeChangeSetError):
+        verify_phase6_web_edge_change_set(**_kwargs(fixture))
+
+
+def test_accepts_placeholder_free_change_set_after_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = _fixture(tmp_path, monkeypatch)
+    path: Path = fixture["paths"]["change-set.json"]
+    _rewrite(
+        path,
+        lambda document: document["Changes"][0]["ResourceChange"].__setitem__(
+            "AfterContext", json.dumps({"Properties": {"Marker": "resolved"}})
+        ),
+    )
+
+    assert verify_phase6_web_edge_change_set(**_kwargs(fixture))
+
+
+def test_rejects_sam_substitution_variables_in_change_set_after_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = _fixture(tmp_path, monkeypatch)
+    path: Path = fixture["paths"]["change-set.json"]
+    _rewrite(
+        path,
+        lambda document: document["Changes"][0]["ResourceChange"].__setitem__(
+            "AfterContext", json.dumps(_sam_api_gateway_source_arn())
+        ),
+    )
+
+    with pytest.raises(Phase6WebEdgeChangeSetError):
+        verify_phase6_web_edge_change_set(**_kwargs(fixture))
 
 
 @pytest.mark.parametrize("stage", ["original", "processed"])
