@@ -39,6 +39,29 @@ The first successful, intervention-free first-time-seller session is a Phase 6 e
 five-session target remains separate and nonblocking for technical Phase 6 closure; it is the
 evidence target for the open seller-trust product hypothesis.
 
+## Private live-evidence workspace
+
+[`tools/phase66_live_acceptance.py`](../tools/phase66_live_acceptance.py) supplies the narrow local
+plumbing for the remaining authorized live run. It creates the exact valid 5 MiB mixed-alpha PNG
+required by the primary canary and invokes the authoritative verifier over one completed evidence
+bundle beneath a Git-ignored private root. It does not stage arbitrary files, sanitize raw
+observations, import an AWS or provider client, or grant live authority; identity setup, technical
+probes, provider writes, moderated observations, and closed evidence production remain separately
+controlled activities.
+
+```shell
+.venv/bin/python -m tools.phase66_live_acceptance make-canary-png \
+  .mr_lister_private/phase66-acceptance/phase66-live-YYYYMMDDTHHMMSSZ
+.venv/bin/python -m tools.phase66_live_acceptance verify \
+  .mr_lister_private/phase66-acceptance/phase66-live-YYYYMMDDTHHMMSSZ
+```
+
+The verifier requires `records.json`, `artifact-files.json`, and every indexed artifact beneath the
+selected run root. The tool rejects paths outside `.mr_lister_private/phase66-acceptance/` and
+secures generated directories and files to owner-only permissions. Published source and
+documentation never contain machine-local paths, credentials, raw identifiers, or evidence
+payloads.
+
 ## Sanitized evidence boundary
 
 Evidence records have no free-text observation field and no raw identifier or payload escape
