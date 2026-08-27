@@ -40,9 +40,7 @@ ROOT = Path(__file__).parents[1]
 ACCOUNT = "123456789012"
 REGION = "us-west-2"
 ENVIRONMENT = "dev"
-SEALED_CORE_SOURCE_SHA256 = (
-    "6b8221fd526cd06cf76cf0029d9c2cd6baf81662aeaa280aa573391e0dfdec3b"
-)
+SEALED_CORE_SOURCE_SHA256 = "6b8221fd526cd06cf76cf0029d9c2cd6baf81662aeaa280aa573391e0dfdec3b"
 STACK_ID = (
     f"arn:aws:cloudformation:{REGION}:{ACCOUNT}:stack/mr-lister-phase6-dev/"
     "11111111-2222-3333-4444-555555555555"

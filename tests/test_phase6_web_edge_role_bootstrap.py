@@ -367,16 +367,8 @@ def test_http_api_and_access_log_authority_is_regional_and_path_scoped() -> None
     assert api["Condition"]["StringEquals"] == {"aws:RequestedRegion": "us-west-2"}
     assert _actions(stage_tag_create) == {"apigateway:*"}
     assert stage_tag_create["Resource"] == [
-        {
-            "Fn::Sub": (
-                "arn:${AWS::Partition}:apigateway:us-west-2::/apis/*/stages"
-            )
-        },
-        {
-            "Fn::Sub": (
-                "arn:${AWS::Partition}:apigateway:us-west-2::/apis/*/stages/*"
-            )
-        },
+        {"Fn::Sub": ("arn:${AWS::Partition}:apigateway:us-west-2::/apis/*/stages")},
+        {"Fn::Sub": ("arn:${AWS::Partition}:apigateway:us-west-2::/apis/*/stages/*")},
     ]
     assert stage_tag_create["Condition"]["StringEquals"] == {
         "aws:RequestTag/DeploymentClass": "FOUNDATION_ONLY",

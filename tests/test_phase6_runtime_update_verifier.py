@@ -1100,15 +1100,15 @@ def test_foundation_old_role_and_new_authority_cannot_be_conflated(
         ),
         (
             "execution-policy.json",
-            lambda value: _policy_statement(value, "ReadOnlyExactSellerWebDistribution").__setitem__(
-                "Action", "cloudfront:GetDistributionConfig"
-            ),
+            lambda value: _policy_statement(
+                value, "ReadOnlyExactSellerWebDistribution"
+            ).__setitem__("Action", "cloudfront:GetDistributionConfig"),
         ),
         (
             "execution-policy.json",
-            lambda value: _policy_statement(value, "ReadOnlyExactSellerWebDistribution").__setitem__(
-                "Resource", f"arn:aws:cloudfront::{ACCOUNT}:distribution/OTHER"
-            ),
+            lambda value: _policy_statement(
+                value, "ReadOnlyExactSellerWebDistribution"
+            ).__setitem__("Resource", f"arn:aws:cloudfront::{ACCOUNT}:distribution/OTHER"),
         ),
         (
             "deployer-role.json",

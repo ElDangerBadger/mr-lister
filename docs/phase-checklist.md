@@ -287,14 +287,16 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       - [x] Prepare the active-core-preserving web-edge renderer, additive change-set verifier,
         expiring deployment bootstrap, digest-bound static release manifest, runtime-config
         binder, post-deploy verifier, and bounded Route 53 A/AAAA alias renderer
-      - [ ] Deploy the additive seller edge, upload the sealed web objects, and pass the
-        non-destructive smoke
+      - [x] Deploy the additive seller edge and pass the closed infrastructure live-state gate
+      - [x] Upload the sealed web objects and bound runtime configuration
+      - [x] Apply the apex A/AAAA aliases and verify public HTTPS `/health` returns `200`
+      - [ ] Invite a seller and pass the authenticated non-destructive browser smoke
     - Evidence: 846 Python tests passed, including 636 Phase 6 tests; 11 gated live-Bedrock tests
       skipped. The web gate passes 62 tests, lint, strict typecheck, production build, artifact
       hygiene, and an audit with zero high-severity vulnerabilities. Ruff, contract drift,
       compileall, SAM lint/build, and `git diff --check` pass. The later Phase 6.6 tri-engine matrix
       is recorded in [`phase6-accessible-seller-interface.md`](phase6-accessible-seller-interface.md),
-      while full WCAG and deployed evidence remain open.
+      while full WCAG and authenticated deployed acceptance evidence remain open.
   - [ ] Phase 6.6 replay, concurrency, cross-owner, live-canary, and first-time-user acceptance
     - [x] Freeze the 12-gate manifest, closed structural evidence schema, and authoritative runtime
       semantic validator, including deterministic checked artifacts and CI drift detection
@@ -342,23 +344,29 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       preserve all 40 source resources and 47 processed resources byte-for-byte, add exactly 62
       source and 78 processed resources, bind `massskutiny.com` and its issued us-east-1
       certificate, and seal the target at
-      `0ab2c8f016afb513d7de5dd65aefd975eeaf827800aa19ceb31d0f64c02748c8`
-    - [ ] Execute the separately approved additive web-edge update and pass the closed live-state
-      verification gate
-    - [ ] Upload the separately approved sealed static bundle and bound runtime configuration
-    - [ ] Render, review, and separately apply the apex A/AAAA aliases to the verified distribution
+      `74560fb066f66759f5baa8a3be15c6370e20bfa884a50e0b4b7e0457592ebff4`
+    - [x] Execute the separately approved additive web-edge update and pass the closed live-state
+      verification gate, including the corrected 512 MB/30-second review-query runtime envelope
+    - [x] Upload the separately approved sealed static bundle and bound runtime configuration
+    - [x] Render, review, and separately apply the apex A/AAAA aliases to the verified distribution;
+      verify public HTTPS `/health` returns `200` with `{"status":"ok"}`
     - [ ] Run explicitly authorized deployed non-destructive, double-gated unpublished Printify,
       and moderated first-time-seller acceptance and attach sanitized evidence
     - Evidence: the quota-compatible core-deployment checkpoint at source commit `678ea4f` passed
       2,318 Python tests with 11 gated live-Bedrock skips plus the 62-test web gate, lint, strict
-      typecheck, production build, SAM lint, and diff hygiene. The live `us-west-2` stack reached
-      `UPDATE_COMPLETE` for the active-core update with no failure or rollback event; the additive
-      web-edge update remains pending above. The activation correction retained the sealed code
-      and raised only dispatcher and settlement timeouts from 30 to 120 seconds before enabling
-      the reviewed draft-only backend. Two scheduled dispatcher runs then completed with zero
-      errors (35.2-second cold start and 14.9-millisecond warm run), zero provider-draft
-      invocations, zero running workflows, an empty recovery queue, and zero unexpected table
-      rows. Acceptance details:
+      typecheck, production build, SAM lint, and diff hygiene. The final deployment-fix checkpoint
+      passed 2,855 Python tests with 11 gated live-Bedrock skips plus Ruff lint and format checks.
+      The live `us-west-2` stack is `UPDATE_COMPLETE` as `WEB_EDGE_ACTIVE_DRAFT_ONLY` with 125
+      complete resources; the exact CloudFront distribution is `Deployed`; the five sealed
+      seller-web objects are versioned and readable; and Route 53 change
+      `/change/C00461842KB849WKZV8W0` reached `INSYNC` with public A and AAAA resolution.
+      The activation correction retained the sealed code and raised only dispatcher and settlement
+      timeouts from 30 to 120 seconds before enabling the reviewed draft-only backend. Two
+      scheduled dispatcher runs then completed with zero errors (35.2-second cold start and
+      14.9-millisecond warm run), zero provider-draft invocations, zero running workflows, an empty
+      recovery queue, and zero unexpected table rows. Seller invitation, authenticated full-flow,
+      cross-owner/version/concurrency, unpublished Printify, and moderated first-time-seller
+      acceptance remain open. Acceptance details:
       [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
 - [ ] Phase 7 — Etsy publication through Printify
   - [x] Freeze publication-disabled contract 7.0.1: separate aggregate authority, complete
