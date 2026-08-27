@@ -552,9 +552,12 @@
                   "Sid": "ExecuteOnlyExactReviewedWebEdgeChangeSet",
                   "Effect": "Allow",
                   "Action": "cloudformation:ExecuteChangeSet",
-                  "Resource": {"Ref": "ReviewedChangeSetId"},
+                  "Resource": {"Ref": "FoundationStackId"},
                   "Condition": {
-                    "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+                    "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                    "StringEquals": {
+                      "cloudformation:ChangeSetName": {"Ref": "ReviewedChangeSetId"}
+                    }
                   }
                 },
                 {

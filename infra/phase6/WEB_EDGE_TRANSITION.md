@@ -84,9 +84,10 @@ receive physical IDs only during creation. Their temporary control-plane permiss
 cannot all be pre-scoped to final ARNs. Those permissions exist only on the CloudFormation service
 role, which only CloudFormation can assume; the developer-facing role can prepare only the exact
 versioned target. When root changes the bootstrap to `EXECUTE`, that role's control policy removes
-all create/delete/pass-role/template-read authority and replaces it with execution authority for
-the reviewed full change-set ARN. The exact target, immutable object version, change-set verifier,
-short expiry, and bootstrap deletion form one compositional boundary.
+all create/delete/pass-role/template-read authority and replaces it with `ExecuteChangeSet` on the
+exact parent stack ARN only when `cloudformation:ChangeSetName` equals the reviewed full change-set
+ARN. The exact target, immutable object version, change-set verifier, short expiry, and bootstrap
+deletion form one compositional boundary.
 
 The bootstrap grants none of the following:
 
@@ -112,7 +113,7 @@ Each row is a distinct approval boundary. Approval of one row does not authorize
 | Create/update bootstrap in `PREPARE` | root | Temporarily attaches execution policies and creates the exact deployer role. This is an IAM mutation, but cannot execute the application change set. |
 | Create exact application change set | `mr-lister-dev` through the deployer role | Creates an `UPDATE` change set only; it does not deploy resources. |
 | Review and verify change set | read-only | Confirms the exact target bytes and the 78-add, zero-modify/remove shape; the bootstrap policy separately enforces the service role and immutable versioned template URL. |
-| Update bootstrap to `EXECUTE` | root | Atomically removes change-set preparation authority and grants `ExecuteChangeSet` only for the supplied full reviewed change-set ARN. This is the explicit deployment approval. |
+| Update bootstrap to `EXECUTE` | root | Atomically removes change-set preparation authority and grants `ExecuteChangeSet` on the fixed parent stack only when the change-set condition equals the supplied full reviewed ARN. This is the explicit deployment approval. |
 | Execute exact application change set | `mr-lister-dev` through the deployer role | Creates the live CloudFront, Cognito, HTTP API, API Lambda, web bucket, and alarm surfaces. |
 | Delete bootstrap | root | Detaches all temporary authority after stack completion and evidence capture. |
 | Upload website/runtime config | separate future approval | Writes reviewed build objects to the private web bucket. |

@@ -480,9 +480,12 @@ def test_execution_requires_separate_execute_stage_and_exact_change_set() -> Non
         "Sid": "ExecuteOnlyExactReviewedWebEdgeChangeSet",
         "Effect": "Allow",
         "Action": "cloudformation:ExecuteChangeSet",
-        "Resource": {"Ref": "ReviewedChangeSetId"},
+        "Resource": {"Ref": "FoundationStackId"},
         "Condition": {
             "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+            "StringEquals": {
+                "cloudformation:ChangeSetName": {"Ref": "ReviewedChangeSetId"},
+            },
         },
     }
     assert execute["ReadOnlyExactReviewedChangeSet"]["Resource"] == [
