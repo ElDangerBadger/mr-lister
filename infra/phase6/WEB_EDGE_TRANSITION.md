@@ -50,7 +50,7 @@ The target binds these public identifiers exactly:
 - application origin: `https://massskutiny.com`;
 - certificate:
   `arn:aws:acm:us-east-1:384627057108:certificate/28b8cddb-a0d7-4dc8-98de-26fd87cb5b79`;
-- canonical target SHA-256:
+- additive predecessor target SHA-256:
   `74560fb066f66759f5baa8a3be15c6370e20bfa884a50e0b4b7e0457592ebff4`;
 - change-set name: `mr-lister-phase6-dev-web-edge-74560fb066f6`.
 
@@ -200,12 +200,19 @@ write only beneath `.mr_lister_private`, and do not call AWS, a browser, or a pr
    canonical repository-private form required by
    `.venv/bin/python -m tools.bind_phase6_runtime_config`. The binder creates the six-field public
    `runtime-config.json` and a separate upload manifest; neither file contains credentials.
-6. Within one 15-minute capture window, normalize the read-only stack, ACM, CloudFront, S3,
+6. The additive target above is the historical web-edge predecessor, not the current live-state
+   authority. Render or verify the separately reviewed no-replacement review-query correction with
+   `.venv/bin/python -m tools.render_phase6_review_query_runtime_envelope`. It must change only the
+   correction metadata plus `ReviewQueryApiFunction` memory from the inherited 256 MB to 512 MB and
+   timeout from 15 to 30 seconds. The corrected canonical target must be
+   `618fbca8d00b1edbfa7412668a6e7d2a0e4e65e23460ee8b9216f92f19dbdfc2` before the current
+   live-state gate is claimed. Rendering does not authorize or perform an AWS update.
+7. Within one 15-minute capture window, normalize the read-only stack, ACM, CloudFront, S3,
    Cognito, and API observations into one closed evidence document and run
    `.venv/bin/python -m tools.verify_phase6_web_live_state EVIDENCE_PATH`. Retain the canonical
    success record and its digest. Asset upload remains a distinct approval after this
    infrastructure readback passes.
-7. Only after the verified distribution is deployed, run
+8. Only after the verified distribution is deployed, run
    `.venv/bin/python -m tools.render_phase6_dns_alias_change --write` with the independently
    confirmed hosted-zone ID, canonical `get-hosted-zone` observation, CloudFront domain, and
    canonical stack-output capture. The observation must prove the exact public `massskutiny.com`

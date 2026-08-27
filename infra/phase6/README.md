@@ -131,6 +131,10 @@ SHA-256 `74560fb066f66759f5baa8a3be15c6370e20bfa884a50e0b4b7e0457592ebff4`.
 The later no-replacement health correction used template SHA-256
 `618fbca8d00b1edbfa7412668a6e7d2a0e4e65e23460ee8b9216f92f19dbdfc2` and changed only the
 `ReviewQueryApiFunction` runtime envelope from 256 MB/15 seconds to 512 MB/30 seconds.
+[`tools/render_phase6_review_query_runtime_envelope.py`](../../tools/render_phase6_review_query_runtime_envelope.py)
+reproduces that final target from the sealed additive predecessor and source template without
+contacting AWS; the current live-state verifier binds the corrected target, while the historical
+78-add change-set verifier remains bound to its `74560f…` predecessor.
 
 Role-separated composition roots now construct the tested API, dispatcher, preparation, provider,
 settlement, reference-aware source-retention, terminal operational-cleanup, and execution-recovery
@@ -177,6 +181,7 @@ python -m pytest -q \
   tests/test_phase6_web_edge_transition.py \
   tests/test_phase6_web_edge_change_set.py \
   tests/test_phase6_web_edge_role_bootstrap.py \
+  tests/test_phase6_review_query_runtime_envelope.py \
   tests/test_prepare_phase6_web_release.py \
   tests/test_bind_phase6_runtime_config.py \
   tests/test_phase6_web_live_state.py \

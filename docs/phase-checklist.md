@@ -345,8 +345,10 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       source and 78 processed resources, bind `massskutiny.com` and its issued us-east-1
       certificate, and seal the target at
       `74560fb066f66759f5baa8a3be15c6370e20bfa884a50e0b4b7e0457592ebff4`
-    - [x] Execute the separately approved additive web-edge update and pass the closed live-state
-      verification gate, including the corrected 512 MB/30-second review-query runtime envelope
+    - [x] Execute the separately approved additive web-edge update at its sealed `74560f…`
+      predecessor target
+    - [x] Apply the separately reviewed no-replacement review-query correction, bind the current
+      `618fb…` target, and pass the closed live-state verification gate at 512 MB/30 seconds
     - [x] Upload the separately approved sealed static bundle and bound runtime configuration
     - [x] Render, review, and separately apply the apex A/AAAA aliases to the verified distribution;
       verify public HTTPS `/health` returns `200` with `{"status":"ok"}`

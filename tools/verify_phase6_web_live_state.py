@@ -21,10 +21,10 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Final
 
-from tools.render_phase6_web_edge_transition import (
-    WEB_EDGE_READINESS,
-    WEB_EDGE_TEMPLATE_SHA256,
+from tools.render_phase6_review_query_runtime_envelope import (
+    REVIEW_QUERY_RUNTIME_ENVELOPE_TEMPLATE_SHA256,
 )
+from tools.render_phase6_web_edge_transition import WEB_EDGE_READINESS
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 FORMAT: Final = "mr-lister-phase6-web-live-state-v1"
@@ -36,7 +36,7 @@ STACK_ID: Final = (
     "f3456970-9fdc-11f1-b448-06b81627db1d"
 )
 SERVICE_ROLE_ARN: Final = "arn:aws:iam::384627057108:role/mr-lister-phase6-runtime-cfn-dev"
-TARGET_TEMPLATE_SHA256: Final = WEB_EDGE_TEMPLATE_SHA256
+TARGET_TEMPLATE_SHA256: Final = REVIEW_QUERY_RUNTIME_ENVELOPE_TEMPLATE_SHA256
 APPLICATION_ORIGIN: Final = "https://massskutiny.com"
 APEX_DOMAIN: Final = "massskutiny.com"
 CERTIFICATE_ARN: Final = (
