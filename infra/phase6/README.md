@@ -107,22 +107,24 @@ should delete the bootstrap stack to detach and remove the developer managed pol
 role is intentionally retained because it is recorded on the foundation stack. Follow
 `FOUNDATION_DEPLOYMENT.md` for the exact capture and verification sequence.
 
-## Full-stack deployment gate
+## Active backend and web-edge deployment gate
 
-The domain-independent core slice is now deployed to `mr-lister-phase6-dev` as
-`CORE_RELEASE_BOUND_STAGED`. It contains the exact sealed Linux ARM64 application release, seven
-healthy Lambda functions, four active Standard workflows, and the pinned AgentCore v1 endpoint,
-but remains deliberately inert: `MR_LISTER_PHASE6_SCAFFOLD_ONLY=true`, all five reviewed triggers
-are disabled, and the three maintenance functions have zero reserved concurrency. The stack has
-no Cognito, API Gateway, CloudFront, ACM, Route 53, or seller-web resource.
+The corrected domain-independent core is deployed to `mr-lister-phase6-dev` as
+`CORE_RUNTIME_ACTIVE_DRAFT_ONLY`. It contains the exact sealed Linux ARM64 application release,
+seven healthy Lambda functions, four Standard workflows, the pinned AgentCore v1 endpoint, the
+five reviewed active triggers, no maintenance concurrency caps, and 120-second dispatcher and
+settlement timeouts. It remains draft-only and has no publication, order, or fulfillment surface.
+The deployed stack still has no Cognito, API Gateway, CloudFront, Route 53, or seller web resource.
 
-The complete template in this directory is therefore **not yet a direct deployment target**. The
-next domain-independent gate is the two-update sequence in
-[`CORE_RUNTIME_ACTIVATION.md`](CORE_RUNTIME_ACTIVATION.md): first
-remove only the three zero concurrency settings while every handler and trigger remains inert;
-then, after fresh empty-state evidence and a separately reviewed change set, remove scaffold mode
-and enable only the five checked triggers. The later web update must preserve that verified active
-core instead of reapplying a fail-closed staging renderer.
+The complete `template.json` remains a source scaffold and is **not a direct deployment target**.
+Its global scaffold value and activation settings would regress the proven backend. Follow
+[`WEB_EDGE_TRANSITION.md`](WEB_EDGE_TRANSITION.md) instead. The checked renderer recomputes the
+exact active predecessor (SHA-256
+`f0e1c0cfcf1b80d8c5277aacd68cb9a0246bedc882246c448a8772ebe4d87a78`), preserves all 40 existing
+resource subtrees byte-for-byte, and adds exactly 62 source resources. After the SAM transform,
+the review gate requires `47 -> 125` resources with exactly 78 additions and no modification,
+removal, import, or replacement. The final canonical web-edge target is fixed at SHA-256
+`0ab2c8f016afb513d7de5dd65aefd975eeaf827800aa19ceb31d0f64c02748c8`.
 
 Role-separated composition roots now construct the tested API, dispatcher, preparation, provider,
 settlement, reference-aware source-retention, terminal operational-cleanup, and execution-recovery
@@ -132,14 +134,15 @@ and reproducible narrow source manifests isolate ordinary Lambda code from the A
 The cleanup/recovery schedules, encrypted recovery DLQ, release/runtime bindings, least-capability
 IAM, and closed alarm/SNS transport are present in this template. Recovery can describe an exact
 execution and settle durable authority, but cannot start, stop, or redrive workflows. The sealed
-application code and the core recovery boundary are deployed; the scaffold marker and disabled
-triggers still prevent execution, while the full alarm, API, and web surfaces remain undeployed.
+application code and core recovery boundary are active and verified; the full alarm, identity,
+API, and web surfaces remain undeployed until the separately approved additive change set.
 
 The controlled Linux ARM64 artifacts, target import smoke, sealed Lambda and AgentCore trees,
-versioned S3 objects, runtime v1, endpoint, and inert core deployment are complete. Remaining
-deployment work still uses reviewed change sets and explicit execution approvals. Backend
-activation does not authorize publication, orders, or fulfillment; web-edge deployment and the
-deployed non-destructive acceptance gates remain separate later steps.
+versioned S3 objects, runtime v1, endpoint, and active draft-only core deployment are complete.
+Remaining deployment work still uses reviewed change sets and explicit execution approvals.
+Backend activation does not authorize publication, orders, or fulfillment; web-edge deployment,
+static asset upload, DNS aliases, seller invitation, and deployed acceptance remain separate
+approval boundaries.
 
 The query role may read and presign only the exact pinned S3 object version after application
 ownership checks. It cannot write DynamoDB, call KMS, read a secret, or proxy artwork bytes through
@@ -154,4 +157,21 @@ Run from the repository root:
 sam validate --lint --template-file infra/phase6/template.json
 env PATH="$PWD/.venv/bin:$PATH" sam build --template-file infra/phase6/template.json --build-dir .aws-sam/phase6-build
 python -m pytest -q tests/test_phase6_infrastructure.py tests/test_phase65_hosting_infrastructure.py
+```
+
+The source template above remains a scaffold validation target. For the additive web-edge update,
+first render the fixed private deployment target as described in
+[`WEB_EDGE_TRANSITION.md`](WEB_EDGE_TRANSITION.md), then validate that exact file and its closed
+transition controls:
+
+```shell
+sam validate --lint --template-file .mr_lister_private/phase6-web-edge-transition/template.web-edge-active-draft-only.local.json
+python -m pytest -q \
+  tests/test_phase6_web_edge_transition.py \
+  tests/test_phase6_web_edge_change_set.py \
+  tests/test_phase6_web_edge_role_bootstrap.py \
+  tests/test_prepare_phase6_web_release.py \
+  tests/test_bind_phase6_runtime_config.py \
+  tests/test_phase6_web_live_state.py \
+  tests/test_phase6_dns_alias_change.py
 ```

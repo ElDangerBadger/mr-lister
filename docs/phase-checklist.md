@@ -223,8 +223,9 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       dispatch stream, four Standard machines, SAM lint, and SAM build
     - [x] Offline gate: 557 tests passed, including 347 Phase 6 tests; 11 explicitly gated live
       Bedrock tests skipped; Ruff lint/format and `git diff --check` passed
-    - [ ] Replace fail-closed `SCAFFOLD_ONLY` Lambda shims, deploy the Phase 6 runtime/stack, and pass
-      same-job Strands plus one-unpublished-product live acceptance
+    - [x] Replace the fail-closed `SCAFFOLD_ONLY` Lambda shims and deploy the composed Phase 6
+      runtime as the verified active, draft-only backend
+    - [ ] Pass same-job Strands plus one-unpublished-product live acceptance
     - Evidence: [`phase6-provider-integration.md`](phase6-provider-integration.md).
   - [x] Phase 6.3 consolidated artwork, listing, mockup, product, validation, and
     estimated-proceeds application projection
@@ -254,8 +255,8 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [x] Offline gate: 824 tests passed, including 614 Phase 6 tests; 11 live-Bedrock tests skipped;
       SAM lint/build, Python wheel/source builds, compileall, Ruff lint/format, and
       `git diff --check` passed
-    - [ ] Compose the tested adapters into the fail-closed Lambda handlers, remove
-      `SCAFFOLD_ONLY`, and deploy the Phase 6 stack
+    - [x] Compose the tested adapters into the Lambda handlers, remove `SCAFFOLD_ONLY`, and deploy
+      the verified active, draft-only Phase 6 backend
     - [ ] Pass deployed cross-owner, upload-expiry, exact-version preview, concurrency, and same-job
       Strands live acceptance; no Phase 6.4 live/deployment gate is claimed by the offline slice
   - [ ] Phase 6.5 accessible seller interface with refresh and conflict recovery
@@ -283,7 +284,11 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       routing, observability, and deployed non-destructive smoke
       - [x] Offline private-S3/OAC/CloudFront topology, exact SPA routes, security headers, and
         uncompressed strong-ETag `/v1/*` behavior
-      - [ ] Compose the `SCAFFOLD_ONLY` handlers, deploy, and pass the non-destructive smoke
+      - [x] Prepare the active-core-preserving web-edge renderer, additive change-set verifier,
+        expiring deployment bootstrap, digest-bound static release manifest, runtime-config
+        binder, post-deploy verifier, and bounded Route 53 A/AAAA alias renderer
+      - [ ] Deploy the additive seller edge, upload the sealed web objects, and pass the
+        non-destructive smoke
     - Evidence: 846 Python tests passed, including 636 Phase 6 tests; 11 gated live-Bedrock tests
       skipped. The web gate passes 62 tests, lint, strict typecheck, production build, artifact
       hygiene, and an audit with zero high-severity vulnerabilities. Ruff, contract drift,
@@ -333,15 +338,25 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
         triggers remain disabled, then verify their live absence
       - [x] From that proven inert state, remove `SCAFFOLD_ONLY`, enable only the five reviewed
         triggers in a later update, and verify the active draft-only backend remains idle and safe
+    - [x] Prepare the exact additive seller-web transition from the corrected active predecessor:
+      preserve all 40 source resources and 47 processed resources byte-for-byte, add exactly 62
+      source and 78 processed resources, bind `massskutiny.com` and its issued us-east-1
+      certificate, and seal the target at
+      `0ab2c8f016afb513d7de5dd65aefd975eeaf827800aa19ceb31d0f64c02748c8`
+    - [ ] Execute the separately approved additive web-edge update and pass the closed live-state
+      verification gate
+    - [ ] Upload the separately approved sealed static bundle and bound runtime configuration
+    - [ ] Render, review, and separately apply the apex A/AAAA aliases to the verified distribution
     - [ ] Run explicitly authorized deployed non-destructive, double-gated unpublished Printify,
       and moderated first-time-seller acceptance and attach sanitized evidence
-    - Evidence: the quota-compatible deployment checkpoint at source commit `678ea4f` passed 2,318
-      Python tests with 11 gated live-Bedrock skips plus the 62-test web gate, lint, strict
+    - Evidence: the quota-compatible core-deployment checkpoint at source commit `678ea4f` passed
+      2,318 Python tests with 11 gated live-Bedrock skips plus the 62-test web gate, lint, strict
       typecheck, production build, SAM lint, and diff hygiene. The live `us-west-2` stack reached
-      `UPDATE_COMPLETE` with no failure or rollback event. The activation correction retained the
-      sealed code and raised only dispatcher and settlement timeouts from 30 to 120 seconds before
-      enabling the reviewed draft-only backend. Two scheduled dispatcher runs then completed with
-      zero errors (35.2-second cold start and 14.9-millisecond warm run), zero provider-draft
+      `UPDATE_COMPLETE` for the active-core update with no failure or rollback event; the additive
+      web-edge update remains pending above. The activation correction retained the sealed code
+      and raised only dispatcher and settlement timeouts from 30 to 120 seconds before enabling
+      the reviewed draft-only backend. Two scheduled dispatcher runs then completed with zero
+      errors (35.2-second cold start and 14.9-millisecond warm run), zero provider-draft
       invocations, zero running workflows, an empty recovery queue, and zero unexpected table
       rows. Acceptance details:
       [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).

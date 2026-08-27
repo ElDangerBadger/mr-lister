@@ -590,8 +590,10 @@ def test_no_forbidden_external_capability_is_present() -> None:
         else:
             deployment_parts.append(path.read_text(encoding="utf-8"))
     deployment_text = "\n".join(deployment_parts).lower()
-    # Operational alarm delivery is the sole non-marketplace use of this verb.
+    # Operational alarm delivery and activation of the checked CloudFront viewer functions are
+    # the only non-marketplace uses of this verb.
     deployment_text = deployment_text.replace('"sns:publish"', "")
+    deployment_text = deployment_text.replace('"cloudfront:publishfunction"', "")
     for forbidden in (
         "waitfortasktoken",
         "sendtasksuccess",

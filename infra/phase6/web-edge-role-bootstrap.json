@@ -1,0 +1,748 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Temporary root-applied least-privilege authority for the exact Mr Lister Phase 6 dev web-edge UPDATE",
+  "Metadata": {
+    "MrListerDeployment": {
+      "DeploymentClass": "WEB_EDGE_UPDATE_BOOTSTRAP_ONLY",
+      "Environment": "dev",
+      "Region": "us-west-2",
+      "RootApplied": true,
+      "RetainedExecutionRoleName": "mr-lister-phase6-runtime-cfn-dev",
+      "Sequence": [
+        "PREPARE_EXACT_CHANGE_SET",
+        "REVIEW_AND_AUTHORIZE_EXECUTION",
+        "DELETE_BOOTSTRAP_TO_DETACH_TEMPORARY_AUTHORITY"
+      ]
+    }
+  },
+  "Parameters": {
+    "NotAfter": {
+      "Type": "String",
+      "AllowedPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "Description": "Exclusive UTC expiry for every temporary execution, deployer, and assume-role permission"
+    },
+    "BootstrapStage": {
+      "Type": "String",
+      "AllowedValues": ["PREPARE", "EXECUTE"],
+      "Description": "PREPARE cannot execute the change set; EXECUTE is a separate root-approved bootstrap update"
+    },
+    "FoundationStackId": {
+      "Type": "String",
+      "AllowedValues": [
+        "arn:aws:cloudformation:us-west-2:384627057108:stack/mr-lister-phase6-dev/f3456970-9fdc-11f1-b448-06b81627db1d"
+      ],
+      "Description": "Exact retained Phase 6 application stack ID"
+    },
+    "ReleaseFingerprint": {
+      "Type": "String",
+      "AllowedValues": [
+        "0c6211a5b0244e9c86d635e6c02e7bc49e5e948d68895b4aaa982c0b0b2e187b"
+      ],
+      "Description": "Exact sealed Phase 6 release fingerprint"
+    },
+    "LambdaArchiveSha256": {
+      "Type": "String",
+      "AllowedValues": [
+        "baf152b732ce8574b6a6925bae7ab4ff849c1b83d4137076c52c6682553f9d48"
+      ],
+      "Description": "Exact SHA-256 of the already frozen Phase 6 Lambda archive"
+    },
+    "LambdaVersionId": {
+      "Type": "String",
+      "AllowedValues": ["pHutjLzKNpukwJ75Qs9s8YzXUAvgxZuS"],
+      "Description": "Exact immutable S3 VersionId of the already frozen Phase 6 Lambda archive"
+    },
+    "TargetTemplateFingerprint": {
+      "Type": "String",
+      "AllowedValues": [
+        "0ab2c8f016afb513d7de5dd65aefd975eeaf827800aa19ceb31d0f64c02748c8"
+      ],
+      "Description": "Exact canonical SHA-256 of the active-core-preserving web-edge template"
+    },
+    "WebTemplateVersionId": {
+      "Type": "String",
+      "AllowedPattern": "^[!-~]{3,1024}$",
+      "Description": "Exact immutable S3 VersionId of the reviewed web-edge template"
+    },
+    "WebTemplateVersionIdUrlEncoded": {
+      "Type": "String",
+      "AllowedPattern": "^(?:[A-Za-z0-9._~-]|%[0-9A-F]{2}){3,3072}$",
+      "Description": "RFC 3986 query-encoded form of WebTemplateVersionId"
+    },
+    "ExactChangeSetName": {
+      "Type": "String",
+      "AllowedValues": ["mr-lister-phase6-dev-web-edge-0ab2c8f016af"],
+      "Description": "Fingerprint-derived exact web-edge change-set name"
+    },
+    "ReviewedChangeSetId": {
+      "Type": "String",
+      "AllowedPattern": "^(?:PREPARE_NOT_REVIEWED|arn:aws:cloudformation:us-west-2:384627057108:changeSet/mr-lister-phase6-dev-web-edge-0ab2c8f016af/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
+      "Description": "PREPARE sentinel or exact full reviewed change-set ARN required for EXECUTE"
+    },
+    "ApplicationOrigin": {
+      "Type": "String",
+      "AllowedValues": ["https://massskutiny.com"],
+      "Description": "Exact seller application origin bound into the reviewed template"
+    },
+    "ApplicationCertificateArn": {
+      "Type": "String",
+      "AllowedValues": [
+        "arn:aws:acm:us-east-1:384627057108:certificate/28b8cddb-a0d7-4dc8-98de-26fd87cb5b79"
+      ],
+      "Description": "Exact issued us-east-1 ACM certificate bound into the reviewed template"
+    }
+  },
+  "Rules": {
+    "OnlyTargetAccountAndRegion": {
+      "Assertions": [
+        {
+          "Assert": {"Fn::Equals": [{"Ref": "AWS::AccountId"}, "384627057108"]},
+          "AssertDescription": "This bootstrap is fixed to AWS account 384627057108"
+        },
+        {
+          "Assert": {"Fn::Equals": [{"Ref": "AWS::Region"}, "us-west-2"]},
+          "AssertDescription": "This bootstrap must be created in us-west-2"
+        }
+      ]
+    },
+    "PrepareRequiresUnreviewedSentinel": {
+      "RuleCondition": {"Fn::Equals": [{"Ref": "BootstrapStage"}, "PREPARE"]},
+      "Assertions": [
+        {
+          "Assert": {"Fn::Equals": [{"Ref": "ReviewedChangeSetId"}, "PREPARE_NOT_REVIEWED"]},
+          "AssertDescription": "PREPARE must use the unreviewed change-set sentinel"
+        }
+      ]
+    },
+    "ExecuteRequiresReviewedChangeSetArn": {
+      "RuleCondition": {"Fn::Equals": [{"Ref": "BootstrapStage"}, "EXECUTE"]},
+      "Assertions": [
+        {
+          "Assert": {"Fn::Not": [{"Fn::Equals": [{"Ref": "ReviewedChangeSetId"}, "PREPARE_NOT_REVIEWED"]}]},
+          "AssertDescription": "EXECUTE requires the exact full reviewed change-set ARN"
+        }
+      ]
+    }
+  },
+  "Conditions": {
+    "ExecutionAuthorized": {"Fn::Equals": [{"Ref": "BootstrapStage"}, "EXECUTE"]}
+  },
+  "Resources": {
+    "TemporaryWebEdgeExecutionPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": "mr-lister-phase6-web-edge-cfn-temporary-dev",
+        "Description": "Expiring web, identity, and HTTP API control-plane authority attached temporarily to the retained Phase 6 execution role",
+        "Roles": ["mr-lister-phase6-runtime-cfn-dev"],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "CreateExactPrivateWebAssetBucket",
+              "Effect": "Allow",
+              "Action": "s3:CreateBucket",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-web-dev-${AWS::AccountId}-us-west-2"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {"s3:LocationConstraint": "us-west-2"}
+              }
+            },
+            {
+              "Sid": "ConfigureAndRollbackExactPrivateWebAssetBucket",
+              "Effect": "Allow",
+              "Action": [
+                "s3:DeleteBucket",
+                "s3:DeleteBucketPolicy",
+                "s3:GetBucketAcl",
+                "s3:GetBucketCORS",
+                "s3:GetBucketLocation",
+                "s3:GetBucketOwnershipControls",
+                "s3:GetBucketPolicy",
+                "s3:GetBucketPolicyStatus",
+                "s3:GetBucketPublicAccessBlock",
+                "s3:GetBucketTagging",
+                "s3:GetBucketVersioning",
+                "s3:GetEncryptionConfiguration",
+                "s3:ListBucket",
+                "s3:PutBucketOwnershipControls",
+                "s3:PutBucketPolicy",
+                "s3:PutBucketPublicAccessBlock",
+                "s3:PutBucketTagging",
+                "s3:PutBucketVersioning",
+                "s3:PutEncryptionConfiguration"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-web-dev-${AWS::AccountId}-us-west-2"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            },
+            {
+              "Sid": "ReadOnlyExactApplicationCertificate",
+              "Effect": "Allow",
+              "Action": "acm:DescribeCertificate",
+              "Resource": {"Ref": "ApplicationCertificateArn"},
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            },
+            {
+              "Sid": "CreateOnlyTaggedSellerUserPool",
+              "Effect": "Allow",
+              "Action": "cognito-idp:CreateUserPool",
+              "Resource": "*",
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {
+                  "aws:RequestTag/DataClassification": "SellerIdentity",
+                  "aws:RequestTag/Environment": "dev",
+                  "aws:RequestTag/Project": "MrLister",
+                  "aws:RequestedRegion": "us-west-2"
+                },
+                "ForAllValues:StringEquals": {
+                  "aws:TagKeys": ["DataClassification", "Environment", "Project"]
+                },
+                "Null": {"aws:TagKeys": "false"}
+              }
+            },
+            {
+              "Sid": "ManageOnlyTaggedSellerUserPoolsAndChildren",
+              "Effect": "Allow",
+              "Action": [
+                "cognito-idp:CreateGroup",
+                "cognito-idp:CreateResourceServer",
+                "cognito-idp:CreateUserPoolClient",
+                "cognito-idp:CreateUserPoolDomain",
+                "cognito-idp:DeleteGroup",
+                "cognito-idp:DeleteResourceServer",
+                "cognito-idp:DeleteUserPool",
+                "cognito-idp:DeleteUserPoolClient",
+                "cognito-idp:DeleteUserPoolDomain",
+                "cognito-idp:DescribeResourceServer",
+                "cognito-idp:DescribeUserPool",
+                "cognito-idp:DescribeUserPoolClient",
+                "cognito-idp:GetGroup",
+                "cognito-idp:GetUserPoolMfaConfig",
+                "cognito-idp:ListTagsForResource",
+                "cognito-idp:SetUserPoolMfaConfig",
+                "cognito-idp:TagResource",
+                "cognito-idp:UntagResource",
+                "cognito-idp:UpdateGroup",
+                "cognito-idp:UpdateResourceServer",
+                "cognito-idp:UpdateUserPool",
+                "cognito-idp:UpdateUserPoolClient",
+                "cognito-idp:UpdateUserPoolDomain"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:cognito-idp:us-west-2:${AWS::AccountId}:userpool/*"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {
+                  "aws:ResourceTag/DataClassification": "SellerIdentity",
+                  "aws:ResourceTag/Environment": "dev",
+                  "aws:ResourceTag/Project": "MrLister",
+                  "aws:RequestedRegion": "us-west-2"
+                }
+              }
+            },
+            {
+              "Sid": "InspectOnlySellerUserPoolDomain",
+              "Effect": "Allow",
+              "Action": "cognito-idp:DescribeUserPoolDomain",
+              "Resource": "*",
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {"aws:RequestedRegion": "us-west-2"}
+              }
+            },
+            {
+              "Sid": "ManageOnlyRegionalSellerHttpApi",
+              "Effect": "Allow",
+              "Action": [
+                "apigateway:DELETE",
+                "apigateway:GET",
+                "apigateway:PATCH",
+                "apigateway:POST",
+                "apigateway:PUT"
+              ],
+              "Resource": [
+                {"Fn::Sub": "arn:${AWS::Partition}:apigateway:us-west-2::/apis"},
+                {"Fn::Sub": "arn:${AWS::Partition}:apigateway:us-west-2::/apis/*"},
+                {"Fn::Sub": "arn:${AWS::Partition}:apigateway:us-west-2::/tags/*"}
+              ],
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {"aws:RequestedRegion": "us-west-2"}
+              }
+            },
+            {
+              "Sid": "ManageOnlySellerApiAccessLogGroup",
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:DeleteLogGroup",
+                "logs:DeleteRetentionPolicy",
+                "logs:ListTagsForResource",
+                "logs:PutRetentionPolicy",
+                "logs:TagResource",
+                "logs:UntagResource"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:/aws/apigateway/mr-lister-phase6-dev-seller-api"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            },
+            {
+              "Sid": "InspectOnlyRegionalLogGroups",
+              "Effect": "Allow",
+              "Action": "logs:DescribeLogGroups",
+              "Resource": "*",
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {"aws:RequestedRegion": "us-west-2"}
+              }
+            },
+            {
+              "Sid": "ConfigureOnlyRegionalHttpApiLogDelivery",
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogDelivery",
+                "logs:DeleteLogDelivery",
+                "logs:DescribeResourcePolicies",
+                "logs:GetLogDelivery",
+                "logs:ListLogDeliveries",
+                "logs:PutResourcePolicy",
+                "logs:UpdateLogDelivery"
+              ],
+              "Resource": "*",
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {"aws:RequestedRegion": "us-west-2"}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "TemporaryCloudFrontExecutionPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Metadata": {
+        "cfn-lint": {
+          "config": {"ignore_checks": ["W3037"]}
+        }
+      },
+      "Properties": {
+        "ManagedPolicyName": "mr-lister-phase6-cloudfront-cfn-temporary-dev",
+        "Description": "Expiring CloudFront control-plane authority for only the reviewed Phase 6 web-edge resource kinds",
+        "Roles": ["mr-lister-phase6-runtime-cfn-dev"],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "CreateOnlyReviewedCloudFrontResourceKinds",
+              "Effect": "Allow",
+              "Action": [
+                "cloudfront:CreateCachePolicy",
+                "cloudfront:CreateDistribution",
+                "cloudfront:CreateDistributionWithTags",
+                "cloudfront:CreateFunction",
+                "cloudfront:CreateOriginAccessControl",
+                "cloudfront:CreateResponseHeadersPolicy"
+              ],
+              "Resource": "*",
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            },
+            {
+              "Sid": "ManageOnlyAccountCloudFrontWebEdgeResources",
+              "Effect": "Allow",
+              "Action": [
+                "cloudfront:DeleteCachePolicy",
+                "cloudfront:DeleteDistribution",
+                "cloudfront:DeleteFunction",
+                "cloudfront:DeleteOriginAccessControl",
+                "cloudfront:DeleteResponseHeadersPolicy",
+                "cloudfront:DescribeFunction",
+                "cloudfront:GetCachePolicy",
+                "cloudfront:GetDistribution",
+                "cloudfront:GetDistributionConfig",
+                "cloudfront:GetFunction",
+                "cloudfront:GetOriginAccessControl",
+                "cloudfront:GetResponseHeadersPolicy",
+                "cloudfront:ListTagsForResource",
+                "cloudfront:PublishFunction",
+                "cloudfront:TagResource",
+                "cloudfront:UntagResource",
+                "cloudfront:UpdateCachePolicy",
+                "cloudfront:UpdateDistribution",
+                "cloudfront:UpdateFunction",
+                "cloudfront:UpdateOriginAccessControl",
+                "cloudfront:UpdateResponseHeadersPolicy"
+              ],
+              "Resource": [
+                {"Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:cache-policy/*"},
+                {"Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*"},
+                {"Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:function/mr-lister-phase6-dev-*"},
+                {"Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:origin-access-control/*"},
+                {"Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:response-headers-policy/*"}
+              ],
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "TemporaryWebObservabilityExecutionPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": "mr-lister-phase6-web-observability-cfn-temporary-dev",
+        "Description": "Expiring creation and rollback authority for the exact Phase 6 alarm key, topic, policy, and named alarms",
+        "Roles": ["mr-lister-phase6-runtime-cfn-dev"],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "CreateOnlyTaggedOperationalAlarmKey",
+              "Effect": "Allow",
+              "Action": "kms:CreateKey",
+              "Resource": "*",
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {
+                  "aws:RequestTag/DataClassification": "OperationalAlarmTransport",
+                  "aws:RequestTag/Environment": "dev",
+                  "aws:RequestTag/Project": "MrLister",
+                  "aws:RequestedRegion": "us-west-2"
+                },
+                "ForAllValues:StringEquals": {
+                  "aws:TagKeys": ["DataClassification", "Environment", "Project"]
+                },
+                "Null": {"aws:TagKeys": "false"}
+              }
+            },
+            {
+              "Sid": "ManageOnlyTaggedOperationalAlarmKeys",
+              "Effect": "Allow",
+              "Action": [
+                "kms:DescribeKey",
+                "kms:DisableKey",
+                "kms:DisableKeyRotation",
+                "kms:EnableKey",
+                "kms:EnableKeyRotation",
+                "kms:GetKeyPolicy",
+                "kms:GetKeyRotationStatus",
+                "kms:ListResourceTags",
+                "kms:PutKeyPolicy",
+                "kms:ScheduleKeyDeletion",
+                "kms:TagResource",
+                "kms:UntagResource",
+                "kms:UpdateKeyDescription"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:kms:us-west-2:${AWS::AccountId}:key/*"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {
+                  "aws:ResourceTag/DataClassification": "OperationalAlarmTransport",
+                  "aws:ResourceTag/Environment": "dev",
+                  "aws:ResourceTag/Project": "MrLister",
+                  "aws:RequestedRegion": "us-west-2"
+                }
+              }
+            },
+            {
+              "Sid": "ManageOnlyExactOperationalAlarmTopic",
+              "Effect": "Allow",
+              "Action": [
+                "sns:CreateTopic",
+                "sns:DeleteTopic",
+                "sns:GetDataProtectionPolicy",
+                "sns:GetTopicAttributes",
+                "sns:ListSubscriptionsByTopic",
+                "sns:ListTagsForResource",
+                "sns:SetTopicAttributes",
+                "sns:TagResource",
+                "sns:UntagResource"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:sns:us-west-2:${AWS::AccountId}:mr-lister-phase6-dev-operational-alarms"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {"aws:RequestedRegion": "us-west-2"}
+              }
+            },
+            {
+              "Sid": "ManageOnlyNamedPhase6Alarms",
+              "Effect": "Allow",
+              "Action": [
+                "cloudwatch:DeleteAlarms",
+                "cloudwatch:DescribeAlarms",
+                "cloudwatch:ListTagsForResource",
+                "cloudwatch:PutMetricAlarm",
+                "cloudwatch:TagResource",
+                "cloudwatch:UntagResource"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:cloudwatch:us-west-2:${AWS::AccountId}:alarm:mr-lister-phase6-dev-*"
+              },
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {"aws:RequestedRegion": "us-west-2"}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "WebEdgeUpdateDeployerRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "mr-lister-phase6-web-edge-update-deployer-dev",
+        "Description": "Expiring stage-switched exact change-set control role",
+        "MaxSessionDuration": 3600,
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/mr-lister-dev"
+                }
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            }
+          ]
+        },
+        "Tags": [
+          {"Key": "DeploymentClass", "Value": "WEB_EDGE_UPDATE_DEPLOYER"},
+          {"Key": "Environment", "Value": "dev"},
+          {"Key": "ExpiresAt", "Value": {"Ref": "NotAfter"}},
+          {"Key": "Project", "Value": "MrLister"}
+        ]
+      }
+    },
+    "WebEdgeChangeSetControlPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": "mr-lister-phase6-web-edge-change-set-control-temporary-dev",
+        "Description": "Atomically stage-switched PREPARE or exact reviewed change-set EXECUTE authority",
+        "Roles": [{"Ref": "WebEdgeUpdateDeployerRole"}],
+        "PolicyDocument": {
+          "Fn::If": [
+            "ExecutionAuthorized",
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "ExecuteOnlyExactReviewedWebEdgeChangeSet",
+                  "Effect": "Allow",
+                  "Action": "cloudformation:ExecuteChangeSet",
+                  "Resource": {"Ref": "ReviewedChangeSetId"},
+                  "Condition": {
+                    "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+                  }
+                },
+                {
+                  "Sid": "ReadOnlyExactReviewedChangeSet",
+                  "Effect": "Allow",
+                  "Action": ["cloudformation:DescribeChangeSet", "cloudformation:GetTemplate"],
+                  "Resource": [
+                    {"Ref": "FoundationStackId"},
+                    {"Ref": "ReviewedChangeSetId"}
+                  ],
+                  "Condition": {
+                    "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+                  }
+                },
+                {
+                  "Sid": "ReadOnlyExactPhase6Stack",
+                  "Effect": "Allow",
+                  "Action": ["cloudformation:DescribeStacks", "cloudformation:ListStackResources"],
+                  "Resource": {"Ref": "FoundationStackId"},
+                  "Condition": {
+                    "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+                  }
+                }
+              ]
+            },
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "CreateExactReviewedWebEdgeUpdate",
+                  "Effect": "Allow",
+                  "Action": "cloudformation:CreateChangeSet",
+                  "Resource": [
+                    {"Ref": "FoundationStackId"},
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:cloudformation:us-west-2:aws:transform/Serverless-2016-10-31"
+                    }
+                  ],
+                  "Condition": {
+                    "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                    "ForAllValues:StringEquals": {
+                      "aws:TagKeys": ["DeploymentClass", "Environment", "Project"]
+                    },
+                    "StringEquals": {
+                      "aws:RequestTag/DeploymentClass": "FOUNDATION_ONLY",
+                      "aws:RequestTag/Environment": "dev",
+                      "aws:RequestTag/Project": "MrLister",
+                      "cloudformation:ChangeSetName": {"Ref": "ExactChangeSetName"},
+                      "cloudformation:RoleArn": {
+                        "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/mr-lister-phase6-runtime-cfn-dev"
+                      },
+                      "cloudformation:TemplateUrl": {
+                        "Fn::Sub": "https://mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2.s3.us-west-2.${AWS::URLSuffix}/private/deployments/cloudformation/web-edge/releases/${ReleaseFingerprint}/web-edge-template-${TargetTemplateFingerprint}.json?versionId=${WebTemplateVersionIdUrlEncoded}"
+                      }
+                    },
+                    "Null": {"aws:TagKeys": "false"}
+                  }
+                },
+                {
+                  "Sid": "PassOnlyRetainedPhase6ExecutionRole",
+                  "Effect": "Allow",
+                  "Action": "iam:PassRole",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/mr-lister-phase6-runtime-cfn-dev"
+                  },
+                  "Condition": {
+                    "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                    "StringEquals": {"iam:PassedToService": "cloudformation.amazonaws.com"}
+                  }
+                },
+                {
+                  "Sid": "ReadOnlyExactReviewedWebTemplateVersion",
+                  "Effect": "Allow",
+                  "Action": "s3:GetObjectVersion",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2/private/deployments/cloudformation/web-edge/releases/${ReleaseFingerprint}/web-edge-template-${TargetTemplateFingerprint}.json"
+                  },
+                  "Condition": {
+                    "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                    "StringEquals": {"s3:VersionId": {"Ref": "WebTemplateVersionId"}}
+                  }
+                },
+                {
+                  "Sid": "ManageOnlyExactUnexecutedChangeSet",
+                  "Effect": "Allow",
+                  "Action": "cloudformation:DeleteChangeSet",
+                  "Resource": {"Ref": "FoundationStackId"},
+                  "Condition": {
+                    "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                    "StringEquals": {"cloudformation:ChangeSetName": {"Ref": "ExactChangeSetName"}}
+                  }
+                },
+                {
+                  "Sid": "ReadOnlyExactReviewedChangeSet",
+                  "Effect": "Allow",
+                  "Action": ["cloudformation:DescribeChangeSet", "cloudformation:GetTemplate"],
+                  "Resource": [
+                    {"Ref": "FoundationStackId"},
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:cloudformation:us-west-2:${AWS::AccountId}:changeSet/${ExactChangeSetName}/*"
+                    }
+                  ],
+                  "Condition": {
+                    "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+                  }
+                },
+                {
+                  "Sid": "ReadOnlyExactPhase6Stack",
+                  "Effect": "Allow",
+                  "Action": ["cloudformation:DescribeStacks", "cloudformation:ListStackResources"],
+                  "Resource": {"Ref": "FoundationStackId"},
+                  "Condition": {
+                    "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "DeveloperAssumeWebEdgeDeployerPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": "mr-lister-phase6-assume-web-edge-deployer-temporary-dev",
+        "Description": "Expiring authority for the dev user to assume only the exact web-edge deployer role",
+        "Groups": ["mr-lister-developers"],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AssumeOnlyWebEdgeUpdateDeployer",
+              "Effect": "Allow",
+              "Action": "sts:AssumeRole",
+              "Resource": {"Fn::GetAtt": ["WebEdgeUpdateDeployerRole", "Arn"]},
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "BootstrapStage": {"Value": {"Ref": "BootstrapStage"}},
+    "DefaultChangeSetExecutionAuthorization": {"Value": "BLOCKED_UNLESS_STAGE_EXECUTE"},
+    "RetainedExecutionRoleArn": {
+      "Value": {
+        "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/mr-lister-phase6-runtime-cfn-dev"
+      }
+    },
+    "TemporaryExecutionPolicyArns": {
+      "Value": {
+        "Fn::Join": [
+          ",",
+          [
+            {"Ref": "TemporaryWebEdgeExecutionPolicy"},
+            {"Ref": "TemporaryCloudFrontExecutionPolicy"},
+            {"Ref": "TemporaryWebObservabilityExecutionPolicy"}
+          ]
+        ]
+      }
+    },
+    "WebEdgeUpdateDeployerRoleArn": {
+      "Value": {"Fn::GetAtt": ["WebEdgeUpdateDeployerRole", "Arn"]}
+    },
+    "WebEdgeChangeSetControlPolicyArn": {
+      "Value": {"Ref": "WebEdgeChangeSetControlPolicy"}
+    },
+    "ReviewedChangeSetId": {"Value": {"Ref": "ReviewedChangeSetId"}},
+    "WebTemplateKey": {
+      "Value": {
+        "Fn::Sub": "private/deployments/cloudformation/web-edge/releases/${ReleaseFingerprint}/web-edge-template-${TargetTemplateFingerprint}.json"
+      }
+    },
+    "WebTemplateVersionId": {"Value": {"Ref": "WebTemplateVersionId"}},
+    "TargetTemplateFingerprint": {"Value": {"Ref": "TargetTemplateFingerprint"}},
+    "LambdaArchiveKey": {
+      "Value": {
+        "Fn::Sub": "private/deployments/lambda/releases/${ReleaseFingerprint}/phase6-lambda-${LambdaArchiveSha256}.zip"
+      }
+    },
+    "LambdaArchiveVersionId": {"Value": {"Ref": "LambdaVersionId"}},
+    "ApplicationOrigin": {"Value": {"Ref": "ApplicationOrigin"}, "Description": "Public identifier; not a credential"},
+    "ApplicationCertificateArn": {
+      "Value": {"Ref": "ApplicationCertificateArn"},
+      "Description": "Public resource identifier; not a credential"
+    }
+  }
+}
