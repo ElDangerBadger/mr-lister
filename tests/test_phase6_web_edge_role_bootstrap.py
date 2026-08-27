@@ -348,6 +348,7 @@ def test_http_api_and_access_log_authority_is_regional_and_path_scoped() -> None
     properties = _template()["Resources"]["TemporaryWebEdgeExecutionPolicy"]["Properties"]
     statements = _statements(properties)
     api = statements["ManageOnlyRegionalSellerHttpApi"]
+    stage_tag_create = statements["CreateOnlyTaggedRegionalSellerApiStage"]
     log_group = statements["ManageOnlySellerApiAccessLogGroup"]
     log_delivery = statements["ConfigureOnlyRegionalHttpApiLogDelivery"]
 
@@ -364,6 +365,36 @@ def test_http_api_and_access_log_authority_is_regional_and_path_scoped() -> None
         {"Fn::Sub": "arn:${AWS::Partition}:apigateway:us-west-2::/tags/*"},
     ]
     assert api["Condition"]["StringEquals"] == {"aws:RequestedRegion": "us-west-2"}
+    assert _actions(stage_tag_create) == {"apigateway:*"}
+    assert stage_tag_create["Resource"] == [
+        {
+            "Fn::Sub": (
+                "arn:${AWS::Partition}:apigateway:us-west-2::/apis/*/stages"
+            )
+        },
+        {
+            "Fn::Sub": (
+                "arn:${AWS::Partition}:apigateway:us-west-2::/apis/*/stages/*"
+            )
+        },
+    ]
+    assert stage_tag_create["Condition"]["StringEquals"] == {
+        "aws:RequestTag/DeploymentClass": "FOUNDATION_ONLY",
+        "aws:RequestTag/Environment": "dev",
+        "aws:RequestTag/Project": "MrLister",
+    }
+    assert stage_tag_create["Condition"]["ForAllValues:StringEquals"] == {
+        "aws:TagKeys": [
+            "DeploymentClass",
+            "Environment",
+            "Project",
+            "httpapi:createdBy",
+            "aws:cloudformation:logical-id",
+            "aws:cloudformation:stack-id",
+            "aws:cloudformation:stack-name",
+        ]
+    }
+    assert stage_tag_create["Condition"]["Null"] == {"aws:TagKeys": "false"}
     assert log_group["Resource"] == [
         {
             "Fn::Sub": (

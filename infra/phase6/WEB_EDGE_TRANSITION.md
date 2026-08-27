@@ -68,8 +68,9 @@ log groups, and Lambda permissions. The temporary policies add only the missing 
 - creation/configuration/rollback of the exact private
   `mr-lister-phase6-web-dev-384627057108-us-west-2` bucket, with no object read, write, or delete;
 - CloudFront distribution, function, OAC, cache-policy, and response-header-policy control plane;
-- exact certificate description, tagged Cognito user-pool control plane, HTTP API control plane,
-  the named API access-log group, and regional log-delivery configuration;
+- exact certificate description, tagged Cognito user-pool control plane, HTTP API control plane
+  including tag-on-create authorization for SAM's generated `$default` stage, the named API
+  access-log group, and regional log-delivery configuration;
 - a tagged KMS alarm key, exact SNS alarm topic, and only alarms named
   `mr-lister-phase6-dev-*`.
 
@@ -96,9 +97,13 @@ remain bounded by all of the following together:
 
 API Gateway resource paths, regional CloudWatch Logs delivery, and most CloudFront resources also
 receive physical IDs only during creation. Their temporary control-plane permissions therefore
-cannot all be pre-scoped to final ARNs. Those permissions exist only on the CloudFormation service
-role, which only CloudFormation can assume; the developer-facing role can prepare only the exact
-versioned target. When root changes the bootstrap to `EXECUTE`, that role's control policy removes
+cannot all be pre-scoped to final ARNs. API stage tag-on-create authority is isolated in a separate
+statement limited to the regional `/apis/*/stages` and `/apis/*/stages/*` paths. It requires the
+exact project, environment, and deployment-class request tags, permits only the closed SAM and
+CloudFormation tag-key set, and expires with the same `NotAfter` boundary. Those permissions exist
+only on the CloudFormation service role, which only CloudFormation can assume; the developer-facing
+role can prepare only the exact versioned target. When root changes the bootstrap to `EXECUTE`, that
+role's control policy removes
 all create/delete/pass-role/template-read authority and replaces it with `ExecuteChangeSet` on the
 exact parent stack ARN only when `cloudformation:ChangeSetName` equals the reviewed full change-set
 ARN. The exact target, immutable object version, change-set verifier, short expiry, and bootstrap

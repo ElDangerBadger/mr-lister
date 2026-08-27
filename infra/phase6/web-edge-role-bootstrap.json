@@ -289,6 +289,39 @@
               }
             },
             {
+              "Sid": "CreateOnlyTaggedRegionalSellerApiStage",
+              "Effect": "Allow",
+              "Action": "apigateway:*",
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:us-west-2::/apis/*/stages"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:us-west-2::/apis/*/stages/*"
+                }
+              ],
+              "Condition": {
+                "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}},
+                "StringEquals": {
+                  "aws:RequestTag/DeploymentClass": "FOUNDATION_ONLY",
+                  "aws:RequestTag/Environment": "dev",
+                  "aws:RequestTag/Project": "MrLister"
+                },
+                "ForAllValues:StringEquals": {
+                  "aws:TagKeys": [
+                    "DeploymentClass",
+                    "Environment",
+                    "Project",
+                    "httpapi:createdBy",
+                    "aws:cloudformation:logical-id",
+                    "aws:cloudformation:stack-id",
+                    "aws:cloudformation:stack-name"
+                  ]
+                },
+                "Null": {"aws:TagKeys": "false"}
+              }
+            },
+            {
               "Sid": "ManageOnlySellerApiAccessLogGroup",
               "Effect": "Allow",
               "Action": [
