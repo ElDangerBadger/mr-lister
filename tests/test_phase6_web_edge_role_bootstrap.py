@@ -364,9 +364,20 @@ def test_http_api_and_access_log_authority_is_regional_and_path_scoped() -> None
         {"Fn::Sub": "arn:${AWS::Partition}:apigateway:us-west-2::/tags/*"},
     ]
     assert api["Condition"]["StringEquals"] == {"aws:RequestedRegion": "us-west-2"}
-    assert log_group["Resource"]["Fn::Sub"].endswith(
-        ":log-group:/aws/apigateway/mr-lister-phase6-dev-seller-api"
-    )
+    assert log_group["Resource"] == [
+        {
+            "Fn::Sub": (
+                "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:"
+                "log-group:/aws/apigateway/mr-lister-phase6-dev-seller-api"
+            )
+        },
+        {
+            "Fn::Sub": (
+                "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:"
+                "log-group:/aws/apigateway/mr-lister-phase6-dev-seller-api:*"
+            )
+        },
+    ]
     assert _actions(log_delivery) == {
         "logs:CreateLogDelivery",
         "logs:DeleteLogDelivery",

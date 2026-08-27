@@ -79,6 +79,10 @@ CloudFormation's three `aws:cloudformation:*` system tags. The policy contains n
 Tag-on-create permission is colocated with the corresponding create action; post-create authority
 still requires the exact project, environment, and data-classification resource tags.
 
+CloudWatch Logs authority remains limited to the exact seller API access-log name. It includes
+both AWS-documented IAM representations of that one log group: the base ARN required by tagging
+actions and its `:*` companion required by other log-group operations during tagged creation.
+
 Every temporary statement expires at the exclusive UTC `NotAfter` value. The only global
 CloudFront create permissions are actions whose resource IDs do not exist until creation. They
 remain bounded by all of the following together:

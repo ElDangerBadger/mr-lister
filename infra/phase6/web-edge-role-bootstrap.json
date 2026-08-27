@@ -300,9 +300,14 @@
                 "logs:TagResource",
                 "logs:UntagResource"
               ],
-              "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:/aws/apigateway/mr-lister-phase6-dev-seller-api"
-              },
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:/aws/apigateway/mr-lister-phase6-dev-seller-api"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:/aws/apigateway/mr-lister-phase6-dev-seller-api:*"
+                }
+              ],
               "Condition": {
                 "DateLessThan": {"aws:CurrentTime": {"Ref": "NotAfter"}}
               }
