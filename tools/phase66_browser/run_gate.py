@@ -37,6 +37,17 @@ _TRACE_REDACTIONS = (
     re.compile(rb"set-cookie", re.IGNORECASE),
     re.compile(rb"cookie", re.IGNORECASE),
 )
+_TRACE_LITERAL_REDACTIONS = tuple(
+    sorted(
+        {
+            str(REPOSITORY_ROOT).encode("utf-8"),
+            str(Path.home()).encode("utf-8"),
+        },
+        key=len,
+        reverse=True,
+    )
+)
+_REDACTED_PATH = b"<redacted-local-path>"
 
 
 class GateFailure(RuntimeError):
@@ -62,6 +73,8 @@ def _bundle_authority() -> tuple[str, int]:
 
 def _redact_trace_bytes(contents: bytes) -> bytes:
     redacted = contents
+    for local_path in _TRACE_LITERAL_REDACTIONS:
+        redacted = redacted.replace(local_path, _REDACTED_PATH)
     for pattern in _TRACE_REDACTIONS:
         redacted = pattern.sub(b"redacted", redacted)
     return redacted
@@ -91,7 +104,9 @@ def _archive_trace(engine_root: Path) -> tuple[Path, int]:
             raise GateFailure("sanitized browser trace is corrupt")
         for name in sanitized.namelist():
             contents = sanitized.read(name)
-            if any(pattern.search(contents) is not None for pattern in _TRACE_REDACTIONS):
+            if any(local_path in contents for local_path in _TRACE_LITERAL_REDACTIONS) or any(
+                pattern.search(contents) is not None for pattern in _TRACE_REDACTIONS
+            ):
                 raise GateFailure("sanitized browser trace retained authority material")
     return archive, trace_count
 
