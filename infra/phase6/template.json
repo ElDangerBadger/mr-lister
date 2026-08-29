@@ -1375,7 +1375,7 @@
               "FilterCriteria": {
                 "Filters": [
                   {
-                    "Pattern": "{\"dynamodb\":{\"Keys\":{\"SK\":{\"S\":[{\"prefix\":\"WORK#\"}]}}}}"
+                    "Pattern": "{\"eventName\":[\"INSERT\",\"MODIFY\"],\"dynamodb\":{\"Keys\":{\"SK\":{\"S\":[{\"prefix\":\"WORK#\"}]}}}}"
                   }
                 ]
               }

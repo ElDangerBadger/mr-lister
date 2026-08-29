@@ -197,7 +197,8 @@ def test_table_has_durable_due_work_topology() -> None:
     filters = stream_event["FilterCriteria"]["Filters"]
     assert len(filters) == 1
     assert json.loads(filters[0]["Pattern"]) == {
-        "dynamodb": {"Keys": {"SK": {"S": [{"prefix": "WORK#"}]}}}
+        "eventName": ["INSERT", "MODIFY"],
+        "dynamodb": {"Keys": {"SK": {"S": [{"prefix": "WORK#"}]}}},
     }
 
 

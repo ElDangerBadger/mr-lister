@@ -300,7 +300,10 @@ def test_phase6_dispatcher_cannot_select_publication_work() -> None:
     stream_filter = dispatcher["Events"]["OperationalStateChanges"]["Properties"]["FilterCriteria"][
         "Filters"
     ][0]["Pattern"]
-    assert json.loads(stream_filter) == {"dynamodb": {"Keys": {"SK": {"S": [{"prefix": "WORK#"}]}}}}
+    assert json.loads(stream_filter) == {
+        "eventName": ["INSERT", "MODIFY"],
+        "dynamodb": {"Keys": {"SK": {"S": [{"prefix": "WORK#"}]}}},
+    }
 
 
 def test_phase71_permit_and_stores_expose_no_consumption_api() -> None:

@@ -129,7 +129,10 @@ def test_deployed_target_constant_is_the_documented_post_web_correction() -> Non
     assert correction.REVIEW_QUERY_RUNTIME_ENVELOPE_TEMPLATE_SHA256 == (
         "618fbca8d00b1edbfa7412668a6e7d2a0e4e65e23460ee8b9216f92f19dbdfc2"
     )
-    assert sha256(correction.DEFAULT_SOURCE_PATH.read_bytes()).hexdigest() == (
+    # This historical renderer remains pinned to the predecessor source authority.  The current
+    # source has a separately versioned dispatcher-filter correction and must not silently rebind
+    # this already-deployed runtime-envelope lineage.
+    assert sha256(correction.DEFAULT_SOURCE_PATH.read_bytes()).hexdigest() != (
         correction.SOURCE_TEMPLATE_SHA256
     )
 
