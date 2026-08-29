@@ -307,7 +307,7 @@ class SellerReviewProjectionService:
             display_state=display_state,
             stage=stage,
             actions=actions,
-            preview=self._preview(source, now),
+            preview=self._preview(source),
             artwork=analysis,
             listing=listing,
             validation=validation,
@@ -1039,13 +1039,14 @@ class SellerReviewProjectionService:
             editable_draft=not sync.provider_locked and not sync.provider_published,
         )
 
-    def _preview(self, source: SourceArtifactRecord, now: datetime) -> ArtworkPreview:
+    def _preview(self, source: SourceArtifactRecord) -> ArtworkPreview:
         if self._preview_issuer is None or self._preview_origin is None:
             return ArtworkPreview(readiness=SectionReadiness.UNAVAILABLE)
         try:
             grant = self._preview_issuer.issue(source=source)
         except Exception:
             return ArtworkPreview(readiness=SectionReadiness.UNAVAILABLE)
+        now = self._now()
         if (
             not isinstance(grant.url, str)
             or not isinstance(grant.expires_at, datetime)

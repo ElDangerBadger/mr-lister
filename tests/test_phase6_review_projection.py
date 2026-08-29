@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from mr_lister.cloud.preview import AuthenticatedPreviewLinkIssuer
 from mr_lister.contracts import ArtworkAnalysis, ProductProfile
 from mr_lister.contracts.presentation import ProductMockupEvidence
 from mr_lister.control.dispatch import deterministic_execution_name, work_input_fingerprint
@@ -534,6 +535,47 @@ def test_complete_projection_joins_one_safe_human_review() -> None:
         pricing_snapshot_id=store.pricing.snapshot_id,
         pricing_snapshot_fingerprint=store.pricing.fingerprint,
     )
+
+
+def test_preview_ttl_is_validated_after_real_time_grant_issuance() -> None:
+    store, _preview = _fixture()
+    projection_times = iter((NOW, NOW + timedelta(microseconds=2)))
+    issuer = AuthenticatedPreviewLinkIssuer(
+        application_origin="https://review.mr-lister.test",
+        clock=lambda: NOW + timedelta(microseconds=1),
+    )
+    service = SellerReviewProjectionService(
+        store=store,
+        profiles=FakeProfiles(
+            ExactReviewProductProfile(
+                profile=PROFILE,
+                fingerprint=PROFILE_FP,
+            )
+        ),
+        clock=lambda: next(projection_times),
+        preview_issuer=issuer,
+        preview_origin="https://review.mr-lister.test",
+    )
+
+    result = service.get(owner_id=OWNER, job_id=JOB_ID)
+
+    assert result.preview.readiness is SectionReadiness.READY
+    assert result.preview.expires_at == NOW + timedelta(minutes=5, microseconds=1)
+
+
+def test_preview_ttl_over_five_minutes_after_validation_still_fails_closed() -> None:
+    store, preview = _fixture()
+    preview.grant = PreviewGrant(
+        url=preview.grant.url,
+        expires_at=NOW + timedelta(minutes=5, microseconds=1),
+        source_artifact_fingerprint=preview.grant.source_artifact_fingerprint,
+    )
+
+    result = _service(store, preview).get(owner_id=OWNER, job_id=JOB_ID)
+
+    assert result.preview.readiness is SectionReadiness.UNAVAILABLE
+    assert result.preview.url is None
+    assert result.preview.expires_at is None
 
 
 def test_legacy_sync_without_shop_authority_disables_approval() -> None:
