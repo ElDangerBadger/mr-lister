@@ -84,6 +84,10 @@ PHASE77_REQUEST_FILES = {
     "request_api.py",
 }
 
+PHASE78_PROVIDER_RUNTIME_FILES = {
+    "provider_runtime.py",
+}
+
 PHASE74_CLOUD_FILES = {
     ROOT / "src/mr_lister/cloud/phase7_composition.py",
     ROOT / "src/mr_lister/cloud/phase7_entrypoints.py",
@@ -103,11 +107,16 @@ PHASE77_REQUEST_CLOUD_FILES = {
     ROOT / "src/mr_lister/cloud/phase7_request_composition.py",
 }
 
+PHASE78_WORKER_CLOUD_FILES = {
+    ROOT / "src/mr_lister/cloud/phase7_worker_composition.py",
+}
+
 PHASE7_CLOUD_FILES = (
     PHASE74_CLOUD_FILES
     | PHASE75_OFFLINE_CLOUD_FILES
     | PHASE76_GUARD_CLOUD_FILES
     | PHASE77_REQUEST_CLOUD_FILES
+    | PHASE78_WORKER_CLOUD_FILES
 )
 
 EXPECTED_OFFLINE_PUBLICATION_FILES = {
@@ -132,6 +141,7 @@ EXPECTED_OFFLINE_PUBLICATION_FILES = {
     | PHASE75_RETENTION_FILES
     | PHASE76_GUARD_FILES
     | PHASE77_REQUEST_FILES
+    | PHASE78_PROVIDER_RUNTIME_FILES
 )
 
 
@@ -470,6 +480,9 @@ def test_phase75_credential_modules_are_capability_narrow_and_uncomposed() -> No
             continue
         imports = _imports(path)
         assert adapter_module not in imports, path.relative_to(ROOT)
+        if path in PHASE78_WORKER_CLOUD_FILES:
+            assert core_module in imports, path.relative_to(ROOT)
+            continue
         assert core_module not in imports, path.relative_to(ROOT)
 
 

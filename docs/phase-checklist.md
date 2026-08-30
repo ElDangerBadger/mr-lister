@@ -443,6 +443,14 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     before event observation or client construction. Phase 6 routes and bundles, the browser,
     Phase 7 SAM/entrypoints, provider credentials, workflows, triggers, IAM mutation, and all live
     publication surfaces remain unchanged and disabled
+  - [x] Phase 7.8 exact-disabled worker-composition checkpoint: the real DynamoDB execution store,
+    execution service, newer Phase 7.6 durable approval guard, owner-bound credential protocol,
+    store-backed sanitized audit/evidence boundary, and one-step provider coordinator now compose
+    as one dependency-injected graph. A dedicated adapter translates the request store authority
+    into the stricter Phase 7.6 guard DTO, and one shared clock/release/profile binding crosses the
+    graph. Construction performs no state read/write, secret resolution, audit write, or provider
+    call; the unregistered wrapper denies before event observation or graph construction. No SAM,
+    IAM, API, browser, trigger, workflow, credential resolver, or live provider surface changed
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports
