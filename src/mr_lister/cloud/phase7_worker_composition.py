@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from mr_lister.cloud.phase7_composition import (
+from mr_lister.cloud.phase7_configuration import (
     PinnedPublicationProfileAuthority,
     load_phase7_read_configuration,
 )

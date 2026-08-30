@@ -451,6 +451,14 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     graph. Construction performs no state read/write, secret resolution, audit write, or provider
     call; the unregistered wrapper denies before event observation or graph construction. No SAM,
     IAM, API, browser, trigger, workflow, credential resolver, or live provider surface changed
+  - [x] Phase 7.9 triggerless worker-source seal: configuration/profile authority was extracted
+    from the read-query composition so the worker closure no longer inherits its dormant default
+    AWS client factory. A separate deterministic offline source artifact now binds the exact
+    47-module closure, disabled activation tuple, contract/profile fingerprints, and reviewed
+    dependency baseline. It is explicitly non-deployable, contains no runtime entrypoint/handler
+    binding, route, trigger, IAM/SAM/S3 binding, production credential resolver, or runtime
+    dependency bytes, and records Pillow as an additional dependency still requiring a separate
+    reviewed runtime seal
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports
