@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Final
@@ -13,6 +14,7 @@ from mr_lister.control.models import WorkRequestStatus, WorkType
 from tools import phase66_deployed_outbox_recovery_smoke as smoke
 
 NOW_DIGEST: Final = "a" * 64
+NAMESPACE_SEED: Final = "9" * 64
 
 
 def _authority() -> smoke.DeploymentAuthority:
@@ -82,7 +84,10 @@ def _after(**changes: Any) -> smoke.LiveSnapshot:
 
 def _gate_document(before: smoke.LiveSnapshot | None = None) -> dict[str, Any]:
     before = before or _before()
-    baseline = before.gate_baseline(synthetic_namespace_absent=True)
+    baseline = before.gate_baseline(
+        synthetic_namespace_absent=True,
+        synthetic_namespace_seed=NAMESPACE_SEED,
+    )
     return {
         "authorization_contract": smoke.GATE_CONTRACT,
         "gate_id": smoke.GATE_ID,
@@ -90,6 +95,7 @@ def _gate_document(before: smoke.LiveSnapshot | None = None) -> dict[str, Any]:
         "source_authority_commit_digest": smoke.SOURCE_AUTHORITY_COMMIT_DIGEST,
         "deployment_digest": "d" * 64,
         "prerequisite_evidence_run_digest": "e" * 64,
+        "synthetic_namespace_seed": NAMESPACE_SEED,
         "method_authorization": dict(smoke._EXPECTED_METHOD_AUTHORIZATION),
         "exact_write_budget": {
             **smoke._FIXED_WRITE_BUDGET,
@@ -309,43 +315,97 @@ def test_live_path_runs_all_seven_assertions_and_emits_only_sanitized_artifacts(
         "stuck_execution_recovery_passes",
     ]
     assert all(summary["assertions"].values())
+    audit = json.loads((output / "log-audit.json").read_text())
+    assert summary["artifact_contract"] == smoke.RAW_CANARY_CONTRACT
+    assert audit["artifact_contract"] == smoke.RAW_LOG_CONTRACT
+    assert summary["execution_authority"] == audit["execution_authority"]
+    assert result["execution_digest"] == summary["execution_authority"]["execution_digest"]
+    assert summary["source_authority_commit_digest"] == smoke.SOURCE_AUTHORITY_COMMIT_DIGEST
+    assert audit["source_authority_commit_digest"] == smoke.SOURCE_AUTHORITY_COMMIT_DIGEST
     retained = b"".join(path.read_bytes() for path in sorted(output.iterdir()))
-    canary = smoke.derive_canary(NOW_DIGEST)
+    canary = smoke.derive_canary(NAMESPACE_SEED)
     for secret in (*canary.sensitive_values, "private-table-secret", str(output)):
         assert secret.encode() not in retained
     assert {path.stat().st_mode & 0o777 for path in output.iterdir()} == {0o600}
 
 
-def test_failure_after_first_write_always_runs_bounded_cleanup(tmp_path: Path) -> None:
+def test_each_live_run_gets_one_distinct_shared_execution_authority(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
+    first_output = private / "first"
+    second_output = private / "second"
+    first = smoke.run_live(_gate(), FakeBackend(), first_output)
+    second = smoke.run_live(_gate(), FakeBackend(), second_output)
+    first_canary = json.loads((first_output / "canary-summary.json").read_bytes())
+    first_log = json.loads((first_output / "log-audit.json").read_bytes())
+    second_canary = json.loads((second_output / "canary-summary.json").read_bytes())
+    second_log = json.loads((second_output / "log-audit.json").read_bytes())
+
+    assert first_canary["execution_authority"] == first_log["execution_authority"]
+    assert second_canary["execution_authority"] == second_log["execution_authority"]
+    assert first["execution_digest"] != second["execution_digest"]
+    assert first_canary["execution_authority"] != second_log["execution_authority"]
+    assert first_canary["execution_authority"]["completed_at"].endswith("Z")
+
+
+def test_live_run_requires_fresh_output_before_backend_operations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
+    output = private / "existing"
+    output.mkdir(mode=0o700)
+    marker = output / "marker"
+    marker.write_bytes(b"unchanged")
+    marker.chmod(0o600)
+    backend = FakeBackend()
+
+    with pytest.raises(smoke.SmokeError, match="fresh"):
+        smoke.run_live(_gate(), backend, output)
+
+    assert backend.calls == []
+    assert marker.read_bytes() == b"unchanged"
+
+
+def test_failure_after_first_write_always_runs_bounded_cleanup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
     backend = FakeBackend()
     backend.dispatch_responses[1] = {"attempted": 1, "dispatched": 1}
 
     with pytest.raises(smoke.SmokeError, match="idempotent"):
-        smoke.run_live(_gate(), backend, tmp_path)
+        smoke.run_live(_gate(), backend, private / "dispatch-failure")
 
     assert backend.calls[-1] == "cleanup_synthetic"
     assert "put_recovery_pair" not in backend.calls
 
 
 def test_retention_release_stops_before_synthetic_writes_and_needs_no_cleanup(
-    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
     backend = FakeBackend()
     backend.retention_response["versions_reasserted_pinned"] = 1
     backend.retention_response["versions_released_to_staged"] = 1
 
     with pytest.raises(smoke.SmokeError, match="retention sweep"):
-        smoke.run_live(_gate(), backend, tmp_path)
+        smoke.run_live(_gate(), backend, private / "retention-failure")
 
     assert "put_outbox_work" not in backend.calls
     assert "cleanup_synthetic" not in backend.calls
 
 
-def test_duplicate_or_nonfailed_execution_fails_closed_and_cleans(tmp_path: Path) -> None:
+def test_duplicate_or_nonfailed_execution_fails_closed_and_cleans(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
     backend = FakeBackend()
     backend.observation = replace(_observation(), exact_name_count=2)
     with pytest.raises(smoke.SmokeError, match="single"):
-        smoke.run_live(_gate(), backend, tmp_path)
+        smoke.run_live(_gate(), backend, private / "observation-failure")
     assert backend.calls[-1] == "cleanup_synthetic"
 
 
@@ -481,6 +541,135 @@ def test_private_gate_rejects_group_readable_file_and_out_of_root_path(
     outside.chmod(0o600)
     with pytest.raises(smoke.SmokeError, match="repository workspace"):
         smoke.load_run_gate(outside, smoke._digest_bytes(b"{}"))
+
+
+def test_private_gate_open_is_anchored_across_parent_symlink_swap(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
+    gate_path, gate_digest = _write_gate(private)
+    parent = gate_path.parent
+    relocated = parent.with_name("run-relocated")
+    outside = private / "swap-target"
+    outside.mkdir(mode=0o700)
+    decoy = outside / gate_path.name
+    decoy.write_bytes(b"{}\n")
+    decoy.chmod(0o600)
+    real_open = smoke.os.open
+    swapped = False
+
+    def swapping_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal swapped
+        if path == gate_path.name and dir_fd is not None and not swapped:
+            swapped = True
+            parent.rename(relocated)
+            parent.symlink_to(outside, target_is_directory=True)
+            try:
+                return real_open(path, flags, mode, dir_fd=dir_fd)
+            finally:
+                parent.unlink()
+                relocated.rename(parent)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(smoke.os, "open", swapping_open)
+    assert smoke.load_run_gate(gate_path, gate_digest).digest == gate_digest
+    assert swapped is True
+    assert decoy.read_bytes() == b"{}\n"
+
+
+def test_artifact_writes_remain_anchored_across_output_parent_symlink_swap(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
+    parent = private / "run"
+    output = parent / "evidence"
+    relocated = private / "run-relocated"
+    outside = private / "swap-target"
+    outside.mkdir(mode=0o700)
+
+    class SwappingBackend(FakeBackend):
+        def snapshot(self, authority: smoke.DeploymentAuthority) -> smoke.LiveSnapshot:
+            result = super().snapshot(authority)
+            parent.rename(relocated)
+            parent.symlink_to(outside, target_is_directory=True)
+            return result
+
+    result = smoke.run_live(_gate(), SwappingBackend(), output)
+
+    assert result["status"] == "passed"
+    anchored = relocated / "evidence"
+    assert {path.name for path in anchored.iterdir()} == {
+        "canary-summary.json",
+        "log-audit.json",
+    }
+    assert list(outside.iterdir()) == []
+
+
+def test_artifacts_are_write_once_and_never_replace_an_existing_leaf(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
+    output = private / "evidence"
+    sentinel = b"preexisting-evidence\n"
+
+    class CollidingBackend(FakeBackend):
+        def snapshot(self, authority: smoke.DeploymentAuthority) -> smoke.LiveSnapshot:
+            result = super().snapshot(authority)
+            collision = output / "canary-summary.json"
+            collision.write_bytes(sentinel)
+            collision.chmod(0o600)
+            return result
+
+    with pytest.raises(smoke.SmokeError, match="could not be written"):
+        smoke.run_live(_gate(), CollidingBackend(), output)
+
+    assert (output / "canary-summary.json").read_bytes() == sentinel
+    assert not (output / "log-audit.json").exists()
+
+
+def test_execution_authority_rejects_invalid_time_or_entropy() -> None:
+    started = smoke.datetime(2026, 8, 29, 12, 0, tzinfo=smoke.UTC)
+    completed = started + smoke.timedelta(seconds=30)
+    authority = smoke._execution_authority(
+        _gate(),
+        started_at=started,
+        completed_at=completed,
+        entropy=b"x" * 32,
+    )
+    assert authority["authority_contract"] == smoke.EXECUTION_AUTHORITY_CONTRACT
+
+    with pytest.raises(smoke.SmokeError, match="time authority"):
+        smoke._execution_authority(
+            _gate(),
+            started_at=started,
+            completed_at=completed,
+            entropy=b"x" * 31,
+        )
+    with pytest.raises(smoke.SmokeError, match="time authority"):
+        smoke._execution_authority(
+            _gate(),
+            started_at=completed,
+            completed_at=started,
+            entropy=b"x" * 32,
+        )
+    with pytest.raises(smoke.SmokeError, match="time authority"):
+        smoke._execution_authority(
+            _gate(),
+            started_at=started,
+            completed_at=started + smoke.timedelta(seconds=smoke.MAX_EXECUTION_SECONDS + 1),
+            entropy=b"x" * 32,
+        )
+    with pytest.raises(smoke.SmokeError, match="timezone-aware"):
+        smoke._utc_second(lambda: smoke.datetime(2026, 8, 29, 12, 0))
 
 
 def test_live_cli_requires_output_root_and_exact_environment_switch(

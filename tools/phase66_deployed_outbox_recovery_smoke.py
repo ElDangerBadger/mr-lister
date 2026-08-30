@@ -5,11 +5,12 @@ The default command is a repository-local gate preflight.  Live execution is pos
 with an exact mode-0600 private gate, its caller-supplied SHA-256, an explicit one-run
 environment switch, and a repository-private output directory.
 
-The live canary uses two synthetic namespaces derived from the gate digest.  One namespace
-contains only an orphan PREPARE work row: the due-work sweep can start the deterministic
-workflow, but the deployed preparation handler must fail on its first strong job read before
-AgentCore is reachable.  The second namespace contains a stale, cancelled Job/Work pair whose
-deterministic execution never existed; the recovery sweep must settle it from durable authority.
+The live canary uses two synthetic namespaces derived from the gate's frozen namespace seed.
+One namespace contains only an orphan PREPARE work row: the due-work sweep can start the
+deterministic workflow, but the deployed preparation handler must fail on its first strong job
+read before AgentCore is reachable.  The second namespace contains a stale, cancelled Job/Work
+pair whose deterministic execution never existed; the recovery sweep must settle it from
+durable authority.
 Every DynamoDB row created by this process is removed by exact-key, exact-payload cleanup.  The
 single Standard Step Functions execution is intentionally retained as immutable audit evidence.
 
@@ -31,7 +32,8 @@ import secrets
 import stat
 import time
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -58,7 +60,7 @@ PREPARE_DEFINITION_PATH: Final = (
 )
 
 GATE_ID: Final = "deployed.outbox_recovery_smoke"
-GATE_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-run-gate-v1"
+GATE_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-run-gate-v2"
 SOURCE_AUTHORITY_COMMIT: Final = "e130292db7124425840c2768a94475417f94f2e5"
 SOURCE_AUTHORITY_COMMIT_DIGEST: Final = (
     "40e7186ae67d9f6cd7ae630381ff8ed59c09afde0e2022d4b0a3ecbced2277cd"
@@ -82,6 +84,10 @@ MAX_TABLE_ITEMS: Final = 10_000
 MAX_SOURCE_VERSIONS: Final = 25
 MAX_EXECUTION_WAIT_SECONDS: Final = 90
 OUTBOX_STREAM_QUIESCENCE_SECONDS: Final = 20
+EXECUTION_AUTHORITY_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-execution-authority-v1"
+RAW_CANARY_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-canary-summary-v2"
+RAW_LOG_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-log-audit-v2"
+MAX_EXECUTION_SECONDS: Final = 60 * 60
 
 _CHECKPOINT_ENTITY: Final = "SOURCE_VERSION_RETENTION_CHECKPOINT"
 _EXPECTED_METHOD_AUTHORIZATION: Final = {
@@ -225,63 +231,125 @@ def _exact_private_path(path: Path) -> Path:
     return candidate
 
 
-def _validate_private_directory(path: Path, *, create: bool) -> Path:
+def _open_repository_root() -> int:
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+    root = Path(os.path.abspath(REPOSITORY_ROOT))
+    descriptor: int | None = None
+    try:
+        if not root.is_absolute() or root.parts[0] != os.sep:
+            raise OSError
+        descriptor = os.open(os.sep, flags)
+        for component in root.parts[1:]:
+            next_descriptor = os.open(component, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError
+        result = descriptor
+        descriptor = None
+        return result
+    except OSError:
+        raise SmokeError("repository root is not one stable directory chain") from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+@contextmanager
+def _private_directory_descriptor(path: Path, *, create: bool) -> Iterator[int]:
     directory = _exact_private_path(path)
-    current = REPOSITORY_ROOT
-    for component in directory.relative_to(REPOSITORY_ROOT).parts:
-        current /= component
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptor: int | None = None
+    try:
+        descriptor = _open_repository_root()
+        for component in directory.relative_to(REPOSITORY_ROOT).parts:
+            next_descriptor: int | None = None
+            try:
+                try:
+                    next_descriptor = os.open(component, flags, dir_fd=descriptor)
+                except FileNotFoundError:
+                    if not create:
+                        raise
+                    os.mkdir(component, mode=0o700, dir_fd=descriptor)
+                    next_descriptor = os.open(component, flags, dir_fd=descriptor)
+                metadata = os.fstat(next_descriptor)
+                if not stat.S_ISDIR(metadata.st_mode):
+                    raise OSError
+                if metadata.st_mode & 0o077:
+                    if not create:
+                        raise OSError
+                    os.fchmod(next_descriptor, 0o700)
+                    metadata = os.fstat(next_descriptor)
+                    if metadata.st_mode & 0o077:
+                        raise OSError
+            except OSError:
+                if next_descriptor is not None:
+                    os.close(next_descriptor)
+                raise
+            os.close(descriptor)
+            descriptor = next_descriptor
+        yield descriptor
+    except OSError:
+        raise SmokeError("private directory is not one confined directory chain") from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+@contextmanager
+def _fresh_private_directory_descriptor(path: Path) -> Iterator[tuple[Path, int]]:
+    directory = _exact_private_path(path)
+    if directory == PRIVATE_ROOT:
+        raise SmokeError("private output root must name a fresh child directory")
+    with _private_directory_descriptor(directory.parent, create=True) as parent_descriptor:
         try:
-            metadata = current.lstat()
-        except FileNotFoundError:
-            if not create:
-                raise SmokeError("private directory is unavailable") from None
-            try:
-                current.mkdir(mode=0o700)
-                metadata = current.lstat()
-            except OSError:
-                raise SmokeError("private directory could not be created") from None
-        if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
-            raise SmokeError("private path contains a non-directory component")
-        if metadata.st_mode & 0o077:
-            if not create:
-                raise SmokeError("private directory permissions are not confined")
-            try:
-                current.chmod(0o700)
-            except OSError:
-                raise SmokeError("private directory permissions could not be confined") from None
-    return directory
+            os.mkdir(directory.name, mode=0o700, dir_fd=parent_descriptor)
+            flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+            descriptor = os.open(directory.name, flags, dir_fd=parent_descriptor)
+        except OSError:
+            raise SmokeError("private output root must be one fresh directory") from None
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_mode & 0o077:
+            raise SmokeError("private output root is not confined")
+        yield directory, descriptor
+    finally:
+        os.close(descriptor)
 
 
 def _read_private_file(path: Path) -> bytes:
     candidate = _exact_private_path(path)
-    _validate_private_directory(candidate.parent, create=False)
     descriptor: int | None = None
-    try:
-        descriptor = os.open(candidate, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
-        before = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(before.st_mode)
-            or before.st_nlink != 1
-            or before.st_mode & 0o077
-            or not 1 <= before.st_size <= MAX_PRIVATE_BYTES
-        ):
-            raise OSError
-        chunks: list[bytes] = []
-        remaining = before.st_size
-        while remaining:
-            chunk = os.read(descriptor, min(remaining, 1024 * 1024))
-            if not chunk:
+    with _private_directory_descriptor(candidate.parent, create=False) as parent_descriptor:
+        try:
+            descriptor = os.open(
+                candidate.name,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                dir_fd=parent_descriptor,
+            )
+            before = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_nlink != 1
+                or before.st_mode & 0o077
+                or not 1 <= before.st_size <= MAX_PRIVATE_BYTES
+            ):
                 raise OSError
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        payload = b"".join(chunks)
-        after = os.fstat(descriptor)
-    except OSError:
-        raise SmokeError("gate must be one stable mode-0600 private regular file") from None
-    finally:
-        if descriptor is not None:
-            os.close(descriptor)
-    if len(payload) != before.st_size or (
+            chunks: list[bytes] = []
+            remaining = before.st_size
+            while remaining:
+                chunk = os.read(descriptor, min(remaining, 1024 * 1024))
+                if not chunk:
+                    raise OSError
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            after = os.fstat(descriptor)
+        except OSError:
+            raise SmokeError("gate must be one stable mode-0600 private regular file") from None
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+    if (
         before.st_dev,
         before.st_ino,
         before.st_size,
@@ -295,38 +363,91 @@ def _read_private_file(path: Path) -> bytes:
         after.st_ctime_ns,
     ):
         raise SmokeError("gate changed while it was read")
-    return payload
+    return b"".join(chunks)
 
 
-def _atomic_private_json(path: Path, value: object) -> tuple[int, str]:
-    candidate = _exact_private_path(path)
-    _validate_private_directory(candidate.parent, create=True)
+def _write_once_private_json(
+    directory_descriptor: int, name: str, value: object
+) -> tuple[int, str]:
+    if not name or name in {".", ".."} or "/" in name or "\x00" in name:
+        raise SmokeError("sanitized result filename is invalid")
     payload = _canonical_json(value, pretty=True)
-    temporary = candidate.with_name(f".{candidate.name}.{secrets.token_hex(12)}.tmp")
+    temporary = f".{name}.{secrets.token_hex(12)}.tmp"
     descriptor: int | None = None
     try:
         descriptor = os.open(
             temporary,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
             0o600,
+            dir_fd=directory_descriptor,
         )
         with os.fdopen(descriptor, "wb", closefd=True) as output:
             descriptor = None
             output.write(payload)
             output.flush()
             os.fsync(output.fileno())
-        temporary.replace(candidate)
-        candidate.chmod(0o600)
+        os.link(
+            temporary,
+            name,
+            src_dir_fd=directory_descriptor,
+            dst_dir_fd=directory_descriptor,
+            follow_symlinks=False,
+        )
+        os.unlink(temporary, dir_fd=directory_descriptor)
+        os.fsync(directory_descriptor)
     except OSError:
         raise SmokeError("sanitized result could not be written") from None
     finally:
         if descriptor is not None:
             os.close(descriptor)
         try:
-            temporary.unlink()
+            os.unlink(temporary, dir_fd=directory_descriptor)
         except FileNotFoundError:
             pass
     return len(payload), _digest_bytes(payload)
+
+
+def _utc_second(clock: Callable[[], datetime]) -> datetime:
+    observed = clock()
+    if not isinstance(observed, datetime) or observed.utcoffset() is None:
+        raise SmokeError("live execution clock is not timezone-aware")
+    return observed.astimezone(UTC).replace(microsecond=0)
+
+
+def _execution_authority(
+    gate: RunGate,
+    *,
+    started_at: datetime,
+    completed_at: datetime,
+    entropy: bytes,
+) -> dict[str, str]:
+    if (
+        len(entropy) != 32
+        or completed_at < started_at
+        or completed_at - started_at > timedelta(seconds=MAX_EXECUTION_SECONDS)
+    ):
+        raise SmokeError("live execution time authority is invalid")
+    started_text = started_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    completed_text = completed_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    digest = _digest_bytes(
+        b"\0".join(
+            (
+                EXECUTION_AUTHORITY_CONTRACT.encode("ascii"),
+                gate.digest.encode("ascii"),
+                gate.deployment_digest.encode("ascii"),
+                gate.prerequisite_digest.encode("ascii"),
+                started_text.encode("ascii"),
+                completed_text.encode("ascii"),
+                entropy,
+            )
+        )
+    )
+    return {
+        "authority_contract": EXECUTION_AUTHORITY_CONTRACT,
+        "completed_at": completed_text,
+        "execution_digest": digest,
+        "started_at": started_text,
+    }
 
 
 def _is_digest(value: object) -> bool:
@@ -358,6 +479,12 @@ class RunGate:
         assert isinstance(value, str)
         return value
 
+    @property
+    def synthetic_namespace_seed(self) -> str:
+        value = self.document.get("synthetic_namespace_seed")
+        assert isinstance(value, str)
+        return value
+
 
 def load_run_gate(path: Path, expected_digest: str) -> RunGate:
     if not _is_digest(expected_digest):
@@ -366,6 +493,19 @@ def load_run_gate(path: Path, expected_digest: str) -> RunGate:
     if not secrets.compare_digest(_digest_bytes(payload), expected_digest):
         raise SmokeError("gate SHA-256 does not match the exact private file")
     document = _mapping(_strict_json(payload, "gate"), "gate")
+    if set(document) != {
+        "authorization_contract",
+        "baseline",
+        "deployment_digest",
+        "exact_write_budget",
+        "gate_id",
+        "method_authorization",
+        "prerequisite_evidence_run_digest",
+        "source_authority_commit",
+        "source_authority_commit_digest",
+        "synthetic_namespace_seed",
+    }:
+        raise SmokeError("gate is not the exact closed authorization object")
     if (
         document.get("gate_id") != GATE_ID
         or document.get("authorization_contract") != GATE_CONTRACT
@@ -375,9 +515,13 @@ def load_run_gate(path: Path, expected_digest: str) -> RunGate:
         raise SmokeError("gate source authority commit is not the deployed code authority")
     if document.get("source_authority_commit_digest") != SOURCE_AUTHORITY_COMMIT_DIGEST:
         raise SmokeError("gate source authority digest is not the deployed code authority")
-    for name in ("deployment_digest", "prerequisite_evidence_run_digest"):
+    for name in (
+        "deployment_digest",
+        "prerequisite_evidence_run_digest",
+        "synthetic_namespace_seed",
+    ):
         if not _is_digest(document.get(name)):
-            raise SmokeError("gate deployment/prerequisite binding is invalid")
+            raise SmokeError("gate deployment/prerequisite/namespace binding is invalid")
     if _mapping(document.get("method_authorization"), "method authorization") != (
         _EXPECTED_METHOD_AUTHORIZATION
     ):
@@ -397,6 +541,7 @@ def load_run_gate(path: Path, expected_digest: str) -> RunGate:
         "retention_source_version_count",
         "running_execution_count",
         "synthetic_namespace_absent",
+        "synthetic_namespace_seed",
     }
     if set(baseline) != required_baseline:
         raise SmokeError("gate baseline is not the exact closed object")
@@ -417,6 +562,7 @@ def load_run_gate(path: Path, expected_digest: str) -> RunGate:
         "application_record_digest",
         "existing_execution_digest",
         "retention_source_inventory_digest",
+        "synthetic_namespace_seed",
     ):
         if not _is_digest(baseline.get(key)):
             raise SmokeError("gate baseline digest is invalid")
@@ -426,6 +572,7 @@ def load_run_gate(path: Path, expected_digest: str) -> RunGate:
         or baseline.get("running_execution_count") != 0
         or baseline.get("retention_checkpoint_present") is not True
         or baseline.get("synthetic_namespace_absent") is not True
+        or baseline.get("synthetic_namespace_seed") != document["synthetic_namespace_seed"]
         or not 1 <= baseline["retention_source_version_count"] <= MAX_SOURCE_VERSIONS
         or baseline["retention_referenced_version_count"]
         != baseline["retention_source_version_count"]
@@ -512,7 +659,14 @@ class LiveSnapshot:
     retention_checkpoint_present: bool
     authority: DeploymentAuthority = field(repr=False)
 
-    def gate_baseline(self, *, synthetic_namespace_absent: bool) -> dict[str, object]:
+    def gate_baseline(
+        self,
+        *,
+        synthetic_namespace_absent: bool,
+        synthetic_namespace_seed: str,
+    ) -> dict[str, object]:
+        if not _is_digest(synthetic_namespace_seed):
+            raise SmokeError("baseline namespace seed is invalid")
         return {
             "application_record_count": self.application_record_count,
             "application_record_digest": self.application_record_digest,
@@ -527,6 +681,7 @@ class LiveSnapshot:
             "retention_source_version_count": self.source_version_count,
             "running_execution_count": self.running_execution_count,
             "synthetic_namespace_absent": synthetic_namespace_absent,
+            "synthetic_namespace_seed": synthetic_namespace_seed,
         }
 
 
@@ -612,10 +767,25 @@ def _verify_final(
         raise SmokeError("workflow execution delta is not the one retained canary")
 
 
-def run_live(gate: RunGate, backend: LiveBackend, output_root: Path) -> Mapping[str, object]:
-    canary = derive_canary(gate.digest)
+def _run_live_in_directory(
+    gate: RunGate,
+    backend: LiveBackend,
+    output_descriptor: int,
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> Mapping[str, object]:
+    execution_clock = clock or (lambda: datetime.now(UTC))
+    started_at = _utc_second(execution_clock)
+    execution_entropy = secrets.token_bytes(32)
+    canary = derive_canary(gate.synthetic_namespace_seed)
     before = backend.prepare(gate, canary)
-    if before.gate_baseline(synthetic_namespace_absent=True) != gate.baseline:
+    if (
+        before.gate_baseline(
+            synthetic_namespace_absent=True,
+            synthetic_namespace_seed=gate.synthetic_namespace_seed,
+        )
+        != gate.baseline
+    ):
         raise SmokeError("live baseline drifted from the exact private gate")
 
     retention = backend.invoke_retention(before.authority)
@@ -688,11 +858,18 @@ def run_live(gate: RunGate, backend: LiveBackend, output_root: Path) -> Mapping[
         raise SmokeError("outbox execution observation is unavailable")
     after = backend.snapshot(before.authority)
     _verify_final(before, after, observation)
+    execution = _execution_authority(
+        gate,
+        started_at=started_at,
+        completed_at=_utc_second(execution_clock),
+        entropy=execution_entropy,
+    )
 
     canary_summary = {
-        "artifact_contract": "phase6.6-deployed-outbox-recovery-canary-summary-v1",
+        "artifact_contract": RAW_CANARY_CONTRACT,
         "gate_digest": gate.digest,
         "deployment_digest": gate.deployment_digest,
+        "execution_authority": execution,
         "prerequisite_evidence_run_digest": gate.prerequisite_digest,
         "assertions": {
             "committed_work_is_recovered_by_sweep": True,
@@ -716,9 +893,10 @@ def run_live(gate: RunGate, backend: LiveBackend, output_root: Path) -> Mapping[
         "status": "passed",
     }
     log_audit = {
-        "artifact_contract": "phase6.6-deployed-outbox-recovery-log-audit-v1",
+        "artifact_contract": RAW_LOG_CONTRACT,
         "gate_digest": gate.digest,
         "deployment_digest": gate.deployment_digest,
+        "execution_authority": execution,
         "prerequisite_evidence_run_digest": gate.prerequisite_digest,
         "deltas": {
             "agentcore_invocations": 0,
@@ -730,16 +908,19 @@ def run_live(gate: RunGate, backend: LiveBackend, output_root: Path) -> Mapping[
             "workflow_executions": 1,
         },
         "raw_authority_retained": False,
+        "source_authority_commit_digest": SOURCE_AUTHORITY_COMMIT_DIGEST,
         "status": "passed",
     }
     for value in (canary_summary, log_audit):
         _assert_private_payload(_canonical_json(value), canary)
-    output = _validate_private_directory(output_root, create=True)
-    summary_size, summary_digest = _atomic_private_json(
-        output / "canary-summary.json", canary_summary
+    summary_size, summary_digest = _write_once_private_json(
+        output_descriptor, "canary-summary.json", canary_summary
     )
-    audit_size, audit_digest = _atomic_private_json(output / "log-audit.json", log_audit)
+    audit_size, audit_digest = _write_once_private_json(
+        output_descriptor, "log-audit.json", log_audit
+    )
     return {
+        "execution_digest": execution["execution_digest"],
         "gate_id": GATE_ID,
         "mode": "live",
         "status": "passed",
@@ -749,6 +930,13 @@ def run_live(gate: RunGate, backend: LiveBackend, output_root: Path) -> Mapping[
         ],
         "redaction_verified": True,
     }
+
+
+def run_live(gate: RunGate, backend: LiveBackend, output_root: Path) -> Mapping[str, object]:
+    """Create fresh output authority before any live operation, then run the exact smoke."""
+
+    with _fresh_private_directory_descriptor(output_root) as (_output, output_descriptor):
+        return _run_live_in_directory(gate, backend, output_descriptor)
 
 
 class AwsBackend:
@@ -1076,7 +1264,9 @@ class AwsBackend:
                 return False
         return True
 
-    def prepare(self, gate: RunGate, canary: CanaryAuthority) -> LiveSnapshot:
+    def capture_baseline(self, canary: CanaryAuthority) -> tuple[LiveSnapshot, bool]:
+        """Verify the deployed read authority and capture one mutation-free baseline."""
+
         if self._sts.get_caller_identity().get("Account") != ACCOUNT_ID:
             raise SmokeError("AWS session is not in the exact deployment account")
         outputs, parameters = self._stack_envelope()
@@ -1188,7 +1378,17 @@ class AwsBackend:
         self._canary = canary
         snapshot = self._snapshot(authority)
         absent = self._synthetic_absent(authority.table_name, canary)
-        if snapshot.gate_baseline(synthetic_namespace_absent=absent) != gate.baseline:
+        return snapshot, absent
+
+    def prepare(self, gate: RunGate, canary: CanaryAuthority) -> LiveSnapshot:
+        snapshot, absent = self.capture_baseline(canary)
+        if (
+            snapshot.gate_baseline(
+                synthetic_namespace_absent=absent,
+                synthetic_namespace_seed=gate.synthetic_namespace_seed,
+            )
+            != gate.baseline
+        ):
             raise SmokeError("live baseline drifted from the exact private gate")
         return snapshot
 
@@ -1558,7 +1758,7 @@ class AwsBackend:
 
 
 def _preflight_result(gate: RunGate) -> Mapping[str, object]:
-    derive_canary(gate.digest)
+    derive_canary(gate.synthetic_namespace_seed)
     return {
         "gate_id": GATE_ID,
         "gate_digest": gate.digest,
