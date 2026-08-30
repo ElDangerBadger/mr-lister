@@ -80,6 +80,10 @@ PHASE76_GUARD_FILES = {
     "guard_verification.py",
 }
 
+PHASE77_REQUEST_FILES = {
+    "request_api.py",
+}
+
 PHASE74_CLOUD_FILES = {
     ROOT / "src/mr_lister/cloud/phase7_composition.py",
     ROOT / "src/mr_lister/cloud/phase7_entrypoints.py",
@@ -95,7 +99,16 @@ PHASE76_GUARD_CLOUD_FILES = {
 }
 PHASE76_GUARD_ENTRYPOINT = ROOT / "src/mr_lister/cloud/phase7_guard_entrypoint.py"
 
-PHASE7_CLOUD_FILES = PHASE74_CLOUD_FILES | PHASE75_OFFLINE_CLOUD_FILES | PHASE76_GUARD_CLOUD_FILES
+PHASE77_REQUEST_CLOUD_FILES = {
+    ROOT / "src/mr_lister/cloud/phase7_request_composition.py",
+}
+
+PHASE7_CLOUD_FILES = (
+    PHASE74_CLOUD_FILES
+    | PHASE75_OFFLINE_CLOUD_FILES
+    | PHASE76_GUARD_CLOUD_FILES
+    | PHASE77_REQUEST_CLOUD_FILES
+)
 
 EXPECTED_OFFLINE_PUBLICATION_FILES = {
     "__init__.py",
@@ -118,6 +131,7 @@ EXPECTED_OFFLINE_PUBLICATION_FILES = {
     | PHASE75_CREDENTIAL_FILES
     | PHASE75_RETENTION_FILES
     | PHASE76_GUARD_FILES
+    | PHASE77_REQUEST_FILES
 )
 
 

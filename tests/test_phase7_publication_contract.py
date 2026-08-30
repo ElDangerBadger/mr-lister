@@ -322,6 +322,10 @@ def test_publication_persistence_and_service_cannot_acquire_runtime_capability()
             # types. Its focused containment gate permits only mr_lister.cloud.auth and proves
             # that the adapter is unregistered and exposes no write/provider capability.
             "query_api.py",
+            # Phase 7.7's request adapter deliberately reuses only cloud auth error types.
+            # Its focused containment gate proves the adapter remains unregistered and has no
+            # provider, workflow, secret, IAM, or AWS-client capability.
+            "request_api.py",
         }
     ]
     assert {path.name for path in adapter_paths}.issuperset({"store.py", "dynamodb.py"})

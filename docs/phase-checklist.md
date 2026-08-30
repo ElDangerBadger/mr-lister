@@ -435,6 +435,14 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     no route, URL, event source, resource policy, secret, provider transport, or mutation surface.
     The source-retained Phase 7.4 query scaffold is impossible to instantiate with any valid guard
     release fingerprint, leaving an exact nine-resource deployed guard topology
+  - [x] Phase 7.7 exact-disabled seller-request composition checkpoint: the strict unregistered
+    `POST /v1/jobs/{job_id}/publish` adapter authenticates before observing request material,
+    derives owner and approval-decision authority server-side, binds strong review/approval ETag
+    plus idempotency authority, and translates only into the existing atomic Phase 7.1 request
+    service. The real DynamoDB request graph composes offline, while its runtime wrapper denies
+    before event observation or client construction. Phase 6 routes and bundles, the browser,
+    Phase 7 SAM/entrypoints, provider credentials, workflows, triggers, IAM mutation, and all live
+    publication surfaces remain unchanged and disabled
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports
