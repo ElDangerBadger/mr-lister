@@ -18,8 +18,10 @@ import os
 import re
 import secrets
 import stat
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import Annotated, Any, Final, Literal
@@ -59,8 +61,9 @@ SOURCE_COMMIT_DIGEST: Final = "40e7186ae67d9f6cd7ae630381ff8ed59c09afde0e2022d4b
 GATE_ID: Final = "deployed.upload_integrity_smoke"
 PREREQUISITE_GATE_ID: Final = "deployed.edge_auth_owner_smoke"
 GATE_CONTRACT: Final = "phase6.6-deployed-upload-integrity-run-gate-v1"
-RAW_CANARY_CONTRACT: Final = "phase6.6-deployed-upload-integrity-canary-summary-v1"
-RAW_LOG_CONTRACT: Final = "phase6.6-deployed-upload-integrity-log-audit-v1"
+EXECUTION_AUTHORITY_CONTRACT: Final = "phase6.6-deployed-upload-integrity-execution-authority-v1"
+RAW_CANARY_CONTRACT: Final = "phase6.6-deployed-upload-integrity-canary-summary-v2"
+RAW_LOG_CONTRACT: Final = "phase6.6-deployed-upload-integrity-log-audit-v2"
 
 CANARY_SUMMARY_FILENAME: Final = "canary_summary.json"
 LOG_AUDIT_FILENAME: Final = "log_audit.json"
@@ -82,9 +85,14 @@ _EXPECTED_ASSERTIONS: Final = (
     "provider_call_count_is_zero",
 )
 _MAX_INPUT_BYTES: Final = 4 * 1024 * 1024
+_MAX_EXECUTION_SECONDS: Final = 60 * 60
 _UTC_TIMESTAMP: Final = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
 
 type Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+type CanonicalTimestamp = Annotated[
+    str,
+    StringConstraints(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"),
+]
 
 
 class Phase66UploadIntegrityEvidenceError(RuntimeError):
@@ -211,11 +219,29 @@ class _Counts(_ClosedModel):
     temporary_overwrite_puts: Literal[1]
 
 
+class _ExecutionAuthority(_ClosedModel):
+    authority_contract: Literal[EXECUTION_AUTHORITY_CONTRACT]
+    completed_at: CanonicalTimestamp
+    execution_digest: Digest
+    started_at: CanonicalTimestamp
+
+    @model_validator(mode="after")
+    def timestamps_are_ordered_and_bounded(self) -> _ExecutionAuthority:
+        started_at = _parse_timestamp(self.started_at)
+        completed_at = _parse_timestamp(self.completed_at)
+        if completed_at < started_at or completed_at - started_at > timedelta(
+            seconds=_MAX_EXECUTION_SECONDS
+        ):
+            raise ValueError("Execution timestamps are not ordered within the closed bound")
+        return self
+
+
 class _RawCanarySummary(_ClosedModel):
     artifact_contract: Literal[RAW_CANARY_CONTRACT]
     assertions: _Assertions
     counts: _Counts
     deployment_digest: Digest
+    execution_authority: _ExecutionAuthority
     gate_digest: Digest
     prerequisite_evidence_run_digest: Digest
     redaction_verified: Literal[True]
@@ -238,6 +264,7 @@ class _RawLogAudit(_ClosedModel):
     artifact_contract: Literal[RAW_LOG_CONTRACT]
     deltas: _ZeroDeltas
     deployment_digest: Digest
+    execution_authority: _ExecutionAuthority
     gate_digest: Digest
     prerequisite_evidence_run_digest: Digest
     raw_authority_retained: Literal[False]
@@ -313,23 +340,66 @@ def _confined(path: Path) -> Path:
     return candidate
 
 
-def _validate_private_parent(path: Path) -> None:
-    candidate = _confined(path)
-    current = REPOSITORY_ROOT
-    for component in candidate.parent.relative_to(REPOSITORY_ROOT).parts:
-        current /= component
-        try:
-            metadata = current.lstat()
-        except OSError:
-            raise Phase66UploadIntegrityEvidenceError(
-                "A private evidence parent is unavailable"
-            ) from None
-        if (
-            not stat.S_ISDIR(metadata.st_mode)
-            or stat.S_ISLNK(metadata.st_mode)
-            or metadata.st_mode & 0o077
-        ):
-            raise Phase66UploadIntegrityEvidenceError("A private evidence parent is not confined")
+def _open_repository_root() -> int:
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+    root = Path(os.path.abspath(REPOSITORY_ROOT))
+    descriptor: int | None = None
+    try:
+        if not root.is_absolute() or root.parts[0] != os.sep:
+            raise OSError
+        descriptor = os.open(os.sep, flags)
+        for component in root.parts[1:]:
+            next_descriptor = os.open(component, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError
+        result = descriptor
+        descriptor = None
+        return result
+    except OSError:
+        raise Phase66UploadIntegrityEvidenceError(
+            "The repository root is not one stable directory chain"
+        ) from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+@contextmanager
+def _private_directory_descriptor(path: Path) -> Iterator[int]:
+    directory = Path(os.path.abspath(path))
+    try:
+        directory.relative_to(PRIVATE_WORKSPACE_ROOT)
+    except ValueError:
+        raise Phase66UploadIntegrityEvidenceError(
+            "Evidence paths must stay in the repository-private workspace"
+        ) from None
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptor: int | None = None
+    try:
+        descriptor = _open_repository_root()
+        for component in directory.relative_to(REPOSITORY_ROOT).parts:
+            next_descriptor: int | None = None
+            try:
+                next_descriptor = os.open(component, flags, dir_fd=descriptor)
+                metadata = os.fstat(next_descriptor)
+                if not stat.S_ISDIR(metadata.st_mode) or metadata.st_mode & 0o077:
+                    raise OSError
+            except OSError:
+                if next_descriptor is not None:
+                    os.close(next_descriptor)
+                raise
+            os.close(descriptor)
+            descriptor = next_descriptor
+        yield descriptor
+    except OSError:
+        raise Phase66UploadIntegrityEvidenceError(
+            "A private evidence directory chain is not confined"
+        ) from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
 
 
 def _read_exact_input(
@@ -343,35 +413,39 @@ def _read_exact_input(
     if expected_size is not None and not 1 <= expected_size <= _MAX_INPUT_BYTES:
         raise Phase66UploadIntegrityEvidenceError("An expected input size is invalid")
     candidate = _confined(path)
-    _validate_private_parent(candidate)
     descriptor: int | None = None
-    try:
-        descriptor = os.open(candidate, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
-        before = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(before.st_mode)
-            or before.st_nlink != 1
-            or before.st_mode & 0o077
-            or not 1 <= before.st_size <= _MAX_INPUT_BYTES
-            or (expected_size is not None and before.st_size != expected_size)
-        ):
-            raise OSError
-        chunks: list[bytes] = []
-        remaining = before.st_size
-        while remaining:
-            chunk = os.read(descriptor, min(1024 * 1024, remaining))
-            if not chunk:
+    with _private_directory_descriptor(candidate.parent) as parent_descriptor:
+        try:
+            descriptor = os.open(
+                candidate.name,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                dir_fd=parent_descriptor,
+            )
+            before = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_nlink != 1
+                or before.st_mode & 0o077
+                or not 1 <= before.st_size <= _MAX_INPUT_BYTES
+                or (expected_size is not None and before.st_size != expected_size)
+            ):
                 raise OSError
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        after = os.fstat(descriptor)
-    except OSError:
-        raise Phase66UploadIntegrityEvidenceError(
-            "An evidence input is not one exact owner-only regular file"
-        ) from None
-    finally:
-        if descriptor is not None:
-            os.close(descriptor)
+            chunks: list[bytes] = []
+            remaining = before.st_size
+            while remaining:
+                chunk = os.read(descriptor, min(1024 * 1024, remaining))
+                if not chunk:
+                    raise OSError
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            after = os.fstat(descriptor)
+        except OSError:
+            raise Phase66UploadIntegrityEvidenceError(
+                "An evidence input is not one exact owner-only regular file"
+            ) from None
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
     if (
         before.st_dev,
         before.st_ino,
@@ -398,44 +472,53 @@ def _read_exact_input(
     )
 
 
-def _create_fresh_output_root(run_root: Path) -> Path:
+@contextmanager
+def _create_fresh_output_root(run_root: Path) -> Iterator[tuple[Path, int]]:
     candidate = _confined(run_root)
-    _validate_private_parent(candidate)
-    if candidate.exists() or candidate.is_symlink():
-        raise Phase66UploadIntegrityEvidenceError("Evidence output root must be fresh")
+    with _private_directory_descriptor(candidate.parent) as parent_descriptor:
+        try:
+            os.mkdir(candidate.name, mode=0o700, dir_fd=parent_descriptor)
+            flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+            descriptor = os.open(candidate.name, flags, dir_fd=parent_descriptor)
+        except OSError:
+            raise Phase66UploadIntegrityEvidenceError(
+                "Evidence output root must be one fresh confined directory"
+            ) from None
     try:
-        candidate.mkdir(mode=0o700)
-    except OSError:
-        raise Phase66UploadIntegrityEvidenceError(
-            "Evidence output root could not be created"
-        ) from None
-    metadata = candidate.lstat()
-    if (
-        not stat.S_ISDIR(metadata.st_mode)
-        or stat.S_ISLNK(metadata.st_mode)
-        or metadata.st_mode & 0o077
-    ):
-        raise Phase66UploadIntegrityEvidenceError("Evidence output root is not confined")
-    return candidate
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_mode & 0o077:
+            raise Phase66UploadIntegrityEvidenceError("Evidence output root is not confined")
+        yield candidate, descriptor
+    finally:
+        os.close(descriptor)
 
 
-def _write_once(path: Path, contents: bytes) -> None:
-    temporary = path.with_name(f".{path.name}.{secrets.token_hex(12)}.tmp")
+def _write_once(directory_descriptor: int, name: str, contents: bytes) -> None:
+    if not name or name in {".", ".."} or "/" in name or "\x00" in name:
+        raise Phase66UploadIntegrityEvidenceError("An evidence output filename is invalid")
+    temporary = f".{name}.{secrets.token_hex(12)}.tmp"
     descriptor: int | None = None
     try:
         descriptor = os.open(
             temporary,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
             0o600,
+            dir_fd=directory_descriptor,
         )
         with os.fdopen(descriptor, "wb", closefd=True) as stream:
             descriptor = None
             stream.write(contents)
             stream.flush()
             os.fsync(stream.fileno())
-        os.link(temporary, path, follow_symlinks=False)
-        temporary.unlink()
-        path.chmod(0o600)
+        os.link(
+            temporary,
+            name,
+            src_dir_fd=directory_descriptor,
+            dst_dir_fd=directory_descriptor,
+            follow_symlinks=False,
+        )
+        os.unlink(temporary, dir_fd=directory_descriptor)
+        os.fsync(directory_descriptor)
     except OSError:
         raise Phase66UploadIntegrityEvidenceError(
             "An immutable evidence output could not be written"
@@ -444,7 +527,7 @@ def _write_once(path: Path, contents: bytes) -> None:
         if descriptor is not None:
             os.close(descriptor)
         try:
-            temporary.unlink()
+            os.unlink(temporary, dir_fd=directory_descriptor)
         except FileNotFoundError:
             pass
 
@@ -496,7 +579,7 @@ def _validated_inputs(
     prerequisite_value: object,
     *,
     gate_digest: str,
-    recorded_at: str,
+    now: datetime,
 ) -> tuple[_RunGate, _RawCanarySummary, _RawLogAudit, DeployedNonDestructiveEvidenceRecord]:
     try:
         gate = _RunGate.model_validate(gate_value)
@@ -534,6 +617,10 @@ def _validated_inputs(
         raise Phase66UploadIntegrityEvidenceError(
             "Upload-integrity gate, deployment, or prerequisite bindings disagree"
         )
+    if canary.execution_authority != log.execution_authority:
+        raise Phase66UploadIntegrityEvidenceError(
+            "Upload-integrity artifacts do not share one execution authority"
+        )
     if (
         prerequisite.gate_id != PREREQUISITE_GATE_ID
         or prerequisite.outcome is not AcceptanceOutcome.PASSED
@@ -544,10 +631,17 @@ def _validated_inputs(
         raise Phase66UploadIntegrityEvidenceError(
             "The exact passed edge prerequisite is not closed"
         )
-    timestamp = _parse_timestamp(recorded_at)
-    if timestamp < prerequisite.recorded_at:
+    if not isinstance(now, datetime) or now.utcoffset() is None:
+        raise Phase66UploadIntegrityEvidenceError("Evidence assembly clock must be timezone-aware")
+    execution_started_at = _parse_timestamp(canary.execution_authority.started_at)
+    execution_completed_at = _parse_timestamp(canary.execution_authority.completed_at)
+    if execution_completed_at > now.astimezone(UTC):
         raise Phase66UploadIntegrityEvidenceError(
-            "Upload-integrity evidence predates its edge prerequisite"
+            "Upload-integrity execution completion is in the future"
+        )
+    if execution_started_at < prerequisite.recorded_at:
+        raise Phase66UploadIntegrityEvidenceError(
+            "Upload-integrity execution predates its edge prerequisite"
         )
     return gate, canary, log, prerequisite
 
@@ -562,14 +656,16 @@ def _build_outputs(
     log_input: _InputFile,
     prerequisite: DeployedNonDestructiveEvidenceRecord,
     prerequisite_input: _InputFile,
-    recorded_at: str,
 ) -> tuple[dict[str, bytes], dict[str, object]]:
     frozen_gate = _gate_authority()
     manifest_digest = phase66_manifest_digest()
+    execution = canary.execution_authority
+    recorded_at = execution.completed_at
     run_digest = _digest(
         {
-            "contract": "phase6.6-upload-integrity-evidence-run-v1",
+            "contract": "phase6.6-upload-integrity-evidence-run-v2",
             "deployment_digest": gate.deployment_digest,
+            "execution_authority": execution.model_dump(mode="json"),
             "gate_byte_count": gate_input.byte_count,
             "gate_digest": gate_input.digest,
             "prerequisite_evidence_run_digest": prerequisite.run_digest,
@@ -587,6 +683,8 @@ def _build_outputs(
     job_digest = _derived_digest("job", run_digest, gate.baseline.selected_job_digest)
     common = {
         "deployment_digest": gate.deployment_digest,
+        "execution_digest": execution.execution_digest,
+        "execution_started_at": execution.started_at,
         "gate": GATE_ID,
         "manifest_digest": manifest_digest,
         "prerequisite_evidence_run_digest": prerequisite.run_digest,
@@ -598,7 +696,7 @@ def _build_outputs(
     }
     canary_document = {
         **common,
-        "artifact_contract": "phase6.6-sanitized-upload-integrity-canary-summary-v1",
+        "artifact_contract": "phase6.6-sanitized-upload-integrity-canary-summary-v2",
         "assertions": canary.assertions.model_dump(mode="json"),
         "counts": canary.counts.model_dump(mode="json"),
         "raw_canary_summary_byte_count": canary_input.byte_count,
@@ -607,7 +705,7 @@ def _build_outputs(
     }
     log_document = {
         **common,
-        "artifact_contract": "phase6.6-sanitized-upload-integrity-log-audit-v1",
+        "artifact_contract": "phase6.6-sanitized-upload-integrity-log-audit-v2",
         "deltas": log.deltas.model_dump(mode="json"),
         "forbidden_field_match_count": 0,
         "free_text_value_count": 0,
@@ -710,6 +808,7 @@ def _build_outputs(
     return outputs, {
         "artifact_count": len(artifact_documents),
         "deployment_digest": gate.deployment_digest,
+        "execution_digest": execution.execution_digest,
         "record_digest": _digest(record_value),
         "result": "passed",
         "run_digest": run_digest,
@@ -732,17 +831,10 @@ def prepare_phase66_upload_integrity_evidence(
     prerequisite_records_path: Path,
     prerequisite_records_sha256: str,
     prerequisite_records_size: int,
-    recorded_at: str,
 ) -> dict[str, object]:
     """Validate exact authorities and create one fresh normalized evidence fragment."""
 
     _validate_source_authority(source_commit, source_commit_digest)
-    try:
-        _parse_timestamp(recorded_at)
-    except ValueError:
-        raise Phase66UploadIntegrityEvidenceError(
-            "Recorded-at must be canonical second-resolution UTC text"
-        ) from None
     output_root = _confined(run_root)
     input_specs = (
         (gate_path, gate_sha256, None),
@@ -774,7 +866,7 @@ def prepare_phase66_upload_integrity_evidence(
         _strict_json(log_input.payload),
         _strict_json(prerequisite_input.payload),
         gate_digest=gate_input.digest,
-        recorded_at=recorded_at,
+        now=datetime.now(UTC),
     )
     outputs, summary = _build_outputs(
         gate=gate,
@@ -785,34 +877,33 @@ def prepare_phase66_upload_integrity_evidence(
         log_input=log_input,
         prerequisite=prerequisite,
         prerequisite_input=prerequisite_input,
-        recorded_at=recorded_at,
     )
-    output_root = _create_fresh_output_root(output_root)
-    for filename in _OUTPUT_FILENAMES:
-        _write_once(output_root / filename, outputs[filename])
+    with _create_fresh_output_root(output_root) as (output_root, output_descriptor):
+        for filename in _OUTPUT_FILENAMES:
+            _write_once(output_descriptor, filename, outputs[filename])
 
-    records_value = _strict_json(outputs[RECORDS_FILENAME])
-    files_value = _strict_json(outputs[ARTIFACT_FILES_FILENAME])
-    if not isinstance(records_value, list) or not isinstance(files_value, list):
-        raise Phase66UploadIntegrityEvidenceError("Evidence indexes are not exact arrays")
-    try:
-        records = _validated_records(records_value)
-        declared = _declared_artifacts(records)
-        files = _validated_artifact_files(files_value)
-        artifact_bytes = _verify_artifacts(declared, files, output_root)
-    except ValueError:
-        raise Phase66UploadIntegrityEvidenceError(
-            "Normalized upload-integrity evidence failed byte verification"
-        ) from None
-    if (
-        len(records) != 1
-        or records[0].gate_id != GATE_ID
-        or len(declared) != 2
-        or artifact_bytes != sum(item.byte_count for item in records[0].artifacts)
-    ):
-        raise Phase66UploadIntegrityEvidenceError(
-            "Normalized upload-integrity evidence is not the exact fragment"
-        )
+        records_value = _strict_json(outputs[RECORDS_FILENAME])
+        files_value = _strict_json(outputs[ARTIFACT_FILES_FILENAME])
+        if not isinstance(records_value, list) or not isinstance(files_value, list):
+            raise Phase66UploadIntegrityEvidenceError("Evidence indexes are not exact arrays")
+        try:
+            records = _validated_records(records_value)
+            declared = _declared_artifacts(records)
+            files = _validated_artifact_files(files_value)
+            artifact_bytes = _verify_artifacts(declared, files, output_root)
+        except ValueError:
+            raise Phase66UploadIntegrityEvidenceError(
+                "Normalized upload-integrity evidence failed byte verification"
+            ) from None
+        if (
+            len(records) != 1
+            or records[0].gate_id != GATE_ID
+            or len(declared) != 2
+            or artifact_bytes != sum(item.byte_count for item in records[0].artifacts)
+        ):
+            raise Phase66UploadIntegrityEvidenceError(
+                "Normalized upload-integrity evidence is not the exact fragment"
+            )
     return summary
 
 
@@ -842,7 +933,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--prerequisite-records", required=True, type=Path)
     parser.add_argument("--prerequisite-records-sha256", required=True)
     parser.add_argument("--prerequisite-records-size", required=True, type=_positive_int)
-    parser.add_argument("--recorded-at", required=True)
     return parser
 
 
@@ -865,7 +955,6 @@ def main(argv: list[str] | None = None) -> int:
             prerequisite_records_path=arguments.prerequisite_records,
             prerequisite_records_sha256=arguments.prerequisite_records_sha256,
             prerequisite_records_size=arguments.prerequisite_records_size,
-            recorded_at=arguments.recorded_at,
         )
     except Phase66UploadIntegrityEvidenceError as error:
         parser.error(str(error))

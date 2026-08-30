@@ -29,6 +29,8 @@ from tools import prepare_phase66_upload_integrity_evidence as assembler
 DEPLOYMENT_DIGEST = sha256(b"deployment").hexdigest()
 PREREQUISITE_RUN_DIGEST = sha256(b"edge-run").hexdigest()
 RECORDED_AT = "2026-08-29T22:24:03Z"
+STARTED_AT = "2026-08-29T22:18:00Z"
+EXECUTION_DIGEST = sha256(b"upload-integrity-execution").hexdigest()
 
 
 def _digest(label: str) -> str:
@@ -133,6 +135,7 @@ def _canary(gate_digest: str) -> dict[str, object]:
             "temporary_overwrite_puts": 1,
         },
         "deployment_digest": DEPLOYMENT_DIGEST,
+        "execution_authority": _execution_authority(),
         "gate_digest": gate_digest,
         "prerequisite_evidence_run_digest": PREREQUISITE_RUN_DIGEST,
         "redaction_verified": True,
@@ -155,10 +158,20 @@ def _log(gate_digest: str) -> dict[str, object]:
             "workflow_executions": 0,
         },
         "deployment_digest": DEPLOYMENT_DIGEST,
+        "execution_authority": _execution_authority(),
         "gate_digest": gate_digest,
         "prerequisite_evidence_run_digest": PREREQUISITE_RUN_DIGEST,
         "raw_authority_retained": False,
         "status": "passed",
+    }
+
+
+def _execution_authority() -> dict[str, object]:
+    return {
+        "authority_contract": assembler.EXECUTION_AUTHORITY_CONTRACT,
+        "completed_at": RECORDED_AT,
+        "execution_digest": EXECUTION_DIGEST,
+        "started_at": STARTED_AT,
     }
 
 
@@ -299,7 +312,6 @@ def _assemble(
     workspace: Path,
     *,
     run_name: str = "normalized-fragment",
-    recorded_at: str = RECORDED_AT,
     inputs: dict[str, object] | None = None,
     **overrides: object,
 ) -> tuple[Path, dict[str, object]]:
@@ -307,7 +319,6 @@ def _assemble(
         "run_root": workspace / run_name,
         "source_commit": assembler.SOURCE_COMMIT,
         "source_commit_digest": assembler.SOURCE_COMMIT_DIGEST,
-        "recorded_at": recorded_at,
         **(inputs or _inputs(workspace)),
         **overrides,
     }
@@ -368,6 +379,7 @@ def test_assembler_emits_exact_verified_private_fragment(private_workspace: Path
     assert result == {
         "artifact_count": 2,
         "deployment_digest": DEPLOYMENT_DIGEST,
+        "execution_digest": EXECUTION_DIGEST,
         "record_digest": assembler._digest(record.model_dump(mode="json")),
         "result": "passed",
         "run_digest": record.run_digest,
@@ -478,21 +490,87 @@ def test_prerequisite_must_be_exact_and_earlier(private_workspace: Path) -> None
         )
 
 
-@pytest.mark.parametrize(
-    "recorded_at",
-    [
-        "2026-08-29T22:24:03+00:00",
-        "2026-08-29T22:24:03.1Z",
-        "2026-08-29 22:24:03Z",
-        "not-a-time",
-    ],
-)
-def test_recorded_at_is_explicit_canonical_utc_seconds(
+def test_recorded_at_is_derived_from_shared_runner_execution_authority(
     private_workspace: Path,
-    recorded_at: str,
 ) -> None:
-    with pytest.raises(assembler.Phase66UploadIntegrityEvidenceError, match="Recorded-at"):
-        _assemble(private_workspace, recorded_at=recorded_at)
+    run_root, result = _assemble(private_workspace)
+    record = validate_phase66_evidence(_load(run_root / assembler.RECORDS_FILENAME)[0])
+    canary = _load(run_root / assembler.CANARY_SUMMARY_FILENAME)
+    audit = _load(run_root / assembler.LOG_AUDIT_FILENAME)
+
+    assert record.recorded_at.isoformat() == "2026-08-29T22:24:03+00:00"
+    assert result["execution_digest"] == EXECUTION_DIGEST
+    assert canary["execution_digest"] == audit["execution_digest"] == EXECUTION_DIGEST
+    assert "--recorded-at" not in assembler._parser().format_help()
+
+
+def test_replaying_identical_raw_inputs_cannot_mint_a_new_run_or_time(
+    private_workspace: Path,
+) -> None:
+    inputs = _inputs(private_workspace)
+    first_root, first = _assemble(private_workspace, run_name="first-fragment", inputs=inputs)
+    second_root, second = _assemble(private_workspace, run_name="second-fragment", inputs=inputs)
+    first_record = validate_phase66_evidence(_load(first_root / assembler.RECORDS_FILENAME)[0])
+    second_record = validate_phase66_evidence(_load(second_root / assembler.RECORDS_FILENAME)[0])
+
+    assert first["run_digest"] == second["run_digest"]
+    assert first["record_digest"] == second["record_digest"]
+    assert first_record.recorded_at == second_record.recorded_at
+    assert first_record.recorded_at.isoformat() == "2026-08-29T22:24:03+00:00"
+
+
+def test_mismatched_or_future_execution_authority_fails_closed(
+    private_workspace: Path,
+) -> None:
+    def mismatch_log(value: dict[str, object]) -> None:
+        execution = value["execution_authority"]
+        assert isinstance(execution, dict)
+        execution["execution_digest"] = _digest("other-execution")
+
+    with pytest.raises(assembler.Phase66UploadIntegrityEvidenceError, match="one execution"):
+        _assemble(
+            private_workspace,
+            inputs=_inputs(private_workspace, log_mutator=mismatch_log),
+        )
+
+    def future(value: dict[str, object]) -> None:
+        execution = value["execution_authority"]
+        assert isinstance(execution, dict)
+        execution["started_at"] = "2099-08-29T22:31:00Z"
+        execution["completed_at"] = "2099-08-29T22:32:00Z"
+
+    with pytest.raises(assembler.Phase66UploadIntegrityEvidenceError, match="future"):
+        _assemble(
+            private_workspace,
+            run_name="future-output",
+            inputs=_inputs(
+                private_workspace,
+                canary_mutator=future,
+                log_mutator=future,
+            ),
+        )
+
+
+def test_legacy_raw_artifacts_cannot_be_reminted_as_fresh_evidence(
+    private_workspace: Path,
+) -> None:
+    def legacy_canary(value: dict[str, object]) -> None:
+        value["artifact_contract"] = "phase6.6-deployed-upload-integrity-canary-summary-v1"
+        value.pop("execution_authority")
+
+    def legacy_log(value: dict[str, object]) -> None:
+        value["artifact_contract"] = "phase6.6-deployed-upload-integrity-log-audit-v1"
+        value.pop("execution_authority")
+
+    with pytest.raises(assembler.Phase66UploadIntegrityEvidenceError, match="closed contracts"):
+        _assemble(
+            private_workspace,
+            inputs=_inputs(
+                private_workspace,
+                canary_mutator=legacy_canary,
+                log_mutator=legacy_log,
+            ),
+        )
 
 
 def test_extra_raw_authority_fields_are_rejected(private_workspace: Path) -> None:
@@ -544,6 +622,112 @@ def test_inputs_cannot_escape_or_follow_symlinks(private_workspace: Path) -> Non
             inputs=_inputs(private_workspace),
             run_root=private_workspace.parent / "escaped",
         )
+
+
+def test_input_read_survives_parent_symlink_swap_without_following_it(
+    private_workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs = _inputs(private_workspace)
+    target = inputs["canary_summary_path"]
+    expected_digest = inputs["canary_summary_sha256"]
+    expected_size = inputs["canary_summary_size"]
+    assert isinstance(target, Path)
+    assert isinstance(expected_digest, str)
+    assert isinstance(expected_size, int)
+    parent = target.parent
+    relocated = parent.with_name(f"{parent.name}-relocated")
+    outside = private_workspace / "swap-target"
+    outside.mkdir(mode=0o700)
+    decoy = outside / target.name
+    decoy.write_bytes(b"{}\n")
+    decoy.chmod(0o600)
+    real_open = os.open
+    swapped = False
+
+    def swapping_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal swapped
+        if path == target.name and dir_fd is not None and not swapped:
+            swapped = True
+            parent.rename(relocated)
+            parent.symlink_to(outside, target_is_directory=True)
+            try:
+                return real_open(path, flags, mode, dir_fd=dir_fd)
+            finally:
+                parent.unlink()
+                relocated.rename(parent)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(assembler.os, "open", swapping_open)
+    observed = assembler._read_exact_input(
+        target,
+        expected_digest=expected_digest,
+        expected_size=expected_size,
+    )
+
+    assert swapped is True
+    assert observed.digest == expected_digest
+    assert decoy.read_bytes() == b"{}\n"
+
+
+def test_output_write_survives_parent_symlink_swap_without_following_it(
+    private_workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = private_workspace / "swap-output"
+    relocated = private_workspace / "swap-output-relocated"
+    outside = private_workspace / "swap-output-target"
+    outside.mkdir(mode=0o700)
+    real_link = os.link
+    swapped = False
+
+    def swapping_link(
+        src: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        dst: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> None:
+        nonlocal swapped
+        if dst == "proof.json" and not swapped:
+            assert src_dir_fd is not None and dst_dir_fd is not None
+            swapped = True
+            output.rename(relocated)
+            output.symlink_to(outside, target_is_directory=True)
+            try:
+                real_link(
+                    src,
+                    dst,
+                    src_dir_fd=src_dir_fd,
+                    dst_dir_fd=dst_dir_fd,
+                    follow_symlinks=follow_symlinks,
+                )
+            finally:
+                output.unlink()
+                relocated.rename(output)
+            return
+        real_link(
+            src,
+            dst,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+            follow_symlinks=follow_symlinks,
+        )
+
+    monkeypatch.setattr(assembler.os, "link", swapping_link)
+    with assembler._create_fresh_output_root(output) as (_path, descriptor):
+        assembler._write_once(descriptor, "proof.json", b"{}\n")
+
+    assert swapped is True
+    assert (output / "proof.json").read_bytes() == b"{}\n"
+    assert not (outside / "proof.json").exists()
 
 
 def test_source_authority_is_exact(private_workspace: Path) -> None:

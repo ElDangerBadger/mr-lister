@@ -26,7 +26,8 @@ import time
 import urllib.error
 import urllib.request
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -62,6 +63,10 @@ LIVE_ENVIRONMENT_VALUE: Final = "I_ACCEPT_THE_EXACT_PRIVATE_GATE"
 MAX_GATE_BYTES: Final = 1024 * 1024
 MAX_HTTP_RESPONSE_BYTES: Final = 64 * 1024
 EXPIRY_SKEW_SECONDS: Final = 5
+EXECUTION_AUTHORITY_CONTRACT: Final = "phase6.6-deployed-upload-integrity-execution-authority-v1"
+RAW_CANARY_CONTRACT: Final = "phase6.6-deployed-upload-integrity-canary-summary-v2"
+RAW_LOG_CONTRACT: Final = "phase6.6-deployed-upload-integrity-log-audit-v2"
+MAX_EXECUTION_SECONDS: Final = 60 * 60
 
 _EXPECTED_BUDGET: Final = {
     "agentcore_invocations": 0,
@@ -198,61 +203,124 @@ def _exact_private_path(path: Path) -> Path:
     return candidate
 
 
-def _validate_private_directory(path: Path, *, create: bool) -> Path:
+def _open_repository_root() -> int:
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+    root = Path(os.path.abspath(REPOSITORY_ROOT))
+    descriptor: int | None = None
+    try:
+        if not root.is_absolute() or root.parts[0] != os.sep:
+            raise OSError
+        descriptor = os.open(os.sep, flags)
+        for component in root.parts[1:]:
+            next_descriptor = os.open(component, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError
+        result = descriptor
+        descriptor = None
+        return result
+    except OSError:
+        raise SmokeError("repository root is not one stable directory chain") from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+@contextmanager
+def _private_directory_descriptor(path: Path, *, create: bool) -> Iterator[int]:
     directory = _exact_private_path(path)
-    current = REPOSITORY_ROOT
-    for component in directory.relative_to(REPOSITORY_ROOT).parts:
-        current /= component
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptor: int | None = None
+    try:
+        descriptor = _open_repository_root()
+        for component in directory.relative_to(REPOSITORY_ROOT).parts:
+            next_descriptor: int | None = None
+            try:
+                try:
+                    next_descriptor = os.open(component, flags, dir_fd=descriptor)
+                except FileNotFoundError:
+                    if not create:
+                        raise
+                    os.mkdir(component, mode=0o700, dir_fd=descriptor)
+                    next_descriptor = os.open(component, flags, dir_fd=descriptor)
+                metadata = os.fstat(next_descriptor)
+                if not stat.S_ISDIR(metadata.st_mode):
+                    raise OSError
+                if metadata.st_mode & 0o077:
+                    if not create:
+                        raise OSError
+                    os.fchmod(next_descriptor, 0o700)
+                    metadata = os.fstat(next_descriptor)
+                    if metadata.st_mode & 0o077:
+                        raise OSError
+            except OSError:
+                if next_descriptor is not None:
+                    os.close(next_descriptor)
+                raise
+            os.close(descriptor)
+            descriptor = next_descriptor
+        yield descriptor
+    except OSError:
+        raise SmokeError("private directory is not one confined directory chain") from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+@contextmanager
+def _fresh_private_directory_descriptor(path: Path) -> Iterator[tuple[Path, int]]:
+    directory = _exact_private_path(path)
+    if directory == PRIVATE_ROOT:
+        raise SmokeError("private output root must name a fresh child directory")
+    with _private_directory_descriptor(directory.parent, create=True) as parent_descriptor:
         try:
-            metadata = current.lstat()
-        except FileNotFoundError:
-            if not create:
-                raise SmokeError("private directory is unavailable") from None
-            try:
-                current.mkdir(mode=0o700)
-                metadata = current.lstat()
-            except OSError:
-                raise SmokeError("private directory could not be created") from None
-        if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
-            raise SmokeError("private path contains a non-directory component")
-        if metadata.st_mode & 0o077:
-            if not create:
-                raise SmokeError("private directory permissions are not confined")
-            try:
-                current.chmod(0o700)
-            except OSError:
-                raise SmokeError("private directory permissions could not be confined") from None
-    return directory
+            os.mkdir(directory.name, mode=0o700, dir_fd=parent_descriptor)
+            flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+            descriptor = os.open(directory.name, flags, dir_fd=parent_descriptor)
+        except OSError:
+            raise SmokeError("private output root must be one fresh directory") from None
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_mode & 0o077:
+            raise SmokeError("private output root is not confined")
+        yield directory, descriptor
+    finally:
+        os.close(descriptor)
 
 
 def _read_private_file(path: Path, *, max_bytes: int = MAX_GATE_BYTES) -> bytes:
     candidate = _exact_private_path(path)
-    _validate_private_directory(candidate.parent, create=False)
     descriptor: int | None = None
-    try:
-        descriptor = os.open(candidate, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
-        before = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(before.st_mode)
-            or before.st_nlink != 1
-            or before.st_mode & 0o077
-            or not 1 <= before.st_size <= max_bytes
-        ):
-            raise OSError
-        chunks: list[bytes] = []
-        remaining = before.st_size
-        while remaining:
-            chunk = os.read(descriptor, min(1024 * 1024, remaining))
-            if not chunk:
+    with _private_directory_descriptor(candidate.parent, create=False) as parent_descriptor:
+        try:
+            descriptor = os.open(
+                candidate.name,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                dir_fd=parent_descriptor,
+            )
+            before = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_nlink != 1
+                or before.st_mode & 0o077
+                or not 1 <= before.st_size <= max_bytes
+            ):
                 raise OSError
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        after = os.fstat(descriptor)
-    except OSError:
-        raise SmokeError("gate must be one stable mode-0600 private regular file") from None
-    finally:
-        if descriptor is not None:
-            os.close(descriptor)
+            chunks: list[bytes] = []
+            remaining = before.st_size
+            while remaining:
+                chunk = os.read(descriptor, min(1024 * 1024, remaining))
+                if not chunk:
+                    raise OSError
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            after = os.fstat(descriptor)
+        except OSError:
+            raise SmokeError("gate must be one stable mode-0600 private regular file") from None
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
     if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
         after.st_dev,
         after.st_ino,
@@ -288,35 +356,88 @@ def _strict_json(payload: bytes, label: str) -> object:
         raise SmokeError(f"{label} is not strict JSON") from None
 
 
-def _atomic_private_json(path: Path, value: object) -> tuple[int, str]:
-    candidate = _exact_private_path(path)
-    _validate_private_directory(candidate.parent, create=True)
+def _write_once_private_json(
+    directory_descriptor: int, name: str, value: object
+) -> tuple[int, str]:
+    if not name or name in {".", ".."} or "/" in name or "\x00" in name:
+        raise SmokeError("sanitized result filename is invalid")
     payload = _canonical_json(value, pretty=True)
-    temporary = candidate.with_name(f".{candidate.name}.{secrets.token_hex(12)}.tmp")
+    temporary = f".{name}.{secrets.token_hex(12)}.tmp"
     descriptor: int | None = None
     try:
         descriptor = os.open(
             temporary,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
             0o600,
+            dir_fd=directory_descriptor,
         )
         with os.fdopen(descriptor, "wb", closefd=True) as output:
             descriptor = None
             output.write(payload)
             output.flush()
             os.fsync(output.fileno())
-        temporary.replace(candidate)
-        candidate.chmod(0o600)
+        os.link(
+            temporary,
+            name,
+            src_dir_fd=directory_descriptor,
+            dst_dir_fd=directory_descriptor,
+            follow_symlinks=False,
+        )
+        os.unlink(temporary, dir_fd=directory_descriptor)
+        os.fsync(directory_descriptor)
     except OSError:
         raise SmokeError("sanitized result could not be written") from None
     finally:
         if descriptor is not None:
             os.close(descriptor)
         try:
-            temporary.unlink()
+            os.unlink(temporary, dir_fd=directory_descriptor)
         except FileNotFoundError:
             pass
     return len(payload), _digest_bytes(payload)
+
+
+def _utc_second(clock: Callable[[], datetime]) -> datetime:
+    observed = clock()
+    if not isinstance(observed, datetime) or observed.utcoffset() is None:
+        raise SmokeError("live execution clock is not timezone-aware")
+    return observed.astimezone(UTC).replace(microsecond=0)
+
+
+def _execution_authority(
+    gate: RunGate,
+    *,
+    started_at: datetime,
+    completed_at: datetime,
+    entropy: bytes,
+) -> dict[str, str]:
+    if (
+        len(entropy) != 32
+        or completed_at < started_at
+        or completed_at - started_at > timedelta(seconds=MAX_EXECUTION_SECONDS)
+    ):
+        raise SmokeError("live execution time authority is invalid")
+    started_text = started_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    completed_text = completed_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    digest = _digest_bytes(
+        b"\0".join(
+            (
+                EXECUTION_AUTHORITY_CONTRACT.encode("ascii"),
+                gate.digest.encode("ascii"),
+                gate.deployment_digest.encode("ascii"),
+                gate.prerequisite_digest.encode("ascii"),
+                started_text.encode("ascii"),
+                completed_text.encode("ascii"),
+                entropy,
+            )
+        )
+    )
+    return {
+        "authority_contract": EXECUTION_AUTHORITY_CONTRACT,
+        "completed_at": completed_text,
+        "execution_digest": digest,
+        "started_at": started_text,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -876,7 +997,16 @@ def _verify_final_delta(before: Snapshot, after: Snapshot, grant: UploadGrant) -
         raise SmokeError("new upload intent does not bind the exact reserved canary")
 
 
-def run_live(gate: RunGate, backend: LiveBackend, output_root: Path) -> Mapping[str, object]:
+def _run_live_in_directory(
+    gate: RunGate,
+    backend: LiveBackend,
+    output_descriptor: int,
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> Mapping[str, object]:
+    execution_clock = clock or (lambda: datetime.now(UTC))
+    started_at = _utc_second(execution_clock)
+    execution_entropy = secrets.token_bytes(32)
     primary, wrong, overwrite = exact_canaries()
     before = backend.prepare(gate, primary)
     _verify_gate_baseline(before, gate, primary)
@@ -968,11 +1098,18 @@ def run_live(gate: RunGate, backend: LiveBackend, output_root: Path) -> Mapping[
     _verify_final_delta(before, after, grant)
     if backend.count_exact_versions(authority, grant.key) != 0:
         raise SmokeError("reserved upload key is not empty at final audit")
+    execution = _execution_authority(
+        gate,
+        started_at=started_at,
+        completed_at=_utc_second(execution_clock),
+        entropy=execution_entropy,
+    )
 
     canary_summary = {
-        "artifact_contract": "phase6.6-deployed-upload-integrity-canary-summary-v1",
+        "artifact_contract": RAW_CANARY_CONTRACT,
         "gate_digest": gate.digest,
         "deployment_digest": gate.deployment_digest,
+        "execution_authority": execution,
         "prerequisite_evidence_run_digest": gate.prerequisite_digest,
         "assertions": {
             "expired_upload_grant_is_rejected": True,
@@ -996,9 +1133,10 @@ def run_live(gate: RunGate, backend: LiveBackend, output_root: Path) -> Mapping[
         "status": "passed",
     }
     log_audit = {
-        "artifact_contract": "phase6.6-deployed-upload-integrity-log-audit-v1",
+        "artifact_contract": RAW_LOG_CONTRACT,
         "gate_digest": gate.digest,
         "deployment_digest": gate.deployment_digest,
+        "execution_authority": execution,
         "prerequisite_evidence_run_digest": gate.prerequisite_digest,
         "deltas": {
             "agentcore_invocations": 0,
@@ -1013,12 +1151,14 @@ def run_live(gate: RunGate, backend: LiveBackend, output_root: Path) -> Mapping[
         "raw_authority_retained": False,
         "status": "passed",
     }
-    output = _validate_private_directory(output_root, create=True)
-    summary_size, summary_digest = _atomic_private_json(
-        output / "canary-summary.json", canary_summary
+    summary_size, summary_digest = _write_once_private_json(
+        output_descriptor, "canary-summary.json", canary_summary
     )
-    audit_size, audit_digest = _atomic_private_json(output / "log-audit.json", log_audit)
+    audit_size, audit_digest = _write_once_private_json(
+        output_descriptor, "log-audit.json", log_audit
+    )
     return {
+        "execution_digest": execution["execution_digest"],
         "gate_id": GATE_ID,
         "mode": "live",
         "status": "passed",
@@ -1028,6 +1168,21 @@ def run_live(gate: RunGate, backend: LiveBackend, output_root: Path) -> Mapping[
         ],
         "redaction_verified": True,
     }
+
+
+def run_live(
+    gate: RunGate,
+    backend: LiveBackend,
+    output_root: Path,
+) -> Mapping[str, object]:
+    """Create fresh output authority before any live operation, then run the exact smoke."""
+
+    with _fresh_private_directory_descriptor(output_root) as (_output, output_descriptor):
+        return _run_live_in_directory(
+            gate,
+            backend,
+            output_descriptor,
+        )
 
 
 class AwsBackend:

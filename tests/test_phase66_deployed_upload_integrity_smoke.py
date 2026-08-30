@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections import Counter
 from collections.abc import Mapping
 from copy import deepcopy
@@ -433,6 +434,12 @@ def test_live_path_executes_exact_budget_and_emits_only_sanitized_private_artifa
     upload_events = [value for name, value in backend.calls if name == "invoke_upload"]
     assert [event["routeKey"] for event in upload_events] == ["POST /v1/uploads"]
     assert result["status"] == "passed"
+    canary = json.loads((output / "canary-summary.json").read_bytes())
+    audit = json.loads((output / "log-audit.json").read_bytes())
+    assert canary["artifact_contract"] == smoke.RAW_CANARY_CONTRACT
+    assert audit["artifact_contract"] == smoke.RAW_LOG_CONTRACT
+    assert canary["execution_authority"] == audit["execution_authority"]
+    assert result["execution_digest"] == canary["execution_authority"]["execution_digest"]
     retained = b"".join(path.read_bytes() for path in sorted(output.iterdir()))
     for secret in (
         OWNER,
@@ -450,34 +457,81 @@ def test_live_path_executes_exact_budget_and_emits_only_sanitized_private_artifa
     assert {path.stat().st_mode & 0o777 for path in output.iterdir()} == {0o600}
 
 
-def test_failed_temporary_proof_still_cleans_only_returned_exact_version(
+def test_each_live_run_gets_one_distinct_shared_execution_authority(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
+    first_output = private / "first"
+    second_output = private / "second"
+    first = smoke.run_live(_gate(), FakeBackend(), first_output)
+    second = smoke.run_live(_gate(), FakeBackend(), second_output)
+    first_canary = json.loads((first_output / "canary-summary.json").read_bytes())
+    first_log = json.loads((first_output / "log-audit.json").read_bytes())
+    second_canary = json.loads((second_output / "canary-summary.json").read_bytes())
+    second_log = json.loads((second_output / "log-audit.json").read_bytes())
+
+    assert first_canary["execution_authority"] == first_log["execution_authority"]
+    assert second_canary["execution_authority"] == second_log["execution_authority"]
+    assert first["execution_digest"] != second["execution_digest"]
+    assert first_canary["execution_authority"]["completed_at"].endswith("Z")
+
+
+def test_live_run_requires_fresh_output_before_backend_operations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
+    output = private / "existing"
+    output.mkdir(mode=0o700)
+    marker = output / "marker"
+    marker.write_bytes(b"unchanged")
+    marker.chmod(0o600)
+    backend = FakeBackend()
+
+    with pytest.raises(smoke.SmokeError, match="fresh"):
+        smoke.run_live(_gate(), backend, output)
+
+    assert backend.calls == []
+    assert marker.read_bytes() == b"unchanged"
+
+
+def test_failed_temporary_proof_still_cleans_only_returned_exact_version(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
     backend = FakeBackend()
     backend.prove_error = smoke.SmokeError("proof failed")
 
     with pytest.raises(smoke.SmokeError, match="proof failed"):
-        smoke.run_live(_gate(), backend, tmp_path)
+        smoke.run_live(_gate(), backend, private / "proof-failure")
 
     deletes = [value for name, value in backend.calls if name == "delete_temporary"]
     assert deletes == ["temporary-version-secret"]
 
 
 def test_existing_domain_event_content_mutation_fails_exact_record_delta(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
     backend = FakeBackend(after=_after(mutate_event=True))
 
     with pytest.raises(smoke.SmokeError, match="existing DynamoDB record changed"):
-        smoke.run_live(_gate(), backend, tmp_path)
+        smoke.run_live(_gate(), backend, private / "delta-failure")
 
 
-def test_negative_probe_success_stops_before_any_temporary_overwrite(tmp_path: Path) -> None:
+def test_negative_probe_success_stops_before_any_temporary_overwrite(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
     backend = FakeBackend()
     backend.post_statuses[0] = 204
 
     with pytest.raises(smoke.SmokeError, match="definitive rejection"):
-        smoke.run_live(_gate(), backend, tmp_path)
+        smoke.run_live(_gate(), backend, private / "probe-failure")
 
     names = [name for name, _value in backend.calls]
     assert "put_temporary" not in names
@@ -498,6 +552,47 @@ def test_private_gate_rejects_group_readable_file_and_out_of_root_path(
     outside.chmod(0o600)
     with pytest.raises(smoke.SmokeError, match="repository workspace"):
         smoke.load_run_gate(outside, smoke._digest_bytes(b"{}"))
+
+
+def test_private_gate_open_is_anchored_across_parent_symlink_swap(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    private = _private_workspace(monkeypatch, tmp_path)
+    gate_path, gate_digest = _write_gate(private)
+    parent = gate_path.parent
+    relocated = parent.with_name("run-relocated")
+    outside = private / "swap-target"
+    outside.mkdir(mode=0o700)
+    decoy = outside / gate_path.name
+    decoy.write_bytes(b"{}\n")
+    decoy.chmod(0o600)
+    real_open = smoke.os.open
+    swapped = False
+
+    def swapping_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal swapped
+        if path == gate_path.name and dir_fd is not None and not swapped:
+            swapped = True
+            parent.rename(relocated)
+            parent.symlink_to(outside, target_is_directory=True)
+            try:
+                return real_open(path, flags, mode, dir_fd=dir_fd)
+            finally:
+                parent.unlink()
+                relocated.rename(parent)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(smoke.os, "open", swapping_open)
+    assert smoke.load_run_gate(gate_path, gate_digest).digest == gate_digest
+    assert swapped is True
+    assert decoy.read_bytes() == b"{}\n"
 
 
 def test_live_cli_requires_both_output_root_and_exact_environment_switch(
