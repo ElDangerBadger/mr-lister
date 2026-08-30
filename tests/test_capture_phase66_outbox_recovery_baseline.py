@@ -200,7 +200,7 @@ def test_local_authority_failure_happens_before_backend_construction(
     assert constructed is False
 
 
-def test_gate_seed_is_exact_and_binds_the_v2_smoke_contract() -> None:
+def test_gate_seed_is_exact_and_binds_the_v3_smoke_contract() -> None:
     seed = _seed_document()
     parsed = capture._gate_seed(seed, "a" * 64)
     assert parsed.deployment_digest == "d" * 64

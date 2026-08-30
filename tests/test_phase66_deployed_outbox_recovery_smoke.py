@@ -9,7 +9,10 @@ from typing import Any, Final
 
 import pytest
 
+from mr_lister.control.agentcore import PreparationAuthorityError, require_prepare_authority
 from mr_lister.control.dispatch import deterministic_execution_name
+from mr_lister.control.dynamodb import DynamoDBSellerControlStore, _job_item, _work_item
+from mr_lister.control.errors import NotFoundError
 from mr_lister.control.models import WorkRequestStatus, WorkType
 from tools import phase66_deployed_outbox_recovery_smoke as smoke
 
@@ -172,10 +175,10 @@ class FakeBackend:
         self.calls.append("verify_retention")
         assert before is self.before
 
-    def put_outbox_work(
+    def put_outbox_pair(
         self, authority: smoke.DeploymentAuthority, canary: smoke.CanaryAuthority
     ) -> None:
-        self.calls.append("put_outbox_work")
+        self.calls.append("put_outbox_pair")
 
     def invoke_dispatcher(self, authority: smoke.DeploymentAuthority) -> dict[str, Any]:
         self.calls.append("invoke_dispatcher")
@@ -295,7 +298,7 @@ def test_live_path_runs_all_seven_assertions_and_emits_only_sanitized_artifacts(
         "prepare",
         "invoke_retention",
         "verify_retention",
-        "put_outbox_work",
+        "put_outbox_pair",
         "invoke_dispatcher",
         "invoke_dispatcher",
         "observe_outbox_execution",
@@ -394,7 +397,7 @@ def test_retention_release_stops_before_synthetic_writes_and_needs_no_cleanup(
     with pytest.raises(smoke.SmokeError, match="retention sweep"):
         smoke.run_live(_gate(), backend, private / "retention-failure")
 
-    assert "put_outbox_work" not in backend.calls
+    assert "put_outbox_pair" not in backend.calls
     assert "cleanup_synthetic" not in backend.calls
 
 
@@ -438,23 +441,96 @@ def test_canary_authority_repr_and_evidence_never_retain_raw_identifiers() -> No
         smoke._assert_private_payload(smoke._canonical_json({"token": "redacted"}), canary)
 
 
-def test_synthetic_models_bind_missing_job_dispatch_and_missing_execution_recovery() -> None:
+def test_synthetic_models_bind_pre_agentcore_rejection_and_missing_execution_recovery() -> None:
     canary = smoke.derive_canary(NOW_DIGEST)
     authority = _authority()
-    outbox = smoke.AwsBackend._outbox_work(canary, smoke.datetime.now(smoke.UTC))
+    outbox_job, outbox = smoke.AwsBackend._outbox_models(canary, smoke.datetime.now(smoke.UTC))
     recovery_job, recovery_work = smoke.AwsBackend._recovery_models(
         authority, canary, smoke.datetime.now(smoke.UTC)
     )
 
+    assert outbox_job.state is smoke.ControlJobState.NEEDS_REVISION
+    assert outbox_job.owner_id == outbox.owner_id
+    assert outbox_job.job_id == outbox.job_id
+    assert outbox_job.active_work_request_id is None
     assert outbox.status is WorkRequestStatus.PENDING
     assert outbox.work_type is WorkType.PREPARE
     assert outbox.job_id == canary.outbox_job_id
     assert outbox.execution_name == deterministic_execution_name(canary.outbox_work_id)
+    claimed = outbox.model_copy(
+        update={
+            "status": WorkRequestStatus.CLAIMED,
+            "attempt_count": 1,
+            "claim_id": "claim_fixture",
+            "lease_expires_at": smoke.datetime.now(smoke.UTC) + smoke.timedelta(minutes=1),
+        }
+    )
+    with pytest.raises(PreparationAuthorityError, match="does not authorize"):
+        require_prepare_authority(
+            outbox_job,
+            claimed,
+            outbox.job_id,
+            outbox.work_request_id,
+        )
     assert recovery_job.state is smoke.ControlJobState.CANCEL_REQUESTED
     assert recovery_job.active_work_request_id == recovery_work.work_request_id
     assert recovery_work.status is WorkRequestStatus.DISPATCHED
     assert recovery_work.work_type is WorkType.PREPARE
     assert recovery_work.updated_at < smoke.datetime.now(smoke.UTC) - smoke.timedelta(minutes=20)
+
+
+class _ConcreteDynamoClient:
+    def __init__(self) -> None:
+        self.items: dict[tuple[str, str], dict[str, Any]] = {}
+
+    @staticmethod
+    def _key(item: dict[str, Any]) -> tuple[str, str]:
+        return item["PK"]["S"], item["SK"]["S"]
+
+    def get_item(self, **request: Any) -> dict[str, Any]:
+        key = request["Key"]["PK"]["S"], request["Key"]["SK"]["S"]
+        item = self.items.get(key)
+        return {} if item is None else {"Item": item}
+
+    def put_item(self, **request: Any) -> None:
+        item = request["Item"]
+        key = self._key(item)
+        assert request["ConditionExpression"] == "payload = :expected_payload"
+        assert (
+            self.items[key]["payload"] == request["ExpressionAttributeValues"][":expected_payload"]
+        )
+        self.items[key] = item
+
+
+def test_concrete_store_requires_parent_job_before_outbox_work_can_be_claimed() -> None:
+    canary = smoke.derive_canary(NOW_DIGEST)
+    now = smoke.datetime.now(smoke.UTC)
+    job, work = smoke.AwsBackend._outbox_models(canary, now)
+    client = _ConcreteDynamoClient()
+    store = DynamoDBSellerControlStore(client=client, table_name="table")
+    client.items[client._key(_work_item(work))] = _work_item(work)
+
+    with pytest.raises(NotFoundError, match="job was not found"):
+        store.claim_work(
+            work.job_id,
+            work.work_request_id,
+            now=work.next_dispatch_at + smoke.timedelta(seconds=1),
+            claim_id="claim_without_parent",
+            lease_expires_at=work.next_dispatch_at + smoke.timedelta(minutes=1),
+        )
+
+    client.items[client._key(_job_item(job))] = _job_item(job)
+    claimed = store.claim_work(
+        work.job_id,
+        work.work_request_id,
+        now=work.next_dispatch_at + smoke.timedelta(seconds=1),
+        claim_id="claim_with_parent",
+        lease_expires_at=work.next_dispatch_at + smoke.timedelta(minutes=1),
+    )
+
+    assert claimed is not None
+    assert claimed.status is WorkRequestStatus.CLAIMED
+    assert claimed.claim_id == "claim_with_parent"
 
 
 def test_backend_constructs_no_provider_bedrock_agentcore_secret_cognito_or_browser_client() -> (

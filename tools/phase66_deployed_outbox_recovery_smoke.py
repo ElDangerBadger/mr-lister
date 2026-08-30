@@ -6,11 +6,11 @@ with an exact mode-0600 private gate, its caller-supplied SHA-256, an explicit o
 environment switch, and a repository-private output directory.
 
 The live canary uses two synthetic namespaces derived from the gate's frozen namespace seed.
-One namespace contains only an orphan PREPARE work row: the due-work sweep can start the
-deterministic workflow, but the deployed preparation handler must fail on its first strong job
-read before AgentCore is reachable.  The second namespace contains a stale, cancelled Job/Work
-pair whose deterministic execution never existed; the recovery sweep must settle it from
-durable authority.
+One namespace contains an atomic Job/PREPARE-work pair.  The Job is in an inert human-review
+state with no active work, so the concrete store can claim and dispatch the Work while the
+deployed preparation handler rejects its durable authority before AgentCore is reachable.  The
+second namespace contains a stale, cancelled Job/Work pair whose deterministic execution never
+existed; the recovery sweep must settle it from durable authority.
 Every DynamoDB row created by this process is removed by exact-key, exact-payload cleanup.  The
 single Standard Step Functions execution is intentionally retained as immutable audit evidence.
 
@@ -60,7 +60,7 @@ PREPARE_DEFINITION_PATH: Final = (
 )
 
 GATE_ID: Final = "deployed.outbox_recovery_smoke"
-GATE_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-run-gate-v2"
+GATE_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-run-gate-v3"
 SOURCE_AUTHORITY_COMMIT: Final = "e130292db7124425840c2768a94475417f94f2e5"
 SOURCE_AUTHORITY_COMMIT_DIGEST: Final = (
     "40e7186ae67d9f6cd7ae630381ff8ed59c09afde0e2022d4b0a3ecbced2277cd"
@@ -93,7 +93,7 @@ _CHECKPOINT_ENTITY: Final = "SOURCE_VERSION_RETENTION_CHECKPOINT"
 _EXPECTED_METHOD_AUTHORIZATION: Final = {
     "browser_authority_not_used": True,
     "exact_synthetic_row_cleanup": True,
-    "missing_job_prepare_dispatch": True,
+    "preparation_authority_rejected_before_agentcore": True,
     "one_retained_standard_execution_accepted": True,
     "raw_identity_retained": False,
     "stream_quiescence_before_due_sweep": True,
@@ -108,10 +108,10 @@ _FIXED_WRITE_BUDGET: Final = {
     "direct_dispatcher_lambda_invocations": 2,
     "direct_execution_recovery_lambda_invocations": 1,
     "direct_retention_lambda_invocations": 1,
-    "dynamodb_item_deletes": 5,
-    "dynamodb_item_writes": 15,
-    "dynamodb_new_items": 5,
-    "dynamodb_transactions": 3,
+    "dynamodb_item_deletes": 6,
+    "dynamodb_item_writes": 17,
+    "dynamodb_new_items": 6,
+    "dynamodb_transactions": 5,
     "logical_work_requests": 2,
     "provider_calls": 0,
     "provider_records": 0,
@@ -701,7 +701,7 @@ class LiveBackend(Protocol):
 
     def verify_retention(self, before: LiveSnapshot) -> None: ...
 
-    def put_outbox_work(self, authority: DeploymentAuthority, canary: CanaryAuthority) -> None: ...
+    def put_outbox_pair(self, authority: DeploymentAuthority, canary: CanaryAuthority) -> None: ...
 
     def invoke_dispatcher(self, authority: DeploymentAuthority) -> Mapping[str, Any]: ...
 
@@ -806,7 +806,7 @@ def _run_live_in_directory(
     write_attempted = False
     try:
         write_attempted = True
-        backend.put_outbox_work(before.authority, canary)
+        backend.put_outbox_pair(before.authority, canary)
         first_dispatch = backend.invoke_dispatcher(before.authority)
         _exact_counter_response(
             first_dispatch,
@@ -1432,8 +1432,25 @@ class AwsBackend:
             raise SmokeError("retention sweep changed source-version authority")
 
     @staticmethod
-    def _outbox_work(canary: CanaryAuthority, now: datetime) -> WorkRequest:
-        return WorkRequest(
+    def _outbox_models(
+        canary: CanaryAuthority, now: datetime
+    ) -> tuple[ControlJobRecord, WorkRequest]:
+        job = ControlJobRecord(
+            owner_id=canary.outbox_owner_id,
+            job_id=canary.outbox_job_id,
+            record_version=0,
+            event_sequence=1,
+            state=ControlJobState.NEEDS_REVISION,
+            review_version=1,
+            review_fingerprint=_digest_text("outbox-review\0" + canary.outbox_job_id),
+            review_validated=False,
+            # The inert human-review state makes PREPARE reject durable authority before
+            # AgentCore is reachable; it cannot retain active machine work.
+            active_work_request_id=None,
+            created_at=now,
+            updated_at=now,
+        )
+        work = WorkRequest(
             work_request_id=canary.outbox_work_id,
             owner_id=canary.outbox_owner_id,
             job_id=canary.outbox_job_id,
@@ -1453,13 +1470,28 @@ class AwsBackend:
             created_at=now,
             updated_at=now,
         )
+        return job, work
 
-    def put_outbox_work(self, authority: DeploymentAuthority, canary: CanaryAuthority) -> None:
-        work = self._outbox_work(canary, datetime.now(UTC))
-        self._dynamodb.put_item(
-            TableName=authority.table_name,
-            Item=_work_item(work),
-            ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
+    def put_outbox_pair(self, authority: DeploymentAuthority, canary: CanaryAuthority) -> None:
+        job, work = self._outbox_models(canary, datetime.now(UTC))
+        self._dynamodb.transact_write_items(
+            TransactItems=[
+                {
+                    "Put": {
+                        "TableName": authority.table_name,
+                        "Item": _job_item(job),
+                        "ConditionExpression": "attribute_not_exists(PK)",
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": authority.table_name,
+                        "Item": _work_item(work),
+                        "ConditionExpression": "attribute_not_exists(PK)",
+                    }
+                },
+            ],
+            ClientRequestToken=_digest_text("outbox-pair\0" + canary.outbox_job_id)[:32],
         )
         due = work.next_dispatch_at + timedelta(milliseconds=250)
         while (remaining := (due - datetime.now(UTC)).total_seconds()) > 0:
@@ -1487,9 +1519,15 @@ class AwsBackend:
             f"JOB#{canary.outbox_job_id}",
             f"WORK#{canary.outbox_work_id}",
         )
-        if item is None:
-            raise SmokeError("outbox work row is unavailable")
+        parent = self._get_item(
+            authority.table_name,
+            f"JOB#{canary.outbox_job_id}",
+            "META",
+        )
+        if item is None or parent is None:
+            raise SmokeError("outbox Job/Work pair is unavailable")
         entity, payload = self._item_payload(item)
+        parent_entity, parent_payload = self._item_payload(parent)
         expected_name = deterministic_execution_name(canary.outbox_work_id)
         expected_arn = execution_arn_for(
             authority.state_machine_arns[WorkType.PREPARE], expected_name
@@ -1501,10 +1539,17 @@ class AwsBackend:
             or payload.get("work_request_id") != canary.outbox_work_id
             or payload.get("execution_name") != expected_name
             or payload.get("execution_arn") != expected_arn
-            or self._get_item(authority.table_name, f"JOB#{canary.outbox_job_id}", "META")
-            is not None
+            or parent_entity != "CONTROL_JOB"
+            or parent_payload.get("owner_id") != canary.outbox_owner_id
+            or parent_payload.get("job_id") != canary.outbox_job_id
+            or parent_payload.get("state") != ControlJobState.NEEDS_REVISION.value
+            or parent_payload.get("review_version") != 1
+            or parent_payload.get("review_validated") is not False
+            or parent_payload.get("active_work_request_id") is not None
         ):
-            raise SmokeError("outbox work did not bind one orphan deterministic execution")
+            raise SmokeError(
+                "outbox Job/Work pair did not bind one authority-rejected deterministic execution"
+            )
         deadline = time.monotonic() + MAX_EXECUTION_WAIT_SECONDS
         description: Mapping[str, Any]
         while True:
@@ -1691,14 +1736,15 @@ class AwsBackend:
             authority.table_name, f"OWNER#{canary.recovery_owner_id}"
         )
         combined = (*outbox, *recovery_job, *recovery_owner)
-        if len(combined) > 5:
-            raise SmokeError("synthetic cleanup inventory exceeded the exact five-row budget")
+        if len(combined) > 6:
+            raise SmokeError("synthetic cleanup inventory exceeded the exact six-row budget")
         expected_outbox = {
+            (f"JOB#{canary.outbox_job_id}", "META", "CONTROL_JOB"),
             (
                 f"JOB#{canary.outbox_job_id}",
                 f"WORK#{canary.outbox_work_id}",
                 "WORK_REQUEST",
-            )
+            ),
         }
         observed_outbox = {
             (

@@ -1,6 +1,6 @@
 """Assemble the passed Phase 6.6 outbox/recovery smoke into closed evidence.
 
-This offline, repository-confined normalizer accepts one exact v2 run gate, the two exact
+This offline, repository-confined normalizer accepts one exact v3 run gate, the two exact
 v2 runner artifacts, and the exact passed upload-integrity execution prerequisite.  It
 validates every immutable binding and writes a fresh four-file evidence fragment.  It has no
 AWS, HTTP, browser, storage, job, workflow, or provider client and never rewrites its inputs.
@@ -60,7 +60,7 @@ SOURCE_COMMIT_DIGEST: Final = "40e7186ae67d9f6cd7ae630381ff8ed59c09afde0e2022d4b
 GATE_ID: Final = "deployed.outbox_recovery_smoke"
 MANIFEST_PREREQUISITE_GATE_ID: Final = "deployed.edge_auth_owner_smoke"
 EXECUTION_PREREQUISITE_GATE_ID: Final = "deployed.upload_integrity_smoke"
-GATE_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-run-gate-v2"
+GATE_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-run-gate-v3"
 EXECUTION_AUTHORITY_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-execution-authority-v1"
 RAW_CANARY_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-canary-summary-v2"
 RAW_LOG_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-log-audit-v2"
@@ -108,7 +108,7 @@ class _ClosedModel(BaseModel):
 class _MethodAuthorization(_ClosedModel):
     browser_authority_not_used: Literal[True]
     exact_synthetic_row_cleanup: Literal[True]
-    missing_job_prepare_dispatch: Literal[True]
+    preparation_authority_rejected_before_agentcore: Literal[True]
     one_retained_standard_execution_accepted: Literal[True]
     raw_identity_retained: Literal[False]
     stream_quiescence_before_due_sweep: Literal[True]
@@ -124,10 +124,10 @@ class _WriteBudget(_ClosedModel):
     direct_dispatcher_lambda_invocations: Literal[2]
     direct_execution_recovery_lambda_invocations: Literal[1]
     direct_retention_lambda_invocations: Literal[1]
-    dynamodb_item_deletes: Literal[5]
-    dynamodb_item_writes: Literal[15]
-    dynamodb_new_items: Literal[5]
-    dynamodb_transactions: Literal[3]
+    dynamodb_item_deletes: Literal[6]
+    dynamodb_item_writes: Literal[17]
+    dynamodb_new_items: Literal[6]
+    dynamodb_transactions: Literal[5]
     logical_work_requests: Literal[2]
     provider_calls: Literal[0]
     provider_records: Literal[0]

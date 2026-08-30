@@ -39,7 +39,7 @@ from tools.prepare_phase66_edge_revalidation import _DeploymentAuthorityDocument
 REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[1]
 PRIVATE_ROOT: Final = REPOSITORY_ROOT / ".mr_lister_private" / "phase66-acceptance"
 
-GATE_SEED_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-gate-seed-v1"
+GATE_SEED_CONTRACT: Final = "phase6.6-deployed-outbox-recovery-gate-seed-v2"
 PREREQUISITE_GATE_ID: Final = "deployed.upload_integrity_smoke"
 MAX_INPUT_BYTES: Final = 4 * 1024 * 1024
 
