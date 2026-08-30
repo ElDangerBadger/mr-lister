@@ -88,6 +88,10 @@ PHASE78_PROVIDER_RUNTIME_FILES = {
     "provider_runtime.py",
 }
 
+PHASE710_CANARY_RUNTIME_FILES = {
+    "canary_runtime.py",
+}
+
 PHASE74_CLOUD_FILES = {
     ROOT / "src/mr_lister/cloud/phase7_composition.py",
     ROOT / "src/mr_lister/cloud/phase7_entrypoints.py",
@@ -147,6 +151,7 @@ EXPECTED_OFFLINE_PUBLICATION_FILES = {
     | PHASE76_GUARD_FILES
     | PHASE77_REQUEST_FILES
     | PHASE78_PROVIDER_RUNTIME_FILES
+    | PHASE710_CANARY_RUNTIME_FILES
 )
 
 

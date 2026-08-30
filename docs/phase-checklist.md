@@ -459,6 +459,16 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     binding, route, trigger, IAM/SAM/S3 binding, production credential resolver, or runtime
     dependency bytes, and records Pillow as an additional dependency still requiring a separate
     reviewed runtime seal
+  - [x] Phase 7.10 exact-bound direct-invoke canary seam: an operator-only preparation function
+    freezes sanitized digests for one owner, aggregate, job, snapshot, permit, work request,
+    release, and deadline. The private runtime accepts only that owner/aggregate pair and uses one
+    injected coordinator graph for its strong before/after reads and one-step advance. Read-only
+    preflight calls a structurally separate coordinator method that refuses the publication branch
+    before credential or POST authority can be constructed, including when proof appears between
+    reads. A separately minted publish-once binding requires the exact durable preflight proof and
+    safely admits consumed-claim recovery or zero-POST deadline settlement. This checkpoint remains
+    source-only: it adds no handler, AWS client, credential resolver, route, trigger, workflow,
+    SAM/IAM/S3 binding, deployment, or live provider call
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports

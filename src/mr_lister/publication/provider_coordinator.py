@@ -60,6 +60,7 @@ class PublicationProviderCoordinatorAction(StrEnum):
     STAGED_PRODUCT_PREFLIGHT = "staged_product_preflight"
     STAGED_DEFINITIVE_PREFLIGHT_FAILURE = "staged_definitive_preflight_failure"
     RECORDED_PREFLIGHT = "recorded_preflight"
+    READ_ONLY_PREFLIGHT_COMPLETE = "read_only_preflight_complete"
     SETTLED_DEFINITIVE_PREFLIGHT_FAILURE = "settled_definitive_preflight_failure"
     STAGED_PUBLISH_OUTCOME = "staged_publish_outcome"
     RECORDED_PUBLISH_OUTCOME = "recorded_publish_outcome"
@@ -138,7 +139,45 @@ class PublicationProviderCoordinator:
     ) -> PublicationProviderCoordinatorResult:
         """Advance through local setup/recovery and perform no more than one provider wire."""
 
-        authority = self._store.load_execution_authority(owner_id, aggregate_id)
+        return self._advance(
+            owner_id=owner_id,
+            aggregate_id=aggregate_id,
+            allow_publish=True,
+        )
+
+    def advance_read_only(
+        self,
+        *,
+        owner_id: str,
+        aggregate_id: str,
+    ) -> PublicationProviderCoordinatorResult:
+        """Advance preflight while structurally refusing the publication branch."""
+
+        return self._advance(
+            owner_id=owner_id,
+            aggregate_id=aggregate_id,
+            allow_publish=False,
+        )
+
+    def load_execution_authority(
+        self,
+        owner_id: str,
+        aggregate_id: str,
+    ) -> PublicationExecutionAuthority:
+        """Strong-read through the same execution graph used by ``advance``."""
+
+        return self._store.load_execution_authority(owner_id, aggregate_id)
+
+    def _advance(
+        self,
+        *,
+        owner_id: str,
+        aggregate_id: str,
+        allow_publish: bool,
+    ) -> PublicationProviderCoordinatorResult:
+        """Run one exact coordinator step under a composition-owned mutation ceiling."""
+
+        authority = self.load_execution_authority(owner_id, aggregate_id)
         if authority.aggregate.state in self._TERMINAL_STATES:
             return self._result(PublicationProviderCoordinatorAction.TERMINAL, authority)
         authority = self._require_current_pre_call_authority(
@@ -146,6 +185,15 @@ class PublicationProviderCoordinator:
             owner_id=owner_id,
             aggregate_id=aggregate_id,
         )
+        if not allow_publish and authority.preflight_proof is not None:
+            if authority.permit.status is not PublicationPermitState.AVAILABLE:
+                raise PublicationProviderCoordinatorError(
+                    "Read-only preflight found publication mutation authority in use"
+                )
+            return self._result(
+                PublicationProviderCoordinatorAction.READ_ONLY_PREFLIGHT_COMPLETE,
+                authority,
+            )
 
         now = self._now()
         stages = self._store.list_unconsumed_provider_evidence(owner_id, aggregate_id)
@@ -181,6 +229,17 @@ class PublicationProviderCoordinator:
             return recovered
 
         if authority.aggregate.state is PublicationState.PUBLICATION_REQUESTED:
+            if not allow_publish:
+                if authority.permit.status is not PublicationPermitState.AVAILABLE:
+                    raise PublicationProviderCoordinatorError(
+                        "Read-only preflight found publication mutation authority in use"
+                    )
+                if authority.preflight_proof is None:
+                    return self._advance_preflight(authority, stages)
+                return self._result(
+                    PublicationProviderCoordinatorAction.READ_ONLY_PREFLIGHT_COMPLETE,
+                    authority,
+                )
             if authority.permit.status is PublicationPermitState.CONSUMED:
                 return self._recover_consumed_publish_claim(authority)
             if authority.preflight_proof is None:
