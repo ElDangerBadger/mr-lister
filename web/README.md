@@ -1,8 +1,8 @@
 # Mr. Lister seller web
 
-Phase 6.5 provides a production-shaped React browser client for the owner-scoped seller API. The browser can upload one PNG, observe preparation, revise a generated listing, and record bounded human decisions. It has no Etsy publish, order, or fulfillment capability.
+Phase 6.5 provides a production-shaped React browser client for the owner-scoped seller API. The browser can submit an ordered, memory-only queue of up to five PNG or compatible self-contained SVG artwork files, observe each independent preparation, revise a generated listing, and record bounded human decisions. SVG input is sanitized and rasterized locally; only the resulting PNG is fingerprinted or uploaded. Linked resources, text, filters, masks, patterns, and animation are rejected. It has no Etsy publish, order, or fulfillment capability.
 
-This directory is **SCAFFOLD_ONLY** until the Phase 6.5 deployment and live Cognito/API acceptance gates are explicitly closed. API behavior in unit tests is injected through mock ports; passing local tests is not evidence of a deployed service.
+Each selected file creates one existing upload intent and one listing job. Queue order is submission order in the current browser session, not a durable batch or a promise that preparation will finish in the same order. API behavior in unit tests is injected through mock ports; passing local tests is not evidence of a deployed service.
 
 ## Local checks
 

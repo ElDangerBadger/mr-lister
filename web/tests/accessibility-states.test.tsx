@@ -18,7 +18,7 @@ describe("accessible application states", () => {
   it("covers the signed-in upload home", async () => {
     const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
     const result = renderApp("/", true, { listJobs });
-    await screen.findByRole("heading", { name: "Start with one artwork." });
+    await screen.findByRole("heading", { name: "Prepare a batch of artwork." });
     await waitFor(() => expect(listJobs).toHaveBeenCalledTimes(1));
     await expectNoViolations(result);
   });

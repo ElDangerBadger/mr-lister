@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useMemo, useReducer, useRef, type ReactNode } from "react";
 import { ApiError, newIdempotencyKey, type ApiPort } from "../api/client";
 import type { UploadRecovery } from "../contracts";
-import { uploadToAuthorizedS3, validateAndHashPng } from "./direct-upload";
+import { prepareArtworkForUpload, uploadToAuthorizedS3, validateAndHashPng } from "./direct-upload";
+
+export const MAX_BATCH_FILES = 5;
 
 export type UploadPhase =
   | "idle"
@@ -26,6 +28,39 @@ export interface UploadState {
   requestId: string | null;
 }
 
+export type BatchUploadItemPhase =
+  | "queued"
+  | "validating"
+  | "hashing"
+  | "creating_intent"
+  | "uploading"
+  | "finalizing"
+  | "complete"
+  | "expired"
+  | "error";
+
+export interface BatchUploadItemState {
+  id: string;
+  position: number;
+  filename: string;
+  preparedFilename: string | null;
+  sizeBytes: number;
+  sourceFormat: "png" | "svg" | null;
+  phase: BatchUploadItemPhase;
+  progress: number;
+  uploadId: string | null;
+  jobId: string | null;
+  message: string;
+  error: string | null;
+  requestId: string | null;
+}
+
+export interface UploadBatchState {
+  phase: "idle" | "running" | "complete" | "error";
+  items: readonly BatchUploadItemState[];
+  message: string;
+}
+
 type UploadAction =
   | { type: "begin" }
   | { type: "phase"; phase: UploadPhase; message: string }
@@ -44,9 +79,24 @@ const initialState: UploadState = {
   requestId: null,
 };
 
+const initialBatchState: UploadBatchState = {
+  phase: "idle",
+  items: [],
+  message: `Choose up to ${MAX_BATCH_FILES} artwork files to begin.`,
+};
+
+type UploadBatchAction =
+  | { type: "start"; items: BatchUploadItemState[] }
+  | { type: "item"; id: string; changes: Partial<BatchUploadItemState> }
+  | { type: "finish"; failed: number }
+  | { type: "failure"; message: string }
+  | { type: "reset" };
+
 interface UploadContextValue {
   state: UploadState;
+  batch: UploadBatchState;
   begin(file: File): Promise<void>;
+  beginBatch(files: Iterable<File>): Promise<void>;
   resume(file: File, recovery: UploadRecovery): Promise<void>;
   recover(recovery?: UploadRecovery): Promise<void>;
   cancel(): Promise<void>;
@@ -57,9 +107,14 @@ const UploadContext = createContext<UploadContextValue | null>(null);
 
 export function UploadProvider({ api, children }: { api: ApiPort; children: ReactNode }) {
   const [state, dispatch] = useReducer(uploadReducer, initialState);
+  const [batch, dispatchBatch] = useReducer(uploadBatchReducer, initialBatchState);
   const stateRef = useRef(state);
   stateRef.current = state;
   const abortRef = useRef<AbortController | null>(null);
+  const batchAbortRef = useRef<AbortController | null>(null);
+  const batchActiveRef = useRef(false);
+  const batchEpoch = useRef(0);
+  const batchFiles = useRef(new Map<string, File>());
   const recoveryKeys = useRef(new Map<string, UploadOperationKeys>());
   const cancellationKeys = useRef(new Map<string, string>());
   const createKey = useRef<{ fileIdentity: string; value: string } | null>(null);
@@ -67,7 +122,9 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
   const operationEpoch = useRef(0);
 
   const begin = useCallback(async (file: File): Promise<void> => {
-    if (preIntentBeginActive.current !== null) return;
+    if (batchActiveRef.current || preIntentBeginActive.current !== null) return;
+    batchFiles.current.clear();
+    dispatchBatch({ type: "reset" });
     const beginOperation = Symbol("pre-intent-upload");
     preIntentBeginActive.current = beginOperation;
     const epoch = ++operationEpoch.current;
@@ -142,6 +199,226 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
       });
     } finally {
       if (preIntentBeginActive.current === beginOperation) preIntentBeginActive.current = null;
+    }
+  }, [api]);
+
+  const beginBatch = useCallback(async (selection: Iterable<File>): Promise<void> => {
+    if (batchActiveRef.current) return;
+    const files = Array.from(selection);
+    if (files.length === 0) {
+      batchFiles.current.clear();
+      dispatchBatch({ type: "reset" });
+      return;
+    }
+    if (files.length > MAX_BATCH_FILES) {
+      batchFiles.current.clear();
+      dispatchBatch({
+        type: "failure",
+        message: `Choose no more than ${MAX_BATCH_FILES} artwork files at a time.`,
+      });
+      return;
+    }
+
+    operationEpoch.current += 1;
+    abortRef.current?.abort();
+    preIntentBeginActive.current = null;
+    createKey.current = null;
+    dispatch({ type: "reset" });
+
+    const epoch = ++batchEpoch.current;
+    const abort = new AbortController();
+    batchAbortRef.current?.abort();
+    batchAbortRef.current = abort;
+    batchActiveRef.current = true;
+    const items = files.map<BatchUploadItemState>((file, index) => ({
+      id: crypto.randomUUID(),
+      position: index + 1,
+      filename: file.name,
+      preparedFilename: null,
+      sizeBytes: file.size,
+      sourceFormat: null,
+      phase: "queued",
+      progress: 0,
+      uploadId: null,
+      jobId: null,
+      message: "Queued for private upload.",
+      error: null,
+      requestId: null,
+    }));
+    const createKeys = new Map(items.map((item) => [item.id, newIdempotencyKey("create-upload")]));
+    batchFiles.current = new Map(items.map((item, index) => [item.id, files[index]!]));
+    dispatchBatch({ type: "start", items });
+
+    let failed = 0;
+    try {
+      for (const item of items) {
+        if (abort.signal.aborted || batchEpoch.current !== epoch) return;
+        const sourceFile = batchFiles.current.get(item.id);
+        if (sourceFile === undefined) return;
+        let sourceFormat: "png" | "svg" | null = null;
+        let createdUploadId: string | null = null;
+        let createdJobId: string | null = null;
+        try {
+          dispatchBatch({
+            type: "item",
+            id: item.id,
+            changes: {
+              phase: "validating",
+              message: "Checking artwork…",
+              error: null,
+              requestId: null,
+            },
+          });
+          const prepared = await prepareArtworkForUpload(sourceFile);
+          sourceFormat = prepared.sourceFormat;
+          if (abort.signal.aborted || batchEpoch.current !== epoch) return;
+          dispatchBatch({
+            type: "item",
+            id: item.id,
+            changes: {
+              preparedFilename: prepared.file.name,
+              sourceFormat: prepared.sourceFormat,
+              phase: "hashing",
+              message: "Calculating the artwork fingerprint…",
+            },
+          });
+          const sha256 = await validateAndHashPng(prepared.file);
+          if (abort.signal.aborted || batchEpoch.current !== epoch) return;
+          dispatchBatch({
+            type: "item",
+            id: item.id,
+            changes: { phase: "creating_intent", message: "Reserving a private upload…" },
+          });
+          const createIdempotencyKey = createKeys.get(item.id);
+          if (createIdempotencyKey === undefined) throw new Error("The batch upload identity is unavailable.");
+          const created = await createUploadWithNetworkReplay(
+            api,
+            prepared.file,
+            sha256,
+            createIdempotencyKey,
+            () => batchEpoch.current === epoch && !abort.signal.aborted,
+          );
+          if (abort.signal.aborted || batchEpoch.current !== epoch) return;
+          const uploadId = created.value.upload.upload_id;
+          const jobId = created.value.upload.job_id;
+          createdUploadId = uploadId;
+          createdJobId = jobId;
+          dispatchBatch({
+            type: "item",
+            id: item.id,
+            changes: { uploadId, jobId },
+          });
+          const keys = recoveryKeys.current.get(uploadId) ?? {
+            authorize: newIdempotencyKey("reauthorize-upload"),
+            complete: newIdempotencyKey("complete-upload"),
+          };
+          recoveryKeys.current.set(uploadId, keys);
+          let authorization = created.value.authorization;
+          if (authorization === null) {
+            dispatchBatch({
+              type: "item",
+              id: item.id,
+              changes: {
+                phase: "creating_intent",
+                message: "Renewing the expired private upload authorization…",
+              },
+            });
+            authorization = await obtainFreshAuthorization(
+              api,
+              uploadId,
+              jobId,
+              keys,
+              () => batchEpoch.current === epoch && !abort.signal.aborted,
+            );
+          }
+          if (abort.signal.aborted || batchEpoch.current !== epoch) return;
+          if (authorization === null || authorization.content_sha256 !== sha256) {
+            throw new Error("The upload service did not return a matching authorization.");
+          }
+          dispatchBatch({
+            type: "item",
+            id: item.id,
+            changes: { phase: "uploading", message: "Uploading artwork…" },
+          });
+          await uploadToAuthorizedS3(prepared.file, authorization, (progress) => {
+            if (batchEpoch.current === epoch && !abort.signal.aborted) {
+              dispatchBatch({ type: "item", id: item.id, changes: { progress } });
+            }
+          }, abort.signal);
+          if (abort.signal.aborted || batchEpoch.current !== epoch) return;
+          dispatchBatch({
+            type: "item",
+            id: item.id,
+            changes: { phase: "finalizing", message: "Verifying the exact uploaded file…" },
+          });
+          const completed = await api.completeUpload(uploadId, keys.complete);
+          if (abort.signal.aborted || batchEpoch.current !== epoch) return;
+          if (completed.value.upload.upload_id !== uploadId
+            || completed.value.upload.job_id !== jobId
+            || completed.value.upload.status !== "completed") {
+            throw new Error("The upload did not reach its completed state.");
+          }
+          recoveryKeys.current.delete(uploadId);
+          dispatchBatch({
+            type: "item",
+            id: item.id,
+            changes: {
+              phase: "complete",
+              progress: 100,
+              message: "Artwork verified. Preparation has started.",
+            },
+          });
+        } catch (error) {
+          if (abort.signal.aborted || batchEpoch.current !== epoch
+            || (error instanceof DOMException && error.name === "AbortError")) return;
+          failed += 1;
+          const apiError = error instanceof ApiError ? error : null;
+          const originalMessage = error instanceof Error ? error.message : "The upload could not be completed.";
+          let message = originalMessage;
+          if (sourceFormat === "svg" && createdUploadId !== null && createdJobId !== null) {
+            const cancellationKey = cancellationKeys.current.get(createdUploadId)
+              ?? newIdempotencyKey("cancel-upload");
+            cancellationKeys.current.set(createdUploadId, cancellationKey);
+            try {
+              const cancelled = await api.cancelUpload(createdUploadId, cancellationKey);
+              if (cancelled.value.upload.upload_id !== createdUploadId
+                || cancelled.value.upload.job_id !== createdJobId
+                || cancelled.value.upload.status !== "cancelled") {
+                throw new Error("The upload cancellation response is inconsistent.");
+              }
+              recoveryKeys.current.delete(createdUploadId);
+              cancellationKeys.current.delete(createdUploadId);
+              message = `${originalMessage} The upload reservation was cancelled. Re-select the original SVG to retry.`;
+            } catch {
+              message = `${originalMessage} Restart before retrying; the upload reservation will expire or be reconciled.`;
+            }
+            if (abort.signal.aborted || batchEpoch.current !== epoch) return;
+          } else if (sourceFormat === "png" && createdUploadId !== null) {
+            message = `${originalMessage} Open recovery to check or resume this exact PNG.`;
+          }
+          dispatchBatch({
+            type: "item",
+            id: item.id,
+            changes: {
+              phase: apiError?.status === 410 ? "expired" : "error",
+              message,
+              error: originalMessage,
+              requestId: apiError?.requestId ?? null,
+            },
+          });
+        } finally {
+          batchFiles.current.delete(item.id);
+        }
+      }
+      if (!abort.signal.aborted && batchEpoch.current === epoch) {
+        dispatchBatch({ type: "finish", failed });
+      }
+    } finally {
+      if (batchEpoch.current === epoch) {
+        batchActiveRef.current = false;
+        batchAbortRef.current = null;
+        batchFiles.current.clear();
+      }
     }
   }, [api]);
 
@@ -292,14 +569,23 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
   const reset = useCallback(() => {
     operationEpoch.current += 1;
     abortRef.current?.abort();
+    batchEpoch.current += 1;
+    batchAbortRef.current?.abort();
+    batchAbortRef.current = null;
+    batchActiveRef.current = false;
+    batchFiles.current.clear();
     preIntentBeginActive.current = null;
     createKey.current = null;
     recoveryKeys.current.clear();
     cancellationKeys.current.clear();
     dispatch({ type: "reset" });
+    dispatchBatch({ type: "reset" });
   }, []);
 
-  const value = useMemo(() => ({ state, begin, resume, recover, cancel, reset }), [state, begin, resume, recover, cancel, reset]);
+  const value = useMemo(
+    () => ({ state, batch, begin, beginBatch, resume, recover, cancel, reset }),
+    [state, batch, begin, beginBatch, resume, recover, cancel, reset],
+  );
   return <UploadContext.Provider value={value}>{children}</UploadContext.Provider>;
 }
 
@@ -331,9 +617,54 @@ function uploadReducer(state: UploadState, action: UploadAction): UploadState {
   }
 }
 
+function uploadBatchReducer(state: UploadBatchState, action: UploadBatchAction): UploadBatchState {
+  switch (action.type) {
+    case "start":
+      return {
+        phase: "running",
+        items: action.items,
+        message: `Preparing ${action.items.length} artwork file${action.items.length === 1 ? "" : "s"} in order.`,
+      };
+    case "item":
+      return {
+        ...state,
+        items: state.items.map((item) => item.id === action.id
+          ? { ...item, ...action.changes }
+          : item),
+      };
+    case "finish":
+      return {
+        ...state,
+        phase: "complete",
+        message: action.failed === 0
+          ? `All ${state.items.length} artwork files started preparation.`
+          : `${state.items.length - action.failed} of ${state.items.length} artwork files started preparation; ${action.failed} need attention.`,
+      };
+    case "failure":
+      return { phase: "error", items: [], message: action.message };
+    case "reset":
+      return initialBatchState;
+  }
+}
+
 interface UploadOperationKeys {
   authorize: string;
   complete: string;
+}
+
+async function createUploadWithNetworkReplay(
+  api: ApiPort,
+  file: File,
+  sha256: string,
+  idempotencyKey: string,
+  isCurrent: () => boolean,
+): ReturnType<ApiPort["createUpload"]> {
+  try {
+    return await api.createUpload(file, sha256, idempotencyKey);
+  } catch (error) {
+    if (!(error instanceof TypeError) || !isCurrent()) throw error;
+    return api.createUpload(file, sha256, idempotencyKey);
+  }
 }
 
 async function obtainFreshAuthorization(

@@ -127,15 +127,35 @@ main { min-height: calc(100vh - 12rem); }
 .hero-panel, .recent-panel, .panel, .progress-card, .strands-card { border: 1px solid var(--line); border-radius: 1rem; background: var(--paper); box-shadow: var(--shadow); }
 .hero-panel, .recent-panel, .panel { padding: clamp(1.25rem, 3vw, 2rem); }
 .hero-panel { background: linear-gradient(145deg, #fffdf8 55%, #e7f0e5); }
+.format-note { padding: 0.75rem 0.9rem; border-left: 3px solid var(--green); background: rgb(255 255 255 / 62%); color: var(--muted); font-size: 0.88rem; }
 .drop-field { display: grid; min-height: 12rem; place-items: center; align-content: center; gap: 0.35rem; margin: 1.5rem 0 1rem; padding: 1.5rem; border: 2px dashed #8aa08e; border-radius: 0.75rem; background: rgb(255 255 255 / 65%); text-align: center; cursor: pointer; }
 .drop-field:hover { border-color: var(--green); background: #fff; }
+.drop-field[aria-disabled="true"] { cursor: not-allowed; opacity: 0.62; }
 .drop-field span:last-child { color: var(--muted); font-size: 0.9rem; }
 .drop-icon { font-size: 2rem; color: var(--green); }
 .file-input { margin-bottom: 1rem; padding: 0.45rem; background: #fff; }
 .file-input::file-selector-button { margin-right: 0.75rem; padding: 0.55rem 0.75rem; border: 1px solid var(--green-dark); border-radius: 0.4rem; background: var(--green-dark); color: #fff; font-weight: 700; }
 .section-heading-row { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
+.section-heading-row--compact { align-items: center; margin-bottom: 0.75rem; }
+.section-heading-row--compact h2 { font-size: 1.05rem; }
 .section-heading-row h2 { margin-bottom: 0; }
 .count-chip, .readiness-chip, .stage-badge { padding: 0.35rem 0.65rem; border-radius: 99rem; background: var(--green-pale); color: var(--green-dark); font-size: 0.75rem; font-weight: 750; white-space: nowrap; }
+.selection-panel, .batch-panel { margin: 1rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: 0.75rem; background: rgb(255 255 255 / 72%); }
+.batch-panel { margin-top: 1.25rem; }
+.selection-list, .upload-queue { display: grid; gap: 0.65rem; padding: 0; list-style: none; }
+.selection-list li, .upload-queue-item { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) auto; gap: 0.75rem; align-items: center; padding: 0.75rem; border: 1px solid var(--line); border-radius: 0.6rem; background: var(--paper); }
+.queue-number { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: 50%; background: var(--green-pale); color: var(--green-dark); font: 750 0.72rem ui-monospace, monospace; }
+.queue-file { display: grid; min-width: 0; }
+.queue-file strong, .queue-file small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-file small { color: var(--muted); }
+.queue-order-controls { display: flex; gap: 0.35rem; }
+.queue-order-controls .button { width: 2.25rem; padding: 0; }
+.queue-status { align-self: start; padding: 0.28rem 0.55rem; border-radius: 99rem; background: var(--blue-pale); color: #2d4657; font-size: 0.72rem; font-weight: 750; white-space: nowrap; }
+.queue-status--complete { background: var(--green-pale); color: var(--green-dark); }
+.queue-status--error, .queue-status--expired { background: var(--red-pale); color: #791d19; }
+.upload-queue-item--error { border-color: #d8a09b; }
+.upload-queue-item progress, .queue-link { grid-column: 2 / -1; }
+.queue-link { justify-self: start; }
 .empty-state { display: grid; min-height: 14rem; place-items: center; align-content: center; border: 1px dashed var(--line); border-radius: 0.7rem; color: var(--muted); text-align: center; }
 .empty-state p { margin-bottom: 0.25rem; color: var(--ink); font-weight: 700; }
 .job-list { padding: 0; list-style: none; }
@@ -240,6 +260,9 @@ footer { padding: 2rem 1rem; border-top: 1px solid var(--line); color: var(--mut
   .strands-card { grid-template-columns: 1fr; }
   .strands-symbol { width: 2.8rem; height: 2.8rem; }
   .economics-range { align-items: start; flex-direction: column; }
+  .selection-list li, .upload-queue-item { grid-template-columns: 2.25rem minmax(0, 1fr); }
+  .queue-order-controls, .queue-status { grid-column: 2; justify-self: start; }
+  .upload-queue-item progress, .queue-link { grid-column: 1 / -1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

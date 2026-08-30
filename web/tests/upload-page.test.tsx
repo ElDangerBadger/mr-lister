@@ -1,12 +1,25 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useNavigate } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import browserFixtures from "../../contracts/browser/phase6.5.fixtures.json";
 import type { ApiPort } from "../src/api/client";
 import { AppRoutes } from "../src/App";
 import { MemoryAuthSession, type AuthCoordinator } from "../src/auth/session";
 import { uploadRecoverySchema } from "../src/contracts";
+
+const directUpload = vi.hoisted(() => ({
+  uploadToAuthorizedS3: vi.fn(),
+}));
+
+vi.mock("../src/upload/direct-upload", async (importOriginal) => ({
+  ...await importOriginal<Record<string, unknown>>(),
+  uploadToAuthorizedS3: directUpload.uploadToAuthorizedS3,
+}));
+
+beforeEach(() => {
+  directUpload.uploadToAuthorizedS3.mockResolvedValue(undefined);
+});
 
 describe("upload route authority", () => {
   it("ignores a delayed upload A completion after recovery has moved to upload B", async () => {
@@ -83,15 +96,80 @@ describe("upload route authority", () => {
     const { api, auth } = dependencies({ createUpload, listJobs });
     render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
     const user = userEvent.setup();
-    const input = screen.getByLabelText(/Choose PNG artwork/u);
+    const input = screen.getByLabelText(/Choose PNG or SVG artwork/u);
     await user.upload(input, makePng());
-    const submit = screen.getByRole("button", { name: "Prepare listing" });
+    const submit = screen.getByRole("button", { name: "Prepare 1 listing" });
     const form = submit.closest("form");
     if (form === null) throw new Error("Upload form is missing");
     fireEvent.submit(form);
-    expect(await screen.findByRole("button", { name: "Preparing…" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Preparing batch…" })).toBeDisabled();
     expect(input).toBeDisabled();
     await waitFor(() => expect(createUpload).toHaveBeenCalledTimes(1));
+  });
+
+  it("keeps a selected batch in an explicit seller-controlled order", async () => {
+    const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
+    const { api, auth } = dependencies({ listJobs });
+    const result = render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
+    const user = userEvent.setup();
+    const first = makePng("first.png", 1);
+    const second = makePng("second.png", 2);
+    const input = screen.getByLabelText(/Choose PNG or SVG artwork/u);
+
+    await user.upload(input, [first, second]);
+    expect(selectedNames(result.container)).toEqual(["first.png", "second.png"]);
+    await user.click(screen.getByRole("button", { name: "Move second.png earlier" }));
+    expect(selectedNames(result.container)).toEqual(["second.png", "first.png"]);
+    expect(screen.getByRole("button", { name: "Prepare 2 listings" })).toBeEnabled();
+  });
+
+  it("rejects a selection above the five-file MVP cap", async () => {
+    const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
+    const { api, auth } = dependencies({ listJobs });
+    render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
+    const user = userEvent.setup();
+
+    await user.upload(
+      screen.getByLabelText(/Choose PNG or SVG artwork/u),
+      Array.from({ length: 6 }, (_, index) => makePng(`art-${index + 1}.png`, index)),
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Choose no more than 5 files");
+    expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
+  });
+
+  it("locks a completed batch until the seller explicitly starts another", async () => {
+    const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
+    const createUpload = vi.fn((file: File, sha256: string) => Promise.resolve(openUploadResponse(file, sha256)));
+    const completeUpload = vi.fn().mockResolvedValue(completedUploadResponse("upload_art", "job_art"));
+    const { api, auth } = dependencies({ listJobs, createUpload, completeUpload });
+    render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
+    const user = userEvent.setup();
+    const input = screen.getByLabelText(/Choose PNG or SVG artwork/u);
+
+    await user.upload(input, makePng());
+    submitBatchForm();
+    expect(await screen.findByRole("button", { name: "Batch complete" })).toBeDisabled();
+    expect(input).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Choose another batch" }));
+    expect(input).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
+  });
+
+  it("links a failed PNG item to the existing upload recovery route", async () => {
+    directUpload.uploadToAuthorizedS3.mockRejectedValueOnce(new Error("simulated transfer interruption"));
+    const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
+    const createUpload = vi.fn((file: File, sha256: string) => Promise.resolve(openUploadResponse(file, sha256)));
+    const { api, auth } = dependencies({ listJobs, createUpload });
+    render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
+    const user = userEvent.setup();
+
+    await user.upload(screen.getByLabelText(/Choose PNG or SVG artwork/u), makePng());
+    submitBatchForm();
+
+    const recoveryLink = await screen.findByRole("link", { name: "Recover upload" });
+    expect(recoveryLink).toHaveAttribute("href", "/uploads/upload_art");
   });
 });
 
@@ -104,6 +182,28 @@ function completedUploadResponse(uploadId: string, jobId: string) {
   return {
     value: { upload: { upload_id: uploadId, job_id: jobId, status: "completed" as const, record_version: 2 }, authorization: null },
     requestId: "request-complete",
+    etag: null,
+  };
+}
+
+function openUploadResponse(file: File, sha256: string) {
+  return {
+    value: {
+      upload: { upload_id: "upload_art", job_id: "job_art", status: "open" as const, record_version: 1 },
+      authorization: {
+        upload_id: "upload_art",
+        job_id: "job_art",
+        authorization_generation: 1,
+        method: "POST" as const,
+        url: "https://private-bucket.s3.us-west-2.amazonaws.com/",
+        form_fields: { key: "private/art.png" },
+        content_sha256: sha256,
+        size_bytes: file.size,
+        issued_at: "2026-08-30T12:00:00Z",
+        expires_at: "2026-08-30T12:05:00Z",
+      },
+    },
+    requestId: "request-create",
     etag: null,
   };
 }
@@ -130,9 +230,20 @@ function dependencies(overrides: Partial<ApiPort>): { api: ApiPort; auth: AuthCo
   return { api, auth };
 }
 
-function makePng(): File {
-  const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1]);
-  const file = new File([bytes], "art.png", { type: "image/png" });
+function makePng(name = "art.png", tail = 1): File {
+  const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, tail]);
+  const file = new File([bytes], name, { type: "image/png" });
   Object.defineProperty(file, "arrayBuffer", { value: () => Promise.resolve(bytes.buffer.slice(0)) });
   return file;
+}
+
+function selectedNames(container: HTMLElement): string[] {
+  return [...container.querySelectorAll(".selection-list strong")].map((element) => element.textContent ?? "");
+}
+
+function submitBatchForm(): void {
+  const submit = screen.getByRole("button", { name: "Prepare 1 listing" });
+  const form = submit.closest("form");
+  if (form === null) throw new Error("Upload form is missing");
+  fireEvent.submit(form);
 }
