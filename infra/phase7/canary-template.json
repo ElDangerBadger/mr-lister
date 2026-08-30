@@ -1,0 +1,212 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Transform": "AWS::Serverless-2016-10-31",
+  "Description": "Isolated direct-IAM-invoke runtime for one exact-bound Mr Lister Phase 7 canary",
+  "Parameters": {
+    "EnvironmentName": {
+      "Type": "String",
+      "Default": "dev",
+      "AllowedPattern": "^[a-z][a-z0-9-]{1,15}$"
+    },
+    "CanaryCodeS3Bucket": {
+      "Type": "String",
+      "AllowedPattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+      "ConstraintDescription": "Supply the same-region immutable Phase 7 canary artifact bucket."
+    },
+    "CanaryCodeS3Key": {
+      "Type": "String",
+      "AllowedPattern": "^phase7/releases/[a-f0-9]{64}/canary\\.zip$",
+      "ConstraintDescription": "Supply the canary-release-fingerprint-bound artifact key."
+    },
+    "CanaryCodeS3ObjectVersion": {
+      "Type": "String",
+      "AllowedPattern": "^(?!(?i:PENDING|current|default|latest|moving|null|none|unversioned)$)[A-Za-z0-9._~+/=-]{3,1024}$",
+      "ConstraintDescription": "Supply the exact immutable S3 object version for the canary bundle."
+    },
+    "CanaryReleaseFingerprint": {
+      "Type": "String",
+      "AllowedPattern": "^(?!0{64}$)[a-f0-9]{64}$",
+      "ConstraintDescription": "Supply the SHA-256 fingerprint of the sealed canary runtime release."
+    },
+    "CanaryBindingFingerprint": {
+      "Type": "String",
+      "AllowedPattern": "^(?!0{64}$)[a-f0-9]{64}$",
+      "ConstraintDescription": "Supply the separately reviewed exact canary binding fingerprint."
+    },
+    "CanaryMode": {
+      "Type": "String",
+      "AllowedValues": ["read_only_preflight", "publish_once"],
+      "ConstraintDescription": "Supply the exact capability mode encoded by the packaged canary binding."
+    },
+    "ApplicationReleaseFingerprint": {
+      "Type": "String",
+      "AllowedPattern": "^(?!0{64}$)[a-f0-9]{64}$",
+      "ConstraintDescription": "Supply the application release fingerprint frozen in the publication snapshot."
+    },
+    "PrintifySecretArn": {
+      "Type": "String",
+      "AllowedPattern": "^arn:(aws|aws-us-gov|aws-cn):secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:mr-lister/[A-Za-z0-9/_-]+-[A-Za-z0-9]{6}$",
+      "ConstraintDescription": "Supply one exact owner-bound Printify Secrets Manager ARN."
+    }
+  },
+  "Resources": {
+    "PublicationCanaryLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/mr-lister-phase7-${EnvironmentName}-publication-canary"
+        },
+        "RetentionInDays": 14,
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "Phase", "Value": "7-isolated-canary"}
+        ]
+      }
+    },
+    "PublicationCanaryFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-canary-role"
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "lambda.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ExactBoundPublicationCanary",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "WritePublicationCanaryLogs",
+                  "Effect": "Allow",
+                  "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                  "Resource": {
+                    "Fn::GetAtt": ["PublicationCanaryLogGroup", "Arn"]
+                  }
+                },
+                {
+                  "Sid": "ReadAndCommitExactPublicationAuthority",
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:GetItem",
+                    "dynamodb:Query",
+                    "dynamodb:TransactWriteItems"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/mr-lister-phase6-${EnvironmentName}"
+                  },
+                  "Condition": {
+                    "ForAllValues:StringLike": {
+                      "dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]
+                    }
+                  }
+                },
+                {
+                  "Sid": "ReadExactPublicationCredential",
+                  "Effect": "Allow",
+                  "Action": "secretsmanager:GetSecretValue",
+                  "Resource": {"Ref": "PrintifySecretArn"}
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "Phase", "Value": "7-isolated-canary"}
+        ]
+      }
+    },
+    "PublicationCanaryFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": "PublicationCanaryLogGroup",
+      "Properties": {
+        "FunctionName": {
+          "Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-canary"
+        },
+        "CodeUri": {
+          "Bucket": {"Ref": "CanaryCodeS3Bucket"},
+          "Key": {"Ref": "CanaryCodeS3Key"},
+          "Version": {"Ref": "CanaryCodeS3ObjectVersion"}
+        },
+        "Handler": "mr_lister.cloud.phase7_canary_entrypoint.publication_canary_handler",
+        "Runtime": "python3.12",
+        "Architectures": ["arm64"],
+        "Role": {
+          "Fn::GetAtt": ["PublicationCanaryFunctionRole", "Arn"]
+        },
+        "ReservedConcurrentExecutions": 1,
+        "MemorySize": 512,
+        "Timeout": 60,
+        "Environment": {
+          "Variables": {
+            "MR_LISTER_AWS_ACCOUNT_ID": {"Ref": "AWS::AccountId"},
+            "MR_LISTER_ENVIRONMENT": {"Ref": "EnvironmentName"},
+            "MR_LISTER_STATE_TABLE": {
+              "Fn::Sub": "mr-lister-phase6-${EnvironmentName}"
+            },
+            "MR_LISTER_PHASE7_CANARY_RELEASE_FINGERPRINT": {
+              "Ref": "CanaryReleaseFingerprint"
+            },
+            "MR_LISTER_PHASE7_CANARY_BINDING_FINGERPRINT": {
+              "Ref": "CanaryBindingFingerprint"
+            },
+            "MR_LISTER_PHASE7_CANARY_MODE": {"Ref": "CanaryMode"},
+            "MR_LISTER_RELEASE_FINGERPRINT": {
+              "Ref": "ApplicationReleaseFingerprint"
+            },
+            "MR_LISTER_PRINTIFY_SECRET_ARN": {"Ref": "PrintifySecretArn"},
+            "MR_LISTER_PHASE7_SCAFFOLD_ONLY": "false",
+            "MR_LISTER_PHASE7_CANARY_ENABLED": "true",
+            "MR_LISTER_PHASE7_QUERY_ENABLED": "false",
+            "MR_LISTER_PHASE7_REQUEST_ENABLED": "false",
+            "MR_LISTER_PHASE7_PUBLICATION_ENABLED": "false",
+            "MR_LISTER_PRODUCT_PROFILE_ID": "gildan_64000_swiftpod",
+            "MR_LISTER_PRODUCT_PROFILE_VERSION": "2",
+            "MR_LISTER_PRODUCT_PROFILE_FINGERPRINT": "5de1257141cfdacb1731f68bb9113712957483b33d5b0f7115afdba86eb7476c",
+            "MR_LISTER_PRODUCT_PROFILE_PATH": "/var/task/config/product_profiles/gildan_64000_swiftpod.json"
+          }
+        },
+        "LoggingConfig": {
+          "LogFormat": "JSON",
+          "ApplicationLogLevel": "ERROR",
+          "SystemLogLevel": "WARN"
+        },
+        "Tags": {
+          "Project": "MrLister",
+          "Environment": {"Ref": "EnvironmentName"},
+          "Phase": "7-isolated-canary"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "PublicationCanaryFunctionArn": {
+      "Value": {"Fn::GetAtt": ["PublicationCanaryFunction", "Arn"]}
+    },
+    "PublicationCanaryMode": {"Value": {"Ref": "CanaryMode"}},
+    "PublicationCanaryReleaseFingerprint": {
+      "Value": {"Ref": "CanaryReleaseFingerprint"}
+    },
+    "PublicationCanaryBindingFingerprint": {
+      "Value": {"Ref": "CanaryBindingFingerprint"}
+    },
+    "ApplicationReleaseFingerprint": {
+      "Value": {"Ref": "ApplicationReleaseFingerprint"}
+    },
+    "SellerPublicationEnabled": {"Value": "false"}
+  }
+}

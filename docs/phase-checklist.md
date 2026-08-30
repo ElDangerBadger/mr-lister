@@ -469,6 +469,17 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     safely admits consumed-claim recovery or zero-POST deadline settlement. This checkpoint remains
     source-only: it adds no handler, AWS client, credential resolver, route, trigger, workflow,
     SAM/IAM/S3 binding, deployment, or live provider call
+  - [x] Phase 7.11 isolated canary release checkpoint: a release-first lazy entrypoint now verifies
+    the complete deterministic Python 3.12 ARM64 bundle, distinct application/canary/binding
+    fingerprints, exact mode, sanitized packaged binding, draft-safe profile, and the reviewed
+    Phase 6 Lambda wheel authority before importing publication code or creating AWS clients. The
+    53-module closure contains no production draft/upload module, while its narrow composition
+    builds the existing coordinator graph with fresh exact-secret credentials and redirect-safe
+    provider transport. A separate three-resource SAM template defines only a retained log group,
+    dedicated least-privilege role, and concurrency-one direct-invoke Lambda, with no route,
+    trigger, resource policy, or seller publication flag. Source, real checked wheelhouse
+    extraction, deterministic sealing, and local readback verification pass; upload, stack change
+    set, invoke authority, deployment, and provider calls remain held for separate approval
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports

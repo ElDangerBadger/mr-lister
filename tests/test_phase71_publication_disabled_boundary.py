@@ -119,6 +119,13 @@ PHASE79_CONFIGURATION_CLOUD_FILES = {
     ROOT / "src/mr_lister/cloud/phase7_configuration.py",
 }
 
+PHASE710_CANARY_CLOUD_FILES = {
+    ROOT / "src/mr_lister/cloud/phase7_canary_composition.py",
+    ROOT / "src/mr_lister/cloud/phase7_canary_entrypoint.py",
+}
+PHASE710_CANARY_COMPOSITION = ROOT / "src/mr_lister/cloud/phase7_canary_composition.py"
+PHASE710_CANARY_ENTRYPOINT = ROOT / "src/mr_lister/cloud/phase7_canary_entrypoint.py"
+
 PHASE7_CLOUD_FILES = (
     PHASE74_CLOUD_FILES
     | PHASE75_OFFLINE_CLOUD_FILES
@@ -126,6 +133,7 @@ PHASE7_CLOUD_FILES = (
     | PHASE77_REQUEST_CLOUD_FILES
     | PHASE78_WORKER_CLOUD_FILES
     | PHASE79_CONFIGURATION_CLOUD_FILES
+    | PHASE710_CANARY_CLOUD_FILES
 )
 
 EXPECTED_OFFLINE_PUBLICATION_FILES = {
@@ -423,9 +431,12 @@ def test_phase7_offline_runtime_is_only_in_exact_inventory() -> None:
             for module in _imports(path)
         )
     }
-    # The sealed guard entrypoint is deliberately stdlib/release-only until its manifest gate
-    # passes; only its lazily imported composition root imports publication modules.
-    assert publication_importing_cloud_files == PHASE7_CLOUD_FILES - {PHASE76_GUARD_ENTRYPOINT}
+    # Sealed entrypoints remain stdlib/release-only until their manifest gates pass; only their
+    # lazily imported composition roots import publication modules.
+    assert publication_importing_cloud_files == PHASE7_CLOUD_FILES - {
+        PHASE76_GUARD_ENTRYPOINT,
+        PHASE710_CANARY_ENTRYPOINT,
+    }
 
     forbidden_phase74_imports = {
         "mr_lister.agent",
@@ -490,7 +501,7 @@ def test_phase75_credential_modules_are_capability_narrow_and_uncomposed() -> No
             continue
         imports = _imports(path)
         assert adapter_module not in imports, path.relative_to(ROOT)
-        if path in PHASE78_WORKER_CLOUD_FILES:
+        if path in PHASE78_WORKER_CLOUD_FILES or path == PHASE710_CANARY_COMPOSITION:
             assert core_module in imports, path.relative_to(ROOT)
             continue
         assert core_module not in imports, path.relative_to(ROOT)

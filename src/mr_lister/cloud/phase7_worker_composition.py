@@ -29,6 +29,7 @@ from mr_lister.publication.guard_verification import (
 )
 from mr_lister.publication.profile_eligibility import (
     PinnedPublicationProfileEligibilityAuthority,
+    PublicationProfileEligibility,
 )
 from mr_lister.publication.provider_boundary import PublicationHttpTransport
 from mr_lister.publication.provider_coordinator import PublicationProviderCoordinator
@@ -36,6 +37,7 @@ from mr_lister.publication.provider_credentials import (
     PublicationProviderCredentialAuthority,
 )
 from mr_lister.publication.provider_runtime import PublicationProviderRuntimeFactory
+from mr_lister.review_profile import ExactReviewProductProfile
 
 PHASE7_WORKER_TIMEOUT_SECONDS = 15.0
 PHASE7_WORKER_USER_AGENT = "MrLister-Phase7/phase78-disabled"
@@ -93,6 +95,35 @@ def compose_publication_worker(
     """Assemble the real coordinator graph without reading state, secrets, or the provider."""
 
     configuration = load_phase7_read_configuration(environment)
+    return compose_publication_worker_graph(
+        state_table=configuration.state_table,
+        release_manifest_fingerprint=configuration.release_manifest_fingerprint,
+        exact_profile=configuration.profile.exact,
+        eligibility=configuration.eligibility,
+        dynamodb=dynamodb,
+        credentials=credentials,
+        transport=transport,
+        rejected_audit_writer=rejected_audit_writer,
+        clock=clock,
+    )
+
+
+def compose_publication_worker_graph(
+    *,
+    state_table: str,
+    release_manifest_fingerprint: str,
+    exact_profile: ExactReviewProductProfile,
+    eligibility: PublicationProfileEligibility,
+    dynamodb: object,
+    credentials: PublicationProviderCredentialAuthority,
+    transport: PublicationHttpTransport,
+    rejected_audit_writer: Callable[[PublicationProviderAuditRecord], None],
+    clock: Callable[[], datetime] | None = None,
+    timeout_seconds: float = PHASE7_WORKER_TIMEOUT_SECONDS,
+    user_agent: str = PHASE7_WORKER_USER_AGENT,
+) -> PublicationProviderCoordinator:
+    """Join a validated configuration to the worker graph without constructing capability."""
+
     _require_methods(
         dynamodb,
         ("get_item", "query", "transact_write_items"),
@@ -110,34 +141,34 @@ def compose_publication_worker(
     )
 
     selected_clock = clock or (lambda: datetime.now(UTC))
-    profiles = PinnedPublicationProfileAuthority(configuration.profile.exact)
-    eligibility = PinnedPublicationProfileEligibilityAuthority(configuration.eligibility)
+    profiles = PinnedPublicationProfileAuthority(exact_profile)
+    eligibility_authority = PinnedPublicationProfileEligibilityAuthority(eligibility)
     store = DynamoDBPublicationExecutionStore(
         client=dynamodb,
-        table_name=configuration.state_table,
+        table_name=state_table,
     )
     execution = PublicationExecutionService(
         store,
         profiles=profiles,
-        profile_eligibility=eligibility,
-        release_manifest_fingerprint=configuration.release_manifest_fingerprint,
+        profile_eligibility=eligibility_authority,
+        release_manifest_fingerprint=release_manifest_fingerprint,
         clock=selected_clock,
     )
     guard = DurablePublicationPreCallGuard(
         store=PublicationGuardStoreAdapter(store),
         profiles=profiles,
-        eligibility=eligibility,
-        release_manifest_fingerprint=configuration.release_manifest_fingerprint,
+        eligibility=eligibility_authority,
+        release_manifest_fingerprint=release_manifest_fingerprint,
     )
     provider = PublicationProviderRuntimeFactory(
         store=store,
         credentials=credentials,
         transport=transport,
-        release_manifest_fingerprint=configuration.release_manifest_fingerprint,
+        release_manifest_fingerprint=release_manifest_fingerprint,
         rejected_audit_writer=rejected_audit_writer,
         clock=selected_clock,
-        timeout_seconds=PHASE7_WORKER_TIMEOUT_SECONDS,
-        user_agent=PHASE7_WORKER_USER_AGENT,
+        timeout_seconds=timeout_seconds,
+        user_agent=user_agent,
     )
     return PublicationProviderCoordinator(
         store=store,
@@ -195,4 +226,5 @@ __all__ = [
     "PublicationGuardStoreAdapter",
     "build_disabled_publication_worker_handler",
     "compose_publication_worker",
+    "compose_publication_worker_graph",
 ]
