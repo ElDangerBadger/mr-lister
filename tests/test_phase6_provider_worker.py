@@ -60,6 +60,7 @@ from mr_lister.production.phase6_worker import (
     Phase6ProductMachineWorker,
 )
 from mr_lister.production.printify import (
+    PrintifyInputError,
     PrintifyResolvedProfile,
     PrintifyResolvedVariant,
     PrintifyUploadedImage,
@@ -172,6 +173,16 @@ def _source() -> SourceArtifactRecord:
         fingerprint=source_artifact_fingerprint(**material),
         **material,
     )
+
+
+def _install_source_geometry(store: FakeStore, *, width: int, height: int) -> None:
+    material = {**_source_material(), "width": width, "height": height}
+    source = SourceArtifactRecord(
+        fingerprint=source_artifact_fingerprint(**material),
+        **material,
+    )
+    store.source = source
+    store.job = store.job.model_copy(update={"source_artifact_fingerprint": source.fingerprint})
 
 
 def _work(*, work_type: WorkType, work_id: str, review_version: int) -> WorkRequest:
@@ -318,6 +329,7 @@ class ForgedFingerprintProfiles:
 class FakeSynchronizer:
     def __init__(self) -> None:
         self.mutations: list[str | None] = []
+        self.drafts: list[object] = []
         self.raise_unknown = False
         self.unexpected_error: Exception | None = None
         self.create_result: CreateReconciliationResult | None = None
@@ -331,6 +343,7 @@ class FakeSynchronizer:
         else:
             assert prior_draft is not None
         self.mutations.append(product_id)
+        self.drafts.append(draft)
         if self.unexpected_error is not None:
             raise self.unexpected_error
         if self.raise_unknown:
@@ -356,6 +369,8 @@ class FakeResources:
     def __init__(self, synchronizer: FakeSynchronizer) -> None:
         self.sync = synchronizer
         self.upload_count = 0
+        self.upload_sources: list[SourceArtifactRecord] = []
+        self.upload_dimensions = (3021, 3927)
         self.preflight_count = 0
         self.uploads: dict[str, PrintifyUploadedImage] = {}
         self.upload_error: Exception | None = None
@@ -375,15 +390,18 @@ class FakeResources:
         self, *, owner_id: str, source: SourceArtifactRecord, file_name: str
     ) -> PrintifyUploadedImage:
         assert owner_id == OWNER
-        assert source == _source()
+        assert source.job_id == JOB_ID
+        assert source.owner_id == OWNER
+        self.upload_sources.append(source)
         self.upload_count += 1
         if self.upload_error is not None:
             raise self.upload_error
+        width, height = self.upload_dimensions
         upload = PrintifyUploadedImage(
             image_id="image_new",
             file_name=file_name,
-            width=3021,
-            height=3927,
+            width=width,
+            height=height,
             size_bytes=2048,
             mime_type="image/png",
         )
@@ -866,6 +884,50 @@ def test_initial_create_claims_then_consumes_one_shot_before_mutation() -> None:
         "small",
     )
     assert control.successes[0].observation.mockups[0].variant_ids == (1000,)
+
+
+def test_fingerprinted_source_geometry_drives_width_fixed_draft_placement() -> None:
+    sync = FakeSynchronizer()
+    worker, store, _control, resources = _worker(
+        job=_job(),
+        work=_work(
+            work_type=WorkType.SYNCHRONIZE_PRODUCT,
+            work_id=SYNC_WORK_ID,
+            review_version=1,
+        ),
+        synchronizer=sync,
+    )
+    _install_source_geometry(store, width=2000, height=800)
+    resources.upload_dimensions = (2000, 800)
+
+    worker.run_product_sync(job_id=JOB_ID, work_request_id=SYNC_WORK_ID)
+
+    assert resources.upload_sources == [store.source]
+    assert len(sync.drafts) == 1
+    placement = sync.drafts[0].print_areas[0].placeholders[0].images[0]  # type: ignore[attr-defined]
+    assert placement.x == 0.5
+    assert placement.y == 0.100008
+    assert placement.scale == 0.65
+
+
+def test_tall_source_is_rejected_before_any_provider_upload_or_scale_change() -> None:
+    sync = FakeSynchronizer()
+    worker, store, _control, resources = _worker(
+        job=_job(),
+        work=_work(
+            work_type=WorkType.SYNCHRONIZE_PRODUCT,
+            work_id=SYNC_WORK_ID,
+            review_version=1,
+        ),
+        synchronizer=sync,
+    )
+    _install_source_geometry(store, width=1000, height=2100)
+
+    with pytest.raises(PrintifyInputError, match="too tall"):
+        worker.run_product_sync(job_id=JOB_ID, work_request_id=SYNC_WORK_ID)
+
+    assert resources.upload_count == 0
+    assert sync.mutations == []
 
 
 def test_profile_cannot_claim_the_pinned_fingerprint_after_its_payload_changes() -> None:

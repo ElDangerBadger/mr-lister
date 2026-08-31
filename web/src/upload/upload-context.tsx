@@ -64,6 +64,7 @@ export interface UploadBatchState {
 type UploadAction =
   | { type: "begin" }
   | { type: "phase"; phase: UploadPhase; message: string }
+  | { type: "terminal"; phase: "complete" | "cancelled" | "expired"; message: string }
   | { type: "intent"; uploadId: string; jobId: string; filename: string }
   | { type: "progress"; progress: number }
   | { type: "failure"; message: string; requestId: string | null; expired: boolean }
@@ -120,6 +121,23 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
   const createKey = useRef<{ fileIdentity: string; value: string } | null>(null);
   const preIntentBeginActive = useRef<symbol | null>(null);
   const operationEpoch = useRef(0);
+
+  const reconcileTerminalUpload = useCallback((
+    uploadId: string,
+    status: UploadRecovery["status"],
+  ): boolean => {
+    if (status === "open") return false;
+    recoveryKeys.current.delete(uploadId);
+    cancellationKeys.current.delete(uploadId);
+    if (status === "completed") {
+      dispatch({ type: "terminal", phase: "complete", message: "Artwork verified. Preparation has started." });
+    } else if (status === "cancelled") {
+      dispatch({ type: "terminal", phase: "cancelled", message: "Upload cancelled." });
+    } else {
+      dispatch({ type: "terminal", phase: "expired", message: "Upload expired." });
+    }
+    return true;
+  }, []);
 
   const begin = useCallback(async (file: File): Promise<void> => {
     if (batchActiveRef.current || preIntentBeginActive.current !== null) return;
@@ -438,12 +456,7 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
       if (abort.signal.aborted || operationEpoch.current !== epoch) return;
       if (recovery.upload_id !== uploadId) throw new Error("The upload recovery authority is inconsistent.");
       dispatch({ type: "intent", uploadId: recovery.upload_id, jobId: recovery.job_id, filename: recovery.filename });
-      if (recovery.status === "completed") {
-        recoveryKeys.current.delete(uploadId);
-        dispatch({ type: "phase", phase: "complete", message: "Artwork verified. Preparation has started." });
-        return;
-      }
-      if (recovery.status !== "open") throw new Error(`This upload is ${recovery.status} and cannot be completed.`);
+      if (reconcileTerminalUpload(uploadId, recovery.status)) return;
       const keys = recoveryKeys.current.get(uploadId) ?? {
         authorize: newIdempotencyKey("reauthorize-upload"),
         complete: newIdempotencyKey("complete-upload"),
@@ -452,10 +465,10 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
       const completed = await api.completeUpload(uploadId, keys.complete);
       if (abort.signal.aborted || operationEpoch.current !== epoch) return;
       if (completed.value.upload.upload_id !== uploadId
-        || completed.value.upload.job_id !== recovery.job_id
-        || completed.value.upload.status !== "completed") throw new Error("The upload is not complete yet.");
-      recoveryKeys.current.delete(uploadId);
-      dispatch({ type: "phase", phase: "complete", message: "Artwork verified. Preparation has started." });
+        || completed.value.upload.job_id !== recovery.job_id) throw new Error("The upload recovery authority is inconsistent.");
+      if (!reconcileTerminalUpload(uploadId, completed.value.upload.status)) {
+        throw new Error("The upload is not complete yet.");
+      }
     } catch (error) {
       if (operationEpoch.current !== epoch || (error instanceof DOMException && error.name === "AbortError")) return;
       const apiError = error instanceof ApiError ? error : null;
@@ -466,7 +479,7 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
         expired: apiError?.status === 410,
       });
     }
-  }, [api]);
+  }, [api, reconcileTerminalUpload]);
 
   const resume = useCallback(async (file: File, recovery: UploadRecovery): Promise<void> => {
     const epoch = ++operationEpoch.current;
@@ -601,6 +614,14 @@ function uploadReducer(state: UploadState, action: UploadAction): UploadState {
       return { ...initialState, phase: "validating", message: "Checking artwork…" };
     case "phase":
       return { ...state, phase: action.phase, message: action.message };
+    case "terminal":
+      return {
+        ...state,
+        phase: action.phase,
+        progress: action.phase === "complete" ? 100 : state.progress,
+        message: action.message,
+        requestId: null,
+      };
     case "intent":
       return { ...state, uploadId: action.uploadId, jobId: action.jobId, filename: action.filename };
     case "progress":

@@ -15,6 +15,7 @@ from pathlib import PurePath
 
 from PIL import Image, UnidentifiedImageError
 
+from mr_lister.contracts import ProductProfile
 from mr_lister.control.fingerprints import canonical_fingerprint
 from mr_lister.control.models import (
     CONTROL_CONTRACT_VERSION,
@@ -37,6 +38,10 @@ class SourceArtifactAuthorityError(ValueError):
     """A persisted source record's fingerprint does not cover its authority."""
 
 
+class SourceArtworkPlacementError(ValueError):
+    """The verified source cannot use the immutable fixed-width placement rule."""
+
+
 @dataclass(frozen=True)
 class VerifiedSourceArtwork:
     """Safe metadata derived from a fully decoded accepted source."""
@@ -48,6 +53,73 @@ class VerifiedSourceArtwork:
     alpha_maximum: int
 
 
+def source_artwork_placement_y(
+    *,
+    calibrated_square_y: float,
+    placement_scale: float,
+    canvas_width: int,
+    canvas_height: int,
+    artwork_width: int,
+    artwork_height: int,
+) -> float:
+    """Return the vertical center for a top-aligned, width-calibrated source."""
+
+    if (
+        isinstance(artwork_width, bool)
+        or not isinstance(artwork_width, int)
+        or artwork_width <= 0
+        or isinstance(artwork_height, bool)
+        or not isinstance(artwork_height, int)
+        or artwork_height <= 0
+        or isinstance(canvas_width, bool)
+        or not isinstance(canvas_width, int)
+        or canvas_width <= 0
+        or isinstance(canvas_height, bool)
+        or not isinstance(canvas_height, int)
+        or canvas_height <= 0
+        or isinstance(calibrated_square_y, bool)
+        or not isinstance(calibrated_square_y, (int, float))
+        or not 0 <= calibrated_square_y <= 1
+        or isinstance(placement_scale, bool)
+        or not isinstance(placement_scale, (int, float))
+        or not 0 < placement_scale <= 1
+    ):
+        raise SourceArtworkPlacementError("Artwork placement dimensions are invalid")
+    if artwork_width == artwork_height:
+        return float(calibrated_square_y)
+    rendered_height = (
+        placement_scale * canvas_width * artwork_height / (canvas_height * artwork_width)
+    )
+    if rendered_height <= 0 or rendered_height > 1:
+        raise SourceArtworkPlacementError(
+            "Artwork is too tall for the calibrated width-first print placement"
+        )
+    return round(rendered_height / 2, 6)
+
+
+def validate_source_artwork_fit(
+    *,
+    profile: ProductProfile,
+    artwork_width: int | None,
+    artwork_height: int | None,
+) -> None:
+    """Validate every profile canvas without cropping, padding, stretching, or scaling down."""
+
+    if (artwork_width is None) != (artwork_height is None):
+        raise SourceArtworkPlacementError("Artwork placement dimensions must be present together")
+    if artwork_width is None or artwork_height is None:
+        return
+    for group in profile.placement_groups:
+        source_artwork_placement_y(
+            calibrated_square_y=group.placement.y,
+            placement_scale=group.placement.scale,
+            canvas_width=group.canvas_width,
+            canvas_height=group.canvas_height,
+            artwork_width=artwork_width,
+            artwork_height=artwork_height,
+        )
+
+
 def verify_phase6_source_artwork(
     *,
     filename: str,
@@ -56,7 +128,7 @@ def verify_phase6_source_artwork(
     expected_sha256: str | None = None,
     expected_size_bytes: int | None = None,
 ) -> VerifiedSourceArtwork:
-    """Fully verify one checksum-bound square PNG accepted by Phase 6.
+    """Fully verify one checksum-bound PNG accepted by Phase 6.
 
     ``expected_*`` values are authoritative declarations from an upload
     intent.  They are optional only so trusted readers can reuse the decoder;
@@ -119,10 +191,9 @@ def verify_phase6_source_artwork(
                 or width > PHASE6_MAX_SOURCE_DIMENSION
                 or height > PHASE6_MAX_SOURCE_DIMENSION
                 or width * height > MAX_ARTWORK_PIXELS
-                or width != height
             ):
                 raise Phase6SourceArtworkError(
-                    "Source artwork must be a square PNG within the Phase 6 dimensions"
+                    "Source artwork must be a PNG within the Phase 6 dimensions"
                 )
             alpha_minimum, alpha_maximum = image.convert("RGBA").getchannel("A").getextrema()
     except Phase6SourceArtworkError:
@@ -163,6 +234,8 @@ def source_artifact_fingerprint(
     product_profile_version: int,
     product_profile_fingerprint: str,
     created_at: datetime,
+    width: int | None = None,
+    height: int | None = None,
     contract_version: str = CONTROL_CONTRACT_VERSION,
 ) -> str:
     """Hash every immutable field that grants authority over a source version."""
@@ -171,23 +244,42 @@ def source_artifact_fingerprint(
         raise SourceArtifactAuthorityError("Pinned source artifact timestamp is invalid")
     if version_id == "null":
         raise SourceArtifactAuthorityError("Pinned source artifact version is invalid")
-    return canonical_fingerprint(
-        {
-            "contract_version": contract_version,
-            "job_id": job_id,
-            "owner_id": owner_id,
-            "bucket": bucket,
-            "object_key": object_key,
-            "version_id": version_id,
-            "content_sha256": content_sha256,
-            "size_bytes": size_bytes,
-            "media_type": media_type,
-            "product_profile_id": product_profile_id,
-            "product_profile_version": product_profile_version,
-            "product_profile_fingerprint": product_profile_fingerprint,
-            "created_at": created_at.isoformat(),
-        }
-    )
+    if (width is None) != (height is None):
+        raise SourceArtifactAuthorityError("Pinned source artifact dimensions are invalid")
+    if width is not None and height is not None:
+        if (
+            isinstance(width, bool)
+            or not isinstance(width, int)
+            or isinstance(height, bool)
+            or not isinstance(height, int)
+            or width < 1
+            or height < 1
+            or width > PHASE6_MAX_SOURCE_DIMENSION
+            or height > PHASE6_MAX_SOURCE_DIMENSION
+            or width * height > MAX_ARTWORK_PIXELS
+        ):
+            raise SourceArtifactAuthorityError("Pinned source artifact dimensions are invalid")
+    material: dict[str, object] = {
+        "contract_version": contract_version,
+        "job_id": job_id,
+        "owner_id": owner_id,
+        "bucket": bucket,
+        "object_key": object_key,
+        "version_id": version_id,
+        "content_sha256": content_sha256,
+        "size_bytes": size_bytes,
+        "media_type": media_type,
+        "product_profile_id": product_profile_id,
+        "product_profile_version": product_profile_version,
+        "product_profile_fingerprint": product_profile_fingerprint,
+        "created_at": created_at.isoformat(),
+    }
+    # Legacy SOURCE records intentionally omit geometry.  Keeping absent dimensions out of the
+    # canonical material preserves their exact historical fingerprints and serialized payloads.
+    if width is not None and height is not None:
+        material["width"] = width
+        material["height"] = height
+    return canonical_fingerprint(material)
 
 
 def source_artifact_authority_fingerprint(source: SourceArtifactRecord) -> str:
@@ -207,6 +299,8 @@ def source_artifact_authority_fingerprint(source: SourceArtifactRecord) -> str:
         product_profile_version=source.product_profile_version,
         product_profile_fingerprint=source.product_profile_fingerprint,
         created_at=source.created_at,
+        width=source.width,
+        height=source.height,
     )
 
 
@@ -226,10 +320,13 @@ __all__ = [
     "PHASE6_MAX_SOURCE_DIMENSION",
     "PHASE6_MIN_SOURCE_ARTWORK_BYTES",
     "Phase6SourceArtworkError",
+    "SourceArtworkPlacementError",
     "SourceArtifactAuthorityError",
     "VerifiedSourceArtwork",
     "source_artifact_authority_fingerprint",
     "source_artifact_fingerprint",
+    "source_artwork_placement_y",
+    "validate_source_artwork_fit",
     "validate_source_artifact_authority",
     "verify_phase6_source_artwork",
 ]

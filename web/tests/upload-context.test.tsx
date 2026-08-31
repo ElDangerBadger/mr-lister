@@ -3,18 +3,20 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import browserFixtures from "../../contracts/browser/phase6.5.fixtures.json";
 import type { ApiPort } from "../src/api/client";
-import { uploadRecoverySchema } from "../src/contracts";
+import { uploadRecoverySchema, type UploadRecovery } from "../src/contracts";
 import { MAX_BATCH_FILES, UploadProvider, useUpload } from "../src/upload/upload-context";
 
 const directUpload = vi.hoisted(() => ({
   prepareArtworkForUpload: vi.fn(),
   uploadToAuthorizedS3: vi.fn(),
+  validateAndHashPng: vi.fn(),
 }));
 
 vi.mock("../src/upload/direct-upload", async (importOriginal) => ({
   ...await importOriginal<Record<string, unknown>>(),
   prepareArtworkForUpload: directUpload.prepareArtworkForUpload,
   uploadToAuthorizedS3: directUpload.uploadToAuthorizedS3,
+  validateAndHashPng: directUpload.validateAndHashPng,
 }));
 
 const recovery = uploadRecoverySchema.parse(browserFixtures.upload_recovery);
@@ -24,6 +26,11 @@ beforeEach(() => {
     file,
     sourceFormat: "png" as const,
   }));
+  directUpload.validateAndHashPng.mockImplementation(async (file: File) => {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const identityByte = bytes.at(-1) ?? 0;
+    return identityByte.toString(16).padStart(2, "0").repeat(32);
+  });
   directUpload.uploadToAuthorizedS3.mockImplementation((
     _file: File,
     _authorization: object,
@@ -50,6 +57,31 @@ describe("durable upload operation identity", () => {
     expect(completeUpload).toHaveBeenCalledTimes(2);
     expect(completeUpload.mock.calls[0]?.[1]).toBe(completeUpload.mock.calls[1]?.[1]);
   });
+
+  it.each([
+    ["completed", "complete", "Artwork verified. Preparation has started."],
+    ["cancelled", "cancelled", "Upload cancelled."],
+    ["expired", "expired", "Upload expired."],
+  ] as const)(
+    "reconciles a stale local error to durable %s state",
+    async (status, phase, message) => {
+      const completeUpload = vi.fn().mockRejectedValueOnce(new TypeError("network interrupted"));
+      const getUpload = vi.fn().mockResolvedValue(recoveryResult(status));
+      const api = fakeApi({ completeUpload, getUpload });
+      render(<UploadProvider api={api}><RecoveryHarness /></UploadProvider>);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole("button", { name: "Recover" }));
+      expect(await screen.findByText("network interrupted")).toBeInTheDocument();
+      expect(screen.getByTestId("upload-phase")).toHaveTextContent("error");
+
+      await user.click(screen.getByRole("button", { name: "Check durable status" }));
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(screen.getByTestId("upload-phase")).toHaveTextContent(phase);
+      expect(getUpload).toHaveBeenCalledWith(recovery.upload_id);
+      expect(completeUpload).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("reuses the exact cancellation key when the first response is lost", async () => {
     const cancelUpload = vi.fn()
@@ -381,7 +413,9 @@ function RecoveryHarness() {
     <div>
       <p>{upload.state.message}</p>
       <p data-testid="upload-id">{upload.state.uploadId ?? "none"}</p>
+      <p data-testid="upload-phase">{upload.state.phase}</p>
       <button type="button" onClick={() => { void upload.recover(recovery); }}>Recover</button>
+      <button type="button" onClick={() => { void upload.recover(); }}>Check durable status</button>
       <button type="button" onClick={() => { void upload.recover({ ...recovery, status: "completed", completed_at: recovery.updated_at }); }}>Recover complete</button>
       <button type="button" onClick={() => { void upload.cancel(); }}>Cancel</button>
       <button type="button" onClick={() => upload.reset()}>Reset</button>
@@ -464,6 +498,20 @@ function completedResult() {
   return {
     value: { upload: { upload_id: recovery.upload_id, job_id: recovery.job_id, status: "completed" as const, record_version: 1 }, authorization: null },
     requestId: "request-complete",
+    etag: null,
+  };
+}
+
+function recoveryResult(status: Exclude<UploadRecovery["status"], "open">) {
+  return {
+    value: {
+      ...recovery,
+      status,
+      completed_at: status === "completed" ? recovery.updated_at : null,
+      cancelled_at: status === "cancelled" ? recovery.updated_at : null,
+      expired_at: status === "expired" ? recovery.updated_at : null,
+    },
+    requestId: `request-recovery-${status}`,
     etag: null,
   };
 }

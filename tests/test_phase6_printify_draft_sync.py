@@ -178,6 +178,64 @@ def test_canonical_payload_reuses_phase5_contracts_and_embeds_job_token(listing)
     assert len(draft.payload_fingerprint) == 64
 
 
+def test_width_first_placement_preserves_scale_and_source_aspect_ratio(listing) -> None:
+    draft = build_canonical_draft(
+        job_id="job_phase6_rectangular",
+        listing=listing,
+        profile=profile(),
+        resolved=resolved(),
+        image_id="image_rectangular",
+        artwork_width=2000,
+        artwork_height=800,
+    )
+
+    placement = draft.print_areas[0].placeholders[0].images[0]
+    assert placement.x == 0.5
+    assert placement.y == 0.100008
+    assert placement.scale == 0.65
+
+
+def test_square_geometry_and_legacy_absence_preserve_the_exact_payload_fingerprint(listing) -> None:
+    legacy = canonical_draft(listing, job_id="job_phase6_compatible")
+    square = build_canonical_draft(
+        job_id="job_phase6_compatible",
+        listing=listing,
+        profile=profile(),
+        resolved=resolved(),
+        image_id="image_1",
+        artwork_width=2400,
+        artwork_height=2400,
+    )
+
+    assert square.provider_payload() == legacy.provider_payload()
+    assert square.payload_fingerprint == legacy.payload_fingerprint
+
+
+def test_source_geometry_must_be_present_as_a_pair(listing) -> None:
+    with pytest.raises(PrintifyInputError, match="present together"):
+        build_canonical_draft(
+            job_id="job_phase6_unpaired",
+            listing=listing,
+            profile=profile(),
+            resolved=resolved(),
+            image_id="image_unpaired",
+            artwork_width=2000,
+        )
+
+
+def test_width_first_placement_rejects_artwork_taller_than_the_print_area(listing) -> None:
+    with pytest.raises(PrintifyInputError, match="too tall"):
+        build_canonical_draft(
+            job_id="job_phase6_too_tall",
+            listing=listing,
+            profile=profile(),
+            resolved=resolved(),
+            image_id="image_too_tall",
+            artwork_width=1000,
+            artwork_height=2100,
+        )
+
+
 def test_first_authorized_sync_posts_exactly_once_and_returns_evidence(listing) -> None:
     draft = canonical_draft(listing)
     sync, transport, _client = synchronizer(

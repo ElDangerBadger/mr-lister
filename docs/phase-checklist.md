@@ -169,6 +169,8 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [x] Thirty exact variants and three size-specific print canvases
     - [x] $29.99 integer-cent price and centered front-placement policy
     - [x] Live mockup calibration: profile v2 top-aligns square artwork at `y=0.25`
+    - [x] Width-first rectangular placement preserves source aspect ratio and derives `y` from the
+      verified source and print-canvas dimensions
     - [x] Second live canary visually accepted the corrected top alignment
     - [x] Read-only, fail-closed catalog preflight contract
   - [x] Idempotent unpublished product creation and external-ID persistence

@@ -161,7 +161,14 @@ def _event(job: ControlJobRecord, name: str, *, at: datetime) -> DomainEvent:
     )
 
 
-def _source_fingerprint(*, job_id: str, owner_id: str, at: datetime) -> str:
+def _source_fingerprint(
+    *,
+    job_id: str,
+    owner_id: str,
+    at: datetime,
+    width: int | None = None,
+    height: int | None = None,
+) -> str:
     return source_artifact_fingerprint(
         job_id=job_id,
         owner_id=owner_id,
@@ -175,20 +182,36 @@ def _source_fingerprint(*, job_id: str, owner_id: str, at: datetime) -> str:
         product_profile_version=SOURCE_PROFILE_VERSION,
         product_profile_fingerprint=PROFILE_FP,
         created_at=at,
+        width=width,
+        height=height,
     )
 
 
-def _source(job: ControlJobRecord, *, at: datetime) -> SourceArtifactRecord:
+def _source(
+    job: ControlJobRecord,
+    *,
+    at: datetime,
+    width: int | None = None,
+    height: int | None = None,
+) -> SourceArtifactRecord:
     return SourceArtifactRecord(
         job_id=job.job_id,
         owner_id=job.owner_id,
-        fingerprint=_source_fingerprint(job_id=job.job_id, owner_id=job.owner_id, at=at),
+        fingerprint=_source_fingerprint(
+            job_id=job.job_id,
+            owner_id=job.owner_id,
+            at=at,
+            width=width,
+            height=height,
+        ),
         bucket=SOURCE_BUCKET,
         object_key=f"private/owners/{job.owner_id}/jobs/{job.job_id}/source/source.png",
         version_id=SOURCE_VERSION_ID,
         content_sha256=SOURCE_CONTENT_SHA256,
         size_bytes=SOURCE_SIZE_BYTES,
         media_type=SOURCE_MEDIA_TYPE,
+        width=width,
+        height=height,
         product_profile_id=SOURCE_PROFILE_ID,
         product_profile_version=SOURCE_PROFILE_VERSION,
         product_profile_fingerprint=PROFILE_FP,
@@ -261,6 +284,8 @@ def _activate(
 def _seed_preparation(
     *,
     job_id: str = "job_phase62_worker",
+    source_width: int | None = None,
+    source_height: int | None = None,
 ) -> tuple[InMemorySellerControlStore, MutableClock, WorkerControlService, WorkRequest]:
     store = InMemorySellerControlStore()
     clock = MutableClock()
@@ -268,6 +293,8 @@ def _seed_preparation(
         job_id=job_id,
         owner_id=OWNER,
         at=clock.value,
+        width=source_width,
+        height=source_height,
     )
     job = ControlJobRecord(
         owner_id=OWNER,
@@ -293,7 +320,12 @@ def _seed_preparation(
         event=_event(job, "INTAKE_VALIDATED", at=clock.value),
         receipt=receipt,
         work_request=work,
-        source_artifact=_source(job, at=clock.value),
+        source_artifact=_source(
+            job,
+            at=clock.value,
+            width=source_width,
+            height=source_height,
+        ),
     )
     dispatched = _activate(store, job, clock=clock)
     return store, clock, WorkerControlService(store=store, clock=clock), dispatched
@@ -331,8 +363,14 @@ def _agent_decision(next_action: str = "human_review") -> PreparationDecision:
 def _prepare_to_product_sync(
     *,
     job_id: str = "job_phase62_worker",
+    source_width: int | None = None,
+    source_height: int | None = None,
 ) -> tuple[InMemorySellerControlStore, MutableClock, WorkerControlService, WorkRequest]:
-    store, clock, worker, prepare_work = _seed_preparation(job_id=job_id)
+    store, clock, worker, prepare_work = _seed_preparation(
+        job_id=job_id,
+        source_width=source_width,
+        source_height=source_height,
+    )
     started = worker.begin_preparation(
         BeginPreparationCommand(
             job_id=job_id,
@@ -572,6 +610,35 @@ def test_upload_claim_is_durable_unique_and_checkpointed_before_product_write() 
                 file_name=file_name,
             )
         )
+
+
+def test_provider_upload_dimensions_must_match_fingerprinted_source_geometry() -> None:
+    store, clock, worker, _sync_work = _prepare_to_product_sync(
+        source_width=2000,
+        source_height=800,
+    )
+    claimed, work, attempt_id, file_name = _begin_upload_only(store, clock, worker)
+    assert worker.authorize_provider_upload(job_id=claimed.job_id, attempt_id=attempt_id)
+    source = store.get_source_artifact(claimed.job_id)
+
+    with pytest.raises(InvalidControlStateError, match="pinned source"):
+        worker.record_provider_upload_success(
+            RecordProviderUploadSuccessCommand(
+                job_id=claimed.job_id,
+                work_request_id=work.work_request_id,
+                expected_record_version=claimed.record_version,
+                attempt_id=attempt_id,
+                observation=UploadedArtworkObservation(
+                    image_id=IMAGE_ID,
+                    file_name=file_name,
+                    width=1999,
+                    height=800,
+                    size_bytes=source.size_bytes,
+                ),
+            )
+        )
+
+    assert store.get_job(claimed.job_id).uploaded_artwork_id is None
 
 
 def test_available_upload_permit_rebinds_only_to_exact_recovery_work() -> None:

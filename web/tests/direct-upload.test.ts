@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  type DecodedPngEvidence,
   prepareArtworkForUpload,
   sanitizeSvgForRasterization,
   type SanitizedSvg,
@@ -7,22 +8,38 @@ import {
   validateAndHashPng,
 } from "../src/upload/direct-upload";
 
-const PNG_BYTES = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1]);
+const PNG_FIXTURES = {
+  landscape: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGOU8MhhYGBg+A8ABlEBzdPZ5QUAAAAASUVORK5CYII=",
+  portrait: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAACCAYAAACZgbYnAAAAEklEQVR4nGOQ8MhhYGJgYPgPAAcfAc7s1TIuAAAAAElFTkSuQmCC",
+  square: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAGklEQVR4nGOU8MhhYGBgcGBhYGA4wMDAYA8AEzMCEeYQEi8AAAAASUVORK5CYII=",
+  opaque: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGOU8Mj5z8DAwAAACk0BzZOHfWQAAAAASUVORK5CYII=",
+  transparent: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR4nGOU8MhhAAEABVIAzg6/E7gAAAAASUVORK5CYII=",
+} as const;
 
 describe("artwork preparation", () => {
-  it("preserves an accepted PNG before hashing", async () => {
-    const png = fileWithBytes(PNG_BYTES, "art.png", "image/png");
+  it.each([
+    ["landscape", 2, 1],
+    ["portrait", 1, 2],
+    ["square", 2, 2],
+  ] as const)("preserves and accepts decoded %s mixed-alpha PNG bytes", async (fixture, width, height) => {
+    const png = pngFile(fixture, `${fixture}.png`);
+    const original = new Uint8Array(await png.arrayBuffer());
 
     const prepared = await prepareArtworkForUpload(png);
 
     expect(prepared).toEqual({ file: png, sourceFormat: "png" });
-    expect(await validateAndHashPng(prepared.file)).toMatch(/^[a-f0-9]{64}$/u);
+    expect(prepared.file).toBe(png);
+    expect(new Uint8Array(await prepared.file.arrayBuffer())).toEqual(original);
+    expect(await validateAndHashPng(
+      prepared.file,
+      decoder({ width, height, hasVisiblePixels: true, hasTransparency: true }),
+    )).toMatch(/^[a-f0-9]{64}$/u);
   });
 
   it("sanitizes SVG and exposes only a converted PNG to the upload path", async () => {
     const source = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><defs><linearGradient id="g"/></defs><rect width="400" height="200" fill="url(#g)"/></svg>';
     const svg = fileWithText(source, "wide-art.svg", "image/svg+xml");
-    const converted = fileWithBytes(PNG_BYTES, "wide-art.png", "image/png");
+    const converted = pngFile("square", "wide-art.png");
     const rasterize = vi.fn<(svg: SanitizedSvg, outputName: string, lastModified: number) => Promise<File>>()
       .mockResolvedValue(converted);
 
@@ -76,7 +93,94 @@ describe("artwork preparation", () => {
     const svgNamedPng = fileWithText('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"/>', "art.png", "image/svg+xml");
     await expect(prepareArtworkForUpload(svgNamedPng)).rejects.toThrow("Choose PNG or SVG");
   });
+
+  it("preserves an OS-unspecified PNG for exact validation", async () => {
+    const png = fileWithBytes(fixtureBytes("landscape"), "art.png", "");
+
+    await expect(prepareArtworkForUpload(png)).resolves.toEqual({ file: png, sourceFormat: "png" });
+  });
+
+  it.each([
+    ["opaque", { width: 2, height: 1, hasVisiblePixels: true, hasTransparency: false }],
+    ["transparent", { width: 2, height: 1, hasVisiblePixels: false, hasTransparency: true }],
+  ] as const)("rejects decoded %s artwork without mixed alpha", async (fixture, evidence) => {
+    await expect(validateAndHashPng(
+      pngFile(fixture, `${fixture}.png`),
+      decoder(evidence),
+    )).rejects.toThrow("visible artwork and a transparent background");
+  });
+
+  it("rejects a decoded image whose dimensions disagree with IHDR", async () => {
+    await expect(validateAndHashPng(
+      pngFile("landscape", "art.png"),
+      decoder({ width: 1, height: 2, hasVisiblePixels: true, hasTransparency: true }),
+    )).rejects.toThrow("dimensions do not match");
+  });
+
+  it("rejects a corrupt decode after accepting a structurally valid header", async () => {
+    const decode = vi.fn().mockRejectedValue(new DOMException("decode failed", "EncodingError"));
+
+    await expect(validateAndHashPng(pngFile("landscape", "art.png"), decode))
+      .rejects.toThrow("corrupt or could not be decoded");
+  });
+
+  it("rejects corrupt and excessive IHDR dimensions before decoding", async () => {
+    const corrupted = fixtureBytes("landscape");
+    corrupted[20] = (corrupted[20] ?? 0) ^ 1;
+    const decode = decoder({ width: 2, height: 1, hasVisiblePixels: true, hasTransparency: true });
+    await expect(validateAndHashPng(fileWithBytes(corrupted, "corrupt.png", "image/png"), decode))
+      .rejects.toThrow("valid PNG header");
+    expect(decode).not.toHaveBeenCalled();
+
+    const excessive = withIhdrDimensions(fixtureBytes("landscape"), 20_001, 1);
+    await expect(validateAndHashPng(fileWithBytes(excessive, "wide.png", "image/png"), decode))
+      .rejects.toThrow("dimensions exceed");
+    expect(decode).not.toHaveBeenCalled();
+  });
+
+  it("accepts an OS-unspecified media type after exact PNG decoding", async () => {
+    const png = fileWithBytes(fixtureBytes("landscape"), "art.png", "");
+    const prepared = await prepareArtworkForUpload(png);
+
+    await expect(validateAndHashPng(
+      prepared.file,
+      decoder({ width: 2, height: 1, hasVisiblePixels: true, hasTransparency: true }),
+    )).resolves.toMatch(/^[a-f0-9]{64}$/u);
+    expect(prepared).toEqual({ file: png, sourceFormat: "png" });
+  });
 });
+
+function decoder(evidence: DecodedPngEvidence) {
+  return vi.fn().mockResolvedValue(evidence);
+}
+
+function pngFile(fixture: keyof typeof PNG_FIXTURES, name: string): File {
+  return fileWithBytes(fixtureBytes(fixture), name, "image/png");
+}
+
+function fixtureBytes(fixture: keyof typeof PNG_FIXTURES): Uint8Array {
+  return Uint8Array.from(atob(PNG_FIXTURES[fixture]), (character) => character.charCodeAt(0));
+}
+
+function withIhdrDimensions(bytes: Uint8Array, width: number, height: number): Uint8Array {
+  const updated = bytes.slice();
+  const view = new DataView(updated.buffer, updated.byteOffset, updated.byteLength);
+  view.setUint32(16, width, false);
+  view.setUint32(20, height, false);
+  view.setUint32(29, pngCrc32(updated.subarray(12, 29)), false);
+  return updated;
+}
+
+function pngCrc32(bytes: Uint8Array): number {
+  let checksum = 0xffffffff;
+  for (const byte of bytes) {
+    checksum ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      checksum = (checksum >>> 1) ^ (checksum & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (checksum ^ 0xffffffff) >>> 0;
+}
 
 function fileWithText(source: string, name: string, type: string): File {
   return fileWithBytes(new TextEncoder().encode(source), name, type);

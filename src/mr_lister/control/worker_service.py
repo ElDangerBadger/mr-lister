@@ -1784,6 +1784,11 @@ class WorkerControlService:
             or observation.file_name != attempt.file_name
             or observation.size_bytes != source.size_bytes
             or observation.mime_type != source.media_type
+            or (
+                source.width is not None
+                and source.height is not None
+                and (observation.width, observation.height) != (source.width, source.height)
+            )
         ):
             raise InvalidControlStateError("Provider upload evidence does not match pinned source")
         material = {

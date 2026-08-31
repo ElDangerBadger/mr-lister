@@ -5,7 +5,7 @@ against a stable target.
 
 ## Product path
 
-- Seller-owned, visually nonempty, square transparent PNG artwork
+- Seller-owned, visually nonempty transparent PNG artwork in its original aspect ratio
 - Gildan 64000 Unisex Softstyle T-Shirt
 - Front print only
 - SwiftPOD print provider
@@ -28,11 +28,12 @@ against a stable target.
 - Prices represented only as integer cents
 
 The placement values are the live-accepted square-artwork baseline for Gildan 64000 blueprint
-`145` and SwiftPOD provider `39`, not a universal product rule. The configured selectors and all
-30 variant IDs must still be resolved against the authorized Printify account before a write.
-They must never be invented or copied from stale reference data. Non-square placement remains
-unsupported until its center position is calculated deterministically from the validated artwork
-and print-canvas dimensions.
+`145` and SwiftPOD provider `39`, not a universal product rule. Artwork width remains fixed at the
+calibrated `0.65` scale; its height stays proportional to the verified source dimensions, and the
+vertical center is derived deterministically from that aspect ratio and the verified print canvas.
+The configured selectors and all 30 variant IDs must still be resolved against the authorized
+Printify account before a write.
+They must never be invented or copied from stale reference data.
 
 ## Phase 0 boundary
 

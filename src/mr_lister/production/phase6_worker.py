@@ -59,6 +59,7 @@ from mr_lister.production.draft_sync import (
     UpdateReconciliationOutcome,
     build_canonical_draft,
     job_correlation_token,
+    validate_width_first_source_fit,
 )
 from mr_lister.production.economics import (
     ProductCostEvidence,
@@ -160,12 +161,23 @@ class Phase6ProductMachineWorker:
             states={ControlJobState.PRODUCT_DRAFT_SYNCING, ControlJobState.CANCEL_REQUESTED},
         )
         authority = self._draft_authority(job=job, work=work)
+        validate_width_first_source_fit(
+            profile=authority.profile,
+            artwork_width=authority.source.width,
+            artwork_height=authority.source.height,
+        )
         if job.uploaded_artwork_id is not None:
             uploaded = self._store.get_uploaded_artwork(job.job_id, job.uploaded_artwork_id)
             if (
                 uploaded.image_id != job.uploaded_image_id
                 or uploaded.fingerprint != job.uploaded_artwork_fingerprint
                 or uploaded.source_artifact_fingerprint != authority.source.fingerprint
+                or (
+                    authority.source.width is not None
+                    and authority.source.height is not None
+                    and (uploaded.width, uploaded.height)
+                    != (authority.source.width, authority.source.height)
+                )
             ):
                 raise InvalidControlStateError("Persisted artwork upload authority changed")
             image_id = uploaded.image_id
@@ -647,6 +659,11 @@ class Phase6ProductMachineWorker:
                     and exact.file_name == attempt.file_name
                     and exact.size_bytes == source.size_bytes
                     and exact.mime_type == source.media_type
+                    and (
+                        source.width is None
+                        or source.height is None
+                        or (exact.width, exact.height) == (source.width, source.height)
+                    )
                 )
                 if coherent:
                     outcome = ReconciliationOutcome.TARGET_MATCH
@@ -745,6 +762,8 @@ class Phase6ProductMachineWorker:
             profile=authority.profile,
             resolved=authority.resolved,
             image_id=image_id,
+            artwork_width=authority.source.width,
+            artwork_height=authority.source.height,
         )
 
     @staticmethod
@@ -863,6 +882,11 @@ class Phase6ProductMachineWorker:
             or exact.file_name != expected_file_name
             or exact.size_bytes != source.size_bytes
             or exact.mime_type != source.media_type
+            or (
+                source.width is not None
+                and source.height is not None
+                and (exact.width, exact.height) != (source.width, source.height)
+            )
         ):
             raise PrintifyCatalogMismatchError(
                 "Printify upload readback did not match the pinned source"

@@ -50,16 +50,11 @@ EXACT_PROFILE = ExactReviewProductProfile(
 )
 
 
-def _png() -> bytes:
-    image = Image.new("RGBA", (2, 2), (32, 64, 96, 255))
-    image.putdata(
-        (
-            (32, 64, 96, 0),
-            (32, 64, 96, 64),
-            (32, 64, 96, 192),
-            (32, 64, 96, 255),
-        )
-    )
+def _png(*, size: tuple[int, int] = (2, 2)) -> bytes:
+    image = Image.new("RGBA", size, (32, 64, 96, 255))
+    pixel_count = size[0] * size[1]
+    alpha = tuple(round(255 * index / (pixel_count - 1)) for index in range(pixel_count))
+    image.putdata(tuple((32, 64, 96, value) for value in alpha))
     output = BytesIO()
     image.save(output, format="PNG")
     return output.getvalue()
@@ -481,6 +476,7 @@ def test_valid_png_completion_atomically_creates_exactly_one_preparation_graph()
     assert job.active_work_request_id == completed.receipt.work_request_id
     assert source.version_id == "source-version-1"
     assert source.content_sha256 == sha256(content).hexdigest()
+    assert (source.width, source.height) == (2, 2)
     assert len(events) == 1
     assert events[0].name == "UPLOAD_COMPLETED"
     assert len(work) == 1
@@ -494,6 +490,53 @@ def test_valid_png_completion_atomically_creates_exactly_one_preparation_graph()
         "source-version-1",
         "source-version-1",
     ]
+
+
+def test_rectangular_completion_persists_verified_source_geometry() -> None:
+    harness = _harness()
+    content = _png(size=(3, 2))
+    created = harness.service.create_upload(
+        owner_id=OWNER,
+        idempotency_key="create-rectangular",
+        filename="seller-art.png",
+        content_type="image/png",
+        content_sha256=sha256(content).hexdigest(),
+        size_bytes=len(content),
+    )
+    harness.artifacts.stage(content)
+
+    harness.service.complete_upload(
+        owner_id=OWNER,
+        upload_id=created.receipt.upload_id,
+        idempotency_key="complete-rectangular",
+    )
+
+    source = harness.store.get_source_artifact(created.receipt.job_id)
+    assert (source.width, source.height) == (3, 2)
+
+
+def test_tall_source_is_rejected_at_intake_before_pin_or_provider_work() -> None:
+    harness = _harness()
+    content = _png(size=(2, 5))
+    created = harness.service.create_upload(
+        owner_id=OWNER,
+        idempotency_key="create-too-tall",
+        filename="seller-art.png",
+        content_type="image/png",
+        content_sha256=sha256(content).hexdigest(),
+        size_bytes=len(content),
+    )
+    harness.artifacts.stage(content)
+
+    with pytest.raises(UploadArtifactIntegrityError, match="fixed-width"):
+        harness.service.complete_upload(
+            owner_id=OWNER,
+            upload_id=created.receipt.upload_id,
+            idempotency_key="complete-too-tall",
+        )
+
+    assert harness.artifacts.pin_calls == []
+    assert harness.store.jobs == {}
 
 
 def test_completion_expiring_during_the_pin_is_released_before_any_job_commit() -> None:

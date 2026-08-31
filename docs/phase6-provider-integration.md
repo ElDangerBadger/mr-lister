@@ -30,8 +30,8 @@ The Phase 6 worker boundary now includes:
 exactly one Phase 6 `@tool`, `record_prepared_review`. The durable preparation path is checkpointed:
 
 1. application code begins the exact active `PREPARE` work;
-2. a pinned S3 `VersionId`, size, SHA-256, square PNG shape, mixed-alpha visibility, and exact product
-   profile are revalidated before inference;
+2. a pinned S3 `VersionId`, size, SHA-256, original PNG dimensions, mixed-alpha visibility, and
+   exact product profile are revalidated before inference;
 3. the artwork analysis and complete listing are stored once as immutable evidence;
 4. Strands returns a bounded structured decision with fixed framework and agent identity;
 5. application code revalidates the result and chooses `NEEDS_REVISION` or queues exact product

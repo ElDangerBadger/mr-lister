@@ -44,8 +44,9 @@ shipping, or publication.
 
 Profile v2 changed `y` from `0.3183` to `0.25` after the first live mockup showed a 6.83% top gap.
 For square artwork at this scale and these proportional canvases, `0.25` top-aligns the rendered
-design. A later refinement must calculate center `y` deterministically from validated dimensions
-for non-square sources; the model must not choose placement geometry.
+design. The Phase 6 successor keeps that exact square baseline and the calibrated width, then
+derives center `y` deterministically from the verified source aspect ratio and print canvas for
+rectangular art; the model does not choose placement geometry.
 
 ## Read-only preflight
 

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type DragEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAppDependencies } from "../app-context";
 import { useSessionStatus } from "../auth/use-session";
@@ -17,8 +17,10 @@ export function HomePage() {
   const upload = useUpload();
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const batchBusy = upload.batch.phase === "running";
   const batchFinished = upload.batch.phase === "complete";
   const preIntentBusy = upload.state.uploadId === null
@@ -45,6 +47,29 @@ export function HomePage() {
       void navigate(`/uploads/${upload.state.uploadId}`);
     }
   }, [navigate, upload.batch.phase, upload.state.phase, upload.state.uploadId]);
+
+  useEffect(() => {
+    if (!uploadLocked) return;
+    dragDepthRef.current = 0;
+    setDragActive(false);
+  }, [uploadLocked]);
+
+  const applySelection = (files: readonly File[]) => {
+    if (files.length > MAX_BATCH_FILES) {
+      setSelectedFiles([]);
+      setSelectionError(`Choose no more than ${MAX_BATCH_FILES} files in one batch.`);
+      return;
+    }
+    if (files.some((file) => !isSupportedArtworkFile(file))) {
+      setSelectedFiles([]);
+      setSelectionError("Choose only PNG or compatible SVG artwork files.");
+      return;
+    }
+    setSelectionError(null);
+    setSelectedFiles([...files]);
+  };
+
+  const fileDrag = (event: DragEvent<HTMLElement>) => event.dataTransfer.types.includes("Files");
 
   if (status === "anonymous") {
     return (
@@ -79,10 +104,42 @@ export function HomePage() {
           setSelectionError(null);
           void upload.beginBatch(selectedFiles);
         }}>
-          <label className="drop-field" htmlFor={inputId} aria-disabled={uploadLocked}>
+          <label
+            className={dragActive ? "drop-field drop-field--active" : "drop-field"}
+            htmlFor={inputId}
+            aria-disabled={uploadLocked}
+            data-drag-active={dragActive ? "true" : "false"}
+            onDragEnter={(event) => {
+              if (!fileDrag(event)) return;
+              event.preventDefault();
+              if (uploadLocked) return;
+              dragDepthRef.current += 1;
+              setDragActive(true);
+            }}
+            onDragOver={(event) => {
+              if (!fileDrag(event)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = uploadLocked ? "none" : "copy";
+            }}
+            onDragLeave={(event) => {
+              if (dragDepthRef.current < 1) return;
+              event.preventDefault();
+              dragDepthRef.current -= 1;
+              if (dragDepthRef.current === 0) setDragActive(false);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              const carriesFiles = fileDrag(event);
+              dragDepthRef.current = 0;
+              setDragActive(false);
+              if (uploadLocked || !carriesFiles) return;
+              if (inputRef.current !== null) inputRef.current.value = "";
+              applySelection([...event.dataTransfer.files]);
+            }}
+          >
             <span className="drop-icon" aria-hidden="true">↑</span>
-            <strong>Choose PNG or SVG artwork</strong>
-            <span>Select one file or build a batch. Originals are never put in browser storage.</span>
+            <strong>{dragActive ? "Drop artwork here" : "Drag and drop PNG or SVG artwork, or choose files"}</strong>
+            <span>Choose one file or build a batch. PNG may be portrait, landscape, or square. Originals are never put in browser storage.</span>
           </label>
           <input
             id={inputId}
@@ -92,18 +149,11 @@ export function HomePage() {
             type="file"
             accept="image/png,image/svg+xml,.png,.svg"
             multiple
-            required
             disabled={uploadLocked}
             onChange={(event) => {
               const files = [...(event.currentTarget.files ?? [])];
-              if (files.length > MAX_BATCH_FILES) {
-                setSelectedFiles([]);
-                setSelectionError(`Choose no more than ${MAX_BATCH_FILES} files in one batch.`);
-                event.currentTarget.value = "";
-                return;
-              }
-              setSelectionError(null);
-              setSelectedFiles(files);
+              applySelection(files);
+              if (files.length > MAX_BATCH_FILES) event.currentTarget.value = "";
             }}
           />
           {selectionError !== null && <p className="alert alert--error" role="alert">{selectionError}</p>}
@@ -199,6 +249,12 @@ function SelectedArtworkList({ files, onChange }: { files: File[]; onChange: (fi
       </ol>
     </section>
   );
+}
+
+function isSupportedArtworkFile(file: File): boolean {
+  const lowerName = file.name.toLocaleLowerCase("en-US");
+  return ((file.type === "image/png" || file.type === "") && lowerName.endsWith(".png"))
+    || ((file.type === "image/svg+xml" || file.type === "") && lowerName.endsWith(".svg"));
 }
 
 function BatchProgress({

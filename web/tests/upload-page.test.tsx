@@ -10,15 +10,18 @@ import { uploadRecoverySchema } from "../src/contracts";
 
 const directUpload = vi.hoisted(() => ({
   uploadToAuthorizedS3: vi.fn(),
+  validateAndHashPng: vi.fn(),
 }));
 
 vi.mock("../src/upload/direct-upload", async (importOriginal) => ({
   ...await importOriginal<Record<string, unknown>>(),
   uploadToAuthorizedS3: directUpload.uploadToAuthorizedS3,
+  validateAndHashPng: directUpload.validateAndHashPng,
 }));
 
 beforeEach(() => {
   directUpload.uploadToAuthorizedS3.mockResolvedValue(undefined);
+  directUpload.validateAndHashPng.mockResolvedValue("a".repeat(64));
 });
 
 describe("upload route authority", () => {
@@ -96,7 +99,7 @@ describe("upload route authority", () => {
     const { api, auth } = dependencies({ createUpload, listJobs });
     render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
     const user = userEvent.setup();
-    const input = screen.getByLabelText(/Choose PNG or SVG artwork/u);
+    const input = screen.getByLabelText(/Drag and drop PNG or SVG artwork/u);
     await user.upload(input, makePng());
     const submit = screen.getByRole("button", { name: "Prepare 1 listing" });
     const form = submit.closest("form");
@@ -114,13 +117,109 @@ describe("upload route authority", () => {
     const user = userEvent.setup();
     const first = makePng("first.png", 1);
     const second = makePng("second.png", 2);
-    const input = screen.getByLabelText(/Choose PNG or SVG artwork/u);
+    const input = screen.getByLabelText(/Drag and drop PNG or SVG artwork/u);
 
     await user.upload(input, [first, second]);
     expect(selectedNames(result.container)).toEqual(["first.png", "second.png"]);
     await user.click(screen.getByRole("button", { name: "Move second.png earlier" }));
     expect(selectedNames(result.container)).toEqual(["second.png", "first.png"]);
     expect(screen.getByRole("button", { name: "Prepare 2 listings" })).toBeEnabled();
+  });
+
+  it("accepts an ordered file-only drop while preserving the native picker fallback", () => {
+    const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
+    const { api, auth } = dependencies({ listJobs });
+    const result = render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
+    const first = makePng("first.png", 1);
+    const second = makePng("second.png", 2);
+    const dropField = screen.getByText(/Drag and drop PNG or SVG artwork/u).closest("label");
+    if (dropField === null) throw new Error("Drop field is missing");
+
+    fireEvent.dragEnter(dropField, { dataTransfer: { types: ["Files"], files: [first, second], dropEffect: "none" } });
+    expect(dropField).toHaveAttribute("data-drag-active", "true");
+    fireEvent.drop(dropField, { dataTransfer: { types: ["Files"], files: [first, second], dropEffect: "copy" } });
+
+    expect(dropField).toHaveAttribute("data-drag-active", "false");
+    expect(selectedNames(result.container)).toEqual(["first.png", "second.png"]);
+    expect(screen.getByRole("button", { name: "Prepare 2 listings" })).toBeEnabled();
+    expect(screen.getByLabelText(/Drag and drop PNG or SVG artwork/u)).toHaveAttribute("type", "file");
+  });
+
+  it("keeps a nested file drag highlighted until it leaves the whole drop field", () => {
+    const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
+    const { api, auth } = dependencies({ listJobs });
+    render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
+    const prompt = screen.getByText(/Drag and drop PNG or SVG artwork/u);
+    const dropField = prompt.closest("label");
+    if (dropField === null) throw new Error("Drop field is missing");
+    const transfer = { types: ["Files"], files: [], dropEffect: "none" };
+
+    fireEvent.dragEnter(dropField, { dataTransfer: transfer });
+    fireEvent.dragEnter(prompt, { dataTransfer: transfer });
+    fireEvent.dragLeave(prompt, { dataTransfer: transfer });
+    expect(dropField).toHaveAttribute("data-drag-active", "true");
+    fireEvent.dragLeave(dropField, { dataTransfer: transfer });
+    expect(dropField).toHaveAttribute("data-drag-active", "false");
+  });
+
+  it("rejects a dropped selection above the five-file cap and ignores non-file drops", () => {
+    const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
+    const { api, auth } = dependencies({ listJobs });
+    render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
+    const dropField = screen.getByText(/Drag and drop PNG or SVG artwork/u).closest("label");
+    if (dropField === null) throw new Error("Drop field is missing");
+
+    fireEvent.drop(dropField, { dataTransfer: { types: ["text/plain"], files: [], dropEffect: "none" } });
+    expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
+    fireEvent.drop(dropField, {
+      dataTransfer: {
+        types: ["Files"],
+        files: Array.from({ length: 6 }, (_, index) => makePng(`drop-${index + 1}.png`, index)),
+        dropEffect: "copy",
+      },
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Choose no more than 5 files");
+    expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
+  });
+
+  it("rejects unsupported dropped file types before enabling submission", () => {
+    const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
+    const { api, auth } = dependencies({ listJobs });
+    render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
+    const dropField = screen.getByText(/Drag and drop PNG or SVG artwork/u).closest("label");
+    if (dropField === null) throw new Error("Drop field is missing");
+
+    fireEvent.drop(dropField, {
+      dataTransfer: {
+        types: ["Files"],
+        files: [new File(["not artwork"], "notes.txt", { type: "text/plain" })],
+        dropEffect: "copy",
+      },
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Choose only PNG or compatible SVG");
+    expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
+  });
+
+  it("ignores file drops while an upload batch is locked", async () => {
+    const createUpload = vi.fn().mockImplementation(() => new Promise<never>(() => undefined));
+    const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
+    const { api, auth } = dependencies({ createUpload, listJobs });
+    render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
+    const user = userEvent.setup();
+    await user.upload(screen.getByLabelText(/Drag and drop PNG or SVG artwork/u), makePng("first.png", 1));
+    submitBatchForm();
+    expect(await screen.findByRole("button", { name: "Preparing batch…" })).toBeDisabled();
+    const dropField = screen.getByText(/Drag and drop PNG or SVG artwork/u).closest("label");
+    if (dropField === null) throw new Error("Drop field is missing");
+
+    fireEvent.drop(dropField, {
+      dataTransfer: { types: ["Files"], files: [makePng("ignored.png", 2)], dropEffect: "none" },
+    });
+
+    expect(dropField).toHaveAttribute("data-drag-active", "false");
+    await waitFor(() => expect(createUpload).toHaveBeenCalledTimes(1));
   });
 
   it("rejects a selection above the five-file MVP cap", async () => {
@@ -130,7 +229,7 @@ describe("upload route authority", () => {
     const user = userEvent.setup();
 
     await user.upload(
-      screen.getByLabelText(/Choose PNG or SVG artwork/u),
+      screen.getByLabelText(/Drag and drop PNG or SVG artwork/u),
       Array.from({ length: 6 }, (_, index) => makePng(`art-${index + 1}.png`, index)),
     );
 
@@ -145,7 +244,7 @@ describe("upload route authority", () => {
     const { api, auth } = dependencies({ listJobs, createUpload, completeUpload });
     render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
     const user = userEvent.setup();
-    const input = screen.getByLabelText(/Choose PNG or SVG artwork/u);
+    const input = screen.getByLabelText(/Drag and drop PNG or SVG artwork/u);
 
     await user.upload(input, makePng());
     submitBatchForm();
@@ -165,7 +264,7 @@ describe("upload route authority", () => {
     render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
     const user = userEvent.setup();
 
-    await user.upload(screen.getByLabelText(/Choose PNG or SVG artwork/u), makePng());
+    await user.upload(screen.getByLabelText(/Drag and drop PNG or SVG artwork/u), makePng());
     submitBatchForm();
 
     const recoveryLink = await screen.findByRole("link", { name: "Recover upload" });

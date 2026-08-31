@@ -31,7 +31,10 @@ from mr_lister.control.models import (
 )
 from mr_lister.control.source_artwork import (
     Phase6SourceArtworkError,
+    SourceArtworkPlacementError,
+    VerifiedSourceArtwork,
     source_artifact_fingerprint,
+    validate_source_artwork_fit,
     verify_phase6_source_artwork,
 )
 from mr_lister.control.store import SellerControlStore
@@ -308,8 +311,18 @@ class UploadIntakeService:
             observed = self._artifacts.read_current_object(current)
         except Exception:
             raise UploadDependencyUnavailableError from None
-        self._verify_object(current, observed)
-        source = self._source(current, observed, now)
+        verified = self._verify_object(current, observed)
+        try:
+            validate_source_artwork_fit(
+                profile=exact_profile.profile,
+                artwork_width=verified.width,
+                artwork_height=verified.height,
+            )
+        except SourceArtworkPlacementError:
+            raise UploadArtifactIntegrityError(
+                "Source artwork cannot fit the fixed-width product placement"
+            ) from None
+        source = self._source(current, observed, verified, now)
         work_id = self._stable_id("work", owner_id, current.job_id)
         receipt = UploadReceipt(
             receipt_id=self._stable_id("receipt_complete", owner_id, f"{upload_id}:{key_digest}"),
@@ -559,6 +572,7 @@ class UploadIntakeService:
     def _source(
         intent: UploadIntent,
         observed: CurrentUploadObject,
+        verified: VerifiedSourceArtwork,
         now: datetime,
     ) -> SourceArtifactRecord:
         material = {
@@ -570,6 +584,8 @@ class UploadIntakeService:
             "content_sha256": intent.content_sha256,
             "size_bytes": intent.size_bytes,
             "media_type": intent.content_type,
+            "width": verified.width,
+            "height": verified.height,
             "product_profile_id": intent.product_profile_id,
             "product_profile_version": intent.product_profile_version,
             "product_profile_fingerprint": intent.product_profile_fingerprint,
@@ -581,7 +597,10 @@ class UploadIntakeService:
         )
 
     @staticmethod
-    def _verify_object(intent: UploadIntent, observed: CurrentUploadObject) -> None:
+    def _verify_object(
+        intent: UploadIntent,
+        observed: CurrentUploadObject,
+    ) -> VerifiedSourceArtwork:
         expected_checksum = b64encode(bytes.fromhex(intent.content_sha256)).decode("ascii")
         if (
             not isinstance(observed.version_id, str)
@@ -602,7 +621,7 @@ class UploadIntakeService:
         ):
             raise UploadArtifactIntegrityError
         try:
-            verify_phase6_source_artwork(
+            return verify_phase6_source_artwork(
                 filename=intent.filename,
                 content_type=intent.content_type,
                 content=observed.content,

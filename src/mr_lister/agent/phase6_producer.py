@@ -178,6 +178,11 @@ class PinnedSourcePreparedReviewProducer:
             artwork.content_sha256 != source.content_sha256
             or artwork.size_bytes != source.size_bytes
             or artwork.content_type != source.media_type
+            or (
+                source.width is not None
+                and source.height is not None
+                and (verified.width, verified.height) != (source.width, source.height)
+            )
         ):
             raise PreparedReviewProducerError("Pinned source integrity check failed")
         return artwork

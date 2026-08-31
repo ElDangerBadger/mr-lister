@@ -24,6 +24,11 @@ from mr_lister.contracts import ListingIntelligence, ProductProfile
 from mr_lister.contracts.presentation import ProductMockupEvidence
 from mr_lister.control.fingerprints import canonical_fingerprint
 from mr_lister.control.models import PHASE6_MAX_SOURCE_ARTWORK_BYTES
+from mr_lister.control.source_artwork import (
+    SourceArtworkPlacementError,
+    source_artwork_placement_y,
+    validate_source_artwork_fit,
+)
 from mr_lister.production.printify import (
     PrintifyCatalogClient,
     PrintifyCatalogMismatchError,
@@ -986,6 +991,48 @@ def job_correlation_token(job_id: str) -> str:
     return f"ml-{digest}"
 
 
+def width_first_placement_y(
+    *,
+    calibrated_square_y: float,
+    placement_scale: float,
+    canvas_width: int,
+    canvas_height: int,
+    artwork_width: int,
+    artwork_height: int,
+) -> float:
+    """Center a top-aligned source at its fixed calibrated width without distortion."""
+
+    try:
+        return source_artwork_placement_y(
+            calibrated_square_y=calibrated_square_y,
+            placement_scale=placement_scale,
+            canvas_width=canvas_width,
+            canvas_height=canvas_height,
+            artwork_width=artwork_width,
+            artwork_height=artwork_height,
+        )
+    except SourceArtworkPlacementError as error:
+        raise PrintifyInputError(str(error)) from None
+
+
+def validate_width_first_source_fit(
+    *,
+    profile: ProductProfile,
+    artwork_width: int | None,
+    artwork_height: int | None,
+) -> None:
+    """Fail before provider mutation when immutable source geometry cannot fit at fixed width."""
+
+    try:
+        validate_source_artwork_fit(
+            profile=profile,
+            artwork_width=artwork_width,
+            artwork_height=artwork_height,
+        )
+    except SourceArtworkPlacementError as error:
+        raise PrintifyInputError(str(error)) from None
+
+
 def build_canonical_draft(
     *,
     job_id: str,
@@ -993,8 +1040,10 @@ def build_canonical_draft(
     profile: ProductProfile,
     resolved: PrintifyResolvedProfile,
     image_id: str,
+    artwork_width: int | None = None,
+    artwork_height: int | None = None,
 ) -> CanonicalPrintifyDraft:
-    """Build the Phase 6 create/replace payload from the proven Phase 5 contracts."""
+    """Build a width-calibrated draft while preserving the source aspect ratio."""
 
     if profile.publish_enabled:
         raise PrintifyInputError("Product synchronization requires publication to remain disabled")
@@ -1007,6 +1056,11 @@ def build_canonical_draft(
         or resolved.print_provider_id != profile.print_provider_id
     ):
         raise PrintifyInputError("Resolved catalog does not match the product profile")
+    validate_width_first_source_fit(
+        profile=profile,
+        artwork_width=artwork_width,
+        artwork_height=artwork_height,
+    )
 
     token = job_correlation_token(job_id)
     variants = tuple(
@@ -1032,7 +1086,18 @@ def build_canonical_draft(
                         DraftPlacementImage(
                             id=image_id,
                             x=group.placement.x,
-                            y=group.placement.y,
+                            y=(
+                                group.placement.y
+                                if artwork_width is None or artwork_height is None
+                                else width_first_placement_y(
+                                    calibrated_square_y=group.placement.y,
+                                    placement_scale=group.placement.scale,
+                                    canvas_width=group.canvas_width,
+                                    canvas_height=group.canvas_height,
+                                    artwork_width=artwork_width,
+                                    artwork_height=artwork_height,
+                                )
+                            ),
                             scale=group.placement.scale,
                             angle=group.angle,
                         ),

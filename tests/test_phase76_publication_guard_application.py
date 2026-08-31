@@ -7,6 +7,8 @@ import json
 import pytest
 from pydantic import ValidationError
 
+from mr_lister.control.models import SourceArtifactRecord
+from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.publication.guard_verification import (
     PublicationGuardOperation,
     PublicationGuardOutcome,
@@ -14,7 +16,9 @@ from mr_lister.publication.guard_verification import (
     PublicationGuardRuntimeActivation,
     PublicationGuardVerificationService,
     PublicationPreCallAuthorityError,
+    _source_artifact_fingerprint,
 )
+from tests.test_phase72_publication_execution import Harness
 
 OWNER_ID = "a" * 64
 AGGREGATE_ID = "aggregate_phase76_private"
@@ -77,6 +81,25 @@ def test_exact_authority_returns_identifier_free_current_attestation() -> None:
     assert AGGREGATE_ID not in rendered
     assert "job_id" not in rendered
     assert "shop_id" not in rendered
+
+
+def test_guard_fingerprint_replica_binds_geometry_and_preserves_legacy_authority() -> None:
+    harness = Harness()
+    legacy = harness.store.load_source_authority(OWNER_ID, harness.aggregate_id).source
+    assert _source_artifact_fingerprint(legacy) == legacy.fingerprint
+
+    material = legacy.model_dump(mode="python", exclude={"fingerprint"})
+    material.update({"width": 2400, "height": 1600})
+    geometric = SourceArtifactRecord(
+        fingerprint=source_artifact_fingerprint(**material),
+        **material,
+    )
+
+    assert _source_artifact_fingerprint(geometric) == geometric.fingerprint
+    assert geometric.fingerprint != legacy.fingerprint
+    assert _source_artifact_fingerprint(geometric.model_copy(update={"width": 2399})) != (
+        geometric.fingerprint
+    )
 
 
 @pytest.mark.parametrize(

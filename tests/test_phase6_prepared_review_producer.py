@@ -158,6 +158,8 @@ def _source(
     content_sha256: str | None = None,
     size_bytes: int | None = None,
     profile_fingerprint: str | None = None,
+    width: int | None = None,
+    height: int | None = None,
 ) -> SourceArtifactRecord:
     material = {
         "job_id": JOB_ID,
@@ -173,6 +175,8 @@ def _source(
         "product_profile_fingerprint": (profile_fingerprint or canonical_fingerprint(profile)),
         "created_at": datetime(2026, 8, 21, 9, 0, tzinfo=UTC),
     }
+    if width is not None or height is not None:
+        material.update({"width": width, "height": height})
     return SourceArtifactRecord(
         **material,
         fingerprint=source_artifact_fingerprint(**material),
@@ -362,17 +366,8 @@ def test_fully_transparent_png_is_rejected() -> None:
     assert intelligence.draft_calls == []
 
 
-@pytest.mark.parametrize(
-    "invalid_png",
-    [
-        _png(alpha=(255, 255, 255, 255)),
-        _png(size=(2, 3), alpha=(0, 64, 128, 192, 224, 255)),
-    ],
-    ids=("fully-opaque", "non-square"),
-)
-def test_phase6_shape_and_alpha_envelope_is_revalidated_before_intelligence(
-    invalid_png: bytes,
-) -> None:
+def test_phase6_opaque_envelope_is_revalidated_before_intelligence() -> None:
+    invalid_png = _png(alpha=(255, 255, 255, 255))
     profile = _profile()
     source = _source(invalid_png, profile)
     s3 = RecordingS3(invalid_png)
@@ -383,6 +378,40 @@ def test_phase6_shape_and_alpha_envelope_is_revalidated_before_intelligence(
     )
 
     with pytest.raises(PreparedReviewProducerError, match="PNG is invalid"):
+        producer.prepare_review(JOB_ID, WORK_ID)
+
+    assert intelligence.inspect_calls == []
+    assert intelligence.draft_calls == []
+
+
+def test_rectangular_source_geometry_is_revalidated_and_accepted() -> None:
+    rectangular = _png(size=(2, 3), alpha=(0, 64, 128, 192, 224, 255))
+    profile = _profile()
+    source = _source(rectangular, profile, width=2, height=3)
+    producer, _, _, intelligence = _producer(
+        source=source,
+        s3=RecordingS3(rectangular),
+        exact=ExactProfile(profile=profile, fingerprint=canonical_fingerprint(profile)),
+    )
+
+    observation = producer.prepare_review(JOB_ID, WORK_ID)
+
+    assert observation.source_artifact_fingerprint == source.fingerprint
+    assert len(intelligence.inspect_calls) == 1
+    assert len(intelligence.draft_calls) == 1
+
+
+def test_persisted_source_geometry_must_match_the_exact_versioned_bytes() -> None:
+    rectangular = _png(size=(2, 3), alpha=(0, 64, 128, 192, 224, 255))
+    profile = _profile()
+    source = _source(rectangular, profile, width=3, height=2)
+    producer, _, _, intelligence = _producer(
+        source=source,
+        s3=RecordingS3(rectangular),
+        exact=ExactProfile(profile=profile, fingerprint=canonical_fingerprint(profile)),
+    )
+
+    with pytest.raises(PreparedReviewProducerError, match="integrity check failed"):
         producer.prepare_review(JOB_ID, WORK_ID)
 
     assert intelligence.inspect_calls == []

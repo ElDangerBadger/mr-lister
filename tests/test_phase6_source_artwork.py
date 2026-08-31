@@ -6,7 +6,9 @@ from io import BytesIO
 
 import pytest
 from PIL import Image
+from pydantic import ValidationError
 
+from mr_lister.control.fingerprints import canonical_fingerprint
 from mr_lister.control.models import PHASE6_MAX_SOURCE_ARTWORK_BYTES, SourceArtifactRecord
 from mr_lister.control.source_artwork import (
     Phase6SourceArtworkError,
@@ -57,7 +59,7 @@ def _source(**updates: object) -> SourceArtifactRecord:
     return SourceArtifactRecord(fingerprint=fingerprint, **material)  # type: ignore[arg-type]
 
 
-def test_phase6_verifier_accepts_one_fully_decoded_checksum_bound_square_png() -> None:
+def test_phase6_verifier_accepts_one_fully_decoded_checksum_bound_png() -> None:
     content = _png()
 
     verified = verify_phase6_source_artwork(
@@ -71,6 +73,21 @@ def test_phase6_verifier_accepts_one_fully_decoded_checksum_bound_square_png() -
     assert verified.artwork.content_sha256 == sha256(content).hexdigest()
     assert verified.artwork.size_bytes == len(content)
     assert (verified.width, verified.height) == (2, 2)
+    assert (verified.alpha_minimum, verified.alpha_maximum) == (0, 255)
+
+
+def test_phase6_verifier_preserves_rectangular_source_dimensions() -> None:
+    content = _png(size=(3, 2), alpha=(0, 64, 128, 192, 224, 255))
+
+    verified = verify_phase6_source_artwork(
+        filename="seller-art.png",
+        content_type="image/png",
+        content=content,
+        expected_sha256=sha256(content).hexdigest(),
+        expected_size_bytes=len(content),
+    )
+
+    assert (verified.width, verified.height) == (3, 2)
     assert (verified.alpha_minimum, verified.alpha_maximum) == (0, 255)
 
 
@@ -121,12 +138,11 @@ def test_phase6_verifier_rejects_empty_corrupt_truncated_or_oversized_bytes(
 @pytest.mark.parametrize(
     "content",
     (
-        _png(size=(2, 1), alpha=(0, 255)),
         _png(alpha=(255, 255, 255, 255)),
         _png(alpha=(0, 0, 0, 0)),
     ),
 )
-def test_phase6_verifier_requires_square_mixed_alpha_artwork(content: bytes) -> None:
+def test_phase6_verifier_requires_mixed_alpha_artwork(content: bytes) -> None:
     with pytest.raises(Phase6SourceArtworkError):
         verify_phase6_source_artwork(
             filename="art.png",
@@ -178,6 +194,44 @@ def test_source_artifact_fingerprint_covers_every_immutable_authority_field() ->
         tampered = source.model_copy(update={field: changed})
         with pytest.raises(SourceArtifactAuthorityError):
             validate_source_artifact_authority(tampered)
+
+
+def test_source_artifact_geometry_is_paired_and_bound_into_authority() -> None:
+    source = _source(width=3, height=2)
+
+    assert validate_source_artifact_authority(source) is source
+    for field, changed in (("width", 4), ("height", 3)):
+        with pytest.raises(SourceArtifactAuthorityError):
+            validate_source_artifact_authority(source.model_copy(update={field: changed}))
+
+    material = source.model_dump(mode="python", exclude={"fingerprint", "height"})
+    with pytest.raises(ValidationError, match="present together"):
+        SourceArtifactRecord(fingerprint=source.fingerprint, **material)
+
+
+def test_legacy_source_payload_and_fingerprint_remain_byte_for_byte_compatible() -> None:
+    source = _source()
+    serialized = source.model_dump(mode="json")
+
+    assert "width" not in serialized
+    assert "height" not in serialized
+    assert source.fingerprint == canonical_fingerprint(
+        {
+            "contract_version": source.contract_version,
+            "job_id": source.job_id,
+            "owner_id": source.owner_id,
+            "bucket": source.bucket,
+            "object_key": source.object_key,
+            "version_id": source.version_id,
+            "content_sha256": source.content_sha256,
+            "size_bytes": source.size_bytes,
+            "media_type": source.media_type,
+            "product_profile_id": source.product_profile_id,
+            "product_profile_version": source.product_profile_version,
+            "product_profile_fingerprint": source.product_profile_fingerprint,
+            "created_at": source.created_at.isoformat(),
+        }
+    )
 
 
 def test_source_artifact_authority_rejects_naive_creation_time() -> None:

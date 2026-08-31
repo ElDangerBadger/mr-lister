@@ -39,7 +39,7 @@ The Phase 6 interface accepts:
 
 - one seller-owned file whose basename ends in `.png` and whose declared type is `image/png`;
 - `1..5 MiB` of fully decodable PNG bytes with a valid signature, IHDR, and checksum;
-- equal width and height for the calibrated square-placement path;
+- original portrait, landscape, or square dimensions without cropping, padding, or stretching;
 - each dimension in `1..20,000` pixels and at most 100,000,000 decoded pixels;
 - an alpha range whose minimum is below 255 and maximum is above zero—at least one transparent
   pixel and at least one visible pixel.
@@ -50,9 +50,9 @@ deferred until a short-lived URL implementation binds the exact S3 bucket, key, 
 and passes a live test; arbitrary artwork URLs are never accepted.
 
 SVG remains a planned input type, not a Phase 6 control. Supporting it requires a separately
-bounded PNG inspection rendition while preserving the SVG as the production artifact. Non-square
-artwork remains deferred until placement `y` is computed deterministically from validated source
-and print-canvas dimensions.
+bounded PNG inspection rendition while preserving the SVG as the production artifact. For PNG,
+the calibrated print width is fixed and placement `y` is computed deterministically from the
+verified source aspect ratio.
 
 ## Fixed product policy
 
@@ -66,7 +66,9 @@ The initial seller profile is read-only in Phase 6:
 - 30 verified variants;
 - retail price `2999` cents for every variant;
 - buyer-facing free shipping;
-- calibrated square-artwork placement at `x=0.5`, `y=0.25`, `scale=0.65`, and `angle=0`.
+- calibrated width-first placement at `x=0.5`, `scale=0.65`, and `angle=0`, retaining the exact
+  square-artwork `y=0.25` baseline and deriving rectangular `y` from verified source and canvas
+  dimensions.
 
 These settings are presented as information, not disabled form controls. Product selection,
 provider selection, variants, placement, price, and shipping policy are not editable in this
@@ -634,7 +636,7 @@ Phase 6 cannot close until all of the following are evidenced:
 - orders and fulfillment;
 - public signup, multiple sellers, stores, teams, roles, billing, or credential onboarding;
 - editable product, provider, variant, placement, price, or shipping policy;
-- SVG inspection and non-square placement;
+- preserved-source SVG inspection and provider upload;
 - custom mockup generation or background replacement;
 - arbitrary listing attributes and personalization;
 - WebSockets, AppSync, bulk queues, analytics, trends, or keyword-performance promises;

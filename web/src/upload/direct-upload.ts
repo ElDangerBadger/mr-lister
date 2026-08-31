@@ -2,6 +2,10 @@ import type { UploadResponse } from "../contracts";
 
 export const MAX_ARTWORK_BYTES = 5 * 1024 * 1024;
 const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+const PNG_HEADER_BYTES = 33;
+const MAX_ARTWORK_DIMENSION = 20_000;
+const MAX_ARTWORK_PIXELS = 100_000_000;
+const PNG_ALPHA_SCAN_TILE = 512;
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const SVG_RASTER_SIZES = [4096, 3072, 2048, 1024] as const;
 const SVG_RENDER_TIMEOUT_MS = 10_000;
@@ -56,12 +60,21 @@ export interface SanitizedSvg {
 
 type SvgRasterizer = (svg: SanitizedSvg, outputName: string, lastModified: number) => Promise<File>;
 
+export interface DecodedPngEvidence {
+  width: number;
+  height: number;
+  hasVisiblePixels: boolean;
+  hasTransparency: boolean;
+}
+
+type PngDecoder = (file: File) => Promise<DecodedPngEvidence>;
+
 export async function prepareArtworkForUpload(
   file: File,
   rasterize: SvgRasterizer = rasterizeSvgToPng,
 ): Promise<PreparedArtwork> {
   const lowerName = file.name.toLocaleLowerCase("en-US");
-  if (file.type === "image/png" && lowerName.endsWith(".png")) {
+  if ((file.type === "image/png" || file.type === "") && lowerName.endsWith(".png")) {
     return { file, sourceFormat: "png" };
   }
   if ((file.type === "image/svg+xml" || file.type === "") && lowerName.endsWith(".svg")) {
@@ -78,7 +91,6 @@ export async function prepareArtworkForUpload(
     const sanitized = sanitizeSvgForRasterization(source);
     const outputName = `${file.name.slice(0, -4)}.png`;
     const converted = await rasterize(sanitized, outputName, file.lastModified);
-    await validateAndHashPng(converted);
     return { file: converted, sourceFormat: "svg" };
   }
   throw new UploadValidationError("Choose PNG or SVG artwork files.");
@@ -182,19 +194,120 @@ export function sanitizeSvgForRasterization(source: string): SanitizedSvg {
   };
 }
 
-export async function validateAndHashPng(file: File): Promise<string> {
-  if (file.type !== "image/png" || !file.name.toLocaleLowerCase("en-US").endsWith(".png")) {
+export async function validateAndHashPng(
+  file: File,
+  decode: PngDecoder = decodePng,
+): Promise<string> {
+  const lowerName = file.name.toLocaleLowerCase("en-US");
+  if ((file.type !== "image/png" && file.type !== "")
+    || !lowerName.endsWith(".png")
+    || file.name !== file.name.trim()
+    || /[\u0000-\u001f\u007f/\\]/u.test(file.name)) {
     throw new UploadValidationError("Choose a PNG artwork file.");
   }
-  if (file.size < PNG_SIGNATURE.length || file.size > MAX_ARTWORK_BYTES) {
+  if (file.size < PNG_HEADER_BYTES || file.size > MAX_ARTWORK_BYTES) {
     throw new UploadValidationError("Artwork must be a non-empty PNG no larger than 5 MB.");
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
-  if (!PNG_SIGNATURE.every((expected, index) => bytes[index] === expected)) {
-    throw new UploadValidationError("The selected file does not have a valid PNG signature.");
+  if (bytes.byteLength !== file.size) {
+    throw new UploadValidationError("The selected PNG could not be read completely.");
+  }
+  const header = parsePngHeader(bytes);
+  if (header.width > MAX_ARTWORK_DIMENSION
+    || header.height > MAX_ARTWORK_DIMENSION
+    || header.width * header.height > MAX_ARTWORK_PIXELS) {
+    throw new UploadValidationError("PNG dimensions exceed the supported artwork limit.");
+  }
+  let decoded: DecodedPngEvidence;
+  try {
+    decoded = await decode(file);
+  } catch (error) {
+    if (error instanceof UploadValidationError) throw error;
+    throw new UploadValidationError("The selected PNG is corrupt or could not be decoded.");
+  }
+  if (decoded.width !== header.width || decoded.height !== header.height) {
+    throw new UploadValidationError("The decoded PNG dimensions do not match its header.");
+  }
+  if (!decoded.hasVisiblePixels || !decoded.hasTransparency) {
+    throw new UploadValidationError(
+      "PNG artwork must contain visible artwork and a transparent background.",
+    );
   }
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function parsePngHeader(bytes: Uint8Array): { width: number; height: number } {
+  if (bytes.byteLength < PNG_HEADER_BYTES
+    || !PNG_SIGNATURE.every((expected, index) => bytes[index] === expected)
+    || readUint32(bytes, 8) !== 13
+    || String.fromCharCode(...bytes.subarray(12, 16)) !== "IHDR"
+    || pngCrc32(bytes.subarray(12, 29)) !== readUint32(bytes, 29)) {
+    throw new UploadValidationError("The selected file does not have a valid PNG header.");
+  }
+  const width = readUint32(bytes, 16);
+  const height = readUint32(bytes, 20);
+  if (width < 1 || height < 1) {
+    throw new UploadValidationError("PNG artwork requires positive dimensions.");
+  }
+  return { width, height };
+}
+
+function readUint32(bytes: Uint8Array, offset: number): number {
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, false);
+}
+
+function pngCrc32(bytes: Uint8Array): number {
+  let checksum = 0xffffffff;
+  for (const byte of bytes) {
+    checksum ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      checksum = (checksum >>> 1) ^ (checksum & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (checksum ^ 0xffffffff) >>> 0;
+}
+
+async function decodePng(file: File): Promise<DecodedPngEvidence> {
+  let image: ImageBitmap;
+  try {
+    image = await createImageBitmap(file);
+  } catch {
+    throw new UploadValidationError("The selected PNG is corrupt or could not be decoded.");
+  }
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = PNG_ALPHA_SCAN_TILE;
+    canvas.height = PNG_ALPHA_SCAN_TILE;
+    const context = canvas.getContext("2d", { alpha: true, willReadFrequently: true });
+    if (context === null) {
+      throw new UploadValidationError("This browser cannot inspect PNG transparency.");
+    }
+    let hasVisiblePixels = false;
+    let hasTransparency = false;
+    for (let y = 0; y < image.height && !(hasVisiblePixels && hasTransparency); y += PNG_ALPHA_SCAN_TILE) {
+      const tileHeight = Math.min(PNG_ALPHA_SCAN_TILE, image.height - y);
+      for (let x = 0; x < image.width && !(hasVisiblePixels && hasTransparency); x += PNG_ALPHA_SCAN_TILE) {
+        const tileWidth = Math.min(PNG_ALPHA_SCAN_TILE, image.width - x);
+        context.clearRect(0, 0, PNG_ALPHA_SCAN_TILE, PNG_ALPHA_SCAN_TILE);
+        context.drawImage(image, x, y, tileWidth, tileHeight, 0, 0, tileWidth, tileHeight);
+        const pixels = context.getImageData(0, 0, tileWidth, tileHeight).data;
+        for (let index = 3; index < pixels.length; index += 4) {
+          const alpha = pixels[index];
+          if (alpha === undefined) continue;
+          if (alpha > 0) hasVisiblePixels = true;
+          if (alpha < 255) hasTransparency = true;
+          if (hasVisiblePixels && hasTransparency) break;
+        }
+      }
+    }
+    return { width: image.width, height: image.height, hasVisiblePixels, hasTransparency };
+  } catch (error) {
+    if (error instanceof UploadValidationError) throw error;
+    throw new UploadValidationError("The selected PNG is corrupt or could not be decoded.");
+  } finally {
+    image.close();
+  }
 }
 
 async function rasterizeSvgToPng(
