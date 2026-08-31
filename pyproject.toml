@@ -34,6 +34,11 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/mr_lister"]
 
+[tool.hatch.build.targets.sdist]
+# Hatch only reads the first repository-level ignore file. An explicit traversal boundary prevents
+# nested, ignored AgentCore staging artifacts and local authority files from entering the sdist.
+only-include = ["src", "README.md", "LICENSE", "pyproject.toml"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
