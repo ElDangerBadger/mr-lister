@@ -371,6 +371,7 @@ def test_functions_have_distinct_explicit_roles_and_scaffold_gate() -> None:
     assert functions["SettlementFunction"]["Properties"]["Timeout"] == 120
     assert functions["ReviewQueryApiFunction"]["Properties"]["MemorySize"] == 512
     assert functions["ReviewQueryApiFunction"]["Properties"]["Timeout"] == 30
+    assert functions["SellerCommandApiFunction"]["Properties"]["MemorySize"] == 512
     assert functions["SourceVersionRetentionFunction"]["Properties"]["Timeout"] == 300
     assert functions["TerminalOperationalCleanupFunction"]["Properties"]["Timeout"] == 300
     assert functions["StuckExecutionRecoveryFunction"]["Properties"]["Timeout"] == 120

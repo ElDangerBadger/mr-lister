@@ -21,7 +21,7 @@ resolve, validate, or serve that hostname and does not require an ACM certificat
 The renderer accepts only these checked local authorities:
 
 - `infra/phase6/template.json`, SHA-256
-  `d7ad630eb4817de5aa81a6e4a9dcec7d7347dc63b10d745a4251d4841b5a1d55`;
+  `1f9772e04ace5a035febeea14b92417866326e5f07a0495a981648dac625fd09`;
 - all four `infra/phase6/statemachine/*.asl.json` definitions at their hardcoded SHA-256 values;
 - the canonical restored `.mr_lister_private/phase6-deployment` and
   `.mr_lister_private/phase6-artifacts` trees, verified against the current checkout;

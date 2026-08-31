@@ -111,13 +111,17 @@ def test_render_rejects_noncanonical_predecessor(monkeypatch: pytest.MonkeyPatch
         correction.render_phase6_dispatch_filter_correction(predecessor_raw, source_raw)
 
 
-def test_checked_in_authorities_and_exact_private_output() -> None:
+def test_checked_in_historical_authorities_and_exact_private_output() -> None:
     predecessor = correction.DEFAULT_PREDECESSOR_PATH.read_bytes()
-    source = correction.SOURCE_PATH.read_bytes()
-    rendered = correction.render_phase6_dispatch_filter_correction(predecessor, source)
+    target = correction.DEFAULT_OUTPUT_PATH.read_bytes()
     assert sha256(predecessor).hexdigest() == correction.PREDECESSOR_TEMPLATE_SHA256
-    assert sha256(source).hexdigest() == correction.CORRECTED_SOURCE_TEMPLATE_SHA256
-    assert sha256(rendered).hexdigest() == correction.DISPATCH_FILTER_CORRECTION_TEMPLATE_SHA256
+    assert sha256(target).hexdigest() == correction.DISPATCH_FILTER_CORRECTION_TEMPLATE_SHA256
+    # This historical renderer remains pinned to its already-deployed corrected source. The
+    # current source separately versions the seller-command memory correction and must not
+    # silently rebind the dispatcher-filter lineage.
+    assert sha256(correction.SOURCE_PATH.read_bytes()).hexdigest() != (
+        correction.CORRECTED_SOURCE_TEMPLATE_SHA256
+    )
 
 
 def test_write_is_create_or_identical_and_confined(

@@ -1549,6 +1549,7 @@
         "CodeUri": "lambda/",
         "Handler": "phase6_lambda.seller_command_api_handler",
         "Role": {"Fn::GetAtt": ["SellerCommandApiFunctionRole", "Arn"]},
+        "MemorySize": 512,
         "Timeout": 30,
         "Environment": {
           "Variables": {
