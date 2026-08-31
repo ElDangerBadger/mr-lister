@@ -37,6 +37,17 @@ owner and aggregate IDs are supplied only in the private direct-invoke payload a
 against that binding before durable work begins. The deployed handler must never mint a binding
 from invocation data or current state.
 
+`tools/prepare_phase712_canary_request.py` is the held operator seam for creating that binding.
+Its read-only `inspect` pass validates one exact approved Phase 6 authority and writes a sanitized
+SHA-bound plan alongside a mode-0600 private command. The plan identifies the target by a safe
+operator label and binds the complete repository source closure used by request creation. Its
+separately gated `execute` pass is the only request-creation step: it delegates one atomic
+transaction to the existing request service, strongly re-reads the result through the durable
+guard, and writes `canary-binding.json` plus an exact `{owner_id, aggregate_id}`
+`invocation.local.json`. A delayed readback still emits those recovery artifacts while explicitly
+reporting whether enough of the 30-minute verification window remains for deployment. Neither pass
+constructs provider, Secrets Manager, Lambda, S3, or publication-POST capability.
+
 ## Execution-role boundary
 
 The Lambda execution role may:
@@ -60,19 +71,26 @@ function ARN. The template intentionally creates no `AWS::Lambda::Permission` re
 
 All live steps remain held for separate approval:
 
-1. Seal and verify a Linux ARM64 runtime ZIP containing the reviewed entrypoint, exact composed
+1. Pre-stage and verify the checked Linux ARM64 dependency tree, exact IAM seams, active sessions,
+   versioned artifact bucket, three-resource template, and absence of any deployed publication
+   worker, trigger, or consumer before starting the request's immutable 30-minute verification
+   window.
+2. Run the read-only operator inspection and review its exact plan SHA. Only after approval, run
+   the gated request creation and strong readback to produce the sanitized binding and private
+   invocation envelope.
+3. Seal and verify a Linux ARM64 runtime ZIP containing the reviewed entrypoint, exact composed
    store/coordinator graph, packaged canary binding, credential adapter, provider boundary, and
    pinned dependencies.
-2. Upload those exact bytes to a versioned same-region S3 key and read back the version, checksum,
+4. Upload those exact bytes to a versioned same-region S3 key and read back the version, checksum,
    size, encryption, and release metadata.
-3. Create and inspect a CloudFormation change set for a separate canary stack. Confirm its exact
+5. Create and inspect a CloudFormation change set for a separate canary stack. Confirm its exact
    three-resource inventory, code coordinates, environment, concurrency, and IAM policy before
    execution.
-4. Grant one operator the exact identity-based invoke permission only after the binding and mode
+6. Grant one operator the exact identity-based invoke permission only after the binding and mode
    receive explicit approval.
-5. Invoke synchronously one coordinator step at a time. The durable permit and provider-call
+7. Invoke synchronously one coordinator step at a time. The durable permit and provider-call
    ledger remain authoritative; deployment never implies permission to publish.
-6. Verify the terminal graph and sanitized evidence, then remove the temporary caller permission
+8. Verify the terminal graph and sanitized evidence, then remove the temporary caller permission
    or canary stack under a separate cleanup approval.
 
 Nothing in this file authorizes any of those live actions.
@@ -83,5 +101,7 @@ From the repository root:
 
 ```shell
 python -m json.tool infra/phase7/canary-template.json >/dev/null
-.venv/bin/python -m pytest -q tests/test_phase711_publication_canary_infrastructure.py
+.venv/bin/python -m pytest -q \
+  tests/test_phase711_publication_canary_infrastructure.py \
+  tests/test_phase712_canary_operator_preparation.py
 ```

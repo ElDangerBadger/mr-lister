@@ -480,6 +480,17 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     trigger, resource policy, or seller publication flag. Source, real checked wheelhouse
     extraction, deterministic sealing, and local readback verification pass; upload, stack change
     set, invoke authority, deployment, and provider calls remain held for separate approval
+  - [x] Phase 7.12 exact-gated canary-request preparation checkpoint: a repository-only operator
+    tool now strong-reads one exact approved Phase 6 job, validates the complete request service
+    and 15-action transaction without writing, and emits a private exact command plus a sanitized
+    SHA-256 approval plan. Its separately gated execution delegates the sole write to the existing
+    request service, supports receipt-first recovery without a second transaction, strongly
+    re-reads and guard-validates the pristine graph, and emits the canonical sanitized
+    `read_only_preflight` binding plus the exact two-key private invocation envelope accepted by
+    the canary runtime. The approval plan binds a safe operator label and the complete repository
+    source closure used by request creation. The tool constructs no provider, secret, Lambda, S3,
+    or publication-POST client; no live request, upload, deployment, invocation, or provider call
+    ran at this checkpoint
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports
