@@ -188,7 +188,11 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [x] One-Printify-product-per-job revision policy
     - [x] Invite-only, owner-scoped cloud review boundary
     - [x] Supported input, seller journey, actions, API, accessibility, and non-goals specified
-    - Evidence: [`phase6-seller-control-contract.md`](phase6-seller-control-contract.md) and ADRs
+    - [x] Reconcile the closure input contract: one or multiple PNG/SVG artworks, optional bounded
+      JPG/JPEG normalization, transparent or opaque backgrounds, native square/portrait/landscape
+      aspect ratios, proportional width-driven placement, and PDF explicitly nonblocking
+    - Evidence: [`phase6-seller-control-contract.md`](phase6-seller-control-contract.md), frozen
+      [`phase6.0.0` artwork contract](../contracts/artwork/phase6.0.0.json), and ADRs
       [0009](architecture/0009-phase6-seller-control-boundary.md),
       [0010](architecture/0010-one-printify-product-per-job.md), and
       [0011](architecture/0011-owner-scoped-cloud-review-boundary.md).
@@ -269,7 +273,8 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [x] Strict TypeScript/Vite application, versioned runtime-validated browser contracts, and
       frontend CI
     - [x] Memory-only Cognito PKCE session recovery and owner-scoped recent-job/upload recovery
-    - [x] Direct upload with measured bytes, expiry/cancellation recovery, and durable completion
+    - [x] One/multiple-file picker and drag/drop through one canonical PNG normalizer, with measured
+      bytes, per-file feedback, expiry/cancellation recovery, and durable completion
     - [x] Consolidated progress/review with prominent Strands provenance, thirteen labelled tags,
       mockups, complete economics, and persistent unpublished authority
     - [x] Version/ETag/idempotency-bound edit, refresh, approve, cancel, and retry with local-edit
@@ -356,6 +361,16 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       verify public HTTPS `/health` returns `200` with `{"status":"ok"}`
     - [ ] Run explicitly authorized deployed non-destructive, double-gated unpublished Printify,
       and moderated first-time-seller acceptance and attach sanitized evidence
+    - [ ] Bind one final closure source/deployment and rerun all 11 blocking gates. Historical
+      records pass gates 1–7 only at source `e130292`; deployed gates 5–7 additionally bind
+      deployment digest `5f26e318…`. They cannot seal a changed source. Provider gates 8–10 and
+      moderated gate 11 have never been completed.
+    - [ ] Execute the additive closure artwork matrix from the seller-control contract. It is
+      mandatory for this release but is not represented by a new gate in the already-frozen
+      Phase 6.6 manifest; the 11 manifest gates alone therefore do not close the reconciled input
+      contract.
+    - [ ] Complete manual screen-reader/contrast evidence and remaining edit, refresh, cancel,
+      retry, upload, and logout journeys against the final bundle
     - Evidence: the quota-compatible core-deployment checkpoint at source commit `678ea4f` passed
       2,318 Python tests with 11 gated live-Bedrock skips plus the 62-test web gate, lint, strict
       typecheck, production build, SAM lint, and diff hygiene. The final deployment-fix checkpoint

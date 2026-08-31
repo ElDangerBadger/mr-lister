@@ -7,9 +7,12 @@ new lifecycle, infer business authority in the browser, publish to Etsy, or call
 
 1. Cognito restores or establishes the invite-only seller session with authorization code and
    S256 PKCE.
-2. The seller selects one supported PNG. The browser performs bounded convenience checks, computes
-   SHA-256, creates an upload intent, and sends the exact returned form directly to private S3.
-3. Upload completion pins one immutable S3 version and creates the durable Job plus `PREPARE` work.
+2. The seller selects or drops one through five supported PNG, safe self-contained SVG, or
+   JPG/JPEG files. The browser validates and normalizes each through one proportional canonical-PNG
+   path, computes SHA-256, creates one upload intent per accepted file, and sends each exact
+   returned form directly to private S3.
+3. Each upload completion pins one immutable S3 version and creates its own durable Job plus
+   `PREPARE` work. Invalid files retain per-file feedback without blocking valid siblings.
 4. The job route shows named server-projected stages while AgentCore and Strands coordinate the
    preparation path and the configured intelligence workers analyze the artwork and draft the
    listing.
@@ -55,6 +58,8 @@ record version than the currently rendered projection are ignored.
 - automated axe checks in every material seller state;
 - Playwright flows in Chromium, Firefox, and WebKit for authentication recovery, upload, refresh,
   review, edit, conflict, approval, cancellation, retry, offline recovery, and logout;
+- picker, single-file drag/drop, and multiple-file drag/drop across required PNG/SVG, transparent/
+  opaque, and square/portrait/landscape input cases, including per-file failure isolation;
 - keyboard, focus, screen-reader semantics, forced colors, reduced motion, contrast, and 200-percent
   zoom checks;
 - recursive checks that no publication/order/fulfillment control or request exists;
@@ -65,15 +70,15 @@ record version than the currently rendered projection are ignored.
 
 ## Offline implementation evidence — August 22, 2026
 
-The Phase 6.5 source/core gate is green:
+The Phase 6.5 source/core gate was green at this checkpoint:
 
-- the full Python suite passes 846 tests with 11 explicitly gated live-Bedrock skips, and the
-  Phase 6 subset passes 636 tests;
-- the web gate passes ESLint, strict TypeScript, 62 Vitest/Testing Library tests, production build,
+- the full Python suite passed 846 tests with 11 explicitly gated live-Bedrock skips, and the
+  Phase 6 subset passed 636 tests;
+- the web gate passed ESLint, strict TypeScript, 62 Vitest/Testing Library tests, production build,
   and release-artifact hygiene checks;
 - the versioned Python-to-browser schema/fixture drift check, Ruff lint and formatting,
-  `compileall`, SAM lint/build, and `git diff --check` pass; and
-- `npm audit --audit-level=high` reports zero vulnerabilities.
+  `compileall`, SAM lint/build, and `git diff --check` passed; and
+- `npm audit --audit-level=high` reported zero vulnerabilities.
 
 Chrome directly exercised managed-session recovery, keyboard focus, desktop and 360-pixel review,
 the unpublished boundary, prominent Strands evidence, 13 tags, exact placement/synchronization
@@ -87,8 +92,10 @@ digest-bound production bundle through Chromium, Firefox, and WebKit. All three 
 same authentication/review/approval, stale-readback focus, tab recovery, route-race, hidden/offline
 polling, forced-colors, reduced-motion, and 360-CSS-pixel reflow flows and produced trace ZIPs. The
 sanitized summary records zero provider transport attempts and no commerce surface. Full manual
-screen-reader/contrast coverage, the remaining command journeys, and the deployed non-destructive
-smoke remain open. No Phase 6 Lambda `SCAFFOLD_ONLY` marker was removed.
+screen-reader/contrast coverage and the remaining command journeys remain open. The backend and
+seller edge were subsequently activated in draft-only mode and historical non-destructive smoke
+evidence was captured, but all source- and deployment-bound gates must be rerun against the final
+closure commit and deployment before release acceptance.
 
 Phase 6.6 retains the destructive/provider live canaries, deployed cross-owner/concurrency probes,
 and moderated first-time-seller evidence.

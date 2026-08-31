@@ -5,7 +5,8 @@ against a stable target.
 
 ## Product path
 
-- Seller-owned, visually nonempty transparent PNG artwork in its original aspect ratio
+- One or multiple seller-owned, visually nonempty PNG/SVG artworks (with JPG/JPEG normalized
+  through the same ingestion path), transparent or opaque, in their native aspect ratios
 - Gildan 64000 Unisex Softstyle T-Shirt
 - Front print only
 - SwiftPOD print provider
@@ -16,6 +17,9 @@ against a stable target.
 - One consolidated human review
 - Explicit approval before publication
 - Publication verification and immutable run report
+
+Phase 6 stops after the review and approval state. Publication and publication verification are
+Phase 7 demo steps and remain disabled during Phase 6 acceptance.
 
 ## Calibration baseline
 
@@ -28,9 +32,10 @@ against a stable target.
 - Prices represented only as integer cents
 
 The placement values are the live-accepted square-artwork baseline for Gildan 64000 blueprint
-`145` and SwiftPOD provider `39`, not a universal product rule. Artwork width remains fixed at the
+`145` and SwiftPOD provider `39`, not a universal product rule. Artwork width starts at the
 calibrated `0.65` scale; its height stays proportional to the verified source dimensions, and the
 vertical center is derived deterministically from that aspect ratio and the verified print canvas.
+Only when a tall artwork's proportional height would exceed the canvas is width reduced to fit.
 The configured selectors and all 30 variant IDs must still be resolved against the authorized
 Printify account before a write.
 They must never be invented or copied from stale reference data.

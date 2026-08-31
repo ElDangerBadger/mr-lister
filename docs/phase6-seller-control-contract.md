@@ -3,26 +3,31 @@
 Phase 6 turns the proven preparation pipeline into a reviewable seller experience. It does not
 publish a marketplace listing, submit an order, or send a product to fulfillment.
 
-This document freezes the product, state, security, commercial, and acceptance boundaries before
-implementation begins. ADR 0008 remains the authority rule: application commands and atomic
-storage conditions decide whether a state transition is valid. ADR 0009 defines the persisted
-human-review pause.
+This document freezes the product, state, security, commercial, and acceptance boundaries. The
+artwork boundary was reconciled for the Phase 6 closure pass on 2026-08-31; its additive
+machine-readable authority is
+[`contracts/artwork/phase6.0.0.json`](../contracts/artwork/phase6.0.0.json). ADR 0008 remains the
+authority rule: application commands and atomic storage conditions decide whether a state
+transition is valid. ADR 0009 defines the persisted human-review pause.
 
 ## Phase exit
 
-An authenticated first-time seller uploads one supported owned PNG, receives real listing
-intelligence and exactly one real unpublished Printify product, can recover the job after refresh,
-review artwork, mockups, listing content, product settings, validation, and transparent economics,
-make multiple validated edits without creating another product, and approve the exact current
-version or cancel without operator access. No reachable Phase 6 route, command, task, client
-operation, or ordinary application path can publish, order, or fulfill.
+An authenticated first-time seller uploads one or more supported owned artworks in one submission.
+Every file follows the same normalization and intake path and creates one independent job and, when
+valid, exactly one real unpublished Printify product. The seller can recover each job after
+refresh, review artwork, mockups, listing content, product settings, validation, and transparent
+economics, make multiple validated edits without creating another product for that job, and
+approve the exact current version or cancel without operator access. No reachable Phase 6 route,
+command, task, client operation, or ordinary application path can publish, order, or fulfill.
 
 ## Supported seller journey
 
 ```text
 Sign in
-  -> Upload one supported PNG
-  -> Watch durable preparation progress
+  -> Upload one or multiple supported artworks
+  -> Validate and normalize every file through the same boundary
+  -> Create one independent job per valid file
+  -> Watch durable preparation progress for each job
   -> Resolve validation errors, if any
   -> Review artwork, mockups, listing, product, and estimated proceeds
   -> Edit and synchronize the same Printify draft, if desired
@@ -35,24 +40,39 @@ not the recovery mechanism.
 
 ## Input envelope
 
-The Phase 6 interface accepts:
+The Phase 6 interface accepts an ordered submission of one through five seller-owned files. PNG
+and SVG are required closure formats. JPG/JPEG is included after the closure assessment confirmed
+that it can remain inside the same browser-only ingestion boundary. Format identity requires a
+matching safe basename extension and declared browser media type (or an empty OS-supplied type).
 
-- one seller-owned file whose basename ends in `.png` and whose declared type is `image/png`;
-- `1..5 MiB` of fully decodable PNG bytes with a valid signature, IHDR, and checksum;
-- original portrait, landscape, or square dimensions without cropping, padding, or stretching;
-- each dimension in `1..20,000` pixels and at most 100,000,000 decoded pixels;
-- an alpha range whose minimum is below 255 and maximum is above zero—at least one transparent
-  pixel and at least one visible pixel.
+The browser normalizes every supported input to the canonical internal artwork representation
+before it requests an upload intent:
 
-The browser uploads directly to a private S3 key. The API does not proxy artwork bytes. Phase 6
-then uploads the exact pinned version through Printify's bounded base64 path. Files above 5 MiB are
-deferred until a short-lived URL implementation binds the exact S3 bucket, key, and `VersionId`
-and passes a live test; arbitrary artwork URLs are never accepted.
+- PNG is fully decoded, validated, fingerprinted, and preserved byte-for-byte;
+- self-contained SVG is parsed under the closed element/resource limits, then rasterized directly
+  to a proportional PNG canvas with no crop, padding, margin, distortion, or square conversion;
+- JPG/JPEG is signature checked, fully decoded with image orientation applied, and rasterized
+  directly to proportional PNG with the same no-crop/no-padding rule;
+- the canonical artifact is a fully decodable `image/png` named `source.png`, no larger than
+  5 MiB, with each dimension in `1..20,000` pixels and no more than 100,000,000 decoded pixels;
+- square, portrait, and landscape shapes are valid;
+- transparent, partially transparent, and fully opaque backgrounds are valid. At least one visible
+  pixel is required; a file with no visible artwork is invalid.
 
-SVG remains a planned input type, not a Phase 6 control. Supporting it requires a separately
-bounded PNG inspection rendition while preserving the SVG as the production artifact. For PNG,
-the calibrated print width is fixed and placement `y` is computed deterministically from the
-verified source aspect ratio.
+Single-file and multi-file submissions use this same normalizer and upload-intent path. A mixed
+submission reports validation and recovery state per file; one invalid file does not invalidate
+the other files. Each accepted file creates one independent job. The browser uploads the canonical
+PNG directly to a private S3 key; the API does not proxy artwork bytes and downstream storage,
+workers, Strands orchestration, Printify draft creation, and review never branch on source format.
+
+The exact pinned canonical version is uploaded through Printify's bounded base64 path. Placement
+starts from the profile's calibrated width. Height follows the source aspect ratio. If that width
+would make a tall image exceed the print canvas, only the width scale is reduced until its
+proportional height fits; the artwork is never cropped, stretched, padded, or forced square.
+
+PDF is a target input but is not a Phase 6 exit blocker. Reliable PDF rendering would introduce a
+new parser/worker, CSP, packaging, and security surface. The smallest future contract is one-page
+artwork PDF normalized at this same boundary; multi-page PDF is not required.
 
 ## Fixed product policy
 
@@ -66,9 +86,9 @@ The initial seller profile is read-only in Phase 6:
 - 30 verified variants;
 - retail price `2999` cents for every variant;
 - buyer-facing free shipping;
-- calibrated width-first placement at `x=0.5`, `scale=0.65`, and `angle=0`, retaining the exact
-  square-artwork `y=0.25` baseline and deriving rectangular `y` from verified source and canvas
-  dimensions.
+- calibrated width-first placement at `x=0.5`, a maximum `scale=0.65`, and `angle=0`, retaining the
+  exact square-artwork `y=0.25` baseline, deriving rectangular `y` from verified source and canvas
+  dimensions, and reducing only width when a tall source would otherwise exceed the canvas.
 
 These settings are presented as information, not disabled form controls. Product selection,
 provider selection, variants, placement, price, and shipping policy are not editable in this
@@ -82,7 +102,7 @@ progress is numeric; preparation uses honest named stages.
 | Display state | Meaning | Primary action | Other actions |
 | --- | --- | --- | --- |
 | Signed out | No authenticated session | Sign in | None |
-| Upload ready | Seller can create a job | Create listing draft | Choose or replace PNG |
+| Upload ready | Seller can create one or more jobs | Create listing draft(s) | Choose or replace artwork |
 | Uploading | Browser is sending bytes to S3 | None | Cancel upload |
 | Preparing | Intake, intelligence, validation, upload, or draft creation is running | None | Request cancellation |
 | Needs revision | Current listing has blocking validation issues | Edit listing | Cancel draft |
@@ -279,8 +299,9 @@ creation.
 Phase 6.3 implements this as a strict owner-first, read-only application projection. The durable
 sync evidence now includes exact color/size/placement identity and structured mockup coverage, and
 the seller economics-refresh capability is backed by a real authority-checked command. Phase 6.4
-adds the strict authenticated HTTP adapters and exact-version preview signer offline; their Lambda
-composition, deployment, and live acceptance remain open. See
+added the strict authenticated HTTP adapters and exact-version preview signer; their reviewed
+Lambda composition was deployed in the active draft-only stack. Final-source live acceptance,
+rather than composition, remains open. See
 [`phase6-review-projection.md`](phase6-review-projection.md).
 
 Product/provider labels in this projection are deterministic renderings of the immutable profile
@@ -452,7 +473,8 @@ reissuing the same exact form cannot broaden the write, and completion remains t
 that verifies and pins a `VersionId`.
 
 Completion reads only the current object at that exact key and independently validates the size,
-media type, S3 checksum, encryption, full PNG bytes, dimensions, and transparency. It requires a
+media type, S3 checksum, encryption, full PNG bytes, dimensions, and visible content. Background
+alpha coverage is not a validity requirement. Completion requires a
 non-null S3 `VersionId`, tags that exact version `mr-lister-state=pinned`, and then performs one
 DynamoDB transaction that consumes the intent and creates the `JobRecord`, canonical
 `SourceArtifactRecord`, `UPLOAD_COMPLETED` event, stable completion receipt, and pending `PREPARE`
@@ -469,12 +491,12 @@ all use DynamoDB TTL for eventual cleanup. Current and
 noncurrent artwork versions tagged `staged` use the bucket's
 tag-filtered one-day lifecycle; versions tagged `pinned` are excluded from that rule. Active,
 retryable, and `APPROVED` jobs retain their pinned source and operational records; `APPROVED` is not
-overall-terminal because Phase 7 still needs it. Before the scaffold may be marked deploy-ready, a
-reference-aware sweeper—not a blanket noncurrent-version rule—must be added to delete the exact
-pinned source 30 days after an overall `CANCELLED` or `FAILED_TERMINAL` result and delete operational
-records after 90 days. The Phase 6.4 offline slice does not claim that sweeper is already composed.
-Application logs retain for 14 days. Provider mockup URLs are metadata, not copied into a public
-bucket.
+overall-terminal because Phase 7 still needs it. The composed reference-aware sweeper—not a blanket
+noncurrent-version rule—releases the exact pinned source after the retained 30-day boundary for an
+overall `CANCELLED` or `FAILED_TERMINAL` result; the cleanup boundary assigns the 90-day record TTLs.
+Both are present in the active draft-only stack, but their final-source deployed acceptance must be
+rerun with the rest of the release gates. Application logs retain for 14 days. Provider mockup URLs
+are metadata, not copied into a public bucket.
 
 ### Artwork preview delivery
 
@@ -588,6 +610,10 @@ There is no deployed `/publish`, order, fulfillment, raw report, or arbitrary ob
 
 Phase 6 cannot close until all of the following are evidenced:
 
+- [ ] The frozen artwork matrix proves required PNG and SVG inputs; transparent and opaque
+      backgrounds; portrait, landscape, and square geometry; picker, single drag/drop, and multiple
+      drag/drop; one independent job per accepted file; per-file failure/retry; and browser/backend
+      acceptance parity. Included JPG/JPEG cases pass through the same canonical PNG path.
 - [ ] The same owner-scoped job's durable `PREPARE` work invokes the exact AgentCore Strands
       runtime, returns a strict structured decision, and emits a sanitized correlation joined to
       the consolidated review; an unavailable runtime fails closed with no non-Strands fallback.
@@ -639,7 +665,7 @@ Phase 6 cannot close until all of the following are evidenced:
 - orders and fulfillment;
 - public signup, multiple sellers, stores, teams, roles, billing, or credential onboarding;
 - editable product, provider, variant, placement, price, or shipping policy;
-- preserved-source SVG inspection and provider upload;
+- PDF ingestion (beginning with a bounded single-page artwork contract); multi-page PDF;
 - custom mockup generation or background replacement;
 - arbitrary listing attributes and personalization;
 - WebSockets, AppSync, bulk queues, analytics, trends, or keyword-performance promises;

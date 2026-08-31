@@ -39,9 +39,12 @@ DNS remains externally managed: point the `ApplicationOrigin` host at
 `SellerWebDistributionDomainName`. The stack intentionally does not assume that the authoritative
 DNS zone is in this AWS account.
 
-The offline application boundary issues a direct S3 POST for the server-derived source key only.
-Each five-minute form fixes `image/png`, the declared SHA-256 value, `AES256`, an exact declared
-size within `1..5 MiB`, and `mr-lister-state=staged`. Reauthorization after expiry repeats those
+The browser ingestion boundary accepts the source formats frozen in
+[`contracts/artwork/phase6.0.0.json`](../../contracts/artwork/phase6.0.0.json) and normalizes them
+before any upload intent. The cloud boundary therefore receives one format only: proportional
+canonical PNG. It issues a direct S3 POST for the server-derived source key. Each five-minute form
+fixes `image/png`, the declared SHA-256 value, `AES256`, an exact declared size within `1..5 MiB`,
+and `mr-lister-state=staged`. Reauthorization after expiry repeats those
 same constraints and requires no object-existence or `ListBucket` probe. Completion pins the exact
 observed `VersionId` and atomically commits the consumed intent, job, source, event, receipt, and
 pending `PREPARE` work. Open/cancelled intent rows use DynamoDB TTL; current and noncurrent S3

@@ -59,9 +59,12 @@ artwork/listing/product review, supported edits, validation, estimated-proceeds 
 explicit approval or cancellation, and clear result states.
 
 **Exit:** an invited, authenticated first-time seller with a configured Printify connection can
-complete the supported PNG workflow without documentation and recover it after refresh. Every
-revision updates the same unpublished product; approval ends at `APPROVED`; cancellation needs no
-operator; and no Phase 6 path can publish, order, or fulfill. Every visible control works,
+submit one or multiple required PNG/SVG artworks without documentation and recover each job after
+refresh. JPG/JPEG may enter through the same canonical PNG normalizer; PDF is not a Phase 6
+blocker. Transparent/opaque and square/portrait/landscape inputs preserve their aspect ratios
+without crop, padding, distortion, or square enforcement. Every revision updates the same
+unpublished product for that job; approval ends at `APPROVED`; cancellation needs no operator; and
+no Phase 6 path can publish, order, or fulfill. Every visible control works,
 explains why it is unavailable, or is removed. The same seller job's durable `PREPARE` request
 must pass fail-closed through the deployed AgentCore Strands runtime, produce a correlated
 structured decision and sanitized audit, and have no direct non-Strands preparation fallback in
@@ -89,7 +92,7 @@ seller job that reaches human review and guarded publication.
 
 ## Outside the hackathon vertical slice
 
-- bulk queues;
+- durable bulk-job orchestration beyond the bounded in-browser multi-file submission;
 - multiple product profiles or stores;
 - Shopify and other marketplace adapters;
 - custom mockup generation;

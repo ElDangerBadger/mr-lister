@@ -3,6 +3,11 @@
 Phase 5 creates one real, unpublished Printify product. It does not publish a marketplace listing,
 submit an order, or send anything to production.
 
+This document records the historical Phase 5 adapter contract. Phase 6 supersedes its intake
+boundary: PNG, safe SVG, and JPG/JPEG are normalized early to one proportional canonical PNG, and
+the Phase 6 worker uploads that representation. See the frozen
+[`phase6.0.0` artwork contract](../contracts/artwork/phase6.0.0.json).
+
 ## Artwork formats
 
 Mr Lister preserves and uploads validated `PNG` and `SVG` source artwork. SVG is never converted
@@ -44,9 +49,10 @@ shipping, or publication.
 
 Profile v2 changed `y` from `0.3183` to `0.25` after the first live mockup showed a 6.83% top gap.
 For square artwork at this scale and these proportional canvases, `0.25` top-aligns the rendered
-design. The Phase 6 successor keeps that exact square baseline and the calibrated width, then
-derives center `y` deterministically from the verified source aspect ratio and print canvas for
-rectangular art; the model does not choose placement geometry.
+design. The Phase 6 successor keeps that exact square baseline and uses the calibrated width when
+its proportional height fits. It derives center `y` deterministically from the verified source
+aspect ratio and print canvas; for tall art it reduces only width until the proportional height
+fits. The model does not choose placement geometry.
 
 ## Read-only preflight
 
@@ -86,8 +92,8 @@ reconciliation instead of repeating a potentially successful provider write.
 
 ## Deferred follow-up
 
-- Extend application intake and private artifact storage to preserve validated SVG alongside PNG,
-  with a separately rendered Bedrock inspection artifact.
+- Add a separately bounded single-page artwork-PDF normalizer without introducing multi-page
+  document-processing behavior into the production path.
 
 ## First deployed canary
 

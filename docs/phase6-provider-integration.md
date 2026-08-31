@@ -1,10 +1,12 @@
 # Phase 6.2 provider and Strands integration evidence
 
-Phase 6.2 implements the offline application and worker core for durable preparation, one-product
-draft synchronization, reconciliation, and estimated-proceeds evidence. It does **not** declare the
-Phase 6 cloud path deployed. The new SAM application remains deliberately fail-closed with
-`DeploymentReadiness=SCAFFOLD_ONLY` until its Lambda composition adapters are implemented, deployed,
-and accepted through an explicitly authorized canary.
+Phase 6.2 introduced the application and worker core for durable preparation, one-product-per-job
+draft synchronization, reconciliation, and estimated-proceeds evidence. The composition adapters
+and draft-only cloud path were subsequently deployed. That historical deployment is not the final
+Phase 6 release: the closure source and deployment must still pass the source-bound, deployed,
+provider-write, accessibility, and moderated acceptance gates recorded in the authoritative
+[`phase checklist`](phase-checklist.md) and frozen
+[`Phase 6.6 acceptance manifest`](../contracts/acceptance/phase6.6.manifest.json).
 
 ## Application authority
 
@@ -24,11 +26,13 @@ The Phase 6 worker boundary now includes:
 - an immutable pricing snapshot paired in the same transaction with the complete per-variant
   economics evidence it summarizes.
 
-The pinned `SourceArtifactRecord` retains its AgentCore v1 schema and fingerprint. Source geometry
-is decoded and fit-checked at upload completion, then decoded again from the exact pinned S3
+The pinned `SourceArtifactRecord` retains its AgentCore v1 schema and fingerprint. Canonical PNG
+geometry is decoded and placement-checked at upload completion, then decoded again from the exact pinned S3
 version when verifying the provider upload or reconciling an ambiguous upload. Only the matching
 provider response dimensions are persisted in `UploadedArtworkRecord`; canonical draft placement
-derives its width-first `y` from that record.
+derives its width scale and `y` from that record. The profile's calibrated width is retained when
+its proportional height fits; tall artwork reduces width only, preserving aspect ratio without
+crop, padding, or distortion.
 
 ## Durable Strands preparation
 
@@ -36,7 +40,7 @@ derives its width-first `y` from that record.
 exactly one Phase 6 `@tool`, `record_prepared_review`. The durable preparation path is checkpointed:
 
 1. application code begins the exact active `PREPARE` work;
-2. a pinned S3 `VersionId`, size, SHA-256, original PNG dimensions, mixed-alpha visibility, and
+2. a pinned S3 `VersionId`, size, SHA-256, canonical PNG dimensions, visible artwork, and
    exact product profile are revalidated before inference;
 3. the artwork analysis and complete listing are stored once as immutable evidence;
 4. Strands returns a bounded structured decision with fixed framework and agent identity;
@@ -51,9 +55,11 @@ decision without buying a second artwork/listing inference.
 This source path is credential-free tested through the genuine Strands loop. The still-open live
 gate is proving the same correlation on the deployed seller job.
 
-## One upload and one product
+## One canonical upload and one product per job
 
-The draft worker is deliberately asymmetric:
+Browser source formats are ingestion concerns: PNG, safe SVG, and JPG/JPEG all reach this worker as
+the same canonical PNG representation. A multi-file submission creates independent jobs; it does
+not give one job multiple provider products. The draft worker is deliberately asymmetric per job:
 
 - one deterministic, source-bound filename may produce one provider upload for the Job;
 - one initial product `POST` may establish the Job's immutable product ID;
@@ -86,7 +92,7 @@ The immutable evidence contracts live in [`control/economics.py`](../src/mr_list
 provider-specific retrieval and calculation depend inward on that boundary. The control package
 does not import Printify or another production adapter.
 
-## Infrastructure scaffold
+## Infrastructure boundary
 
 [`infra/phase6`](../infra/phase6) defines separately named Phase 6 resources without modifying the
 retained Phase 4/5 evidence stacks:
@@ -99,18 +105,18 @@ retained Phase 4/5 evidence stacks:
 - identifier-only state-machine inputs, execution-data logging disabled, and 14-day log retention;
 - no approval callback, publication, order, fulfillment, or archive task.
 
-The Lambda handlers still raise `Phase6ScaffoldNotReady`. Deployment is blocked until real adapters
-construct the DynamoDB store and the exact Strands/provider/settlement services, the readiness marker
-is deliberately changed, and offline plus approved live acceptance passes.
+The active draft-only transition replaced the original fail-closed shims with the reviewed
+composition adapters and enabled only the Phase 6 triggers. This does not grant publication
+authority and does not waive final-release acceptance.
 
-## Verification
+## Historical slice verification
 
-The current offline gate covers genuine Strands execution, bridge correlation, pinned-source
+The historical Phase 6.2 offline gate covered genuine Strands execution, bridge correlation, pinned-source
 production, application/store/DynamoDB parity, dispatch races, upload and product ambiguity,
 same-product revision, manual provider drift, cancellation, immutable economics, static no-commerce
 authority, SAM policy/topology assertions, and legacy regression.
 
-Latest accepted local verification:
+The Phase 6.2 implementation checkpoint recorded:
 
 - all tests: 557 passed, including 347 Phase 6 tests; 11 explicitly gated live-Bedrock tests
   skipped;
@@ -121,10 +127,9 @@ Latest accepted local verification:
 The seven warnings in the full suite are deprecations emitted by installed Bedrock AgentCore
 dependencies, not application failures.
 
-## Open Phase 6.2 deployment gate
+## Open Phase 6.2 release gate
 
-- replace the four fail-closed Lambda shims with tested composition adapters;
-- deploy the separately named Phase 6 stack and Phase 6 AgentCore runtime;
+- bind the final closure source and exact Phase 6 deployment under one release authority;
 - prove the same owner-scoped Job traverses pinned upload, AgentCore/Strands, structured preparation,
   one unpublished provider product, economics projection, and the human decision boundary;
 - verify exact IAM, secret rotation/revocation, provider eventual consistency, privacy, latency, and

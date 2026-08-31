@@ -1,11 +1,11 @@
 # Strands Agents submission evidence
 
-Status date: 2026-08-22
+Status date: 2026-08-31
 
 This is the public traceability map for Mr Lister's required Strands Agents implementation. It is
 written so a judge—or an automated first-pass reviewer—can verify in under a minute that Strands is
 the real agent framework, understand the non-trivial work it performs, and distinguish completed
-evidence from the remaining production integration gate.
+evidence from the remaining same-job acceptance gate.
 
 ## Event requirement
 
@@ -44,7 +44,7 @@ commercially permitted.
 | The Strands agent runs through the official AgentCore SDK boundary | [`agent/agentcore_sdk.py`](../src/mr_lister/agent/agentcore_sdk.py) | [`test_agentcore_sdk.py`](../tests/test_agentcore_sdk.py) | Runtime version 2 reached `READY` in `us-west-2` and completed a live invocation |
 | Agent output cannot claim human approval or publication | [`PreparationDecision`](../src/mr_lister/agent/contracts.py), [`AGENT_SYSTEM_PROMPT`](../src/mr_lister/agent/runtime.py) | Authority and prompt-injection tests in [`test_agent_tools.py`](../tests/test_agent_tools.py) | Live result returned human review and `publication_authorized=false` |
 | Runtime evidence names Strands without exposing seller data | [`agent/observability.py`](../src/mr_lister/agent/observability.py) | [`test_agent_observability.py`](../tests/test_agent_observability.py) | Current response/audit contract requires `strands-agents` and `mr-lister-preparation`; redeployed canary pending |
-| Durable Phase 6 preparation uses the real SDK agent and exactly one job-scoped tool | [`agent/phase6.py`](../src/mr_lister/agent/phase6.py) | [`test_phase6_strands_runtime.py`](../tests/test_phase6_strands_runtime.py) | Offline complete; Phase 6 deployment pending |
+| Durable Phase 6 preparation uses the real SDK agent and exactly one job-scoped tool | [`agent/phase6.py`](../src/mr_lister/agent/phase6.py) | [`test_phase6_strands_runtime.py`](../tests/test_phase6_strands_runtime.py) | Active draft-only composition deployed; current-release same-job acceptance pending |
 | The AgentCore boundary binds exact owner/job/work input to immutable Strands evidence | [`control/agentcore.py`](../src/mr_lister/control/agentcore.py) | [`test_phase6_agentcore_bridge.py`](../tests/test_phase6_agentcore_bridge.py), [`test_phase6_preparation_settlement.py`](../tests/test_phase6_preparation_settlement.py) | Offline complete; same-job live canary pending |
 
 The sanitized public summary combines historical live-canary metrics and tool selection with
@@ -68,14 +68,16 @@ Completed now:
 - the current source response and audit contracts require fixed Strands framework/agent identity,
   with redeployment evidence still pending.
 
-The Phase 6.2 source now contains a fail-closed, work-bound AgentCore bridge and a genuine
-single-tool Strands preparation runtime with immutable same-job evidence. It is verified offline;
-the SAM Lambda composition remains deliberately `SCAFFOLD_ONLY`.
+The Phase 6.2 source contains a fail-closed, work-bound AgentCore bridge and a genuine single-tool
+Strands preparation runtime with immutable same-job evidence. The reviewed Lambda adapters and
+workers have since been composed and deployed as the active draft-only backend. Deployment alone
+does not close the source- and deployment-bound same-job acceptance gate.
 
-Still mandatory before the product or submission may claim a deployed end-to-end Strands path:
+Still mandatory before the product or submission may claim a current-release end-to-end Strands
+path:
 
-- the fail-closed Phase 6 Lambda adapters must be replaced and deployed so durable `PREPARE` work
-  invokes the exact AgentCore Strands runtime with no direct deterministic or non-Strands fallback;
+- an authenticated current-release `PREPARE` run must prove that durable work invokes the exact
+  AgentCore Strands runtime with no direct deterministic or non-Strands fallback;
 - the resulting Strands audit correlation must belong to the same seller job later displayed in
   consolidated review;
 - an end-to-end acceptance test and demo must visibly show upload, Strands tool use, structured
@@ -89,8 +91,8 @@ The submission video should make Strands visible three times:
 
 1. **First 30 seconds:** say that Mr Lister is a Strands agent for POD sellers and show the labeled
    architecture loop.
-2. **Working run:** upload one artwork and show progress while the real preparation request routes
-   through AgentCore/Strands to a complete staged listing.
+2. **Working run:** upload one or more supported artworks and follow one resulting job while its
+   real preparation request routes through AgentCore/Strands to a complete staged listing.
 3. **Technical proof:** briefly show the public `Agent(...)` construction, the four `@tool`
    functions, and a sanitized audit/response containing framework, agent ID, cycles, selected
    tools, structured next action, and the human-approval boundary.

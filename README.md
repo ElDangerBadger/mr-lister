@@ -14,10 +14,12 @@ safeguards.
 > [the real `@tool` implementations](src/mr_lister/agent/tools.py), and the
 > [judge-facing evidence map](docs/strands-submission-evidence.md).
 
-The initial product path is deliberately narrow:
+The Phase 6 product path is deliberately bounded:
 
-> One artwork file -> one calibrated apparel product -> one reviewed listing -> one approved
-> publication through Printify to Etsy -> one verified result.
+> One submission with one or more artworks -> one independent job and calibrated unpublished
+> Printify product per accepted file -> seller review -> exact-version approval -> STOP.
+
+Etsy publication is Phase 7. It is disabled and is not part of the Phase 6 acceptance path.
 
 ## Why it exists
 
@@ -47,13 +49,14 @@ approval, cancellation, idempotency, and irreversible marketplace actions.
 | Requirement-to-code/test/demo traceability | [`docs/strands-submission-evidence.md`](docs/strands-submission-evidence.md) |
 
 The Phase 3 runtime was deployed and live-tested as a synthetic, non-publishing canary. Phase 6.2
-contains the offline durable `PREPARE` bridge, genuine single-tool Strands runtime, and exact
-same-job evidence contract. Phase 6.3 joins that persisted evidence into the owner-scoped seller
-review alongside artwork, listing, product, mockups, validation, and economics. The new SAM
-application is intentionally `SCAFFOLD_ONLY`; seller production integration is still an open acceptance gate.
-The path will not be called deployed end to end until real Lambda composition
-adapters invoke that runtime fail-closed and an approved live canary emits correlated public-safe
-evidence. That distinction is tracked explicitly in the
+contains the durable `PREPARE` bridge, genuine single-tool Strands runtime, and exact same-job
+evidence contract. Phase 6.3 joins that persisted evidence into the owner-scoped seller review
+alongside artwork, listing, product, mockups, validation, and economics. Phase 6 runtime and web
+resources have progressed beyond the original scaffold, but the current closure candidate is not
+an accepted release until its source-bound offline gates, deployment-bound gates, unpublished
+provider canaries, accessibility evidence, and moderated first-time-seller gate all close. The
+authenticated same-job Strands run is therefore still an open acceptance gate. That distinction is
+tracked explicitly in the
 [phase checklist](docs/phase-checklist.md) and
 [Phase 6.2](docs/phase6-provider-integration.md) and
 [Phase 6.3](docs/phase6-review-projection.md) evidence.
@@ -74,13 +77,15 @@ python -m pytest -q \
 ## Phase 6 seller workspace
 
 The Phase 6.5 implementation includes a strict React/TypeScript seller application under
-[`web/`](web/). It supports one private PNG upload, durable progress and upload recovery,
-consolidated artwork/listing/mockup/economics review, a prominent same-job Strands evidence card,
-and the five server-authorized seller actions. The interface keeps
+[`web/`](web/). It accepts one or multiple PNG, safe self-contained SVG, or JPG/JPEG artworks;
+normalizes every file to a proportional canonical PNG without cropping, padding, distortion, or
+square enforcement; and gives every file its own private job and progress/recovery state. It also
+provides consolidated artwork/listing/mockup/economics review, a prominent same-job Strands
+evidence card, and the five server-authorized seller actions. The interface keeps
 **Unpublished — not on Etsy** visible throughout and contains no browser publication, order, or
 fulfillment capability.
 
-The accompanying SAM scaffold adds a private CloudFront/OAC web origin, same-origin cache-disabled
+The accompanying SAM application defines a private CloudFront/OAC web origin, same-origin cache-disabled
 `/v1/*`, exact Cognito PKCE runtime configuration, CSP/security headers, and allowlisted SPA
 routing. The browser contract is exported from Python into versioned JSON Schema and fixtures, so
 backend/frontend drift fails CI.
@@ -91,9 +96,9 @@ npm ci
 npm run check
 ```
 
-The seller UI and hosting topology are offline-tested, but the Phase 6 Lambda entry points remain
-deliberately `SCAFFOLD_ONLY`. They must be composed, deployed, and pass the documented live gates
-before this repository claims an end-to-end production launch. See
+The seller UI and hosting topology are offline-tested. Deployment history and historical smoke
+evidence do not substitute for rerunning the complete acceptance set against one final source
+commit and deployment. See
 [`docs/phase6-accessible-seller-interface.md`](docs/phase6-accessible-seller-interface.md) and
 [`docs/architecture/0012-phase65-browser-and-hosting-boundary.md`](docs/architecture/0012-phase65-browser-and-hosting-boundary.md).
 

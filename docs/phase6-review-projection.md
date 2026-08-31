@@ -100,15 +100,16 @@ recursive response-field leakage. Phase 6.4 cloud-boundary coverage separately e
 authenticated no-query endpoint, owner-first exact-version signing, hostile signer results, and
 bodyless redirect response.
 
-## Deliberately open
+## Current completion boundary
 
-Phase 6.3 is the application read model, not the deployed cloud API or interface. Phase 6 remains
-open until:
+Phase 6.3 remains the application read-model layer rather than an independent deployment or
+acceptance claim. Since this slice was completed, the Phase 6.4 adapters and Phase 6.5 seller
+interface have been composed and deployed as the active draft-only backend. The checked source
+template remains a fail-closed validation/build input; it is not a claim that the deployed stack is
+still scaffold-only.
 
-- the Phase 6.4 Cognito, direct-upload, owner-scoped API, and exact-version preview adapters are
-  composed into the fail-closed Lambda shims, deployed, and proven live;
-- Phase 6.5 renders this projection as an accessible seller interface;
-- the `SCAFFOLD_ONLY` marker remains in place until those runtime adapters and workers are composed;
-  and
-- live same-job acceptance proves upload through AgentCore/Strands, one unpublished product,
-  consolidated review, and the human decision boundary.
+Phase 6 is not yet accepted or sealed. Current-release evidence must still prove the authenticated,
+same-job path from a supported single- or multiple-artwork submission through AgentCore/Strands,
+one unpublished Printify product, consolidated review, and the human decision boundary. The
+remaining deployed cross-owner/concurrency and manual accessibility/first-time-seller gates also
+remain open. Approval stops at `APPROVED`; publication is outside Phase 6.

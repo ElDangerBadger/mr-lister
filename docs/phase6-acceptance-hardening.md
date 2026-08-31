@@ -1,9 +1,12 @@
 # Phase 6.6 acceptance hardening contract
 
 Phase 6.6 freezes how acceptance is partitioned and what may be retained as evidence. The offline
-exact-bundle browser matrix and the evidence-set verifier have passed locally; this document does
-not claim that a deployment, deployed evidence-set closure, provider canary, or moderated session
-has passed.
+exact-bundle browser matrix and the evidence-set verifier have passed locally. Sanitized private
+records also show individual passes for the four offline gates and three deployed non-destructive
+gates against earlier source/deployment bindings. Those records are historical and cannot be
+combined to close a changed stabilization release: the verifier requires exact source, manifest,
+and deployment bindings plus its gate-specific run, actor, and job joins. No provider-destructive
+or moderated first-time-seller gate is claimed as passed here.
 
 The source manifest is
 [`contracts/acceptance/phase6.6.manifest.json`](../contracts/acceptance/phase6.6.manifest.json).
@@ -42,12 +45,14 @@ evidence target for the open seller-trust product hypothesis.
 ## Private live-evidence workspace
 
 [`tools/phase66_live_acceptance.py`](../tools/phase66_live_acceptance.py) supplies the narrow local
-plumbing for the remaining authorized live run. It creates the exact valid 5 MiB mixed-alpha PNG
-required by the primary canary and invokes the authoritative verifier over one completed evidence
-bundle beneath a Git-ignored private root. It does not stage arbitrary files, sanitize raw
-observations, import an AWS or provider client, or grant live authority; identity setup, technical
-probes, provider writes, moderated observations, and closed evidence production remain separately
-controlled activities.
+plumbing for an authorized live run. It creates the exact valid 5 MiB mixed-alpha PNG required by
+the frozen primary single-artwork canary and invokes the authoritative verifier over one completed
+evidence bundle beneath a Git-ignored private root. That canary fixture is not the product input
+contract and does not certify the full PNG/SVG, transparent/opaque, single/multiple matrix frozen in
+[`phase6.0.0.json`](../contracts/artwork/phase6.0.0.json). The tool does not stage arbitrary files,
+sanitize raw observations, import an AWS or provider client, or grant live authority; identity
+setup, technical probes, provider writes, moderated observations, and closed evidence production
+remain separately controlled activities.
 
 ```shell
 .venv/bin/python -m tools.phase66_live_acceptance make-canary-png \
@@ -92,15 +97,16 @@ authorized versus observed product POST and PUT counts. The two gate digests mus
 primary same-job canary is valid only with one artwork upload, one product POST, two same-product
 PUTs, at least one final product GET, exact work and Strands-correlation digests, explicit evidence
 that Gemma performed the intelligence work under the Strands controller, and a final
-`unpublished_unlocked` aggregate result. Publication, order, and fulfillment attempt counts are
-fixed at zero in both boundaries. The runtime validator rejects boolean/integer coercion and owns
-the manifest-selected semantic rules that standard JSON Schema cannot represent.
+`unpublished_unlocked` aggregate result. The one-upload assertion defines that frozen canary sample;
+it is not a single-upload product restriction. Publication, order, and fulfillment attempt counts
+are fixed at zero in both boundaries. The runtime validator rejects boolean/integer coercion and
+owns the manifest-selected semantic rules that standard JSON Schema cannot represent.
 
 The draft-only provider transport writes a closed audit record before every allowed request and a
 single identifier-free `rejected` category for every denied route attempt. Dynamic shop, product,
 image, owner, token, header, body, and query values have no representation in that ledger.
 
-## Offline implementation checkpoint
+## Historical offline implementation checkpoint
 
 The Phase 6.6 offline slice includes the frozen evidence contract and drift gate, an artifact-backed
 evidence-set closure oracle, forced three-way revise/approve/cancel concurrency, exact idempotent
@@ -117,9 +123,12 @@ provider and cloud capabilities. A cross-component release manifest now binds ev
 and dependency byte, the Lambda verifies that authority before every production delegate, and the
 preparation boundary binds an exact non-default AgentCore endpoint, immutable runtime version, and
 observed `READY` deployment fingerprint. The build tooling rejects missing target-native awscrt,
-Pillow, or pydantic-core extensions and non-AArch64 ELF bytes. The checked repository still contains
-build requests—not the real controlled Linux ARM64 dependency artifacts or target-runtime import
-smoke—and its SAM `CodeUri` deliberately remains the fail-closed scaffold.
+Pillow, or pydantic-core extensions and non-AArch64 ELF bytes. At this original offline checkpoint,
+the checked repository contained build requests rather than the controlled Linux ARM64 dependency
+artifacts, and its SAM `CodeUri` still selected the fail-closed scaffold. Later controlled builds,
+target-runtime import smoke, and the reviewed active draft-only deployment superseded that
+checkpoint; the source template remains a fail-closed validation/build input rather than a
+description of live mode.
 
 The deterministic production bundle with digest
 `c6115a4d8f3d4fec88ce9b640d760dff1599db43fe3cba10b3962a8eda16aad2` passed the same
@@ -146,8 +155,10 @@ job/work pair, and calls only `DescribeExecution`. It never starts, stops, or re
 Terminal or missing executions converge through the existing CAS/idempotent settlement commands;
 running or pending-redrive observations emit alarms only. The isolated function has singleton
 concurrency, an encrypted DLQ, bounded retries, identifier-free embedded metrics, and corresponding
-Lambda, EventBridge, Step Functions, DynamoDB, API, retention, cleanup, and recovery alarms. The
-checked scaffold marker still prevents every one of these handlers from executing in AWS.
+Lambda, EventBridge, Step Functions, DynamoDB, API, retention, cleanup, and recovery alarms. At
+this offline checkpoint, the scaffold marker prevented these handlers from executing in AWS. The
+later active draft-only transition enabled the reviewed Phase 6 handlers; current-release
+acceptance remains source- and deployment-bound and must be rerun after changes.
 
 ## Frozen gate order
 
@@ -164,7 +175,7 @@ Prerequisites form a validated acyclic graph. A passed record must include every
 in frozen manifest order and may not contain a failed assertion. Failed evidence must identify at
 least one failed assertion. Inconclusive evidence remains recordable but cannot close a gate.
 
-## Verification
+## Historical checkpoint verification
 
 Run the focused credential-free contract gate with:
 
@@ -177,10 +188,11 @@ Run the focused credential-free contract gate with:
 .venv/bin/python -m tools.phase66_browser.run_gate
 ```
 
-At this checkpoint, the full Python suite passes 1,419 tests with 11 explicitly gated live-Bedrock
-skips; the Phase 6 and Phase 6.6 subsets pass 697 and 490 tests respectively. The web gate passes
+At this checkpoint, the full Python suite passed 1,419 tests with 11 explicitly gated live-Bedrock
+skips; the Phase 6 and Phase 6.6 subsets passed 697 and 490 tests respectively. The web gate passed
 62 tests, lint, strict typecheck, production build, and release-artifact checks. SAM lint/build,
-Ruff lint/format, `compileall`, both contract drift checks, `npm audit`, and `git diff --check` pass.
+Ruff lint/format, `compileall`, both contract drift checks, `npm audit`, and `git diff --check`
+passed.
 
 The Python contract/offline tests prove deterministic manifest drift detection, strict
 discriminated evidence classes, closed structural JSON Schema objects, mandatory runtime semantic
