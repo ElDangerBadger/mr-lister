@@ -198,7 +198,7 @@ describe("durable upload operation identity", () => {
       await Promise.resolve();
     });
     expect(screen.getByTestId("upload-id")).toHaveTextContent("none");
-    expect(screen.getByText("Choose one PNG artwork file to begin.")).toBeInTheDocument();
+    expect(screen.getByText("Choose an artwork file to begin.")).toBeInTheDocument();
   });
 
   it("ignores a delayed completion after cancellation takes authority", async () => {
@@ -343,17 +343,28 @@ describe("ordered in-memory upload batches", () => {
     expect(screen.getByTestId("batch-item-1")).toHaveTextContent("Open recovery to check or resume this exact PNG.");
   });
 
-  it("cancels a post-intent SVG reservation exactly once and continues with the next file", async () => {
-    directUpload.prepareArtworkForUpload.mockImplementation((file: File) => file.name.endsWith(".svg")
-      ? Promise.resolve({ file: makePng("vector.png", 4), sourceFormat: "svg" as const })
+  it.each([
+    ["SVG", "original.svg", "svg", "vector.png"],
+    ["JPEG", "original.jpg", "jpeg", "photo.png"],
+  ] as const)("cancels a post-intent %s reservation exactly once and continues with the next file", async (
+    sourceLabel,
+    sourceFilename,
+    sourceFormat,
+    preparedFilename,
+  ) => {
+    directUpload.prepareArtworkForUpload.mockImplementation((file: File) => file.name === sourceFilename
+      ? Promise.resolve({ file: makePng(preparedFilename, 4), sourceFormat })
       : Promise.resolve({ file, sourceFormat: "png" as const }));
-    directUpload.uploadToAuthorizedS3.mockRejectedValueOnce(new TypeError("simulated post-intent SVG failure"));
+    directUpload.uploadToAuthorizedS3.mockRejectedValueOnce(
+      new TypeError(`simulated post-intent ${sourceLabel} failure`),
+    );
     const createUpload = vi.fn((file: File, sha256: string) => (
       Promise.resolve(batchCreateResult(file, sha256))
     ));
     const cancelUpload = vi.fn((uploadId: string) => Promise.resolve(cancelledBatchResult(uploadId)));
     const completeUpload = vi.fn((uploadId: string) => Promise.resolve(completedBatchResult(uploadId)));
-    const files = [makeSvg("original.svg"), makePng("later.png", 5)];
+    const source = sourceFormat === "svg" ? makeSvg(sourceFilename) : makeJpeg(sourceFilename);
+    const files = [source, makePng("later.png", 5)];
     render(
       <UploadProvider api={fakeApi({ createUpload, cancelUpload, completeUpload })}>
         <BatchHarness files={files} />
@@ -364,10 +375,13 @@ describe("ordered in-memory upload batches", () => {
     await user.click(screen.getByRole("button", { name: "Begin batch" }));
     await waitFor(() => expect(screen.getByTestId("batch-phase")).toHaveTextContent("complete"));
 
-    expect(createUpload.mock.calls.map((call) => call[0].name)).toEqual(["vector.png", "later.png"]);
+    expect(createUpload.mock.calls.map((call) => call[0].name)).toEqual([
+      preparedFilename,
+      "later.png",
+    ]);
     expect(cancelUpload).toHaveBeenCalledTimes(1);
     expect(cancelUpload).toHaveBeenCalledWith(
-      "upload_vector",
+      `upload_${preparedFilename.replace(".png", "")}`,
       expect.stringMatching(/^web:cancel-upload:/u),
     );
     expect(completeUpload).toHaveBeenCalledTimes(1);
@@ -375,10 +389,14 @@ describe("ordered in-memory upload batches", () => {
       "upload_later",
       expect.stringMatching(/^web:complete-upload:/u),
     );
-    expect(screen.getByTestId("batch-item-1")).toHaveTextContent("original.svgsvgerror");
-    expect(screen.getByTestId("batch-item-1")).toHaveTextContent("simulated post-intent SVG failure");
     expect(screen.getByTestId("batch-item-1")).toHaveTextContent(
-      "The upload reservation was cancelled. Re-select the original SVG to retry.",
+      `${sourceFilename}${sourceFormat}error`,
+    );
+    expect(screen.getByTestId("batch-item-1")).toHaveTextContent(
+      `simulated post-intent ${sourceLabel} failure`,
+    );
+    expect(screen.getByTestId("batch-item-1")).toHaveTextContent(
+      `The upload reservation was cancelled. Re-select the original ${sourceLabel} to retry.`,
     );
     expect(screen.getByTestId("batch-item-2")).toHaveTextContent("later.pngpngcomplete");
   });
@@ -470,6 +488,13 @@ function makeSvg(name: string): File {
   return new File([
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>',
   ], name, { type: "image/svg+xml", lastModified: 123 });
+}
+
+function makeJpeg(name: string): File {
+  return new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], name, {
+    type: "image/jpeg",
+    lastModified: 123,
+  });
 }
 
 function fakeApi(overrides: Partial<ApiPort>): ApiPort {

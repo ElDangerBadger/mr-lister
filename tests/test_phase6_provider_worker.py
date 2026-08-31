@@ -61,7 +61,6 @@ from mr_lister.production.phase6_worker import (
 )
 from mr_lister.production.printify import (
     PrintifyCatalogMismatchError,
-    PrintifyInputError,
     PrintifyResolvedProfile,
     PrintifyResolvedVariant,
     PrintifyUploadedImage,
@@ -426,10 +425,14 @@ class FakeResources:
         assert source.job_id == JOB_ID
         assert source.owner_id == OWNER
         self.geometry_checks.append((source.fingerprint, upload.image_id))
-        if self.expected_source_dimensions is not None and (
-            upload.width,
-            upload.height,
-        ) != self.expected_source_dimensions:
+        if (
+            self.expected_source_dimensions is not None
+            and (
+                upload.width,
+                upload.height,
+            )
+            != self.expected_source_dimensions
+        ):
             raise PrintifyCatalogMismatchError("upload geometry mismatch")
         return upload
 
@@ -924,7 +927,7 @@ def test_persisted_provider_geometry_drives_width_fixed_draft_placement() -> Non
     assert placement.scale == 0.65
 
 
-def test_tall_persisted_provider_geometry_is_rejected_before_product_mutation() -> None:
+def test_tall_persisted_provider_geometry_scales_down_before_product_mutation() -> None:
     sync = FakeSynchronizer()
     worker, store, _control, resources = _worker(
         job=_job(),
@@ -937,11 +940,15 @@ def test_tall_persisted_provider_geometry_is_rejected_before_product_mutation() 
     )
     resources.upload_dimensions = (1000, 2100)
 
-    with pytest.raises(PrintifyInputError, match="too tall"):
-        worker.run_product_sync(job_id=JOB_ID, work_request_id=SYNC_WORK_ID)
+    worker.run_product_sync(job_id=JOB_ID, work_request_id=SYNC_WORK_ID)
 
+    assert resources.upload_sources == [store.source]
     assert resources.upload_count == 1
-    assert sync.mutations == []
+    assert sync.mutations == [None]
+    placement = sync.drafts[0].print_areas[0].placeholders[0].images[0]  # type: ignore[attr-defined]
+    assert placement.x == 0.5
+    assert placement.y == 0.5
+    assert placement.scale == 0.619
 
 
 def test_profile_cannot_claim_the_pinned_fingerprint_after_its_payload_changes() -> None:

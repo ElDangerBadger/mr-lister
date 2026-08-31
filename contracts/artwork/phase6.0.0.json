@@ -1,0 +1,109 @@
+{
+  "acceptance_matrix": {
+    "backgrounds": [
+      "transparent",
+      "opaque"
+    ],
+    "failure_isolation": "one invalid file does not prevent other valid files in the same submission from creating their own jobs",
+    "input_methods": [
+      "file_picker",
+      "single_file_drag_drop",
+      "multiple_file_drag_drop"
+    ],
+    "required_cases": [
+      "png_transparent_square",
+      "png_opaque_portrait",
+      "png_opaque_landscape",
+      "svg_transparent_portrait",
+      "svg_opaque_landscape",
+      "single_file_submission",
+      "multiple_file_submission",
+      "per_file_rejection_and_retry",
+      "browser_backend_acceptance_parity"
+    ],
+    "shapes": [
+      "square",
+      "portrait",
+      "landscape"
+    ]
+  },
+  "canonical_artwork": {
+    "background_policy": "alpha coverage and background fill are seller choices; at least one visible pixel is required",
+    "content_type": "image/png",
+    "format": "png",
+    "max_bytes": 5242880,
+    "max_dimension_pixels": 20000,
+    "max_decoded_pixels": 100000000,
+    "normalization_boundary": "browser_before_upload_intent",
+    "object_name": "source.png"
+  },
+  "contract_version": "6.0.0",
+  "deferred_formats": [
+    {
+      "format": "pdf",
+      "phase6_blocking": false,
+      "reason": "reliable rendering requires a new PDF parser or server-native renderer and a broader worker, CSP, packaging, and security surface",
+      "smallest_future_contract": "single_page_artwork_pdf_normalized_to_canonical_png"
+    }
+  ],
+  "frozen_at": "2026-08-31T00:00:00Z",
+  "geometry": {
+    "crop": false,
+    "distort": false,
+    "force_square": false,
+    "native_aspect_ratio_preserved": true,
+    "pad": false,
+    "placement_sizing": "width_driven_with_proportional_height",
+    "tall_artwork_fit": "reduce_width_only_when_the_proportional_height_would_exceed_the_print_canvas"
+  },
+  "phase": "6",
+  "phase_boundary": {
+    "etsy_publication": "phase7_only",
+    "publication_enabled": false,
+    "terminal_phase6_approval_state": "APPROVED"
+  },
+  "source_formats": [
+    {
+      "extensions": [
+        ".png"
+      ],
+      "format": "png",
+      "media_types": [
+        "image/png"
+      ],
+      "normalization": "validate_and_preserve_exact_bytes",
+      "phase6_closure": "required"
+    },
+    {
+      "extensions": [
+        ".svg"
+      ],
+      "format": "svg",
+      "media_types": [
+        "image/svg+xml"
+      ],
+      "normalization": "sanitize_and_rasterize_proportionally_to_png_without_padding",
+      "phase6_closure": "required"
+    },
+    {
+      "extensions": [
+        ".jpg",
+        ".jpeg"
+      ],
+      "format": "jpeg",
+      "media_types": [
+        "image/jpeg"
+      ],
+      "normalization": "decode_with_orientation_and_rasterize_proportionally_to_png_without_padding",
+      "phase6_closure": "included_after_low_risk_assessment"
+    }
+  ],
+  "status": "frozen",
+  "submission": {
+    "common_ingestion_path": true,
+    "job_cardinality": "one_independent_job_per_file",
+    "max_files": 5,
+    "min_files": 1,
+    "ordered": true
+  }
+}

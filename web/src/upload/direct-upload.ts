@@ -1,14 +1,24 @@
 import type { UploadResponse } from "../contracts";
 
 export const MAX_ARTWORK_BYTES = 5 * 1024 * 1024;
+export const SUPPORTED_ARTWORK_SOURCE_EXTENSIONS = [".png", ".svg", ".jpg", ".jpeg"] as const;
+export const SUPPORTED_ARTWORK_SOURCE_MEDIA_TYPES = [
+  "image/png",
+  "image/svg+xml",
+  "image/jpeg",
+] as const;
+export const ARTWORK_FILE_INPUT_ACCEPT = [
+  ...SUPPORTED_ARTWORK_SOURCE_MEDIA_TYPES,
+  ...SUPPORTED_ARTWORK_SOURCE_EXTENSIONS,
+].join(",");
 const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 const PNG_HEADER_BYTES = 33;
 const MAX_ARTWORK_DIMENSION = 20_000;
 const MAX_ARTWORK_PIXELS = 100_000_000;
 const PNG_ALPHA_SCAN_TILE = 512;
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
-const SVG_RASTER_SIZES = [4096, 3072, 2048, 1024] as const;
-const SVG_RENDER_TIMEOUT_MS = 10_000;
+const RASTER_LONGEST_SIDE_CANDIDATES = [4096, 3072, 2048, 1024, 512] as const;
+const RASTER_RENDER_TIMEOUT_MS = 10_000;
 const MAX_SVG_ELEMENTS = 5_000;
 const MAX_SVG_ATTRIBUTE_CHARACTERS = 1_000_000;
 const MAX_SVG_PATH_CHARACTERS = 100_000;
@@ -47,9 +57,11 @@ const FORBIDDEN_SVG_ELEMENTS = new Set([
   "video",
 ]);
 
+export type ArtworkSourceFormat = "png" | "svg" | "jpeg";
+
 export interface PreparedArtwork {
   file: File;
-  sourceFormat: "png" | "svg";
+  sourceFormat: ArtworkSourceFormat;
 }
 
 export interface SanitizedSvg {
@@ -60,11 +72,22 @@ export interface SanitizedSvg {
 
 type SvgRasterizer = (svg: SanitizedSvg, outputName: string, lastModified: number) => Promise<File>;
 
+interface JpegDimensions {
+  width: number;
+  height: number;
+}
+
+type JpegRasterizer = (
+  file: File,
+  outputName: string,
+  lastModified: number,
+  encodedDimensions: JpegDimensions,
+) => Promise<File>;
+
 export interface DecodedPngEvidence {
   width: number;
   height: number;
   hasVisiblePixels: boolean;
-  hasTransparency: boolean;
 }
 
 type PngDecoder = (file: File) => Promise<DecodedPngEvidence>;
@@ -72,12 +95,13 @@ type PngDecoder = (file: File) => Promise<DecodedPngEvidence>;
 export async function prepareArtworkForUpload(
   file: File,
   rasterize: SvgRasterizer = rasterizeSvgToPng,
+  rasterizeJpeg: JpegRasterizer = rasterizeJpegToPng,
 ): Promise<PreparedArtwork> {
-  const lowerName = file.name.toLocaleLowerCase("en-US");
-  if ((file.type === "image/png" || file.type === "") && lowerName.endsWith(".png")) {
+  const sourceFormat = artworkSourceFormatForFile(file);
+  if (sourceFormat === "png") {
     return { file, sourceFormat: "png" };
   }
-  if ((file.type === "image/svg+xml" || file.type === "") && lowerName.endsWith(".svg")) {
+  if (sourceFormat === "svg") {
     if (file.size < 1 || file.size > MAX_ARTWORK_BYTES) {
       throw new UploadValidationError("SVG artwork must be non-empty and no larger than 5 MB.");
     }
@@ -93,7 +117,47 @@ export async function prepareArtworkForUpload(
     const converted = await rasterize(sanitized, outputName, file.lastModified);
     return { file: converted, sourceFormat: "svg" };
   }
-  throw new UploadValidationError("Choose PNG or SVG artwork files.");
+  if (sourceFormat === "jpeg") {
+    if (file.size < 4 || file.size > MAX_ARTWORK_BYTES) {
+      throw new UploadValidationError("JPEG artwork must be non-empty and no larger than 5 MB.");
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (bytes.byteLength !== file.size) {
+      throw new UploadValidationError("The selected JPEG could not be read completely.");
+    }
+    const encodedDimensions = parseJpegDimensions(bytes);
+    assertArtworkDimensions(encodedDimensions.width, encodedDimensions.height, "JPEG");
+    const lowerName = file.name.toLocaleLowerCase("en-US");
+    const extensionLength = lowerName.endsWith(".jpeg") ? 5 : 4;
+    const outputName = `${file.name.slice(0, -extensionLength)}.png`;
+    const converted = await rasterizeJpeg(
+      file,
+      outputName,
+      file.lastModified,
+      encodedDimensions,
+    );
+    return { file: converted, sourceFormat: "jpeg" };
+  }
+  throw new UploadValidationError("Choose PNG, compatible SVG, or JPEG artwork files.");
+}
+
+export function artworkSourceFormatForFile(file: File): ArtworkSourceFormat | null {
+  if (file.name !== file.name.trim() || /[\u0000-\u001f\u007f/\\]/u.test(file.name)) return null;
+  const lowerName = file.name.toLocaleLowerCase("en-US");
+  if (lowerName.length > 4
+    && lowerName.endsWith(".png")
+    && (file.type === "image/png" || file.type === "")) return "png";
+  if (lowerName.length > 4
+    && lowerName.endsWith(".svg")
+    && (file.type === "image/svg+xml" || file.type === "")) return "svg";
+  if (((lowerName.length > 4 && lowerName.endsWith(".jpg"))
+    || (lowerName.length > 5 && lowerName.endsWith(".jpeg")))
+    && (file.type === "image/jpeg" || file.type === "")) return "jpeg";
+  return null;
+}
+
+export function isSupportedArtworkFile(file: File): boolean {
+  return artworkSourceFormatForFile(file) !== null;
 }
 
 export function sanitizeSvgForRasterization(source: string): SanitizedSvg {
@@ -174,10 +238,6 @@ export function sanitizeSvgForRasterization(source: string): SanitizedSvg {
   if (sourceWidth === null || sourceHeight === null) {
     throw new UploadValidationError("SVG artwork requires a positive viewBox or pixel dimensions.");
   }
-  const aspectRatio = sourceWidth / sourceHeight;
-  if (aspectRatio < 0.02 || aspectRatio > 50) {
-    throw new UploadValidationError("SVG artwork dimensions are too narrow or wide to prepare.");
-  }
   if (viewBox === null) root.setAttribute("viewBox", `0 0 ${sourceWidth} ${sourceHeight}`);
   const intrinsicScale = Math.min(
     1,
@@ -228,10 +288,8 @@ export async function validateAndHashPng(
   if (decoded.width !== header.width || decoded.height !== header.height) {
     throw new UploadValidationError("The decoded PNG dimensions do not match its header.");
   }
-  if (!decoded.hasVisiblePixels || !decoded.hasTransparency) {
-    throw new UploadValidationError(
-      "PNG artwork must contain visible artwork and a transparent background.",
-    );
+  if (!decoded.hasVisiblePixels) {
+    throw new UploadValidationError("PNG artwork must contain at least one visible pixel.");
   }
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -284,10 +342,9 @@ async function decodePng(file: File): Promise<DecodedPngEvidence> {
       throw new UploadValidationError("This browser cannot inspect PNG transparency.");
     }
     let hasVisiblePixels = false;
-    let hasTransparency = false;
-    for (let y = 0; y < image.height && !(hasVisiblePixels && hasTransparency); y += PNG_ALPHA_SCAN_TILE) {
+    for (let y = 0; y < image.height && !hasVisiblePixels; y += PNG_ALPHA_SCAN_TILE) {
       const tileHeight = Math.min(PNG_ALPHA_SCAN_TILE, image.height - y);
-      for (let x = 0; x < image.width && !(hasVisiblePixels && hasTransparency); x += PNG_ALPHA_SCAN_TILE) {
+      for (let x = 0; x < image.width && !hasVisiblePixels; x += PNG_ALPHA_SCAN_TILE) {
         const tileWidth = Math.min(PNG_ALPHA_SCAN_TILE, image.width - x);
         context.clearRect(0, 0, PNG_ALPHA_SCAN_TILE, PNG_ALPHA_SCAN_TILE);
         context.drawImage(image, x, y, tileWidth, tileHeight, 0, 0, tileWidth, tileHeight);
@@ -296,12 +353,11 @@ async function decodePng(file: File): Promise<DecodedPngEvidence> {
           const alpha = pixels[index];
           if (alpha === undefined) continue;
           if (alpha > 0) hasVisiblePixels = true;
-          if (alpha < 255) hasTransparency = true;
-          if (hasVisiblePixels && hasTransparency) break;
+          if (hasVisiblePixels) break;
         }
       }
     }
-    return { width: image.width, height: image.height, hasVisiblePixels, hasTransparency };
+    return { width: image.width, height: image.height, hasVisiblePixels };
   } catch (error) {
     if (error instanceof UploadValidationError) throw error;
     throw new UploadValidationError("The selected PNG is corrupt or could not be decoded.");
@@ -317,37 +373,125 @@ async function rasterizeSvgToPng(
 ): Promise<File> {
   const loaded = await loadSvgImage(svg.markup);
   try {
-    for (const size of SVG_RASTER_SIZES) {
-      const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
-      const context = canvas.getContext("2d", { alpha: true });
-      if (context === null) {
-        throw new UploadValidationError("This browser cannot prepare SVG artwork.");
-      }
-      context.clearRect(0, 0, size, size);
-      const margin = Math.max(2, Math.round(size * 0.02));
-      const available = size - margin * 2;
-      const scale = Math.min(available / svg.sourceWidth, available / svg.sourceHeight);
-      const width = svg.sourceWidth * scale;
-      const height = svg.sourceHeight * scale;
-      if (![scale, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
-        throw new UploadValidationError("SVG artwork dimensions cannot be rendered safely.");
-      }
-      context.drawImage(loaded.image, (size - width) / 2, (size - height) / 2, width, height);
-      const blob = await canvasPng(canvas);
-      if (blob.size <= MAX_ARTWORK_BYTES) {
-        return new File([blob], outputName, {
-          type: "image/png",
-          lastModified,
-        });
-      }
-    }
+    return await rasterizeImageToPng(
+      loaded.image,
+      svg.sourceWidth,
+      svg.sourceHeight,
+      outputName,
+      lastModified,
+      "SVG",
+      true,
+      true,
+    );
   } finally {
     loaded.image.src = "";
     URL.revokeObjectURL(loaded.url);
   }
-  throw new UploadValidationError("The converted SVG is too detailed to fit the 5 MB artwork limit.");
+}
+
+async function rasterizeJpegToPng(
+  file: File,
+  outputName: string,
+  lastModified: number,
+  encodedDimensions: JpegDimensions,
+): Promise<File> {
+  let image: ImageBitmap;
+  try {
+    image = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    throw new UploadValidationError("The selected JPEG is corrupt or could not be decoded.");
+  }
+  try {
+    assertArtworkDimensions(image.width, image.height, "JPEG");
+    const matchesEncodedDimensions = image.width === encodedDimensions.width
+      && image.height === encodedDimensions.height;
+    const matchesOrientedDimensions = image.width === encodedDimensions.height
+      && image.height === encodedDimensions.width;
+    if (!matchesEncodedDimensions && !matchesOrientedDimensions) {
+      throw new UploadValidationError("The decoded JPEG dimensions do not match its header.");
+    }
+    return await rasterizeImageToPng(
+      image,
+      image.width,
+      image.height,
+      outputName,
+      lastModified,
+      "JPEG",
+      false,
+      false,
+    );
+  } finally {
+    image.close();
+  }
+}
+
+async function rasterizeImageToPng(
+  image: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+  outputName: string,
+  lastModified: number,
+  sourceLabel: "SVG" | "JPEG",
+  allowUpscale: boolean,
+  alpha: boolean,
+): Promise<File> {
+  const attemptedDimensions = new Set<string>();
+  for (const longestSide of RASTER_LONGEST_SIDE_CANDIDATES) {
+    const dimensions = proportionalRasterDimensions(
+      sourceWidth,
+      sourceHeight,
+      longestSide,
+      allowUpscale,
+    );
+    const identity = `${dimensions.width}x${dimensions.height}`;
+    if (attemptedDimensions.has(identity)) continue;
+    attemptedDimensions.add(identity);
+    const canvas = document.createElement("canvas");
+    canvas.width = dimensions.width;
+    canvas.height = dimensions.height;
+    const context = canvas.getContext("2d", { alpha });
+    if (context === null) {
+      throw new UploadValidationError(`This browser cannot prepare ${sourceLabel} artwork.`);
+    }
+    context.clearRect(0, 0, dimensions.width, dimensions.height);
+    context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
+    const blob = await canvasPng(canvas, sourceLabel);
+    if (blob.size <= MAX_ARTWORK_BYTES) {
+      return new File([blob], outputName, {
+        type: "image/png",
+        lastModified,
+      });
+    }
+  }
+  throw new UploadValidationError(
+    `The converted ${sourceLabel} is too detailed to fit the 5 MB artwork limit.`,
+  );
+}
+
+export function proportionalRasterDimensions(
+  sourceWidth: number,
+  sourceHeight: number,
+  longestSide: number,
+  allowUpscale: boolean,
+): { width: number; height: number } {
+  if (![sourceWidth, sourceHeight, longestSide].every(Number.isFinite)
+    || sourceWidth <= 0
+    || sourceHeight <= 0
+    || longestSide < 1) {
+    throw new UploadValidationError("Artwork dimensions cannot be rendered safely.");
+  }
+  const sourceLongestSide = Math.max(sourceWidth, sourceHeight);
+  const targetLongestSide = Math.min(
+    longestSide,
+    allowUpscale ? longestSide : sourceLongestSide,
+    MAX_ARTWORK_DIMENSION,
+  );
+  if (sourceWidth >= sourceHeight) {
+    const width = Math.max(1, Math.round(targetLongestSide));
+    return { width, height: Math.max(1, Math.round(width * sourceHeight / sourceWidth)) };
+  }
+  const height = Math.max(1, Math.round(targetLongestSide));
+  return { width: Math.max(1, Math.round(height * sourceWidth / sourceHeight)), height };
 }
 
 function loadSvgImage(markup: string): Promise<{ image: HTMLImageElement; url: string }> {
@@ -375,7 +519,7 @@ function loadSvgImage(markup: string): Promise<{ image: HTMLImageElement; url: s
     };
     const loaded = () => finish("load");
     const failed = () => finish("error");
-    const timeout = window.setTimeout(() => finish("timeout"), SVG_RENDER_TIMEOUT_MS);
+    const timeout = window.setTimeout(() => finish("timeout"), RASTER_RENDER_TIMEOUT_MS);
     image.decoding = "async";
     image.addEventListener("load", loaded, { once: true });
     image.addEventListener("error", failed, { once: true });
@@ -383,25 +527,77 @@ function loadSvgImage(markup: string): Promise<{ image: HTMLImageElement; url: s
   });
 }
 
-function canvasPng(canvas: HTMLCanvasElement): Promise<Blob> {
+function canvasPng(canvas: HTMLCanvasElement, sourceLabel: "SVG" | "JPEG"): Promise<Blob> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const timeout = window.setTimeout(() => {
       if (settled) return;
       settled = true;
-      reject(new UploadValidationError("SVG conversion timed out before any upload began."));
-    }, SVG_RENDER_TIMEOUT_MS);
+      reject(new UploadValidationError(
+        `${sourceLabel} conversion timed out before any upload began.`,
+      ));
+    }, RASTER_RENDER_TIMEOUT_MS);
     canvas.toBlob((blob) => {
       if (settled) return;
       settled = true;
       window.clearTimeout(timeout);
       if (blob === null || blob.type !== "image/png" || blob.size < PNG_SIGNATURE.length) {
-        reject(new UploadValidationError("The browser could not convert this SVG to PNG."));
+        reject(new UploadValidationError(
+          `The browser could not convert this ${sourceLabel} to PNG.`,
+        ));
       } else {
         resolve(blob);
       }
     }, "image/png");
   });
+}
+
+function parseJpegDimensions(bytes: Uint8Array): JpegDimensions {
+  if (bytes.byteLength < 4
+    || bytes[0] !== 0xff
+    || bytes[1] !== 0xd8
+    || bytes[2] !== 0xff) {
+    throw new UploadValidationError("The selected file does not have a valid JPEG signature.");
+  }
+  let offset = 2;
+  while (offset < bytes.byteLength) {
+    while (bytes[offset] === 0xff) offset += 1;
+    const marker = bytes[offset];
+    offset += 1;
+    if (marker === undefined || marker === 0x00 || marker === 0xd9 || marker === 0xda) break;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (offset + 2 > bytes.byteLength) break;
+    const segmentLength = ((bytes[offset] ?? 0) << 8) | (bytes[offset + 1] ?? 0);
+    if (segmentLength < 2 || offset + segmentLength > bytes.byteLength) break;
+    if (isJpegStartOfFrame(marker)) {
+      if (segmentLength < 8) break;
+      const height = ((bytes[offset + 3] ?? 0) << 8) | (bytes[offset + 4] ?? 0);
+      const width = ((bytes[offset + 5] ?? 0) << 8) | (bytes[offset + 6] ?? 0);
+      if (width < 1 || height < 1) break;
+      return { width, height };
+    }
+    offset += segmentLength;
+  }
+  throw new UploadValidationError("The selected JPEG does not have valid image dimensions.");
+}
+
+function isJpegStartOfFrame(marker: number): boolean {
+  return (marker >= 0xc0 && marker <= 0xc3)
+    || (marker >= 0xc5 && marker <= 0xc7)
+    || (marker >= 0xc9 && marker <= 0xcb)
+    || (marker >= 0xcd && marker <= 0xcf);
+}
+
+function assertArtworkDimensions(width: number, height: number, sourceLabel: string): void {
+  if (!Number.isInteger(width)
+    || !Number.isInteger(height)
+    || width < 1
+    || height < 1
+    || width > MAX_ARTWORK_DIMENSION
+    || height > MAX_ARTWORK_DIMENSION
+    || width * height > MAX_ARTWORK_PIXELS) {
+    throw new UploadValidationError(`${sourceLabel} dimensions exceed the supported artwork limit.`);
+  }
 }
 
 function parseSvgViewBox(value: string | null): { width: number; height: number } | null {

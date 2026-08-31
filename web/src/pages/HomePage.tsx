@@ -8,6 +8,10 @@ import {
   type BatchUploadItemState,
   useUpload,
 } from "../upload/upload-context";
+import {
+  ARTWORK_FILE_INPUT_ACCEPT,
+  artworkSourceFormatForFile,
+} from "../upload/direct-upload";
 
 export function HomePage() {
   const { api, auth } = useAppDependencies();
@@ -60,11 +64,6 @@ export function HomePage() {
       setSelectionError(`Choose no more than ${MAX_BATCH_FILES} files in one batch.`);
       return;
     }
-    if (files.some((file) => !isSupportedArtworkFile(file))) {
-      setSelectedFiles([]);
-      setSelectionError("Choose only PNG or compatible SVG artwork files.");
-      return;
-    }
     setSelectionError(null);
     setSelectedFiles([...files]);
   };
@@ -77,13 +76,13 @@ export function HomePage() {
         <div>
           <p className="eyebrow">Private seller workspace</p>
           <h1>Your artwork in. Listings ready for your decision.</h1>
-          <p className="lede">Mr. Lister accepts PNG or compatible self-contained SVG artwork, prepares each listing independently, stages unpublished Printify products, and waits for you.</p>
+          <p className="lede">Mr. Lister accepts PNG, compatible self-contained SVG, and JPEG artwork, prepares each listing independently, stages unpublished Printify products, and waits for you.</p>
           <button className="button button--primary" type="button" onClick={() => { void auth.startSignIn(location.pathname); }}>
             Sign in securely
           </button>
         </div>
         <ol className="process-list" aria-label="How Mr. Lister works">
-          <li><span>01</span><strong>Add PNG or SVG artwork</strong><small>Up to {MAX_BATCH_FILES} files in one ordered queue</small></li>
+          <li><span>01</span><strong>Add PNG, SVG, or JPEG artwork</strong><small>Up to {MAX_BATCH_FILES} files in one ordered queue</small></li>
           <li><span>02</span><strong>Strands prepares it</strong><small>Agentic artwork and listing review</small></li>
           <li><span>03</span><strong>You decide</strong><small>Nothing is published to Etsy</small></li>
         </ol>
@@ -96,8 +95,8 @@ export function HomePage() {
       <section className="hero-panel" aria-labelledby="upload-heading">
         <p className="eyebrow">New listing</p>
         <h1 id="upload-heading">Prepare a batch of artwork.</h1>
-        <p>Select up to {MAX_BATCH_FILES} PNG or compatible self-contained SVG files, then arrange their submission order. Each file creates its own private listing preparation.</p>
-        <p className="format-note"><strong>SVG stays local:</strong> your browser converts supported shapes and gradients to PNG before fingerprinting or upload. Linked assets, text, filters, and animation are not accepted. Each source file may be up to 5 MB.</p>
+        <p>Select up to {MAX_BATCH_FILES} PNG, compatible self-contained SVG, or JPEG files, then arrange their submission order. Each file creates its own private listing preparation.</p>
+        <p className="format-note"><strong>Source files stay local:</strong> your browser preserves PNG bytes and converts compatible SVG and JPEG artwork to proportional PNG without cropping or padding before fingerprinting or upload. Portrait, landscape, square, transparent, and opaque artwork are valid. Linked SVG assets, text, filters, and animation are not accepted. Each source file may be up to 5 MB.</p>
         <form onSubmit={(event) => {
           event.preventDefault();
           if (selectedFiles.length === 0 || selectedFiles.length > MAX_BATCH_FILES) return;
@@ -138,8 +137,8 @@ export function HomePage() {
             }}
           >
             <span className="drop-icon" aria-hidden="true">↑</span>
-            <strong>{dragActive ? "Drop artwork here" : "Drag and drop PNG or SVG artwork, or choose files"}</strong>
-            <span>Choose one file or build a batch. PNG may be portrait, landscape, or square. Originals are never put in browser storage.</span>
+            <strong>{dragActive ? "Drop artwork here" : "Drag and drop PNG, SVG, or JPEG artwork, or choose files"}</strong>
+            <span>Choose one file or build a batch. Native aspect ratios and seller-chosen backgrounds are preserved. Originals are never put in browser storage.</span>
           </label>
           <input
             id={inputId}
@@ -147,7 +146,7 @@ export function HomePage() {
             className="file-input"
             name="artwork"
             type="file"
-            accept="image/png,image/svg+xml,.png,.svg"
+            accept={ARTWORK_FILE_INPUT_ACCEPT}
             multiple
             disabled={uploadLocked}
             onChange={(event) => {
@@ -238,7 +237,7 @@ function SelectedArtworkList({ files, onChange }: { files: File[]; onChange: (fi
             <span className="queue-number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
             <span className="queue-file">
               <strong>{file.name}</strong>
-              <small>{formatBytes(file.size)} · {file.name.toLocaleLowerCase("en-US").endsWith(".svg") ? "SVG converts locally" : "PNG"}</small>
+              <small>{formatBytes(file.size)} · {sourceFormatDescription(file)}</small>
             </span>
             <span className="queue-order-controls">
               <button className="button button--quiet" type="button" disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Move ${file.name} earlier`}>↑</button>
@@ -251,10 +250,12 @@ function SelectedArtworkList({ files, onChange }: { files: File[]; onChange: (fi
   );
 }
 
-function isSupportedArtworkFile(file: File): boolean {
-  const lowerName = file.name.toLocaleLowerCase("en-US");
-  return ((file.type === "image/png" || file.type === "") && lowerName.endsWith(".png"))
-    || ((file.type === "image/svg+xml" || file.type === "") && lowerName.endsWith(".svg"));
+function sourceFormatDescription(file: File): string {
+  const sourceFormat = artworkSourceFormatForFile(file);
+  if (sourceFormat === "svg") return "SVG converts locally";
+  if (sourceFormat === "jpeg") return "JPEG converts locally";
+  if (sourceFormat === "png") return "PNG preserved exactly";
+  return "Unsupported file · this item will be rejected";
 }
 
 function BatchProgress({

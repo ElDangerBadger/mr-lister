@@ -1,7 +1,12 @@
 import { createContext, useCallback, useContext, useMemo, useReducer, useRef, type ReactNode } from "react";
 import { ApiError, newIdempotencyKey, type ApiPort } from "../api/client";
 import type { UploadRecovery } from "../contracts";
-import { prepareArtworkForUpload, uploadToAuthorizedS3, validateAndHashPng } from "./direct-upload";
+import {
+  type ArtworkSourceFormat,
+  prepareArtworkForUpload,
+  uploadToAuthorizedS3,
+  validateAndHashPng,
+} from "./direct-upload";
 
 export const MAX_BATCH_FILES = 5;
 
@@ -45,7 +50,7 @@ export interface BatchUploadItemState {
   filename: string;
   preparedFilename: string | null;
   sizeBytes: number;
-  sourceFormat: "png" | "svg" | null;
+  sourceFormat: ArtworkSourceFormat | null;
   phase: BatchUploadItemPhase;
   progress: number;
   uploadId: string | null;
@@ -76,7 +81,7 @@ const initialState: UploadState = {
   uploadId: null,
   jobId: null,
   filename: null,
-  message: "Choose one PNG artwork file to begin.",
+  message: "Choose an artwork file to begin.",
   requestId: null,
 };
 
@@ -273,7 +278,7 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
         if (abort.signal.aborted || batchEpoch.current !== epoch) return;
         const sourceFile = batchFiles.current.get(item.id);
         if (sourceFile === undefined) return;
-        let sourceFormat: "png" | "svg" | null = null;
+        let sourceFormat: ArtworkSourceFormat | null = null;
         let createdUploadId: string | null = null;
         let createdJobId: string | null = null;
         try {
@@ -393,7 +398,11 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
           const apiError = error instanceof ApiError ? error : null;
           const originalMessage = error instanceof Error ? error.message : "The upload could not be completed.";
           let message = originalMessage;
-          if (sourceFormat === "svg" && createdUploadId !== null && createdJobId !== null) {
+          if (sourceFormat !== null
+            && sourceFormat !== "png"
+            && createdUploadId !== null
+            && createdJobId !== null) {
+            const sourceLabel = sourceFormat === "jpeg" ? "JPEG" : "SVG";
             const cancellationKey = cancellationKeys.current.get(createdUploadId)
               ?? newIdempotencyKey("cancel-upload");
             cancellationKeys.current.set(createdUploadId, cancellationKey);
@@ -406,7 +415,7 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
               }
               recoveryKeys.current.delete(createdUploadId);
               cancellationKeys.current.delete(createdUploadId);
-              message = `${originalMessage} The upload reservation was cancelled. Re-select the original SVG to retry.`;
+              message = `${originalMessage} The upload reservation was cancelled. Re-select the original ${sourceLabel} to retry.`;
             } catch {
               message = `${originalMessage} Restart before retrying; the upload reservation will expire or be reconciled.`;
             }

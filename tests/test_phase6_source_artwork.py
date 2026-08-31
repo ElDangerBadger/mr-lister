@@ -15,6 +15,8 @@ from mr_lister.control.source_artwork import (
     SourceArtifactAuthorityError,
     source_artifact_authority_fingerprint,
     source_artifact_fingerprint,
+    source_artwork_placement_scale,
+    source_artwork_placement_y,
     validate_source_artifact_authority,
     verify_phase6_source_artwork,
 )
@@ -135,20 +137,62 @@ def test_phase6_verifier_rejects_empty_corrupt_truncated_or_oversized_bytes(
         )
 
 
-@pytest.mark.parametrize(
-    "content",
-    (
-        _png(alpha=(255, 255, 255, 255)),
-        _png(alpha=(0, 0, 0, 0)),
-    ),
-)
-def test_phase6_verifier_requires_mixed_alpha_artwork(content: bytes) -> None:
+def test_phase6_verifier_accepts_fully_opaque_artwork() -> None:
+    content = _png(alpha=(255, 255, 255, 255))
+
+    verified = verify_phase6_source_artwork(
+        filename="art.png",
+        content_type="image/png",
+        content=content,
+    )
+
+    assert (verified.alpha_minimum, verified.alpha_maximum) == (255, 255)
+
+
+def test_phase6_verifier_rejects_fully_transparent_artwork() -> None:
     with pytest.raises(Phase6SourceArtworkError):
         verify_phase6_source_artwork(
             filename="art.png",
             content_type="image/png",
-            content=content,
+            content=_png(alpha=(0, 0, 0, 0)),
         )
+
+
+@pytest.mark.parametrize(
+    ("artwork_size", "expected_scale", "expected_y"),
+    (
+        ((2400, 2400), 0.65, 0.25),
+        ((2000, 800), 0.65, 0.100008),
+        ((1000, 2100), 0.619, 0.5),
+    ),
+)
+def test_phase6_placement_preserves_legacy_width_or_scales_down_for_height(
+    artwork_size: tuple[int, int],
+    expected_scale: float,
+    expected_y: float,
+) -> None:
+    width, height = artwork_size
+    scale = source_artwork_placement_scale(
+        placement_scale=0.65,
+        canvas_width=3021,
+        canvas_height=3927,
+        artwork_width=width,
+        artwork_height=height,
+    )
+    y = source_artwork_placement_y(
+        calibrated_square_y=0.25,
+        placement_scale=0.65,
+        canvas_width=3021,
+        canvas_height=3927,
+        artwork_width=width,
+        artwork_height=height,
+    )
+
+    assert scale == expected_scale
+    assert y == expected_y
+    rendered_height = scale * 3021 * height / (3927 * width)
+    assert rendered_height <= 1
+    assert y == round(rendered_height / 2, 6) or artwork_size == (2400, 2400)
 
 
 @pytest.mark.parametrize(

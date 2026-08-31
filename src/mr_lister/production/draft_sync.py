@@ -26,6 +26,7 @@ from mr_lister.control.fingerprints import canonical_fingerprint
 from mr_lister.control.models import PHASE6_MAX_SOURCE_ARTWORK_BYTES
 from mr_lister.control.source_artwork import (
     SourceArtworkPlacementError,
+    source_artwork_placement_scale,
     source_artwork_placement_y,
     validate_source_artwork_fit,
 )
@@ -1000,11 +1001,33 @@ def width_first_placement_y(
     artwork_width: int,
     artwork_height: int,
 ) -> float:
-    """Center a top-aligned source at its fixed calibrated width without distortion."""
+    """Center a top-aligned source at its effective width without distortion."""
 
     try:
         return source_artwork_placement_y(
             calibrated_square_y=calibrated_square_y,
+            placement_scale=placement_scale,
+            canvas_width=canvas_width,
+            canvas_height=canvas_height,
+            artwork_width=artwork_width,
+            artwork_height=artwork_height,
+        )
+    except SourceArtworkPlacementError as error:
+        raise PrintifyInputError(str(error)) from None
+
+
+def width_first_placement_scale(
+    *,
+    placement_scale: float,
+    canvas_width: int,
+    canvas_height: int,
+    artwork_width: int,
+    artwork_height: int,
+) -> float:
+    """Return the calibrated width unless proportional height requires a smaller scale."""
+
+    try:
+        return source_artwork_placement_scale(
             placement_scale=placement_scale,
             canvas_width=canvas_width,
             canvas_height=canvas_height,
@@ -1021,7 +1044,7 @@ def validate_width_first_source_fit(
     artwork_width: int | None,
     artwork_height: int | None,
 ) -> None:
-    """Fail before provider mutation when immutable source geometry cannot fit at fixed width."""
+    """Fail before provider mutation when immutable source geometry is invalid."""
 
     try:
         validate_source_artwork_fit(
@@ -1098,7 +1121,17 @@ def build_canonical_draft(
                                     artwork_height=artwork_height,
                                 )
                             ),
-                            scale=group.placement.scale,
+                            scale=(
+                                group.placement.scale
+                                if artwork_width is None or artwork_height is None
+                                else width_first_placement_scale(
+                                    placement_scale=group.placement.scale,
+                                    canvas_width=group.canvas_width,
+                                    canvas_height=group.canvas_height,
+                                    artwork_width=artwork_width,
+                                    artwork_height=artwork_height,
+                                )
+                            ),
                             angle=group.angle,
                         ),
                     ),

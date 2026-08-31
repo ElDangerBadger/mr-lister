@@ -362,22 +362,22 @@ def test_fully_transparent_png_is_rejected() -> None:
     assert intelligence.draft_calls == []
 
 
-def test_phase6_opaque_envelope_is_revalidated_before_intelligence() -> None:
-    invalid_png = _png(alpha=(255, 255, 255, 255))
+def test_phase6_opaque_envelope_is_revalidated_and_accepted() -> None:
+    opaque_png = _png(alpha=(255, 255, 255, 255))
     profile = _profile()
-    source = _source(invalid_png, profile)
-    s3 = RecordingS3(invalid_png)
+    source = _source(opaque_png, profile)
+    s3 = RecordingS3(opaque_png)
     producer, _, _, intelligence = _producer(
         source=source,
         s3=s3,
         exact=ExactProfile(profile=profile, fingerprint=canonical_fingerprint(profile)),
     )
 
-    with pytest.raises(PreparedReviewProducerError, match="PNG is invalid"):
-        producer.prepare_review(JOB_ID, WORK_ID)
+    observation = producer.prepare_review(JOB_ID, WORK_ID)
 
-    assert intelligence.inspect_calls == []
-    assert intelligence.draft_calls == []
+    assert observation.source_artifact_fingerprint == source.fingerprint
+    assert len(intelligence.inspect_calls) == 1
+    assert len(intelligence.draft_calls) == 1
 
 
 def test_rectangular_source_geometry_is_revalidated_and_accepted() -> None:

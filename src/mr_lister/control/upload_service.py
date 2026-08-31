@@ -320,7 +320,7 @@ class UploadIntakeService:
             )
         except SourceArtworkPlacementError:
             raise UploadArtifactIntegrityError(
-                "Source artwork cannot fit the fixed-width product placement"
+                "Source artwork placement geometry is invalid"
             ) from None
         source = self._source(current, observed, now)
         work_id = self._stable_id("work", owner_id, current.job_id)

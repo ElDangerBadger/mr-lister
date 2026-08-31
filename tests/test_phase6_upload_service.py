@@ -50,10 +50,14 @@ EXACT_PROFILE = ExactReviewProductProfile(
 )
 
 
-def _png(*, size: tuple[int, int] = (2, 2)) -> bytes:
+def _png(*, size: tuple[int, int] = (2, 2), opaque: bool = False) -> bytes:
     image = Image.new("RGBA", size, (32, 64, 96, 255))
     pixel_count = size[0] * size[1]
-    alpha = tuple(round(255 * index / (pixel_count - 1)) for index in range(pixel_count))
+    alpha = (
+        (255,) * pixel_count
+        if opaque
+        else tuple(round(255 * index / (pixel_count - 1)) for index in range(pixel_count))
+    )
     image.putdata(tuple((32, 64, 96, value) for value in alpha))
     output = BytesIO()
     image.save(output, format="PNG")
@@ -517,12 +521,12 @@ def test_rectangular_completion_verifies_fit_without_extending_source_schema() -
     assert "height" not in source.model_dump(mode="json")
 
 
-def test_tall_source_is_rejected_at_intake_before_pin_or_provider_work() -> None:
+def test_opaque_source_completes_through_the_same_intake_path() -> None:
     harness = _harness()
-    content = _png(size=(2, 5))
+    content = _png(opaque=True)
     created = harness.service.create_upload(
         owner_id=OWNER,
-        idempotency_key="create-too-tall",
+        idempotency_key="create-opaque",
         filename="seller-art.png",
         content_type="image/png",
         content_sha256=sha256(content).hexdigest(),
@@ -530,15 +534,39 @@ def test_tall_source_is_rejected_at_intake_before_pin_or_provider_work() -> None
     )
     harness.artifacts.stage(content)
 
-    with pytest.raises(UploadArtifactIntegrityError, match="fixed-width"):
-        harness.service.complete_upload(
-            owner_id=OWNER,
-            upload_id=created.receipt.upload_id,
-            idempotency_key="complete-too-tall",
-        )
+    completed = harness.service.complete_upload(
+        owner_id=OWNER,
+        upload_id=created.receipt.upload_id,
+        idempotency_key="complete-opaque",
+    )
 
-    assert harness.artifacts.pin_calls == []
-    assert harness.store.jobs == {}
+    assert completed.receipt.job_id == created.receipt.job_id
+    assert len(harness.artifacts.pin_calls) == 2
+
+
+def test_tall_source_completes_intake_without_crop_pad_or_rejection() -> None:
+    harness = _harness()
+    content = _png(size=(2, 5))
+    created = harness.service.create_upload(
+        owner_id=OWNER,
+        idempotency_key="create-tall",
+        filename="seller-art.png",
+        content_type="image/png",
+        content_sha256=sha256(content).hexdigest(),
+        size_bytes=len(content),
+    )
+    harness.artifacts.stage(content)
+
+    completed = harness.service.complete_upload(
+        owner_id=OWNER,
+        upload_id=created.receipt.upload_id,
+        idempotency_key="complete-tall",
+    )
+
+    assert completed.receipt.job_id == created.receipt.job_id
+    source = harness.store.get_source_artifact(created.receipt.job_id)
+    assert source.content_sha256 == sha256(content).hexdigest()
+    assert len(harness.artifacts.pin_calls) == 2
 
 
 def test_completion_expiring_during_the_pin_is_released_before_any_job_commit() -> None:

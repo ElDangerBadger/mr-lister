@@ -28,6 +28,7 @@ from mr_lister.workflow.validation import MAX_ARTWORK_PIXELS, validate_artwork
 
 PHASE6_MIN_SOURCE_ARTWORK_BYTES = 1
 PHASE6_MAX_SOURCE_DIMENSION = 20_000
+_PLACEMENT_SCALE_PRECISION = 1_000_000
 
 
 class Phase6SourceArtworkError(ValueError):
@@ -39,7 +40,7 @@ class SourceArtifactAuthorityError(ValueError):
 
 
 class SourceArtworkPlacementError(ValueError):
-    """The verified source cannot use the immutable fixed-width placement rule."""
+    """The verified source cannot use the immutable width-driven placement rule."""
 
 
 @dataclass(frozen=True)
@@ -53,16 +54,15 @@ class VerifiedSourceArtwork:
     alpha_maximum: int
 
 
-def source_artwork_placement_y(
+def source_artwork_placement_scale(
     *,
-    calibrated_square_y: float,
     placement_scale: float,
     canvas_width: int,
     canvas_height: int,
     artwork_width: int,
     artwork_height: int,
 ) -> float:
-    """Return the vertical center for a top-aligned, width-calibrated source."""
+    """Return the calibrated width scale, reduced only when height requires it."""
 
     if (
         isinstance(artwork_width, bool)
@@ -77,24 +77,65 @@ def source_artwork_placement_y(
         or isinstance(canvas_height, bool)
         or not isinstance(canvas_height, int)
         or canvas_height <= 0
-        or isinstance(calibrated_square_y, bool)
-        or not isinstance(calibrated_square_y, (int, float))
-        or not 0 <= calibrated_square_y <= 1
         or isinstance(placement_scale, bool)
         or not isinstance(placement_scale, (int, float))
         or not 0 < placement_scale <= 1
     ):
         raise SourceArtworkPlacementError("Artwork placement dimensions are invalid")
-    if artwork_width == artwork_height:
+
+    calibrated_scale = float(placement_scale)
+    height_limit_numerator = canvas_height * artwork_width
+    height_limit_denominator = canvas_width * artwork_height
+    height_limited_scale = height_limit_numerator / height_limit_denominator
+    if calibrated_scale <= height_limited_scale:
+        return calibrated_scale
+
+    # Provider placement values are kept to six decimal places. Quantizing downward guarantees
+    # that floating-point or decimal rounding can never make a height-limited design overflow.
+    effective_scale_units = (
+        height_limit_numerator * _PLACEMENT_SCALE_PRECISION
+    ) // height_limit_denominator
+    if effective_scale_units <= 0:
+        # The verified Phase 6 source envelope cannot reach this branch with the checked product
+        # profiles, but retaining the exact positive ratio keeps the geometry helper total for
+        # any future valid canvas rather than manufacturing an invalid zero scale.
+        return height_limited_scale
+    return effective_scale_units / _PLACEMENT_SCALE_PRECISION
+
+
+def source_artwork_placement_y(
+    *,
+    calibrated_square_y: float,
+    placement_scale: float,
+    canvas_width: int,
+    canvas_height: int,
+    artwork_width: int,
+    artwork_height: int,
+) -> float:
+    """Return the vertical center for a top-aligned, aspect-preserving source."""
+
+    if (
+        isinstance(calibrated_square_y, bool)
+        or not isinstance(calibrated_square_y, (int, float))
+        or not 0 <= calibrated_square_y <= 1
+    ):
+        raise SourceArtworkPlacementError("Artwork placement dimensions are invalid")
+
+    effective_scale = source_artwork_placement_scale(
+        placement_scale=placement_scale,
+        canvas_width=canvas_width,
+        canvas_height=canvas_height,
+        artwork_width=artwork_width,
+        artwork_height=artwork_height,
+    )
+    if artwork_width == artwork_height and effective_scale == float(placement_scale):
         return float(calibrated_square_y)
     rendered_height = (
-        placement_scale * canvas_width * artwork_height / (canvas_height * artwork_width)
+        effective_scale * canvas_width * artwork_height / (canvas_height * artwork_width)
     )
-    if rendered_height <= 0 or rendered_height > 1:
-        raise SourceArtworkPlacementError(
-            "Artwork is too tall for the calibrated width-first print placement"
-        )
-    return round(rendered_height / 2, 6)
+    if rendered_height <= 0:
+        raise SourceArtworkPlacementError("Artwork placement dimensions are invalid")
+    return round(min(rendered_height, 1.0) / 2, 6)
 
 
 def validate_source_artwork_fit(
@@ -103,7 +144,7 @@ def validate_source_artwork_fit(
     artwork_width: int | None,
     artwork_height: int | None,
 ) -> None:
-    """Validate every profile canvas without cropping, padding, stretching, or scaling down."""
+    """Validate that every profile canvas has a deterministic proportional placement."""
 
     if (artwork_width is None) != (artwork_height is None):
         raise SourceArtworkPlacementError("Artwork placement dimensions must be present together")
@@ -201,10 +242,8 @@ def verify_phase6_source_artwork(
     except (OSError, SyntaxError, UnidentifiedImageError, ValueError):
         raise Phase6SourceArtworkError("Source artwork PNG is invalid") from None
 
-    if alpha_minimum == 255 or alpha_maximum == 0:
-        raise Phase6SourceArtworkError(
-            "Source artwork must contain both visible and transparent pixels"
-        )
+    if alpha_maximum == 0:
+        raise Phase6SourceArtworkError("Source artwork must contain visible pixels")
     if (
         artwork.content_sha256 != content_sha256
         or artwork.size_bytes != size_bytes
@@ -301,6 +340,7 @@ __all__ = [
     "VerifiedSourceArtwork",
     "source_artifact_authority_fingerprint",
     "source_artifact_fingerprint",
+    "source_artwork_placement_scale",
     "source_artwork_placement_y",
     "validate_source_artwork_fit",
     "validate_source_artifact_authority",

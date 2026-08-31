@@ -223,17 +223,26 @@ def test_source_geometry_must_be_present_as_a_pair(listing) -> None:
         )
 
 
-def test_width_first_placement_rejects_artwork_taller_than_the_print_area(listing) -> None:
-    with pytest.raises(PrintifyInputError, match="too tall"):
-        build_canonical_draft(
-            job_id="job_phase6_too_tall",
-            listing=listing,
-            profile=profile(),
-            resolved=resolved(),
-            image_id="image_too_tall",
-            artwork_width=1000,
-            artwork_height=2100,
-        )
+def test_tall_placement_scales_down_and_preserves_aspect_ratio(listing) -> None:
+    draft = build_canonical_draft(
+        job_id="job_phase6_tall",
+        listing=listing,
+        profile=profile(),
+        resolved=resolved(),
+        image_id="image_tall",
+        artwork_width=1000,
+        artwork_height=2100,
+    )
+
+    placement = draft.print_areas[0].placeholders[0].images[0]
+    assert placement.x == 0.5
+    assert placement.scale == 0.619
+    assert placement.y == 0.5
+    rendered_width = placement.scale * 3021
+    rendered_height = rendered_width * 2100 / 1000
+    assert rendered_width / rendered_height == pytest.approx(1000 / 2100)
+    assert placement.y == round(rendered_height / 3927 / 2, 6)
+    assert rendered_height <= 3927
 
 
 def test_first_authorized_sync_posts_exactly_once_and_returns_evidence(listing) -> None:
