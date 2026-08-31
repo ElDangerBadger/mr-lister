@@ -33,6 +33,7 @@ from tools.build_phase66_source_bundles import (
 from tools.verify_phase6_s3_release_object import (
     Phase6S3ReleaseObjectExpectation,
     VerifiedPhase6S3ReleaseObject,
+    validate_phase6_s3_version_id,
     verify_phase6_s3_release_object_evidence,
 )
 
@@ -43,6 +44,7 @@ UPDATE_EVIDENCE_FORMAT = "mr-lister-phase6-reviewed-update-v2"
 RUNTIME_UPDATE_BOOTSTRAP = (
     Path(__file__).resolve().parents[1] / "infra/phase6/runtime-update-bootstrap.json"
 )
+FOUNDATION_TEMPLATE = Path(__file__).resolve().parents[1] / "infra/phase6/foundation.json"
 
 MAX_REVIEW_WINDOW = timedelta(minutes=15)
 MAX_EVENT_TO_CHANGE_SET_DELAY = timedelta(minutes=5)
@@ -57,6 +59,10 @@ FOUNDATION_RESOURCE_TYPES = {
 _ACCOUNT_ID = re.compile(r"^[0-9]{12}$")
 _ENVIRONMENT = re.compile(r"^[a-z][a-z0-9-]{1,15}$")
 _FINGERPRINT = re.compile(r"^[a-f0-9]{64}$")
+_LAMBDA_ARCHIVE_KEY = re.compile(
+    r"^private/deployments/lambda/releases/([a-f0-9]{64})/"
+    r"phase6-lambda-([a-f0-9]{64})\.zip$"
+)
 _CHANGE_SET_NAME = re.compile(r"^[A-Za-z][-A-Za-z0-9]{0,127}$")
 _CLIENT_TOKEN = re.compile(r"^[A-Za-z0-9][-A-Za-z0-9]{0,127}$")
 _ROLE_ID = re.compile(r"^ARO[A-Z0-9]{12,64}$")
@@ -348,6 +354,17 @@ class CloudTrailAuthority:
     normalized: Mapping[str, object]
 
 
+@dataclass(frozen=True, slots=True)
+class LambdaArchiveBinding:
+    """One exact immutable Lambda archive tuple found in a reviewed template."""
+
+    bucket: str
+    key: str
+    version_id: str
+    release_fingerprint: str
+    archive_sha256: str
+
+
 def semantic_fingerprint(value: object) -> str:
     """Return the repository's canonical semantic JSON SHA-256 fingerprint."""
 
@@ -415,6 +432,9 @@ def verify_reviewed_update(
         }
 
         binding = _verify_foundation_binding(documents["foundation_binding"])
+        predecessor_template = _load_mapping(FOUNDATION_TEMPLATE)
+        if semantic_fingerprint(predecessor_template) != FOUNDATION_TEMPLATE_FINGERPRINT:
+            raise ValueError
         target_template = documents["target_template"]
         target_fingerprint = semantic_fingerprint(target_template)
         _verify_target_foundation_identities(target_template)
@@ -468,6 +488,7 @@ def verify_reviewed_update(
         expected_execution_policy = _expected_execution_policy(
             binding,
             lambda_object,
+            predecessor_template=predecessor_template,
             target_template=target_template,
         )
         if (
@@ -745,12 +766,104 @@ def _verify_lambda_release_object(
     return verified
 
 
+def _template_lambda_archive_bindings(
+    template: Mapping[str, object],
+) -> dict[str, LambdaArchiveBinding]:
+    resources = template.get("Resources")
+    if not isinstance(resources, Mapping):
+        raise ValueError
+    bindings: dict[str, LambdaArchiveBinding] = {}
+    for logical_id, resource in resources.items():
+        if not isinstance(logical_id, str) or not isinstance(resource, Mapping):
+            raise ValueError
+        resource_type = resource.get("Type")
+        if resource_type not in {"AWS::Lambda::Function", "AWS::Serverless::Function"}:
+            continue
+        properties = resource.get("Properties")
+        if not isinstance(properties, Mapping):
+            raise ValueError
+        if resource_type == "AWS::Serverless::Function":
+            code = properties.get("CodeUri")
+            if not isinstance(code, Mapping) or set(code) != {"Bucket", "Key", "Version"}:
+                raise ValueError
+            bucket = code.get("Bucket")
+            key = code.get("Key")
+            version_id = code.get("Version")
+        else:
+            code = properties.get("Code")
+            if not isinstance(code, Mapping) or set(code) != {
+                "S3Bucket",
+                "S3Key",
+                "S3ObjectVersion",
+            }:
+                raise ValueError
+            bucket = code.get("S3Bucket")
+            key = code.get("S3Key")
+            version_id = code.get("S3ObjectVersion")
+        key_match = _LAMBDA_ARCHIVE_KEY.fullmatch(key) if isinstance(key, str) else None
+        if (
+            not isinstance(bucket, str)
+            or not bucket
+            or key_match is None
+            or not isinstance(version_id, str)
+        ):
+            raise ValueError
+        validate_phase6_s3_version_id(version_id)
+        bindings[logical_id] = LambdaArchiveBinding(
+            bucket=bucket,
+            key=key,
+            version_id=version_id,
+            release_fingerprint=key_match.group(1),
+            archive_sha256=key_match.group(2),
+        )
+    return bindings
+
+
+def _changed_lambda_archive_transition(
+    predecessor_template: Mapping[str, object],
+    target_template: Mapping[str, object],
+) -> tuple[LambdaArchiveBinding | None, LambdaArchiveBinding]:
+    """Return the one rollback predecessor and candidate for changed Lambda code only."""
+
+    predecessor = _template_lambda_archive_bindings(predecessor_template)
+    target = _template_lambda_archive_bindings(target_template)
+    changed_ids = {
+        logical_id
+        for logical_id in set(predecessor) | set(target)
+        if predecessor.get(logical_id) != target.get(logical_id)
+    }
+    predecessor_bindings = {
+        predecessor[logical_id] for logical_id in changed_ids if logical_id in predecessor
+    }
+    candidate_bindings = {target[logical_id] for logical_id in changed_ids if logical_id in target}
+    if len(predecessor_bindings) > 1 or len(candidate_bindings) != 1:
+        raise ValueError
+    live = next(iter(predecessor_bindings), None)
+    candidate = next(iter(candidate_bindings))
+    if live == candidate:
+        raise ValueError
+    return live, candidate
+
+
 def _expected_execution_policy(
     binding: Phase6FoundationBinding,
     lambda_object: VerifiedPhase6S3ReleaseObject,
     *,
+    predecessor_template: Mapping[str, object],
     target_template: Mapping[str, object],
 ) -> Mapping[str, object]:
+    live_binding, candidate_binding = _changed_lambda_archive_transition(
+        predecessor_template,
+        target_template,
+    )
+    if candidate_binding != LambdaArchiveBinding(
+        bucket=lambda_object.bucket,
+        key=lambda_object.key,
+        version_id=lambda_object.version_id,
+        release_fingerprint=lambda_object.release_fingerprint,
+        archive_sha256=lambda_object.archive_sha256,
+    ):
+        raise ValueError
     bootstrap = _load_mapping(RUNTIME_UPDATE_BOOTSTRAP)
     resources = bootstrap.get("Resources")
     role = resources.get("CoreRuntimeExecutionRole") if isinstance(resources, Mapping) else None
@@ -764,21 +877,47 @@ def _expected_execution_policy(
     substitutions = {
         "AWS::AccountId": binding.account_id,
         "AWS::Partition": "aws",
+        "CandidateArchiveBinding": "EXPANDED",
         "LambdaArchiveSha256": lambda_object.archive_sha256,
         "LambdaVersionId": lambda_object.version_id,
+        "LiveLambdaArchiveSha256": (
+            live_binding.archive_sha256 if live_binding is not None else "NONE"
+        ),
+        "LiveLambdaVersionId": live_binding.version_id if live_binding is not None else "NONE",
+        "LiveReleaseFingerprint": (
+            live_binding.release_fingerprint if live_binding is not None else "NONE"
+        ),
         "ReleaseFingerprint": lambda_object.release_fingerprint,
     }
+    condition_values = {
+        "CandidateArchiveReadEnabled": True,
+        "LiveArchiveReadEnabled": live_binding is not None,
+    }
+    no_value = object()
 
     def resolve(value: object) -> object:
         if isinstance(value, list):
-            return [resolve(item) for item in value]
+            resolved_items = [resolve(item) for item in value]
+            return [item for item in resolved_items if item is not no_value]
         if not isinstance(value, Mapping):
             return value
         if set(value) == {"Ref"}:
             ref = value.get("Ref")
+            if ref == "AWS::NoValue":
+                return no_value
             if not isinstance(ref, str) or ref not in substitutions:
                 raise ValueError
             return substitutions[ref]
+        if set(value) == {"Fn::If"}:
+            branches = value.get("Fn::If")
+            if (
+                not isinstance(branches, list)
+                or len(branches) != 3
+                or not isinstance(branches[0], str)
+                or branches[0] not in condition_values
+            ):
+                raise ValueError
+            return resolve(branches[1] if condition_values[branches[0]] else branches[2])
         if set(value) == {"Fn::Sub"}:
             expression = value.get("Fn::Sub")
             if not isinstance(expression, str):
@@ -791,7 +930,10 @@ def _expected_execution_policy(
                 return substitutions[name]
 
             return re.sub(r"\$\{([^}]+)\}", replace, expression)
-        return {str(key): resolve(item) for key, item in value.items()}
+        resolved_mapping = {str(key): resolve(item) for key, item in value.items()}
+        if any(item is no_value for item in resolved_mapping.values()):
+            raise ValueError
+        return resolved_mapping
 
     resolved = resolve(policy)
     if not isinstance(resolved, Mapping):
@@ -801,6 +943,7 @@ def _expected_execution_policy(
         target_template=target_template,
         binding=binding,
         lambda_object=lambda_object,
+        live_binding=live_binding,
     )
     return resolved
 
@@ -1182,10 +1325,10 @@ def _verify_execution_policy_artifact_binding(
     target_template: Mapping[str, object],
     binding: Phase6FoundationBinding,
     lambda_object: VerifiedPhase6S3ReleaseObject,
+    live_binding: LambdaArchiveBinding | None,
 ) -> None:
-    resources = target_template.get("Resources")
     parameters = target_template.get("Parameters")
-    if not isinstance(resources, Mapping) or not isinstance(parameters, Mapping):
+    if not isinstance(parameters, Mapping):
         raise ValueError
     release_definition = parameters.get("ReleaseFingerprint")
     if not isinstance(release_definition, Mapping):
@@ -1196,28 +1339,10 @@ def _verify_execution_policy_artifact_binding(
         or _FINGERPRINT.fullmatch(release_fingerprint) is None
     ):
         raise ValueError
-    code_locations: list[Mapping[str, object]] = []
-    for resource in resources.values():
-        if not isinstance(resource, Mapping) or resource.get("Type") != "AWS::Serverless::Function":
-            continue
-        properties = resource.get("Properties")
-        if not isinstance(properties, Mapping):
-            raise ValueError
-        code_uri = properties.get("CodeUri")
-        if not isinstance(code_uri, Mapping) or set(code_uri) != {"Bucket", "Key", "Version"}:
-            raise ValueError
-        code_locations.append(code_uri)
-    if not code_locations or any(location != code_locations[0] for location in code_locations[1:]):
-        raise ValueError
-    code = code_locations[0]
-    key = code.get("Key")
-    version_id = code.get("Version")
     if (
         release_fingerprint != lambda_object.release_fingerprint
-        or code.get("Bucket") != binding.bucket_name
-        or code.get("Bucket") != lambda_object.bucket
-        or key != lambda_object.key
-        or version_id != lambda_object.version_id
+        or lambda_object.bucket != binding.bucket_name
+        or (live_binding is not None and live_binding.bucket != binding.bucket_name)
     ):
         raise ValueError
     statements = policy.get("Statement")
@@ -1237,6 +1362,27 @@ def _verify_execution_policy_artifact_binding(
         "Sid": "ReadOnlyExactLambdaDeploymentArchiveVersion",
     }
     if matches != [expected]:
+        raise ValueError
+    live_matches = [
+        statement
+        for statement in statements
+        if isinstance(statement, Mapping)
+        and statement.get("Sid") == "ReadOnlyExactLiveLambdaDeploymentArchiveVersion"
+    ]
+    expected_live = (
+        []
+        if live_binding is None
+        else [
+            {
+                "Action": "s3:GetObjectVersion",
+                "Condition": {"StringEquals": {"s3:VersionId": live_binding.version_id}},
+                "Effect": "Allow",
+                "Resource": f"arn:aws:s3:::{live_binding.bucket}/{live_binding.key}",
+                "Sid": "ReadOnlyExactLiveLambdaDeploymentArchiveVersion",
+            }
+        ]
+    )
+    if live_matches != expected_live:
         raise ValueError
 
 

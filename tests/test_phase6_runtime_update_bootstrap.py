@@ -28,7 +28,19 @@ def _bootstrap() -> dict[str, Any]:
 
 def _statements(policy: dict[str, Any]) -> dict[str, dict[str, Any]]:
     statements = policy["PolicyDocument"]["Statement"]
-    return {statement["Sid"]: statement for statement in statements}
+    return {statement["Sid"]: statement for statement in statements if "Sid" in statement}
+
+
+def _conditional_statement(policy: dict[str, Any], condition: str) -> dict[str, Any]:
+    matches = [
+        statement["Fn::If"]
+        for statement in policy["PolicyDocument"]["Statement"]
+        if statement.get("Fn::If", [None])[0] == condition
+    ]
+    assert len(matches) == 1
+    selected = matches[0]
+    assert selected[2] == {"Ref": "AWS::NoValue"}
+    return selected[1]
 
 
 def test_bootstrap_has_closed_two_stage_identity_contract() -> None:
@@ -58,6 +70,10 @@ def test_bootstrap_has_closed_two_stage_identity_contract() -> None:
         "ExactChangeSetName",
         "LambdaVersionId",
         "TargetTemplateFingerprint",
+        "CandidateArchiveBinding",
+        "LiveLambdaArchiveSha256",
+        "LiveLambdaVersionId",
+        "LiveReleaseFingerprint",
     } <= set(parameters)
     for name in (
         "CoreTemplateVersionId",
@@ -68,6 +84,12 @@ def test_bootstrap_has_closed_two_stage_identity_contract() -> None:
     ):
         assert parameters[name]["Default"] == "PENDING"
     assert template["Conditions"] == {
+        "CandidateArchiveReadEnabled": {
+            "Fn::Equals": [{"Ref": "CandidateArchiveBinding"}, "EXPANDED"]
+        },
+        "LiveArchiveReadEnabled": {
+            "Fn::Not": [{"Fn::Equals": [{"Ref": "LiveLambdaVersionId"}, "NONE"]}]
+        },
         "StageAUpload": {"Fn::Equals": [{"Ref": "CoreTemplateVersionId"}, "PENDING"]},
         "StageBExact": {"Fn::Not": [{"Fn::Equals": [{"Ref": "CoreTemplateVersionId"}, "PENDING"]}]},
     }
@@ -75,6 +97,33 @@ def test_bootstrap_has_closed_two_stage_identity_contract() -> None:
         template["Rules"]["VersionsMoveTogether"]["Assertions"][0]["AssertDescription"]
         == "All Stage B immutable identities must replace PENDING together"
     )
+    assert template["Parameters"]["CandidateArchiveBinding"]["Default"] == "CONTRACTED"
+    assert all(
+        template["Parameters"][name]["Default"] == "NONE"
+        for name in (
+            "LiveLambdaArchiveSha256",
+            "LiveLambdaVersionId",
+            "LiveReleaseFingerprint",
+        )
+    )
+    assert set(template["Rules"]) == {
+        "CandidateExpansionRequiresExactTarget",
+        "ExpandedCandidateMustDifferFromLive",
+        "LiveArchiveBindingMovesTogether",
+        "OnlyUsWest2",
+        "StageBArchiveAuthorityMustNotBeEmpty",
+        "VersionsMoveTogether",
+    }
+    nonempty = template["Rules"]["StageBArchiveAuthorityMustNotBeEmpty"]
+    assert nonempty["RuleCondition"] == {
+        "Fn::Not": [{"Fn::Equals": [{"Ref": "CoreTemplateVersionId"}, "PENDING"]}]
+    }
+    assert nonempty["Assertions"][0]["Assert"] == {
+        "Fn::Or": [
+            {"Fn::Not": [{"Fn::Equals": [{"Ref": "LiveLambdaVersionId"}, "NONE"]}]},
+            {"Fn::Equals": [{"Ref": "CandidateArchiveBinding"}, "EXPANDED"]},
+        ]
+    }
 
 
 def test_stage_a_matches_common_lambda_v2_names_keys_and_freeze() -> None:
@@ -245,13 +294,25 @@ def test_core_execution_role_is_separate_retained_and_lambda_version_scoped() ->
             {"Fn::Sub": CORE_FUNCTION_ARN_PREFIX + name} for name in CAPPED_CORE_FUNCTION_NAMES
         ],
     }
-    artifact = statements["ReadOnlyExactLambdaDeploymentArchiveVersion"]
-    assert artifact["Action"] == "s3:GetObjectVersion"
-    assert artifact["Condition"] == {"StringEquals": {"s3:VersionId": {"Ref": "LambdaVersionId"}}}
-    assert artifact["Resource"]["Fn::Sub"].endswith(
+    policy = properties["Policies"][0]
+    live = _conditional_statement(policy, "LiveArchiveReadEnabled")
+    candidate = _conditional_statement(policy, "CandidateArchiveReadEnabled")
+    assert live["Sid"] == "ReadOnlyExactLiveLambdaDeploymentArchiveVersion"
+    assert live["Action"] == "s3:GetObjectVersion"
+    assert live["Condition"] == {"StringEquals": {"s3:VersionId": {"Ref": "LiveLambdaVersionId"}}}
+    assert live["Resource"]["Fn::Sub"].endswith(
+        "/private/deployments/lambda/releases/${LiveReleaseFingerprint}/"
+        "phase6-lambda-${LiveLambdaArchiveSha256}.zip"
+    )
+    assert candidate["Sid"] == "ReadOnlyExactLambdaDeploymentArchiveVersion"
+    assert candidate["Action"] == "s3:GetObjectVersion"
+    assert candidate["Condition"] == {"StringEquals": {"s3:VersionId": {"Ref": "LambdaVersionId"}}}
+    assert candidate["Resource"]["Fn::Sub"].endswith(
         "/private/deployments/lambda/releases/${ReleaseFingerprint}/"
         "phase6-lambda-${LambdaArchiveSha256}.zip"
     )
+    assert live["Resource"] != candidate["Resource"]
+    assert live["Condition"] != candidate["Condition"]
     assert statements["ReadOnlyExactSellerWebDistribution"] == {
         "Sid": "ReadOnlyExactSellerWebDistribution",
         "Effect": "Allow",
@@ -351,7 +412,7 @@ def test_every_unavoidable_wildcard_is_region_scoped() -> None:
         statement
         for document in documents
         for statement in document["Statement"]
-        if statement["Resource"] == "*"
+        if statement.get("Resource") == "*"
     ]
     assert {statement["Sid"] for statement in wildcard_statements} == {
         "ConfigureOnlyRegionalStepFunctionsLogDelivery",

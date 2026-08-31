@@ -61,9 +61,11 @@ behavior and the exact API header/query forwarding rules.
 
 ## What the temporary bootstrap grants
 
-The retained execution role already has the exact release-bound Lambda archive read and the
-control-plane permissions needed for named Phase 6 Lambda functions, their inline roles, Lambda
-log groups, and Lambda permissions. The temporary policies add only the missing web closure:
+The retained execution role must already be contracted to the exact live Lambda archive read
+needed by any function the web change set could modify, plus the control-plane permissions needed
+for named Phase 6 Lambda functions, their inline roles, Lambda log groups, and Lambda permissions.
+The reviewed web-edge closure changes no existing `CodeUri`, so it must not expand a candidate
+archive read. The temporary policies add only the missing web closure:
 
 - creation/configuration/rollback of the exact private
   `mr-lister-phase6-web-dev-384627057108-us-west-2` bucket, with no object read, write, or delete;
@@ -159,7 +161,10 @@ Before applying the bootstrap, retain read-only evidence that:
 4. all active triggers remain enabled, every scaffold value remains `false`, the provider-draft
    boundary remains draft-only, and the AgentCore v1 endpoint remains `READY`;
 5. the rendered target has a recorded canonical SHA-256 and its S3 readback matches byte-for-byte;
-6. the Lambda archive key, SHA-256, and S3 VersionId remain the frozen Phase 6 bindings;
+6. the role owner reports `CandidateArchiveBinding=CONTRACTED`, its exact live archive statement
+   matches the predecessor of every Lambda function the change set would modify, and the reviewed
+   target changes no existing `CodeUri` (a code mosaic on unchanged functions does not expand this
+   set);
 7. the ACM certificate is `ISSUED` in `us-east-1` and covers `massskutiny.com`.
 
 Apply the bootstrap only as stack `mr-lister-phase6-web-edge-bootstrap-dev` in `us-west-2`, with

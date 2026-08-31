@@ -34,14 +34,28 @@ def _document(path: Path) -> dict[str, Any]:
 
 def _statements(role: dict[str, Any]) -> dict[str, dict[str, Any]]:
     policy = role["Properties"]["Policies"][0]["PolicyDocument"]
-    return {statement["Sid"]: statement for statement in policy["Statement"]}
+    return {statement["Sid"]: statement for statement in policy["Statement"] if "Sid" in statement}
 
 
-def test_root_only_bootstrap_has_one_static_role_and_three_exact_inputs() -> None:
+def _conditional_statement(role: dict[str, Any], condition: str) -> dict[str, Any]:
+    policy = role["Properties"]["Policies"][0]["PolicyDocument"]
+    matches = [
+        statement["Fn::If"]
+        for statement in policy["Statement"]
+        if statement.get("Fn::If", [None])[0] == condition
+    ]
+    assert len(matches) == 1
+    selected = matches[0]
+    assert selected[2] == {"Ref": "AWS::NoValue"}
+    return selected[1]
+
+
+def test_root_only_bootstrap_has_one_static_role_and_closed_archive_inputs() -> None:
     template = _document(BOOTSTRAP_PATH)
 
     assert set(template) == {
         "AWSTemplateFormatVersion",
+        "Conditions",
         "Description",
         "Metadata",
         "Outputs",
@@ -56,11 +70,35 @@ def test_root_only_bootstrap_has_one_static_role_and_three_exact_inputs() -> Non
         "RootApplied": True,
     }
     assert set(template["Parameters"]) == {
+        "CandidateArchiveBinding",
         "LambdaArchiveSha256",
         "LambdaVersionId",
+        "LiveLambdaArchiveSha256",
+        "LiveLambdaVersionId",
+        "LiveReleaseFingerprint",
         "ReleaseFingerprint",
     }
-    assert all("Default" not in definition for definition in template["Parameters"].values())
+    assert template["Parameters"]["CandidateArchiveBinding"] == {
+        "AllowedValues": ["CONTRACTED", "EXPANDED"],
+        "Default": "CONTRACTED",
+        "Description": (
+            "EXPANDED only while an exact candidate archive must coexist with the live rollback "
+            "archive"
+        ),
+        "Type": "String",
+    }
+    assert all(
+        template["Parameters"][name]["Default"] == "NONE"
+        for name in (
+            "LiveLambdaArchiveSha256",
+            "LiveLambdaVersionId",
+            "LiveReleaseFingerprint",
+        )
+    )
+    assert all(
+        "Default" not in template["Parameters"][name]
+        for name in ("LambdaArchiveSha256", "LambdaVersionId", "ReleaseFingerprint")
+    )
     version_pattern = template["Parameters"]["LambdaVersionId"]["AllowedPattern"]
     assert re.fullmatch(version_pattern, "BrN1FSvu_H9ZpkLKXFzvmbVPyfdgBUon")
     for moving in (
@@ -74,15 +112,27 @@ def test_root_only_bootstrap_has_one_static_role_and_three_exact_inputs() -> Non
         "unversioned",
     ):
         assert re.fullmatch(version_pattern, moving) is None
-    assert template["Rules"] == {
-        "OnlyUsWest2": {
-            "Assertions": [
-                {
-                    "Assert": {"Fn::Equals": [{"Ref": "AWS::Region"}, "us-west-2"]},
-                    "AssertDescription": ("This dev-only bootstrap must be created in us-west-2"),
-                }
-            ]
-        }
+    assert set(template["Rules"]) == {
+        "ArchiveAuthorityMustNotBeEmpty",
+        "ExpandedCandidateMustDifferFromLive",
+        "LiveArchiveBindingMovesTogether",
+        "OnlyUsWest2",
+    }
+    assert template["Rules"]["OnlyUsWest2"] == {
+        "Assertions": [
+            {
+                "Assert": {"Fn::Equals": [{"Ref": "AWS::Region"}, "us-west-2"]},
+                "AssertDescription": ("This dev-only bootstrap must be created in us-west-2"),
+            }
+        ]
+    }
+    assert template["Conditions"] == {
+        "CandidateArchiveReadEnabled": {
+            "Fn::Equals": [{"Ref": "CandidateArchiveBinding"}, "EXPANDED"]
+        },
+        "LiveArchiveReadEnabled": {
+            "Fn::Not": [{"Fn::Equals": [{"Ref": "LiveLambdaVersionId"}, "NONE"]}]
+        },
     }
     assert set(template["Resources"]) == {"CoreRuntimeExecutionRole"}
     assert template["Outputs"] == {
@@ -90,6 +140,33 @@ def test_root_only_bootstrap_has_one_static_role_and_three_exact_inputs() -> Non
             "Value": {"Fn::GetAtt": ["CoreRuntimeExecutionRole", "Arn"]}
         }
     }
+
+
+def test_archive_rules_fail_closed_and_require_a_distinct_expanded_candidate() -> None:
+    template = _document(BOOTSTRAP_PATH)
+    rules = template["Rules"]
+
+    nonempty = rules["ArchiveAuthorityMustNotBeEmpty"]["Assertions"][0]
+    assert nonempty["Assert"] == {
+        "Fn::Or": [
+            {"Fn::Not": [{"Fn::Equals": [{"Ref": "LiveLambdaVersionId"}, "NONE"]}]},
+            {"Fn::Equals": [{"Ref": "CandidateArchiveBinding"}, "EXPANDED"]},
+        ]
+    }
+    distinct = rules["ExpandedCandidateMustDifferFromLive"]
+    assert distinct["RuleCondition"] == {
+        "Fn::Equals": [{"Ref": "CandidateArchiveBinding"}, "EXPANDED"]
+    }
+    serialized = json.dumps(distinct, sort_keys=True)
+    for name in (
+        "LambdaArchiveSha256",
+        "LambdaVersionId",
+        "LiveLambdaArchiveSha256",
+        "LiveLambdaVersionId",
+        "LiveReleaseFingerprint",
+        "ReleaseFingerprint",
+    ):
+        assert name in serialized
 
 
 def test_root_only_bootstrap_copies_the_reviewed_execution_role_exactly() -> None:
@@ -134,7 +211,8 @@ def test_execution_role_keeps_exact_resource_and_wildcard_boundaries() -> None:
     role = _document(BOOTSTRAP_PATH)["Resources"]["CoreRuntimeExecutionRole"]
     statements = _statements(role)
 
-    assert len(statements) == 17
+    assert len(role["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]) == 18
+    assert len(statements) == 16
     wildcard = {
         sid: statement for sid, statement in statements.items() if statement["Resource"] == "*"
     }
@@ -171,8 +249,22 @@ def test_execution_role_keeps_exact_resource_and_wildcard_boundaries() -> None:
         )
     ]
 
-    artifact = statements["ReadOnlyExactLambdaDeploymentArchiveVersion"]
-    assert artifact == {
+    live = _conditional_statement(role, "LiveArchiveReadEnabled")
+    assert live == {
+        "Sid": "ReadOnlyExactLiveLambdaDeploymentArchiveVersion",
+        "Effect": "Allow",
+        "Action": "s3:GetObjectVersion",
+        "Resource": {
+            "Fn::Sub": (
+                "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-"
+                "${AWS::AccountId}-us-west-2/private/deployments/lambda/releases/"
+                "${LiveReleaseFingerprint}/phase6-lambda-${LiveLambdaArchiveSha256}.zip"
+            )
+        },
+        "Condition": {"StringEquals": {"s3:VersionId": {"Ref": "LiveLambdaVersionId"}}},
+    }
+    candidate = _conditional_statement(role, "CandidateArchiveReadEnabled")
+    assert candidate == {
         "Sid": "ReadOnlyExactLambdaDeploymentArchiveVersion",
         "Effect": "Allow",
         "Action": "s3:GetObjectVersion",
@@ -185,6 +277,8 @@ def test_execution_role_keeps_exact_resource_and_wildcard_boundaries() -> None:
         },
         "Condition": {"StringEquals": {"s3:VersionId": {"Ref": "LambdaVersionId"}}},
     }
+    assert live["Resource"] != candidate["Resource"]
+    assert live["Condition"] != candidate["Condition"]
 
     pass_role = statements["PassOnlyCoreRuntimeRoles"]
     assert pass_role["Resource"] == {

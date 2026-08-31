@@ -375,18 +375,33 @@ def _execution_policy() -> dict[str, Any]:
     substitutions = {
         "AWS::AccountId": ACCOUNT,
         "AWS::Partition": "aws",
+        "CandidateArchiveBinding": "EXPANDED",
         "LambdaArchiveSha256": LAMBDA_ARCHIVE_SHA256,
         "LambdaVersionId": LAMBDA_VERSION_ID,
+        "LiveLambdaArchiveSha256": "NONE",
+        "LiveLambdaVersionId": "NONE",
+        "LiveReleaseFingerprint": "NONE",
         "ReleaseFingerprint": RELEASE_FINGERPRINT,
     }
+    condition_values = {
+        "CandidateArchiveReadEnabled": True,
+        "LiveArchiveReadEnabled": False,
+    }
+    no_value = object()
 
     def resolve(value: Any) -> Any:
         if isinstance(value, list):
-            return [resolve(item) for item in value]
+            resolved_items = [resolve(item) for item in value]
+            return [item for item in resolved_items if item is not no_value]
         if not isinstance(value, dict):
             return value
         if set(value) == {"Ref"}:
+            if value["Ref"] == "AWS::NoValue":
+                return no_value
             return substitutions[value["Ref"]]
+        if set(value) == {"Fn::If"}:
+            condition, when_true, when_false = value["Fn::If"]
+            return resolve(when_true if condition_values[condition] else when_false)
         if set(value) == {"Fn::Sub"}:
             return re.sub(
                 r"\$\{([^}]+)\}",
@@ -901,6 +916,75 @@ def _mutate_cloudtrail(documents: dict[str, dict[str, Any]], mutation: Any) -> N
     event = json.loads(wrapper["CloudTrailEvent"])
     mutation(event)
     wrapper["CloudTrailEvent"] = json.dumps(event, separators=(",", ":"), sort_keys=True)
+
+
+def _lambda_binding_template(bindings: dict[str, tuple[str, str, str]]) -> dict[str, Any]:
+    return {
+        "Resources": {
+            logical_id: {
+                "Type": "AWS::Serverless::Function",
+                "Properties": {
+                    "CodeUri": {
+                        "Bucket": BUCKET,
+                        "Key": (
+                            "private/deployments/lambda/releases/"
+                            f"{release}/phase6-lambda-{archive}.zip"
+                        ),
+                        "Version": version,
+                    }
+                },
+            }
+            for logical_id, (release, archive, version) in bindings.items()
+        }
+    }
+
+
+def test_changed_lambda_transition_ignores_an_unchanged_code_mosaic() -> None:
+    live = ("a" * 64, "1" * 64, "live-version")
+    candidate = ("b" * 64, "2" * 64, "candidate-version")
+    unchanged = ("c" * 64, "3" * 64, "unchanged-version")
+
+    predecessor = _lambda_binding_template({"Changed": live, "Unchanged": unchanged})
+    target = _lambda_binding_template({"Changed": candidate, "Unchanged": unchanged})
+
+    live_binding, candidate_binding = update_verifier._changed_lambda_archive_transition(
+        predecessor,
+        target,
+    )
+
+    assert live_binding is not None
+    assert (
+        live_binding.release_fingerprint,
+        live_binding.archive_sha256,
+        live_binding.version_id,
+    ) == live
+    assert (
+        candidate_binding.release_fingerprint,
+        candidate_binding.archive_sha256,
+        candidate_binding.version_id,
+    ) == candidate
+
+
+@pytest.mark.parametrize("mosaic_side", ["predecessor", "candidate"])
+def test_changed_lambda_transition_rejects_multiple_archive_tuples(mosaic_side: str) -> None:
+    live_a = ("a" * 64, "1" * 64, "live-a")
+    live_b = ("b" * 64, "2" * 64, "live-b")
+    candidate_a = ("c" * 64, "3" * 64, "candidate-a")
+    candidate_b = ("d" * 64, "4" * 64, "candidate-b")
+    predecessor_bindings = {
+        "First": live_a,
+        "Second": live_b if mosaic_side == "predecessor" else live_a,
+    }
+    target_bindings = {
+        "First": candidate_a,
+        "Second": candidate_b if mosaic_side == "candidate" else candidate_a,
+    }
+
+    with pytest.raises(ValueError):
+        update_verifier._changed_lambda_archive_transition(
+            _lambda_binding_template(predecessor_bindings),
+            _lambda_binding_template(target_bindings),
+        )
 
 
 def test_exact_reviewed_update_returns_short_lived_capture_descriptor(tmp_path: Path) -> None:

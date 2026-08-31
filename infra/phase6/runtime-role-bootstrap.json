@@ -10,6 +10,12 @@
     }
   },
   "Parameters": {
+    "CandidateArchiveBinding": {
+      "Type": "String",
+      "Default": "CONTRACTED",
+      "AllowedValues": ["CONTRACTED", "EXPANDED"],
+      "Description": "EXPANDED only while an exact candidate archive must coexist with the live rollback archive"
+    },
     "ReleaseFingerprint": {
       "Type": "String",
       "AllowedPattern": "^(?!0{64}$)[a-f0-9]{64}$",
@@ -24,6 +30,24 @@
       "Type": "String",
       "AllowedPattern": "^(?!(?i:PENDING|current|default|latest|moving|null|none|unversioned)$)[A-Za-z0-9._~+/=-]{3,1024}$",
       "Description": "Exact immutable S3 VersionId of the Lambda deployment archive"
+    },
+    "LiveReleaseFingerprint": {
+      "Type": "String",
+      "Default": "NONE",
+      "AllowedPattern": "^(NONE|(?!0{64}$)[a-f0-9]{64})$",
+      "Description": "Exact live rollback release fingerprint, or NONE only when no Lambda predecessor exists"
+    },
+    "LiveLambdaArchiveSha256": {
+      "Type": "String",
+      "Default": "NONE",
+      "AllowedPattern": "^(NONE|(?!0{64}$)[a-f0-9]{64})$",
+      "Description": "Exact SHA-256 of the live rollback Lambda archive, or NONE only when no predecessor exists"
+    },
+    "LiveLambdaVersionId": {
+      "Type": "String",
+      "Default": "NONE",
+      "AllowedPattern": "^(NONE|(?!(?i:PENDING|current|default|latest|moving|null|none|unversioned)$)[A-Za-z0-9._~+/=-]{3,1024})$",
+      "Description": "Exact immutable S3 VersionId of the live rollback archive, or NONE only when no predecessor exists"
     }
   },
   "Rules": {
@@ -34,6 +58,76 @@
           "AssertDescription": "This dev-only bootstrap must be created in us-west-2"
         }
       ]
+    },
+    "LiveArchiveBindingMovesTogether": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Or": [
+              {
+                "Fn::And": [
+                  {"Fn::Equals": [{"Ref": "LiveReleaseFingerprint"}, "NONE"]},
+                  {"Fn::Equals": [{"Ref": "LiveLambdaArchiveSha256"}, "NONE"]},
+                  {"Fn::Equals": [{"Ref": "LiveLambdaVersionId"}, "NONE"]}
+                ]
+              },
+              {
+                "Fn::And": [
+                  {"Fn::Not": [{"Fn::Equals": [{"Ref": "LiveReleaseFingerprint"}, "NONE"]}]},
+                  {"Fn::Not": [{"Fn::Equals": [{"Ref": "LiveLambdaArchiveSha256"}, "NONE"]}]},
+                  {"Fn::Not": [{"Fn::Equals": [{"Ref": "LiveLambdaVersionId"}, "NONE"]}]}
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "The live rollback release, archive digest, and VersionId must be supplied together or all be NONE"
+        }
+      ]
+    },
+    "ArchiveAuthorityMustNotBeEmpty": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Or": [
+              {"Fn::Not": [{"Fn::Equals": [{"Ref": "LiveLambdaVersionId"}, "NONE"]}]},
+              {"Fn::Equals": [{"Ref": "CandidateArchiveBinding"}, "EXPANDED"]}
+            ]
+          },
+          "AssertDescription": "The role must retain one exact live or candidate archive read"
+        }
+      ]
+    },
+    "ExpandedCandidateMustDifferFromLive": {
+      "RuleCondition": {"Fn::Equals": [{"Ref": "CandidateArchiveBinding"}, "EXPANDED"]},
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Or": [
+              {"Fn::Equals": [{"Ref": "LiveLambdaVersionId"}, "NONE"]},
+              {
+                "Fn::Not": [
+                  {
+                    "Fn::And": [
+                      {"Fn::Equals": [{"Ref": "LiveReleaseFingerprint"}, {"Ref": "ReleaseFingerprint"}]},
+                      {"Fn::Equals": [{"Ref": "LiveLambdaArchiveSha256"}, {"Ref": "LambdaArchiveSha256"}]},
+                      {"Fn::Equals": [{"Ref": "LiveLambdaVersionId"}, {"Ref": "LambdaVersionId"}]}
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "An expanded candidate archive tuple must differ from the live tuple"
+        }
+      ]
+    }
+  },
+  "Conditions": {
+    "CandidateArchiveReadEnabled": {
+      "Fn::Equals": [{"Ref": "CandidateArchiveBinding"}, "EXPANDED"]
+    },
+    "LiveArchiveReadEnabled": {
+      "Fn::Not": [{"Fn::Equals": [{"Ref": "LiveLambdaVersionId"}, "NONE"]}]
     }
   },
   "Resources": {
@@ -301,13 +395,34 @@
                   }
                 },
                 {
-                  "Sid": "ReadOnlyExactLambdaDeploymentArchiveVersion",
-                  "Effect": "Allow",
-                  "Action": "s3:GetObjectVersion",
-                  "Resource": {
-                    "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2/private/deployments/lambda/releases/${ReleaseFingerprint}/phase6-lambda-${LambdaArchiveSha256}.zip"
-                  },
-                  "Condition": {"StringEquals": {"s3:VersionId": {"Ref": "LambdaVersionId"}}}
+                  "Fn::If": [
+                    "LiveArchiveReadEnabled",
+                    {
+                      "Sid": "ReadOnlyExactLiveLambdaDeploymentArchiveVersion",
+                      "Effect": "Allow",
+                      "Action": "s3:GetObjectVersion",
+                      "Resource": {
+                        "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2/private/deployments/lambda/releases/${LiveReleaseFingerprint}/phase6-lambda-${LiveLambdaArchiveSha256}.zip"
+                      },
+                      "Condition": {"StringEquals": {"s3:VersionId": {"Ref": "LiveLambdaVersionId"}}}
+                    },
+                    {"Ref": "AWS::NoValue"}
+                  ]
+                },
+                {
+                  "Fn::If": [
+                    "CandidateArchiveReadEnabled",
+                    {
+                      "Sid": "ReadOnlyExactLambdaDeploymentArchiveVersion",
+                      "Effect": "Allow",
+                      "Action": "s3:GetObjectVersion",
+                      "Resource": {
+                        "Fn::Sub": "arn:${AWS::Partition}:s3:::mr-lister-phase6-artifacts-dev-${AWS::AccountId}-us-west-2/private/deployments/lambda/releases/${ReleaseFingerprint}/phase6-lambda-${LambdaArchiveSha256}.zip"
+                      },
+                      "Condition": {"StringEquals": {"s3:VersionId": {"Ref": "LambdaVersionId"}}}
+                    },
+                    {"Ref": "AWS::NoValue"}
+                  ]
                 }
               ]
             }

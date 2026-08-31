@@ -10,8 +10,10 @@ Root is used only for the two actions that require broad control:
 2. create the small CloudFormation execution-role bootstrap and the reviewed core change set.
 
 CloudFormation still runs through `mr-lister-phase6-runtime-cfn-dev`, not with root's ambient
-authority. That retained role can manage only the named Phase 6 dev backend resources and can read
-only the exact Lambda object key and S3 VersionId supplied to its bootstrap. Its sole
+authority. That retained role can manage only the named Phase 6 dev backend resources. At rest it
+can read one exact live Lambda object key and S3 VersionId. Immediately before an update it can be
+expanded to one separately paired exact candidate key and VersionId, and it is contracted again
+after the application stack reaches a terminal state. Its sole
 CloudFormation action is `CreateChangeSet` on the exact regional
 `AWS::Serverless-2016-10-31` transform so CloudFormation can expand the staged SAM template.
 
@@ -63,8 +65,22 @@ Write the template once, then rerun the renderer with `--verify-staged` before u
 
 After the Lambda VersionId is known, apply `runtime-role-bootstrap.json` manually as root in
 `us-west-2`, using stack name `mr-lister-phase6-runtime-role-bootstrap-dev` and
-`CAPABILITY_NAMED_IAM`. Supply the exact release fingerprint, Lambda archive SHA-256, and Lambda
-VersionId.
+`CAPABILITY_NAMED_IAM`. Update the stack that already owns the fixed role name; do not create the
+audit-grade bootstrap alongside it.
+
+Before an application update, enumerate only the Lambda functions whose `CodeUri` changes in the
+reviewed change set. Every changed existing function must have the same exact predecessor bucket,
+key, and VersionId, and every changed target function must have the same exact candidate tuple.
+A function whose `CodeUri` is unchanged may remain on an older archive and is not part of this
+rollback read set. Stop if changed functions have more than one predecessor or candidate tuple;
+split or reseal the update instead of widening IAM.
+
+Supply that predecessor as `LiveReleaseFingerprint`, `LiveLambdaArchiveSha256`, and
+`LiveLambdaVersionId`. Supply the candidate through `ReleaseFingerprint`,
+`LambdaArchiveSha256`, and `LambdaVersionId`, then set
+`CandidateArchiveBinding=EXPANDED`. For a true first deployment with no predecessor Lambda, leave
+all three `Live*` parameters at `NONE`. The template requires the `Live*` values to be all exact or
+all `NONE` and defaults the candidate read to `CONTRACTED`.
 
 The bootstrap contains exactly one retained IAM role. It does not create or attach a managed
 policy, reference `mr-lister-developers`, grant upload authority, create a deployer identity, or
@@ -116,10 +132,60 @@ the three foundation resources in place and adds only the inert backend resource
 staging renderer. Any removal, replacement of a retained foundation resource, web-surface
 resource, active trigger, or unexpected IAM expansion stops the deployment.
 
-After review, execute the exact change set manually. Verify stack completion, role identity,
-Lambda code VersionIds, disabled triggers, function environment bindings, and log retention.
+Before execution of an update with an existing Lambda predecessor, read back the role's one inline
+policy and require two distinct `s3:GetObjectVersion` statements: one predecessor key paired only
+with its VersionId and one candidate key paired only with its VersionId. A true first deployment
+has only the candidate statement. Resource or VersionId lists are forbidden because they form a
+cross-product rather than separate exact pairs.
+
+After review, execute the exact change set manually and keep both reads until the application
+stack is terminal. On `UPDATE_COMPLETE`, update the bootstrap so the candidate tuple becomes the
+three `Live*` values and set `CandidateArchiveBinding=CONTRACTED`. On
+`UPDATE_ROLLBACK_COMPLETE`, leave the predecessor `Live*` values unchanged and set
+`CandidateArchiveBinding=CONTRACTED`. Read the inline policy back and require exactly one live
+archive statement before considering deployment authority closed. Never contract while the stack
+is `*_IN_PROGRESS`, and never skip a rollback resource to work around a missing archive read.
+
+Verify stack completion, role identity, Lambda code VersionIds, disabled triggers, function
+environment bindings, and log retention.
 This does not activate intake, publish approval, or the seller web surface; those remain separate
 later gates.
+
+## Recover an archive-read rollback failure
+
+If the application stack is already `UPDATE_ROLLBACK_FAILED` because the retained role cannot read
+the predecessor archive, do not retry the application update. First identify which bootstrap stack
+owns `mr-lister-phase6-runtime-cfn-dev`; the simple and audit bootstraps are mutually exclusive
+owners of that fixed name. Update only that owner as root with:
+
+```text
+LiveReleaseFingerprint=0c6211a5b0244e9c86d635e6c02e7bc49e5e948d68895b4aaa982c0b0b2e187b
+LiveLambdaArchiveSha256=baf152b732ce8574b6a6925bae7ab4ff849c1b83d4137076c52c6682553f9d48
+LiveLambdaVersionId=pHutjLzKNpukwJ75Qs9s8YzXUAvgxZuS
+ReleaseFingerprint=<full attempted 2c1b... release fingerprint>
+LambdaArchiveSha256=<full attempted ba6f... archive SHA-256>
+LambdaVersionId=<exact attempted archive VersionId from sealed evidence>
+CandidateArchiveBinding=EXPANDED
+```
+
+For this recovery, the functions being rolled back share the `0c621.../baf152...` predecessor and
+the `2c1b.../ba6f...` candidate. `ReviewQueryApiFunction` remains unchanged on its older
+`6e32.../122958...` object, so that third object is not added to the rollback policy.
+
+Wait for IAM propagation, acquire a fresh role session, and read back the one inline policy. Require
+both exact statements and verify that swapping either VersionId or either resource fails the
+pairing check. Then continue the existing rollback with the retained role and no skipped resources:
+
+```shell
+aws cloudformation continue-update-rollback \
+  --stack-name <EXACT_APPLICATION_STACK_ID> \
+  --role-arn arn:aws:iam::<ACCOUNT_ID>:role/mr-lister-phase6-runtime-cfn-dev \
+  --region us-west-2
+```
+
+Monitor events to `UPDATE_ROLLBACK_COMPLETE`, verify the affected functions have the exact
+predecessor `CodeUri`, and then set `CandidateArchiveBinding=CONTRACTED` while preserving the
+three `Live*` values. Preserve both immutable objects and the failed attempt evidence.
 
 ## Optional audit-grade path
 

@@ -8,6 +8,10 @@
 This runbook stages and reviews the first inert core-runtime update of the retained Phase 6
 foundation stack. It does not deploy the seller web surface, enable a trigger, authorize
 publication, or execute a change set. The final verifier is offline and proves only its captures.
+Its v2 evidence contract describes that first transition, whose predecessor contains no Lambda
+function. The bootstrap itself now supports a live-plus-candidate rollback window for later code
+updates, but the v2 verifier must not claim a later update until a separately reviewed predecessor
+template/object evidence input is added.
 
 Keep these roles distinct:
 
@@ -36,7 +40,10 @@ sam validate --lint --template-file infra/phase6/runtime-update-bootstrap.json
 ### Stage A: independently seal Lambda, then the template
 
 Create the bootstrap stack with exact `FoundationStackId`, `ReleaseFingerprint`,
-`LambdaArchiveSha256`, and a near-term Stage A `NotAfter`. Leave `LambdaVersionId`,
+`LambdaArchiveSha256`, and a near-term Stage A `NotAfter`. For this first-transition verifier,
+leave `LiveReleaseFingerprint`, `LiveLambdaArchiveSha256`, and `LiveLambdaVersionId` at `NONE`;
+there is no predecessor Lambda. The three values must always move together when the role-owner
+template is used for a later recovery. Leave `CandidateArchiveBinding=CONTRACTED`, `LambdaVersionId`,
 `CoreTemplateVersionId`, `CoreTemplateVersionIdUrlEncoded`, `TargetTemplateFingerprint`, and
 `ExactChangeSetName` at `PENDING`; the template requires all five to move together.
 
@@ -93,16 +100,22 @@ Stage A identities fixed and set together:
 - canonical semantic `TargetTemplateFingerprint`;
 - `ExactChangeSetName` equal to `mr-lister-phase6-dev-runtime-update-` plus the first twelve target
   fingerprint characters.
+- `CandidateArchiveBinding=EXPANDED`.
 
 Set a fresh `NotAfter` later than capture/review but no more than fifteen minutes after the
-CreateChangeSet CloudTrail event. Stage B removes both upload policies, binds the runtime role to
-the exact Lambda version, and creates the deployer and assume-role policy. If the window cannot be
+CreateChangeSet CloudTrail event. Stage B removes both upload policies, retains the exact live
+rollback archive read, adds the separately paired exact candidate archive read, and creates the
+deployer and assume-role policy. Candidate expansion is rejected while any Stage B identity is
+`PENDING`. If the window cannot be
 completed, stop and open a fresh Stage B window before creating a new change set.
 
 Read back both live roles and policies. Each role must have one exact inline policy, no attached
 policies, and no boundary. The verifier derives the complete runtime execution policy from the
 checked bootstrap plus the exact account and accepted Lambda object binding; any extra or missing
 statement, action, resource, or condition fails even if a manifest fingerprint is recomputed. The
+resolved runtime policy has one exact statement for each enabled archive binding. Each statement
+pairs one content-addressed key with only its own VersionId; key lists, VersionId lists, or any
+other cross-product are forbidden. The
 deployer policy must bind the exact stack, SAM transform,
 `cloudformation:RoleArn`, `cloudformation:ChangeSetName`, immutable versioned
 `cloudformation:TemplateUrl`, three tags, expiry, exact `iam:PassRole` with
@@ -284,3 +297,23 @@ descriptor to be byte-for-byte identical, and
 require current time before `recapture_contract.execute_before`. Any changed evidence fingerprint,
 policy, role inventory, template, change context, change-set state, CloudTrail join, descriptor
 byte, or expired window invalidates the review. Execution remains a separate manual/root action.
+
+## Terminal contraction
+
+Keep the live and candidate archive reads until the application stack reaches a terminal state.
+Before removing temporary authority:
+
+- after `UPDATE_COMPLETE`, set the three `Live*` values to the candidate tuple and set
+  `CandidateArchiveBinding=CONTRACTED`;
+- after `UPDATE_ROLLBACK_COMPLETE`, preserve the predecessor `Live*` tuple and set
+  `CandidateArchiveBinding=CONTRACTED`.
+
+Do not reset the Stage B version/evidence parameters to `PENDING`; that would re-enter Stage A and
+recreate upload authority. Read back the role's single inline policy and require exactly one live
+archive read after contraction. Never contract during rollback and never use
+`continue-update-rollback --resources-to-skip` to mask an archive-permission failure.
+
+For a code mosaic, derive `Live*` from the predecessor `CodeUri` of only the functions the change
+set actually modifies. All such predecessors must be one exact tuple and all changed targets must
+be one exact candidate tuple. Unchanged functions may reference another immutable archive; that
+archive is not added merely because it exists elsewhere in the stack.
