@@ -10,6 +10,18 @@ import pytest
 
 import tools.render_phase6_seller_command_runtime_envelope as correction
 
+LINEAGE_PATH = Path(__file__).parent / "fixtures/phase6_release_lineage.json"
+LINEAGE_COMPONENT = "phase6-seller-command-runtime-envelope"
+LINEAGE_KEYS = {
+    "component",
+    "format",
+    "permitted_changed_path",
+    "predecessor_sha256",
+    "publication_enabled",
+    "source_sha256",
+    "target_sha256",
+}
+
 
 def _canonical(value: object) -> bytes:
     return (
@@ -41,6 +53,18 @@ def _documents() -> tuple[dict[str, object], dict[str, object]]:
         }
     }
     return predecessor, source
+
+
+def _release_lineage() -> dict[str, object]:
+    raw = LINEAGE_PATH.read_bytes()
+    records = json.loads(raw)
+    assert _canonical(records) == raw
+    assert isinstance(records, list)
+    matches = [record for record in records if record.get("component") == LINEAGE_COMPONENT]
+    assert len(matches) == 1
+    record = matches[0]
+    assert set(record) == LINEAGE_KEYS
+    return record
 
 
 def _render(
@@ -113,32 +137,25 @@ def test_render_rejects_drifted_runtime_authority(
         _render(monkeypatch, predecessor, source)
 
 
-def test_checked_in_authorities_render_exact_target() -> None:
-    predecessor_raw = correction.DEFAULT_PREDECESSOR_PATH.read_bytes()
-    source_raw = correction.DEFAULT_SOURCE_PATH.read_bytes()
+def test_sanitized_release_lineage_binds_exact_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lineage = _release_lineage()
 
-    rendered = correction.render_phase6_seller_command_runtime_envelope(
-        predecessor_raw,
-        source_raw,
-    )
-
-    assert correction.PREDECESSOR_TEMPLATE_SHA256 == (
-        "e5fb4ba29915fd8ec4261476987432c20b490f339019f4eb6a6972b4c24f86c3"
-    )
-    assert correction.SOURCE_TEMPLATE_SHA256 == (
-        "1f9772e04ace5a035febeea14b92417866326e5f07a0495a981648dac625fd09"
-    )
-    assert correction.SELLER_COMMAND_RUNTIME_ENVELOPE_TEMPLATE_SHA256 == (
-        "6a6775a01f7c836ba90efb8f0a9259d389daac32b52c5bf553a4752aeb9f8791"
-    )
-    assert sha256(predecessor_raw).hexdigest() == correction.PREDECESSOR_TEMPLATE_SHA256
-    assert sha256(source_raw).hexdigest() == correction.SOURCE_TEMPLATE_SHA256
+    assert lineage["format"] == "phase6-release-lineage-v1"
+    assert lineage["publication_enabled"] is False
+    assert lineage["predecessor_sha256"] == correction.PREDECESSOR_TEMPLATE_SHA256
+    assert lineage["source_sha256"] == correction.SOURCE_TEMPLATE_SHA256
+    assert lineage["target_sha256"] == (correction.SELLER_COMMAND_RUNTIME_ENVELOPE_TEMPLATE_SHA256)
+    assert tuple(lineage["permitted_changed_path"]) == correction._MEMORY_PATH
     assert (
-        sha256(rendered).hexdigest() == correction.SELLER_COMMAND_RUNTIME_ENVELOPE_TEMPLATE_SHA256
+        sha256(correction.DEFAULT_SOURCE_PATH.read_bytes()).hexdigest() == lineage["source_sha256"]
     )
-    target = json.loads(rendered)
-    assert correction._changed_paths(json.loads(predecessor_raw), target) == {
-        correction._MEMORY_PATH
+
+    predecessor, source = _documents()
+    target = _render(monkeypatch, predecessor, source)
+    assert correction._changed_paths(predecessor, target) == {
+        tuple(lineage["permitted_changed_path"])
     }
 
 

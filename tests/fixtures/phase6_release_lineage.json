@@ -1,0 +1,36 @@
+[
+  {
+    "component": "phase6-dispatch-stream-filter-correction",
+    "format": "phase6-release-lineage-v1",
+    "permitted_changed_path": [
+      "Resources",
+      "DispatcherFunction",
+      "Properties",
+      "Events",
+      "OperationalStateChanges",
+      "Properties",
+      "FilterCriteria",
+      "Filters",
+      "0",
+      "Pattern"
+    ],
+    "predecessor_sha256": "81ad610ad62fa4ab58017c107c980b9572c4306681264f9565555e77379325e8",
+    "publication_enabled": false,
+    "source_sha256": "96439a80d9c65e658de68cb3e8ca6c9ca99ad85b69ef9cbef2b4bb9d1517430b",
+    "target_sha256": "e5fb4ba29915fd8ec4261476987432c20b490f339019f4eb6a6972b4c24f86c3"
+  },
+  {
+    "component": "phase6-seller-command-runtime-envelope",
+    "format": "phase6-release-lineage-v1",
+    "permitted_changed_path": [
+      "Resources",
+      "SellerCommandApiFunction",
+      "Properties",
+      "MemorySize"
+    ],
+    "predecessor_sha256": "e5fb4ba29915fd8ec4261476987432c20b490f339019f4eb6a6972b4c24f86c3",
+    "publication_enabled": false,
+    "source_sha256": "1f9772e04ace5a035febeea14b92417866326e5f07a0495a981648dac625fd09",
+    "target_sha256": "6a6775a01f7c836ba90efb8f0a9259d389daac32b52c5bf553a4752aeb9f8791"
+  }
+]

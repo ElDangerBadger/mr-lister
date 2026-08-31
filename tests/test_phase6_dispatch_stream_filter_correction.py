@@ -3,10 +3,23 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from hashlib import sha256
+from pathlib import Path
 
 import pytest
 
 import tools.render_phase6_dispatch_stream_filter_correction as correction
+
+LINEAGE_PATH = Path(__file__).parent / "fixtures/phase6_release_lineage.json"
+LINEAGE_COMPONENT = "phase6-dispatch-stream-filter-correction"
+LINEAGE_KEYS = {
+    "component",
+    "format",
+    "permitted_changed_path",
+    "predecessor_sha256",
+    "publication_enabled",
+    "source_sha256",
+    "target_sha256",
+}
 
 
 def _canonical(value: object) -> bytes:
@@ -44,6 +57,18 @@ def _document(pattern: object) -> dict[str, object]:
             "Unchanged": {"Properties": {"Value": "exact"}, "Type": "Custom::Exact"},
         },
     }
+
+
+def _release_lineage() -> dict[str, object]:
+    raw = LINEAGE_PATH.read_bytes()
+    records = json.loads(raw)
+    assert _canonical(records) == raw
+    assert isinstance(records, list)
+    matches = [record for record in records if record.get("component") == LINEAGE_COMPONENT]
+    assert len(matches) == 1
+    record = matches[0]
+    assert set(record) == LINEAGE_KEYS
+    return record
 
 
 def _render(
@@ -111,17 +136,28 @@ def test_render_rejects_noncanonical_predecessor(monkeypatch: pytest.MonkeyPatch
         correction.render_phase6_dispatch_filter_correction(predecessor_raw, source_raw)
 
 
-def test_checked_in_historical_authorities_and_exact_private_output() -> None:
-    predecessor = correction.DEFAULT_PREDECESSOR_PATH.read_bytes()
-    target = correction.DEFAULT_OUTPUT_PATH.read_bytes()
-    assert sha256(predecessor).hexdigest() == correction.PREDECESSOR_TEMPLATE_SHA256
-    assert sha256(target).hexdigest() == correction.DISPATCH_FILTER_CORRECTION_TEMPLATE_SHA256
+def test_sanitized_release_lineage_binds_historical_authorities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lineage = _release_lineage()
+
+    assert lineage["format"] == "phase6-release-lineage-v1"
+    assert lineage["publication_enabled"] is False
+    assert lineage["predecessor_sha256"] == correction.PREDECESSOR_TEMPLATE_SHA256
+    assert lineage["source_sha256"] == correction.CORRECTED_SOURCE_TEMPLATE_SHA256
+    assert lineage["target_sha256"] == correction.DISPATCH_FILTER_CORRECTION_TEMPLATE_SHA256
+    assert tuple(lineage["permitted_changed_path"]) == correction._FILTER_PATH
     # This historical renderer remains pinned to its already-deployed corrected source. The
     # current source separately versions the seller-command memory correction and must not
     # silently rebind the dispatcher-filter lineage.
-    assert sha256(correction.SOURCE_PATH.read_bytes()).hexdigest() != (
-        correction.CORRECTED_SOURCE_TEMPLATE_SHA256
-    )
+    assert sha256(correction.SOURCE_PATH.read_bytes()).hexdigest() != (lineage["source_sha256"])
+
+    predecessor = _document(correction.OLD_FILTER)
+    source = _document(correction.SAFE_FILTER)
+    target = json.loads(_render(monkeypatch, predecessor, source))
+    assert correction._changed_paths(predecessor, target) == {
+        tuple(lineage["permitted_changed_path"])
+    }
 
 
 def test_write_is_create_or_identical_and_confined(

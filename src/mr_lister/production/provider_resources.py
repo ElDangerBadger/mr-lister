@@ -287,11 +287,10 @@ class OwnerBoundProviderDraftResources:
     ) -> PrintifyUploadedImage:
         """Bind one provider image response to the exact pinned PNG dimensions."""
 
-        content = (
-            self._read_source(owner_id=owner_id, source=source)
-            if _content is None
-            else _content
-        )
+        if _content is None:
+            content = self._read_source(owner_id=owner_id, source=source)
+        else:
+            content = _content
         try:
             verified = verify_phase6_source_artwork(
                 filename=upload.file_name,
