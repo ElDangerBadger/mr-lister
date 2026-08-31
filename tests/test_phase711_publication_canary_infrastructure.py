@@ -182,7 +182,8 @@ def test_canary_role_has_only_exact_logs_state_and_secret_authority() -> None:
     }
     statements = _role_statements()
     assert set(statements) == {
-        "CommitExactPublicationAuthorityTransaction",
+        "CommitExactPublicationAuthorityConditionChecks",
+        "CommitExactPublicationAuthorityPuts",
         "WritePublicationCanaryLogs",
         "ReadExactPublicationAuthority",
         "ReadExactPublicationCredential",
@@ -210,13 +211,24 @@ def test_canary_role_has_only_exact_logs_state_and_secret_authority() -> None:
             "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]}
         },
     }
-    assert statements["CommitExactPublicationAuthorityTransaction"] == {
-        "Sid": "CommitExactPublicationAuthorityTransaction",
+    assert statements["CommitExactPublicationAuthorityConditionChecks"] == {
+        "Sid": "CommitExactPublicationAuthorityConditionChecks",
         "Effect": "Allow",
-        "Action": [
-            "dynamodb:ConditionCheckItem",
-            "dynamodb:PutItem",
-        ],
+        "Action": "dynamodb:ConditionCheckItem",
+        "Resource": {
+            "Fn::Sub": (
+                "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/"
+                "mr-lister-phase6-${EnvironmentName}"
+            )
+        },
+        "Condition": {
+            "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]}
+        },
+    }
+    assert statements["CommitExactPublicationAuthorityPuts"] == {
+        "Sid": "CommitExactPublicationAuthorityPuts",
+        "Effect": "Allow",
+        "Action": "dynamodb:PutItem",
         "Resource": {
             "Fn::Sub": (
                 "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/"
