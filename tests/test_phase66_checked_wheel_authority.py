@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tomllib
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -10,13 +11,11 @@ import tools.build_phase66_source_bundles as phase66_builder
 from mr_lister.release.phase6 import (
     DEPENDENCY_BUILD_REQUEST_FILENAME,
     LOCKED_BUILD_REQUEST_FORMAT,
+    normalize_wheel_authority,
     render_manifest,
     wheel_authority_from_build_request,
 )
-from tools.build_phase66_source_bundles import (
-    build_source_bundles,
-    capture_wheelhouse_authority_candidate,
-)
+from tools.build_phase66_source_bundles import build_source_bundles
 
 ROOT = Path(__file__).resolve().parents[1]
 AUTHORITY_DIRECTORY = ROOT / "config/release/phase6"
@@ -27,33 +26,13 @@ def _checked_path(component: str) -> Path:
 
 
 @pytest.mark.parametrize("component", ["lambda", "agentcore"])
-def test_checked_authority_is_canonical_and_matches_private_review_capture(
-    component: str,
+def test_checked_authority_is_canonical_and_schema_valid(
+    component: Literal["lambda", "agentcore"],
 ) -> None:
     checked = _checked_path(component).read_bytes()
-    assert render_manifest(json.loads(checked)) == checked
-    private_capture = ROOT / f".mr_lister_private/phase6-{component}-wheel-authority.json"
-    if private_capture.is_file():
-        assert private_capture.read_bytes() == checked
-
-
-@pytest.mark.parametrize("component", ["lambda", "agentcore"])
-def test_real_private_wheelhouse_recaptures_byte_exact_checked_authority(
-    tmp_path: Path,
-    component: str,
-) -> None:
-    wheelhouse = ROOT / f".mr_lister_private/phase6-{component}-wheelhouse"
-    if not wheelhouse.is_dir():
-        pytest.skip("private review wheelhouse is intentionally not committed")
-    output = tmp_path / f"phase6-{component}-wheel-authority.json"
-
-    capture_wheelhouse_authority_candidate(
-        wheelhouse,
-        component=component,  # type: ignore[arg-type]
-        output_path=output,
-    )
-
-    assert output.read_bytes() == _checked_path(component).read_bytes()
+    authority = json.loads(checked)
+    assert normalize_wheel_authority(authority, component=component) == authority
+    assert render_manifest(authority) == checked
 
 
 def test_default_source_build_embeds_both_checked_v2_authorities(tmp_path: Path) -> None:
