@@ -514,18 +514,6 @@ class SourceArtifactRecord(ControlModel):
     content_sha256: Fingerprint
     size_bytes: int = Field(gt=0, le=PHASE6_MAX_SOURCE_ARTWORK_BYTES)
     media_type: Literal["image/png"] = "image/png"
-    width: int | None = Field(
-        default=None,
-        gt=0,
-        le=20_000,
-        exclude_if=lambda value: value is None,
-    )
-    height: int | None = Field(
-        default=None,
-        gt=0,
-        le=20_000,
-        exclude_if=lambda value: value is None,
-    )
     product_profile_id: SafeId
     product_profile_version: int = Field(ge=1)
     product_profile_fingerprint: Fingerprint
@@ -536,11 +524,6 @@ class SourceArtifactRecord(ControlModel):
         expected = f"private/owners/{self.owner_id}/jobs/{self.job_id}/source/source.png"
         if self.object_key != expected:
             raise ValueError("Source artifact key must bind the exact owner and job")
-        if (self.width is None) != (self.height is None):
-            raise ValueError("Source artifact dimensions must be present together")
-        if self.width is not None and self.height is not None:
-            if self.width * self.height > 100_000_000:
-                raise ValueError("Source artifact dimensions exceed the safe decoded-pixel limit")
         return self
 
 

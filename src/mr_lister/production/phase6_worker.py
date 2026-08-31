@@ -28,6 +28,7 @@ from mr_lister.control.models import (
     ReconciliationOutcome,
     ReviewContent,
     SourceArtifactRecord,
+    UploadedArtworkRecord,
     WorkRequest,
     WorkRequestStatus,
     WorkType,
@@ -101,6 +102,14 @@ class ProviderDraftResources(Protocol):
 
     def get_upload(self, *, owner_id: str, image_id: str) -> PrintifyUploadedImage: ...
 
+    def verify_upload_source_geometry(
+        self,
+        *,
+        owner_id: str,
+        source: SourceArtifactRecord,
+        upload: PrintifyUploadedImage,
+    ) -> PrintifyUploadedImage: ...
+
     def current_product_costs(
         self,
         *,
@@ -161,26 +170,10 @@ class Phase6ProductMachineWorker:
             states={ControlJobState.PRODUCT_DRAFT_SYNCING, ControlJobState.CANCEL_REQUESTED},
         )
         authority = self._draft_authority(job=job, work=work)
-        validate_width_first_source_fit(
-            profile=authority.profile,
-            artwork_width=authority.source.width,
-            artwork_height=authority.source.height,
-        )
         if job.uploaded_artwork_id is not None:
-            uploaded = self._store.get_uploaded_artwork(job.job_id, job.uploaded_artwork_id)
-            if (
-                uploaded.image_id != job.uploaded_image_id
-                or uploaded.fingerprint != job.uploaded_artwork_fingerprint
-                or uploaded.source_artifact_fingerprint != authority.source.fingerprint
-                or (
-                    authority.source.width is not None
-                    and authority.source.height is not None
-                    and (uploaded.width, uploaded.height)
-                    != (authority.source.width, authority.source.height)
-                )
-            ):
+            if job.uploaded_image_id is None:
                 raise InvalidControlStateError("Persisted artwork upload authority changed")
-            image_id = uploaded.image_id
+            image_id = job.uploaded_image_id
         else:
             upload_attempt = self._upload_attempt_for_work(job=job, work=work)
             if upload_attempt is None:
@@ -654,16 +647,16 @@ class Phase6ProductMachineWorker:
                     owner_id=job.owner_id,
                     image_id=matches[0].image_id,
                 )
+                exact = self._resources.verify_upload_source_geometry(
+                    owner_id=job.owner_id,
+                    source=source,
+                    upload=exact,
+                )
                 coherent = (
                     exact.image_id == matches[0].image_id
                     and exact.file_name == attempt.file_name
                     and exact.size_bytes == source.size_bytes
                     and exact.mime_type == source.media_type
-                    and (
-                        source.width is None
-                        or source.height is None
-                        or (exact.width, exact.height) == (source.width, source.height)
-                    )
                 )
                 if coherent:
                     outcome = ReconciliationOutcome.TARGET_MATCH
@@ -744,10 +737,10 @@ class Phase6ProductMachineWorker:
             raise InvalidControlStateError("Prior provider payload cannot be reproduced exactly")
         return prior
 
-    @staticmethod
     def _build_draft(
-        *, authority: _DraftAuthority, review: ReviewContent, image_id: str
+        self, *, authority: _DraftAuthority, review: ReviewContent, image_id: str
     ) -> CanonicalPrintifyDraft:
+        uploaded = self._uploaded_artwork(authority=authority, image_id=image_id)
         listing = ListingIntelligence(
             title=review.title,
             description=review.description,
@@ -762,9 +755,34 @@ class Phase6ProductMachineWorker:
             profile=authority.profile,
             resolved=authority.resolved,
             image_id=image_id,
-            artwork_width=authority.source.width,
-            artwork_height=authority.source.height,
+            artwork_width=uploaded.width,
+            artwork_height=uploaded.height,
         )
+
+    def _uploaded_artwork(
+        self,
+        *,
+        authority: _DraftAuthority,
+        image_id: str,
+    ) -> UploadedArtworkRecord:
+        upload_id = authority.job.uploaded_artwork_id
+        if upload_id is None:
+            raise InvalidControlStateError("Persisted artwork upload authority is missing")
+        uploaded = self._store.get_uploaded_artwork(authority.job.job_id, upload_id)
+        if (
+            uploaded.job_id != authority.job.job_id
+            or uploaded.image_id != image_id
+            or uploaded.image_id != authority.job.uploaded_image_id
+            or uploaded.fingerprint != authority.job.uploaded_artwork_fingerprint
+            or uploaded.source_artifact_fingerprint != authority.source.fingerprint
+        ):
+            raise InvalidControlStateError("Persisted artwork upload authority changed")
+        validate_width_first_source_fit(
+            profile=authority.profile,
+            artwork_width=uploaded.width,
+            artwork_height=uploaded.height,
+        )
+        return uploaded
 
     @staticmethod
     def _require_target(*, attempt: ProviderWriteAttempt, draft: CanonicalPrintifyDraft) -> None:
@@ -882,11 +900,6 @@ class Phase6ProductMachineWorker:
             or exact.file_name != expected_file_name
             or exact.size_bytes != source.size_bytes
             or exact.mime_type != source.media_type
-            or (
-                source.width is not None
-                and source.height is not None
-                and (exact.width, exact.height) != (source.width, source.height)
-            )
         ):
             raise PrintifyCatalogMismatchError(
                 "Printify upload readback did not match the pinned source"

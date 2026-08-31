@@ -24,6 +24,12 @@ The Phase 6 worker boundary now includes:
 - an immutable pricing snapshot paired in the same transaction with the complete per-variant
   economics evidence it summarizes.
 
+The pinned `SourceArtifactRecord` retains its AgentCore v1 schema and fingerprint. Source geometry
+is decoded and fit-checked at upload completion, then decoded again from the exact pinned S3
+version when verifying the provider upload or reconciling an ambiguous upload. Only the matching
+provider response dimensions are persisted in `UploadedArtworkRecord`; canonical draft placement
+derives its width-first `y` from that record.
+
 ## Durable Strands preparation
 
 [`agent/phase6.py`](../src/mr_lister/agent/phase6.py) constructs the real `strands.Agent` and exposes

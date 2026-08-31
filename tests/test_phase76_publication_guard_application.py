@@ -7,8 +7,6 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from mr_lister.control.models import SourceArtifactRecord
-from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.publication.guard_verification import (
     PublicationGuardOperation,
     PublicationGuardOutcome,
@@ -83,23 +81,13 @@ def test_exact_authority_returns_identifier_free_current_attestation() -> None:
     assert "shop_id" not in rendered
 
 
-def test_guard_fingerprint_replica_binds_geometry_and_preserves_legacy_authority() -> None:
+def test_guard_fingerprint_replica_preserves_agentcore_v1_source_authority() -> None:
     harness = Harness()
-    legacy = harness.store.load_source_authority(OWNER_ID, harness.aggregate_id).source
-    assert _source_artifact_fingerprint(legacy) == legacy.fingerprint
+    source = harness.store.load_source_authority(OWNER_ID, harness.aggregate_id).source
 
-    material = legacy.model_dump(mode="python", exclude={"fingerprint"})
-    material.update({"width": 2400, "height": 1600})
-    geometric = SourceArtifactRecord(
-        fingerprint=source_artifact_fingerprint(**material),
-        **material,
-    )
-
-    assert _source_artifact_fingerprint(geometric) == geometric.fingerprint
-    assert geometric.fingerprint != legacy.fingerprint
-    assert _source_artifact_fingerprint(geometric.model_copy(update={"width": 2399})) != (
-        geometric.fingerprint
-    )
+    assert _source_artifact_fingerprint(source) == source.fingerprint
+    assert "width" not in source.model_dump(mode="json")
+    assert "height" not in source.model_dump(mode="json")
 
 
 @pytest.mark.parametrize(

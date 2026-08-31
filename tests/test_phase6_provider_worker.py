@@ -60,6 +60,7 @@ from mr_lister.production.phase6_worker import (
     Phase6ProductMachineWorker,
 )
 from mr_lister.production.printify import (
+    PrintifyCatalogMismatchError,
     PrintifyInputError,
     PrintifyResolvedProfile,
     PrintifyResolvedVariant,
@@ -175,16 +176,6 @@ def _source() -> SourceArtifactRecord:
     )
 
 
-def _install_source_geometry(store: FakeStore, *, width: int, height: int) -> None:
-    material = {**_source_material(), "width": width, "height": height}
-    source = SourceArtifactRecord(
-        fingerprint=source_artifact_fingerprint(**material),
-        **material,
-    )
-    store.source = source
-    store.job = store.job.model_copy(update={"source_artifact_fingerprint": source.fingerprint})
-
-
 def _work(*, work_type: WorkType, work_id: str, review_version: int) -> WorkRequest:
     return WorkRequest(
         work_request_id=work_id,
@@ -270,7 +261,7 @@ class FakeStore:
                 image_id=job.uploaded_image_id or "",
                 file_name=file_name,
                 width=3021,
-                height=3927,
+                height=3021,
                 size_bytes=2048,
                 fingerprint=job.uploaded_artwork_fingerprint or "",
                 confirmed_at=NOW,
@@ -370,7 +361,9 @@ class FakeResources:
         self.sync = synchronizer
         self.upload_count = 0
         self.upload_sources: list[SourceArtifactRecord] = []
-        self.upload_dimensions = (3021, 3927)
+        self.upload_dimensions = (3021, 3021)
+        self.expected_source_dimensions: tuple[int, int] | None = None
+        self.geometry_checks: list[tuple[str, str]] = []
         self.preflight_count = 0
         self.uploads: dict[str, PrintifyUploadedImage] = {}
         self.upload_error: Exception | None = None
@@ -406,7 +399,11 @@ class FakeResources:
             mime_type="image/png",
         )
         self.uploads[upload.image_id] = upload
-        return upload
+        return self.verify_upload_source_geometry(
+            owner_id=owner_id,
+            source=source,
+            upload=upload,
+        )
 
     def list_uploads(self, *, owner_id: str) -> tuple[PrintifyUploadedImage, ...]:
         assert owner_id == OWNER
@@ -417,6 +414,24 @@ class FakeResources:
         if self.upload_readback_override is not None:
             return self.upload_readback_override
         return self.uploads[image_id]
+
+    def verify_upload_source_geometry(
+        self,
+        *,
+        owner_id: str,
+        source: SourceArtifactRecord,
+        upload: PrintifyUploadedImage,
+    ) -> PrintifyUploadedImage:
+        assert owner_id == OWNER
+        assert source.job_id == JOB_ID
+        assert source.owner_id == OWNER
+        self.geometry_checks.append((source.fingerprint, upload.image_id))
+        if self.expected_source_dimensions is not None and (
+            upload.width,
+            upload.height,
+        ) != self.expected_source_dimensions:
+            raise PrintifyCatalogMismatchError("upload geometry mismatch")
+        return upload
 
     def current_product_costs(
         self,
@@ -886,7 +901,7 @@ def test_initial_create_claims_then_consumes_one_shot_before_mutation() -> None:
     assert control.successes[0].observation.mockups[0].variant_ids == (1000,)
 
 
-def test_fingerprinted_source_geometry_drives_width_fixed_draft_placement() -> None:
+def test_persisted_provider_geometry_drives_width_fixed_draft_placement() -> None:
     sync = FakeSynchronizer()
     worker, store, _control, resources = _worker(
         job=_job(),
@@ -897,7 +912,6 @@ def test_fingerprinted_source_geometry_drives_width_fixed_draft_placement() -> N
         ),
         synchronizer=sync,
     )
-    _install_source_geometry(store, width=2000, height=800)
     resources.upload_dimensions = (2000, 800)
 
     worker.run_product_sync(job_id=JOB_ID, work_request_id=SYNC_WORK_ID)
@@ -910,7 +924,7 @@ def test_fingerprinted_source_geometry_drives_width_fixed_draft_placement() -> N
     assert placement.scale == 0.65
 
 
-def test_tall_source_is_rejected_before_any_provider_upload_or_scale_change() -> None:
+def test_tall_persisted_provider_geometry_is_rejected_before_product_mutation() -> None:
     sync = FakeSynchronizer()
     worker, store, _control, resources = _worker(
         job=_job(),
@@ -921,12 +935,12 @@ def test_tall_source_is_rejected_before_any_provider_upload_or_scale_change() ->
         ),
         synchronizer=sync,
     )
-    _install_source_geometry(store, width=1000, height=2100)
+    resources.upload_dimensions = (1000, 2100)
 
     with pytest.raises(PrintifyInputError, match="too tall"):
         worker.run_product_sync(job_id=JOB_ID, work_request_id=SYNC_WORK_ID)
 
-    assert resources.upload_count == 0
+    assert resources.upload_count == 1
     assert sync.mutations == []
 
 
@@ -1043,6 +1057,7 @@ def test_upload_reconciliation_lists_then_reads_exact_candidate_without_mutation
         size_bytes=2048,
         mime_type="image/png",
     )
+    resources.expected_source_dimensions = (3021, 3927)
 
     worker.run_product_reconciliation(job_id=JOB_ID, work_request_id=RECON_WORK_ID)
 
@@ -1050,6 +1065,54 @@ def test_upload_reconciliation_lists_then_reads_exact_candidate_without_mutation
     assert control.upload_observations[0].outcome is ReconciliationOutcome.TARGET_MATCH
     assert control.upload_observations[0].upload is not None
     assert control.upload_observations[0].upload.image_id == "image_new"
+    assert resources.geometry_checks == [(store.source.fingerprint, "image_new")]
+
+
+def test_upload_reconciliation_rejects_candidate_with_changed_source_geometry() -> None:
+    file_name = f"mr-lister-{'a' * 24}-{'8' * 16}.png"
+    job = _job(
+        state=ControlJobState.RECONCILIATION_REQUIRED,
+        work_id=RECON_WORK_ID,
+    ).model_copy(
+        update={
+            "provider_upload_attempt_id": "upload_attempt",
+            "upload_outcome_unconfirmed": True,
+        }
+    )
+    work = _work(
+        work_type=WorkType.RECONCILE_PRODUCT,
+        work_id=RECON_WORK_ID,
+        review_version=1,
+    )
+    worker, store, control, resources = _worker(
+        job=job,
+        work=work,
+        synchronizer=FakeSynchronizer(),
+    )
+    store.upload_attempts["upload_attempt"] = ProviderUploadAttempt(
+        attempt_id="upload_attempt",
+        job_id=JOB_ID,
+        work_request_id=SYNC_WORK_ID,
+        source_artifact_fingerprint=SOURCE_FP,
+        file_name=file_name,
+        reconciliation_deadline=NOW + timedelta(minutes=15),
+        started_at=NOW,
+    )
+    resources.uploads["image_new"] = PrintifyUploadedImage(
+        image_id="image_new",
+        file_name=file_name,
+        width=3021,
+        height=3927,
+        size_bytes=2048,
+        mime_type="image/png",
+    )
+    resources.expected_source_dimensions = (3021, 3021)
+
+    worker.run_product_reconciliation(job_id=JOB_ID, work_request_id=RECON_WORK_ID)
+
+    assert control.upload_observations[0].outcome is ReconciliationOutcome.CONFLICT
+    assert control.upload_observations[0].upload is None
+    assert resources.geometry_checks == [(store.source.fingerprint, "image_new")]
 
 
 def test_lost_create_response_routes_to_reconciliation_without_second_call() -> None:
@@ -1223,6 +1286,15 @@ def test_reconciliation_maps_closed_get_only_outcomes(mode: str, expected: str) 
         product_sync_fingerprint=prior_sync.fingerprint if update else None,
         synchronized_review_version=1 if update else None,
     )
+    if not update:
+        job = job.model_copy(
+            update={
+                "provider_upload_attempt_id": "upload_original",
+                "uploaded_artwork_id": "uploaded_original",
+                "uploaded_image_id": "image_new",
+                "uploaded_artwork_fingerprint": "0" * 64,
+            }
+        )
     work = _work(
         work_type=WorkType.RECONCILE_PRODUCT,
         work_id=RECON_WORK_ID,
@@ -1296,6 +1368,13 @@ def test_multiple_correlated_create_candidates_map_to_closed_conflict_class() ->
     job = _job(
         state=ControlJobState.RECONCILIATION_REQUIRED,
         work_id=RECON_WORK_ID,
+    ).model_copy(
+        update={
+            "provider_upload_attempt_id": "upload_original",
+            "uploaded_artwork_id": "uploaded_original",
+            "uploaded_image_id": "image_new",
+            "uploaded_artwork_fingerprint": "0" * 64,
+        }
     )
     work = _work(
         work_type=WorkType.RECONCILE_PRODUCT,

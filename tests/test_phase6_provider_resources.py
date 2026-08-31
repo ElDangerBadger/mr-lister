@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
+from PIL import Image
 
 from mr_lister.contracts import Placement, PlacementGroup, ProductProfile
 from mr_lister.control.models import SourceArtifactRecord
@@ -19,6 +20,7 @@ from mr_lister.production.printify import (
     PrintifyCatalogMismatchError,
     PrintifyHttpResponse,
     PrintifyInputError,
+    PrintifyUploadedImage,
 )
 from mr_lister.production.provider_resources import (
     LoggingProviderRequestAuditSink,
@@ -136,15 +138,38 @@ class SourceS3:
         return self.response
 
 
-def _upload_payload(*, image_id: str = "image_private_1", size: int = 100) -> dict[str, object]:
+def _upload_payload(
+    *,
+    image_id: str = "image_private_1",
+    size: int = 100,
+    width: int = 1200,
+    height: int = 1600,
+) -> dict[str, object]:
     return {
         "id": image_id,
         "file_name": FILE_NAME,
-        "width": 1200,
-        "height": 1600,
+        "width": width,
+        "height": height,
         "size": size,
         "mime_type": "image/png",
     }
+
+
+def _source_png() -> bytes:
+    image = Image.new("RGBA", (3, 2), (24, 72, 108, 255))
+    image.putdata(
+        [
+            (24, 72, 108, 0),
+            (24, 72, 108, 64),
+            (24, 72, 108, 128),
+            (24, 72, 108, 192),
+            (24, 72, 108, 224),
+            (24, 72, 108, 255),
+        ]
+    )
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
 
 
 def _shipping_resource(variant_id: int) -> dict[str, object]:
@@ -350,12 +375,18 @@ def test_preflight_uses_the_owner_shop_and_audits_only_catalog_templates() -> No
 
 
 def test_upload_reads_only_the_exact_s3_version_and_bounds_the_body() -> None:
-    content = b"\x89PNG\r\n\x1a\n" + b"source-bytes"
+    content = _source_png()
     source = _source(content)
     body = TrackingBody(content)
     s3 = SourceS3(_s3_response(source, body))
     transport = ScriptedTransport(
-        [ExpectedRequest("POST", "/v1/uploads/images.json", _upload_payload(size=len(content)))]
+        [
+            ExpectedRequest(
+                "POST",
+                "/v1/uploads/images.json",
+                _upload_payload(size=len(content), width=3, height=2),
+            )
+        ]
     )
     resolver = RotatingResolver(tokens=("rotated-token",))
     audit = MemoryAudit()
@@ -386,8 +417,74 @@ def test_upload_reads_only_the_exact_s3_version_and_bounds_the_body() -> None:
     assert "rotated-token" not in audit_json
 
 
+def test_upload_rejects_provider_geometry_that_differs_from_the_exact_png() -> None:
+    content = _source_png()
+    source = _source(content)
+    body = TrackingBody(content)
+    transport = ScriptedTransport(
+        [
+            ExpectedRequest(
+                "POST",
+                "/v1/uploads/images.json",
+                _upload_payload(size=len(content), width=2, height=3),
+            )
+        ]
+    )
+    resources = _resources(
+        resolver=RotatingResolver(),
+        transport=transport,
+        audit=MemoryAudit(),
+        s3=SourceS3(_s3_response(source, body)),
+    )
+
+    with pytest.raises(PrintifyCatalogMismatchError, match="geometry"):
+        resources.upload_source(owner_id=OWNER, source=source, file_name=FILE_NAME)
+
+    assert body.closed is True
+
+
+def test_reconciliation_geometry_check_rereads_the_exact_source_version() -> None:
+    content = _source_png()
+    source = _source(content)
+    body = TrackingBody(content)
+    s3 = SourceS3(_s3_response(source, body))
+    resources = _resources(
+        resolver=RotatingResolver(),
+        transport=ScriptedTransport([]),
+        audit=MemoryAudit(),
+        s3=s3,
+    )
+    upload = PrintifyUploadedImage(
+        image_id="image_private_1",
+        file_name=FILE_NAME,
+        width=3,
+        height=2,
+        size_bytes=len(content),
+        mime_type="image/png",
+    )
+
+    assert (
+        resources.verify_upload_source_geometry(
+            owner_id=OWNER,
+            source=source,
+            upload=upload,
+        )
+        == upload
+    )
+    assert s3.calls == [
+        {
+            "Bucket": BUCKET,
+            "Key": source.object_key,
+            "VersionId": source.version_id,
+            "ChecksumMode": "ENABLED",
+            "ExpectedBucketOwner": BUCKET_OWNER,
+        }
+    ]
+    assert body.closed is True
+
+
 def test_oversized_source_stream_fails_before_credentials_or_provider_call() -> None:
-    content = b"\x89PNG\r\n\x1a\n" + b"source-bytes"
+    content = _source_png()
     source = _source(content)
     body = TrackingBody(content + b"x")
     s3 = SourceS3(_s3_response(source, body))
@@ -406,7 +503,7 @@ def test_oversized_source_stream_fails_before_credentials_or_provider_call() -> 
 
 
 def test_source_response_must_confirm_the_requested_version() -> None:
-    content = b"\x89PNG\r\n\x1a\n" + b"source-bytes"
+    content = _source_png()
     source = _source(content)
     body = TrackingBody(content)
     response = _s3_response(source, body)

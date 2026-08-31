@@ -476,7 +476,8 @@ def test_valid_png_completion_atomically_creates_exactly_one_preparation_graph()
     assert job.active_work_request_id == completed.receipt.work_request_id
     assert source.version_id == "source-version-1"
     assert source.content_sha256 == sha256(content).hexdigest()
-    assert (source.width, source.height) == (2, 2)
+    assert "width" not in source.model_dump(mode="json")
+    assert "height" not in source.model_dump(mode="json")
     assert len(events) == 1
     assert events[0].name == "UPLOAD_COMPLETED"
     assert len(work) == 1
@@ -492,7 +493,7 @@ def test_valid_png_completion_atomically_creates_exactly_one_preparation_graph()
     ]
 
 
-def test_rectangular_completion_persists_verified_source_geometry() -> None:
+def test_rectangular_completion_verifies_fit_without_extending_source_schema() -> None:
     harness = _harness()
     content = _png(size=(3, 2))
     created = harness.service.create_upload(
@@ -512,7 +513,8 @@ def test_rectangular_completion_persists_verified_source_geometry() -> None:
     )
 
     source = harness.store.get_source_artifact(created.receipt.job_id)
-    assert (source.width, source.height) == (3, 2)
+    assert "width" not in source.model_dump(mode="json")
+    assert "height" not in source.model_dump(mode="json")
 
 
 def test_tall_source_is_rejected_at_intake_before_pin_or_provider_work() -> None:

@@ -234,8 +234,6 @@ def source_artifact_fingerprint(
     product_profile_version: int,
     product_profile_fingerprint: str,
     created_at: datetime,
-    width: int | None = None,
-    height: int | None = None,
     contract_version: str = CONTROL_CONTRACT_VERSION,
 ) -> str:
     """Hash every immutable field that grants authority over a source version."""
@@ -244,22 +242,7 @@ def source_artifact_fingerprint(
         raise SourceArtifactAuthorityError("Pinned source artifact timestamp is invalid")
     if version_id == "null":
         raise SourceArtifactAuthorityError("Pinned source artifact version is invalid")
-    if (width is None) != (height is None):
-        raise SourceArtifactAuthorityError("Pinned source artifact dimensions are invalid")
-    if width is not None and height is not None:
-        if (
-            isinstance(width, bool)
-            or not isinstance(width, int)
-            or isinstance(height, bool)
-            or not isinstance(height, int)
-            or width < 1
-            or height < 1
-            or width > PHASE6_MAX_SOURCE_DIMENSION
-            or height > PHASE6_MAX_SOURCE_DIMENSION
-            or width * height > MAX_ARTWORK_PIXELS
-        ):
-            raise SourceArtifactAuthorityError("Pinned source artifact dimensions are invalid")
-    material: dict[str, object] = {
+    material = {
         "contract_version": contract_version,
         "job_id": job_id,
         "owner_id": owner_id,
@@ -274,11 +257,6 @@ def source_artifact_fingerprint(
         "product_profile_fingerprint": product_profile_fingerprint,
         "created_at": created_at.isoformat(),
     }
-    # Legacy SOURCE records intentionally omit geometry.  Keeping absent dimensions out of the
-    # canonical material preserves their exact historical fingerprints and serialized payloads.
-    if width is not None and height is not None:
-        material["width"] = width
-        material["height"] = height
     return canonical_fingerprint(material)
 
 
@@ -299,8 +277,6 @@ def source_artifact_authority_fingerprint(source: SourceArtifactRecord) -> str:
         product_profile_version=source.product_profile_version,
         product_profile_fingerprint=source.product_profile_fingerprint,
         created_at=source.created_at,
-        width=source.width,
-        height=source.height,
     )
 
 

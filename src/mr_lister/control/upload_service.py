@@ -322,7 +322,7 @@ class UploadIntakeService:
             raise UploadArtifactIntegrityError(
                 "Source artwork cannot fit the fixed-width product placement"
             ) from None
-        source = self._source(current, observed, verified, now)
+        source = self._source(current, observed, now)
         work_id = self._stable_id("work", owner_id, current.job_id)
         receipt = UploadReceipt(
             receipt_id=self._stable_id("receipt_complete", owner_id, f"{upload_id}:{key_digest}"),
@@ -572,7 +572,6 @@ class UploadIntakeService:
     def _source(
         intent: UploadIntent,
         observed: CurrentUploadObject,
-        verified: VerifiedSourceArtwork,
         now: datetime,
     ) -> SourceArtifactRecord:
         material = {
@@ -584,8 +583,6 @@ class UploadIntakeService:
             "content_sha256": intent.content_sha256,
             "size_bytes": intent.size_bytes,
             "media_type": intent.content_type,
-            "width": verified.width,
-            "height": verified.height,
             "product_profile_id": intent.product_profile_id,
             "product_profile_version": intent.product_profile_version,
             "product_profile_fingerprint": intent.product_profile_fingerprint,

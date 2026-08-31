@@ -456,7 +456,10 @@ media type, S3 checksum, encryption, full PNG bytes, dimensions, and transparenc
 non-null S3 `VersionId`, tags that exact version `mr-lister-state=pinned`, and then performs one
 DynamoDB transaction that consumes the intent and creates the `JobRecord`, canonical
 `SourceArtifactRecord`, `UPLOAD_COMPLETED` event, stable completion receipt, and pending `PREPARE`
-work request. The dispatcher—not the upload request—starts the deterministic preparation execution.
+work request. PNG dimensions are validation evidence at this boundary, not new fields in the
+AgentCore v1-compatible `SourceArtifactRecord`. The exact provider upload/readback later persists
+those dimensions in `UploadedArtworkRecord`, which is the durable placement authority. The
+dispatcher—not the upload request—starts the deterministic preparation execution.
 If cancellation or another completion wins the transaction race, an unreferenced version is
 retagged `staged`; a concurrently committed winner's referenced version remains pinned.
 

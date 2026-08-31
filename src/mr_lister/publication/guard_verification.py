@@ -115,9 +115,7 @@ def _review_content_fingerprint(review: ReviewContent) -> str:
 def _source_artifact_fingerprint(source: SourceArtifactRecord) -> str:
     if source.created_at.utcoffset() is None or source.version_id == "null":
         raise ValueError("Pinned source artifact authority is invalid")
-    if (source.width is None) != (source.height is None):
-        raise ValueError("Pinned source artifact authority is invalid")
-    material: dict[str, object] = {
+    material = {
         "contract_version": source.contract_version,
         "job_id": source.job_id,
         "owner_id": source.owner_id,
@@ -132,9 +130,6 @@ def _source_artifact_fingerprint(source: SourceArtifactRecord) -> str:
         "product_profile_fingerprint": source.product_profile_fingerprint,
         "created_at": source.created_at.isoformat(),
     }
-    if source.width is not None and source.height is not None:
-        material["width"] = source.width
-        material["height"] = source.height
     return control_fingerprint(material)
 
 

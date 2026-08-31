@@ -614,8 +614,6 @@ def make_upload_completion_commit(current: UploadIntent) -> UploadCompletionComm
         "content_sha256": current.content_sha256,
         "size_bytes": current.size_bytes,
         "media_type": current.content_type,
-        "width": 2400,
-        "height": 1600,
         "product_profile_id": current.product_profile_id,
         "product_profile_version": current.product_profile_version,
         "product_profile_fingerprint": current.product_profile_fingerprint,
@@ -992,10 +990,9 @@ def test_upload_completion_is_one_six_item_intent_cas_and_round_trips_graph() ->
     assert reconstructed.get_upload_intent_for_owner(OWNER, UPLOAD_ID) == completion.intent.updated
     assert reconstructed.get_job_for_owner(OWNER, UPLOAD_JOB_ID) == completion.job
     assert reconstructed.get_source_artifact(UPLOAD_JOB_ID) == completion.source_artifact
-    assert (
-        reconstructed.get_source_artifact(UPLOAD_JOB_ID).width,
-        reconstructed.get_source_artifact(UPLOAD_JOB_ID).height,
-    ) == (2400, 1600)
+    source = reconstructed.get_source_artifact(UPLOAD_JOB_ID)
+    assert "width" not in source.model_dump(mode="json")
+    assert "height" not in source.model_dump(mode="json")
     event_item = client.items[(f"JOB#{UPLOAD_JOB_ID}", "EVENT#00000000000000000001")]
     assert DomainEvent.model_validate_json(event_item["payload"]["S"]) == completion.event
     assert reconstructed.get_work_request(UPLOAD_JOB_ID, UPLOAD_WORK_ID) == completion.work_request

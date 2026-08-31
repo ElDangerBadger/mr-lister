@@ -19,8 +19,8 @@ from tools.prepare_phase6_web_release import (
 )
 
 _FIXTURE_FILES = {
-    "assets/index-6gi-4xol.css": b"body{color:#123456}\n",
-    "assets/index-CCx4-_5w.js": b'console.log("seller web");\n',
+    "assets/index-BiMmzyh5.css": b"body{color:#123456}\n",
+    "assets/index-LH8ry4bk.js": b'console.log("seller web");\n',
     "favicon.svg": b'<svg xmlns="http://www.w3.org/2000/svg"/>\n',
     "index.html": b"<!doctype html><html><body></body></html>\n",
 }
@@ -131,7 +131,7 @@ def test_private_manifest_is_create_only_and_mode_0600(tmp_path: Path) -> None:
     (
         "runtime-config.json",
         "runtime-config.example.json",
-        "assets/index-CCx4-_5w.js.map",
+        "assets/index-LH8ry4bk.js.map",
         "robots.txt",
         "nested/extra.txt",
     ),
@@ -173,7 +173,7 @@ def test_symlinked_input_is_rejected_even_when_target_stays_in_repository(
     repository, dist, _contents = _repository(tmp_path)
     target = repository / "replacement.js"
     target.write_bytes(b"replacement")
-    expected = dist / "assets" / "index-CCx4-_5w.js"
+    expected = dist / "assets" / "index-LH8ry4bk.js"
     expected.unlink()
     expected.symlink_to(target)
 

@@ -22,6 +22,10 @@ from pydantic import model_validator
 from mr_lister.contracts import ContractModel, ProductProfile
 from mr_lister.control.economics import ProductCostEvidence, ProductVariantCostEvidence
 from mr_lister.control.models import OwnerId, SourceArtifactRecord
+from mr_lister.control.source_artwork import (
+    Phase6SourceArtworkError,
+    verify_phase6_source_artwork,
+)
 from mr_lister.production.draft_sync import (
     PrintifyDraftOnlyClient,
     PrintifyDraftSynchronizer,
@@ -261,11 +265,48 @@ class OwnerBoundProviderDraftResources:
             raise PrintifyInputError("Phase 6 artwork upload requires its deterministic PNG name")
         content = self._read_source(owner_id=owner_id, source=source)
         connection = self._resolve(owner_id)
-        return self._v1_client(connection).upload_artwork_contents(
+        uploaded = self._v1_client(connection).upload_artwork_contents(
             file_name=file_name,
             content_type=source.media_type,
             content=content,
         )
+        return self.verify_upload_source_geometry(
+            owner_id=owner_id,
+            source=source,
+            upload=uploaded,
+            _content=content,
+        )
+
+    def verify_upload_source_geometry(
+        self,
+        *,
+        owner_id: str,
+        source: SourceArtifactRecord,
+        upload: PrintifyUploadedImage,
+        _content: bytes | None = None,
+    ) -> PrintifyUploadedImage:
+        """Bind one provider image response to the exact pinned PNG dimensions."""
+
+        content = (
+            self._read_source(owner_id=owner_id, source=source)
+            if _content is None
+            else _content
+        )
+        try:
+            verified = verify_phase6_source_artwork(
+                filename=upload.file_name,
+                content_type=source.media_type,
+                content=content,
+                expected_sha256=source.content_sha256,
+                expected_size_bytes=source.size_bytes,
+            )
+        except Phase6SourceArtworkError:
+            raise PrintifyCatalogMismatchError("Pinned source PNG is invalid") from None
+        if (upload.width, upload.height) != (verified.width, verified.height):
+            raise PrintifyCatalogMismatchError(
+                "Printify upload geometry did not match the pinned source"
+            )
+        return upload
 
     def list_uploads(self, *, owner_id: str) -> tuple[PrintifyUploadedImage, ...]:
         connection = self._resolve(owner_id)

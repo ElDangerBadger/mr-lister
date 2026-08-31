@@ -196,20 +196,20 @@ def test_source_artifact_fingerprint_covers_every_immutable_authority_field() ->
             validate_source_artifact_authority(tampered)
 
 
-def test_source_artifact_geometry_is_paired_and_bound_into_authority() -> None:
-    source = _source(width=3, height=2)
+def test_source_artifact_schema_rejects_persisted_geometry() -> None:
+    source = _source()
+    material = source.model_dump(mode="python", exclude={"fingerprint"})
 
-    assert validate_source_artifact_authority(source) is source
-    for field, changed in (("width", 4), ("height", 3)):
-        with pytest.raises(SourceArtifactAuthorityError):
-            validate_source_artifact_authority(source.model_copy(update={field: changed}))
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        SourceArtifactRecord(
+            fingerprint=source.fingerprint,
+            width=3,
+            height=2,
+            **material,
+        )
 
-    material = source.model_dump(mode="python", exclude={"fingerprint", "height"})
-    with pytest.raises(ValidationError, match="present together"):
-        SourceArtifactRecord(fingerprint=source.fingerprint, **material)
 
-
-def test_legacy_source_payload_and_fingerprint_remain_byte_for_byte_compatible() -> None:
+def test_source_payload_and_fingerprint_remain_agentcore_v1_compatible() -> None:
     source = _source()
     serialized = source.model_dump(mode="json")
 
