@@ -55,7 +55,9 @@ The Lambda execution role may:
 - create a stream and write events only in its predeclared log group;
 - strongly read and transactionally update only the existing
   `mr-lister-phase6-${EnvironmentName}` table, with every key limited to `JOB#*` or
-  `PUBLICATION#*`; and
+  `PUBLICATION#*`; the `PutItem` and `ConditionCheckItem` IAM actions are additionally conditioned
+  on `dynamodb:EnclosingOperation=TransactWriteItems`, so they cannot authorize standalone writes;
+  and
 - read only the one exact owner-bound Printify secret ARN supplied to the stack.
 
 It has no standalone DynamoDB put/update/delete/scan authority, S3 runtime authority, KMS,

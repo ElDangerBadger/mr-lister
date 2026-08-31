@@ -182,8 +182,9 @@ def test_canary_role_has_only_exact_logs_state_and_secret_authority() -> None:
     }
     statements = _role_statements()
     assert set(statements) == {
+        "CommitExactPublicationAuthorityTransaction",
         "WritePublicationCanaryLogs",
-        "ReadAndCommitExactPublicationAuthority",
+        "ReadExactPublicationAuthority",
         "ReadExactPublicationCredential",
     }
     assert statements["WritePublicationCanaryLogs"] == {
@@ -192,13 +193,12 @@ def test_canary_role_has_only_exact_logs_state_and_secret_authority() -> None:
         "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
         "Resource": {"Fn::GetAtt": ["PublicationCanaryLogGroup", "Arn"]},
     }
-    assert statements["ReadAndCommitExactPublicationAuthority"] == {
-        "Sid": "ReadAndCommitExactPublicationAuthority",
+    assert statements["ReadExactPublicationAuthority"] == {
+        "Sid": "ReadExactPublicationAuthority",
         "Effect": "Allow",
         "Action": [
             "dynamodb:GetItem",
             "dynamodb:Query",
-            "dynamodb:TransactWriteItems",
         ],
         "Resource": {
             "Fn::Sub": (
@@ -208,6 +208,24 @@ def test_canary_role_has_only_exact_logs_state_and_secret_authority() -> None:
         },
         "Condition": {
             "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]}
+        },
+    }
+    assert statements["CommitExactPublicationAuthorityTransaction"] == {
+        "Sid": "CommitExactPublicationAuthorityTransaction",
+        "Effect": "Allow",
+        "Action": [
+            "dynamodb:ConditionCheckItem",
+            "dynamodb:PutItem",
+        ],
+        "Resource": {
+            "Fn::Sub": (
+                "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/"
+                "mr-lister-phase6-${EnvironmentName}"
+            )
+        },
+        "Condition": {
+            "ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]},
+            "ForAnyValue:StringEquals": {"dynamodb:EnclosingOperation": ["TransactWriteItems"]},
         },
     }
     assert statements["ReadExactPublicationCredential"] == {
@@ -224,9 +242,10 @@ def test_canary_role_has_only_exact_logs_state_and_secret_authority() -> None:
         )
     }
     assert actions == {
+        "dynamodb:ConditionCheckItem",
         "dynamodb:GetItem",
+        "dynamodb:PutItem",
         "dynamodb:Query",
-        "dynamodb:TransactWriteItems",
         "logs:CreateLogStream",
         "logs:PutLogEvents",
         "secretsmanager:GetSecretValue",
@@ -262,7 +281,6 @@ def test_canary_template_contains_no_trigger_or_broader_runtime_surface() -> Non
         "dynamodb:delete",
         "dynamodb:execute",
         "dynamodb:partiql",
-        "dynamodb:putitem",
         "dynamodb:scan",
         "dynamodb:updateitem",
         "execute-api:",
