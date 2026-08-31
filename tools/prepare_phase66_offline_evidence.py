@@ -65,8 +65,8 @@ from mr_lister.acceptance.phase6 import (
 REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[1]
 PRIVATE_WORKSPACE_ROOT: Final = REPOSITORY_ROOT / ".mr_lister_private/phase66-acceptance"
 
-SOURCE_COMMIT: Final = "b953aeae14da2520b205a0cd3126407c900892c6"
-SOURCE_COMMIT_DIGEST: Final = "80e95a97fcac6a370f9aa1b516efece710d1ef6dda5cb4bc74ea8860380f6c96"
+SOURCE_COMMIT: Final = "7c4d668b2c322f1e4cad1802105567d4a38ee2c8"
+SOURCE_COMMIT_DIGEST: Final = "e016852a0ab39e2e454878c5ee6030257bcd07faaaaf8d0a3841e5b5f67c4b11"
 OFFLINE_GATE_ORDER: Final = (
     "offline.replay_matrix",
     "offline.concurrency_matrix",
