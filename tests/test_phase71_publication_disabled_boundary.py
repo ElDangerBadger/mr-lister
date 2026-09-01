@@ -92,6 +92,12 @@ PHASE710_CANARY_RUNTIME_FILES = {
     "canary_runtime.py",
 }
 
+PHASE715_CONTROL_PLANE_FILES = {
+    "orchestration.py",
+    "orchestration_dynamodb.py",
+    "orchestration_recovery.py",
+}
+
 PHASE74_CLOUD_FILES = {
     ROOT / "src/mr_lister/cloud/phase7_composition.py",
     ROOT / "src/mr_lister/cloud/phase7_entrypoints.py",
@@ -126,6 +132,11 @@ PHASE710_CANARY_CLOUD_FILES = {
 PHASE710_CANARY_COMPOSITION = ROOT / "src/mr_lister/cloud/phase7_canary_composition.py"
 PHASE710_CANARY_ENTRYPOINT = ROOT / "src/mr_lister/cloud/phase7_canary_entrypoint.py"
 
+PHASE715_CONTROL_PLANE_CLOUD_FILES = {
+    ROOT / "src/mr_lister/cloud/phase7_operations.py",
+    ROOT / "src/mr_lister/cloud/phase7_operations_composition.py",
+}
+
 PHASE7_CLOUD_FILES = (
     PHASE74_CLOUD_FILES
     | PHASE75_OFFLINE_CLOUD_FILES
@@ -134,6 +145,7 @@ PHASE7_CLOUD_FILES = (
     | PHASE78_WORKER_CLOUD_FILES
     | PHASE79_CONFIGURATION_CLOUD_FILES
     | PHASE710_CANARY_CLOUD_FILES
+    | PHASE715_CONTROL_PLANE_CLOUD_FILES
 )
 
 EXPECTED_OFFLINE_PUBLICATION_FILES = {
@@ -160,6 +172,7 @@ EXPECTED_OFFLINE_PUBLICATION_FILES = {
     | PHASE77_REQUEST_FILES
     | PHASE78_PROVIDER_RUNTIME_FILES
     | PHASE710_CANARY_RUNTIME_FILES
+    | PHASE715_CONTROL_PLANE_FILES
 )
 
 
@@ -582,8 +595,19 @@ def test_phase75_retention_is_offline_injected_and_adds_no_source_tag_writer() -
     assert "delete_object" not in adapter_source
     assert "DeleteItem" not in adapter_source
 
+    operations_composition = ROOT / "src/mr_lister/cloud/phase7_operations_composition.py"
+    adapter_importers = {
+        path
+        for path in (ROOT / "src" / "mr_lister" / "cloud").glob("*.py")
+        if adapter_module in _imports(path)
+    }
+    assert adapter_importers == {operations_composition}
+
     for path in (ROOT / "src" / "mr_lister" / "cloud").glob("*.py"):
         imports = _imports(path)
+        if path == operations_composition:
+            assert imports.intersection(core_modules) == {"mr_lister.publication.retention"}
+            continue
         assert adapter_module not in imports, path.relative_to(ROOT)
         if path in PHASE76_GUARD_CLOUD_FILES:
             assert imports.intersection(core_modules) <= {

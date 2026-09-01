@@ -168,7 +168,7 @@
         "SqsManagedSseEnabled": true,
         "RedrivePolicy": {
           "deadLetterTargetArn": {"Fn::GetAtt": ["PublicationOperationsDeadLetterQueue", "Arn"]},
-          "maxReceiveCount": 3
+          "maxReceiveCount": 12
         }
       }
     },
@@ -303,7 +303,7 @@
             {"Sid": "WriteRetentionLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "${PublicationRetentionLogGroup.Arn}:*"}},
             {"Sid": "ReadTerminalPublicationStream", "Effect": "Allow", "Action": ["dynamodb:DescribeStream", "dynamodb:GetRecords", "dynamodb:GetShardIterator", "dynamodb:ListStreams"], "Resource": {"Ref": "StateTableStreamArn"}},
             {"Sid": "ReadTerminalPublicationGraph", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:Query"], "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "OWNER#*", "PUBLICATION#*"]}}},
-            {"Sid": "CommitTerminalRetention", "Effect": "Allow", "Action": ["dynamodb:ConditionCheckItem", "dynamodb:PutItem", "dynamodb:UpdateItem"], "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "OWNER#*", "PUBLICATION#*"]}, "ForAnyValue:StringEquals": {"dynamodb:EnclosingOperation": ["TransactWriteItems"]}}},
+            {"Sid": "CommitTerminalRetention", "Effect": "Allow", "Action": ["dynamodb:ConditionCheckItem", "dynamodb:PutItem"], "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "OWNER#*", "PUBLICATION#*"]}, "ForAnyValue:StringEquals": {"dynamodb:EnclosingOperation": ["TransactWriteItems"]}}},
             {"Sid": "SendFailedRetentionBatchToOperationsDlq", "Effect": "Allow", "Action": "sqs:SendMessage", "Resource": {"Fn::GetAtt": ["PublicationOperationsDeadLetterQueue", "Arn"]}}
           ]}
         }]
@@ -478,7 +478,7 @@
         "MaximumRetryAttempts": 2,
         "BisectBatchOnFunctionError": true,
         "DestinationConfig": {"OnFailure": {"Destination": {"Fn::GetAtt": ["PublicationOperationsDeadLetterQueue", "Arn"]}}},
-        "FilterCriteria": {"Filters": [{"Pattern": "{\"eventName\":[\"INSERT\"],\"dynamodb\":{\"Keys\":{\"SK\":{\"S\":[\"TERMINAL_JOB_LINK\"]}},\"NewImage\":{\"entity_type\":{\"S\":[\"PUBLICATION_TERMINAL_JOB_LINK\"]}}}}"}]}
+        "FilterCriteria": {"Filters": [{"Pattern": "{\"eventName\":[\"INSERT\"],\"dynamodb\":{\"Keys\":{\"PK\":{\"S\":[{\"prefix\":\"PUBLICATION#\"}]},\"SK\":{\"S\":[\"TERMINAL_JOB_LINK\"]}},\"StreamViewType\":[\"KEYS_ONLY\"]}}"}]}
       }
     },
     "PublicationDueWorkSweepRule": {

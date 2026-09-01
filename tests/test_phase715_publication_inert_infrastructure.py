@@ -140,8 +140,17 @@ def test_every_trigger_has_an_independent_exact_disabled_barrier() -> None:
     ]["Filters"][0]["Pattern"]
     assert "PUBLICATION_WORK#" in dispatcher_filter
     assert '"WORK#' not in dispatcher_filter.replace('"PUBLICATION_WORK#', "")
-    assert "TERMINAL_JOB_LINK" in retention_filter
-    assert "PUBLICATION_TERMINAL_JOB_LINK" in retention_filter
+    assert json.loads(retention_filter) == {
+        "eventName": ["INSERT"],
+        "dynamodb": {
+            "Keys": {
+                "PK": {"S": [{"prefix": "PUBLICATION#"}]},
+                "SK": {"S": ["TERMINAL_JOB_LINK"]},
+            },
+            "StreamViewType": ["KEYS_ONLY"],
+        },
+    }
+    assert "NewImage" not in retention_filter
 
     rules = {
         name: resource
@@ -269,7 +278,8 @@ def test_roles_keep_provider_mutation_and_control_plane_authority_separate() -> 
     assert "states:RedriveExecution" in recovery
     assert "states:StartExecution" not in recovery
     assert "secretsmanager:GetSecretValue" not in recovery
-    assert "dynamodb:UpdateItem" in retention
+    assert {"dynamodb:ConditionCheckItem", "dynamodb:PutItem"}.issubset(retention)
+    assert "dynamodb:UpdateItem" not in retention
     assert "sqs:SendMessage" in retention
     assert not retention & {"dynamodb:DeleteItem", "secretsmanager:GetSecretValue"}
     assert "lambda:InvokeFunction" in workflow
@@ -306,8 +316,11 @@ def test_recovery_is_same_execution_only_and_failure_event_is_sanitized() -> Non
     queue = resources["PublicationWorkflowRecoveryQueue"]["Properties"]
     assert queue["RedrivePolicy"] == {
         "deadLetterTargetArn": {"Fn::GetAtt": ["PublicationOperationsDeadLetterQueue", "Arn"]},
-        "maxReceiveCount": 3,
+        "maxReceiveCount": 12,
     }
+    # A non-redrivable early failure remains recoverable until the immutable 30-minute
+    # publication deadline, when the same message can settle durable authority without provider I/O.
+    assert queue["VisibilityTimeout"] * (queue["RedrivePolicy"]["maxReceiveCount"] - 1) >= 1800
     assert queue["SqsManagedSseEnabled"] is True
     assert (
         resources["PublicationOperationsDeadLetterQueue"]["Properties"]["SqsManagedSseEnabled"]
