@@ -209,8 +209,10 @@ describe("authoritative seller review", () => {
     );
     const user = userEvent.setup();
     await screen.findByRole("heading", { name: first.listing.title ?? "" });
-    window.dispatchEvent(new Event("focus"));
-    await waitFor(() => expect(getJob).toHaveBeenCalledWith(first.job_id));
+    await waitFor(() => {
+      window.dispatchEvent(new Event("focus"));
+      expect(getJob).toHaveBeenCalledWith(first.job_id);
+    });
     await user.click(screen.getByRole("button", { name: "Open second route" }));
     expect(await screen.findByRole("heading", { name: "Second listing" })).toBeInTheDocument();
     await act(async () => {
@@ -268,7 +270,10 @@ describe("authoritative seller review", () => {
     const title = await screen.findByRole("textbox", { name: /^Title/u });
     await user.clear(title);
     await user.type(title, "Preserved local revision");
-    window.dispatchEvent(new Event("focus"));
+    await waitFor(() => {
+      window.dispatchEvent(new Event("focus"));
+      expect(getJob).toHaveBeenCalledTimes(1);
+    });
     expect(await screen.findByText(/newer authoritative review is available/u)).toBeInTheDocument();
     expect(title).toHaveValue("Preserved local revision");
     expect(screen.getByRole("button", { name: "Save listing revision" })).toBeDisabled();
@@ -313,7 +318,10 @@ describe("authoritative seller review", () => {
     await user.type(title, acceptedTitle);
     await user.click(screen.getByRole("button", { name: "Save listing revision" }));
     await screen.findByText("response lost");
-    window.dispatchEvent(new Event("focus"));
+    await waitFor(() => {
+      window.dispatchEvent(new Event("focus"));
+      expect(getJob).toHaveBeenCalledTimes(1);
+    });
     expect(await screen.findByText(/contains this exact revision/u)).toBeInTheDocument();
     expect(title).toHaveValue(acceptedTitle);
     expect(reviseListing).toHaveBeenCalledTimes(1);
@@ -350,8 +358,10 @@ describe("authoritative seller review", () => {
     });
     render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview, getJob })} /></MemoryRouter>);
     await screen.findByRole("heading", { name: review.listing.title ?? "" });
-    window.dispatchEvent(new Event("focus"));
-    await waitFor(() => expect(getJob).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      window.dispatchEvent(new Event("focus"));
+      expect(getJob).toHaveBeenCalledTimes(1);
+    });
     expect(getReview).toHaveBeenCalledTimes(1);
   });
 
@@ -363,8 +373,10 @@ describe("authoritative seller review", () => {
     const getReview = vi.fn().mockResolvedValue(reviewResponse(review, "request-review"));
     const { unmount } = render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getJob, getReview })} /></MemoryRouter>);
     await screen.findByRole("heading", { name: review.listing.title ?? "" });
-    window.dispatchEvent(new Event("focus"));
-    await waitFor(() => expect(getJob).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      window.dispatchEvent(new Event("focus"));
+      expect(getJob).toHaveBeenCalledTimes(1);
+    });
     unmount();
     const changed = sellerReviewSchema.parse({ ...review, record_version: review.record_version + 1 });
     await act(async () => {
