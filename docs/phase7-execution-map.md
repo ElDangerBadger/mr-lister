@@ -129,6 +129,20 @@ is authenticated. The repository contains no authoritative Phase 7 deployment re
 and the ignored private guard and worker artifacts are stale against current source. Therefore no
 Phase 7 deployment or rollback tuple is currently claimed.
 
+A replacement zero-publication guard candidate was then rebuilt from `main` and verified locally:
+
+| Candidate authority | Value |
+| --- | --- |
+| Guard release | `625eeb88fff6f9f801d7e2320efa08a1d2567f077145b394229b9a2c33717fe3` |
+| Archive SHA-256 | `f77b3bb41b86ae4afcdd17428de140c8def78551ef92bfd5cefa9dc1fafeac84` |
+| Archive size | `30,870,582` bytes |
+| Deployment-manifest SHA-256 | `26fc7e187fd66670c367d23a78c7c5cba160a89be72ce8f9547ce9f449664a64` |
+| Product-profile fingerprint | `5de1257141cfdacb1731f68bb9113712957483b33d5b0f7115afdba86eb7476c` |
+
+The checked dependency artifact, deterministic archive, release-first verifier, and focused
+read-only infrastructure tests passed. This candidate is retained only in the ignored private
+release area. It has not been uploaded or deployed and is not yet a rollback point.
+
 ## Stop lines
 
 - A guard deployment is not publication authorization.
