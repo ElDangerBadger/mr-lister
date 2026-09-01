@@ -1,0 +1,669 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Transform": "AWS::Serverless-2016-10-31",
+  "Description": "Phase 7.15A source-only production topology; impossible to instantiate or activate",
+  "Parameters": {
+    "ActivationMode": {
+      "Type": "String",
+      "Default": "SOURCE_ONLY_DISABLED",
+      "AllowedValues": ["SOURCE_ONLY_DISABLED"]
+    },
+    "EnvironmentName": {
+      "Type": "String",
+      "Default": "dev",
+      "AllowedPattern": "^[a-z][a-z0-9-]{1,15}$"
+    },
+    "CandidateCodeS3Bucket": {
+      "Type": "String",
+      "AllowedPattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+    },
+    "CandidateCodeS3Key": {
+      "Type": "String",
+      "AllowedPattern": "^phase7/candidates/[a-f0-9]{64}/production-disabled\\.zip$"
+    },
+    "CandidateCodeS3ObjectVersion": {
+      "Type": "String",
+      "AllowedPattern": "^(?!null$)[A-Za-z0-9._+=/-]{1,1024}$"
+    },
+    "StateTableArn": {
+      "Type": "String",
+      "AllowedPattern": "^arn:[a-z0-9-]+:dynamodb:[a-z0-9-]+:[0-9]{12}:table/mr-lister-phase6-[a-z][a-z0-9-]{1,15}$"
+    },
+    "StateTableStreamArn": {
+      "Type": "String",
+      "AllowedPattern": "^arn:[a-z0-9-]+:dynamodb:[a-z0-9-]+:[0-9]{12}:table/mr-lister-phase6-[a-z][a-z0-9-]{1,15}/stream/.+$"
+    },
+    "PrintifySecretArn": {
+      "Type": "String",
+      "NoEcho": true,
+      "AllowedPattern": "^arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:mr-lister/printify/[A-Za-z0-9/_+=.@-]+$"
+    }
+  },
+  "Conditions": {
+    "InstantiateProductionCandidate": {
+      "Fn::Equals": [
+        {"Ref": "ActivationMode"},
+        "GENERAL_AVAILABILITY_ENABLED"
+      ]
+    }
+  },
+  "Globals": {
+    "Function": {
+      "Runtime": "python3.12",
+      "Architectures": ["arm64"],
+      "MemorySize": 512,
+      "Timeout": 30,
+      "ReservedConcurrentExecutions": 1,
+      "LoggingConfig": {
+        "LogFormat": "JSON",
+        "ApplicationLogLevel": "ERROR",
+        "SystemLogLevel": "WARN"
+      },
+      "Environment": {
+        "Variables": {
+          "MR_LISTER_PHASE7_SCAFFOLD_ONLY": "true",
+          "MR_LISTER_PHASE7_QUERY_ENABLED": "false",
+          "MR_LISTER_PHASE7_REQUEST_ENABLED": "false",
+          "MR_LISTER_PHASE7_PUBLICATION_ENABLED": "false",
+          "MR_LISTER_PHASE7_PRODUCTION_CANDIDATE_ENABLED": "false"
+        }
+      },
+      "Tags": {
+        "Project": "MrLister",
+        "Phase": "7.15A-source-only"
+      }
+    }
+  },
+  "Resources": {
+    "PublicationQueryLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Condition": "InstantiateProductionCandidate",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase7-${EnvironmentName}-publication-query"},
+        "RetentionInDays": 14
+      }
+    },
+    "PublicationRequestLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Condition": "InstantiateProductionCandidate",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase7-${EnvironmentName}-publication-request"},
+        "RetentionInDays": 14
+      }
+    },
+    "PublicationDispatcherLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Condition": "InstantiateProductionCandidate",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase7-${EnvironmentName}-publication-dispatcher"},
+        "RetentionInDays": 14
+      }
+    },
+    "PublicationWorkerLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Condition": "InstantiateProductionCandidate",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase7-${EnvironmentName}-publication-worker"},
+        "RetentionInDays": 14
+      }
+    },
+    "PublicationRecoveryLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Condition": "InstantiateProductionCandidate",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase7-${EnvironmentName}-publication-recovery"},
+        "RetentionInDays": 14
+      }
+    },
+    "PublicationRetentionLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Condition": "InstantiateProductionCandidate",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "LogGroupName": {"Fn::Sub": "/aws/lambda/mr-lister-phase7-${EnvironmentName}-publication-retention"},
+        "RetentionInDays": 14
+      }
+    },
+    "PublicationWorkflowLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Condition": "InstantiateProductionCandidate",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "LogGroupName": {"Fn::Sub": "/aws/vendedlogs/states/mr-lister-phase7-${EnvironmentName}-publication"},
+        "RetentionInDays": 14
+      }
+    },
+    "PublicationOperationsDeadLetterQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Condition": "InstantiateProductionCandidate",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "QueueName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-operations-dlq"},
+        "MessageRetentionPeriod": 1209600,
+        "SqsManagedSseEnabled": true
+      }
+    },
+    "PublicationWorkflowRecoveryQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Condition": "InstantiateProductionCandidate",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "QueueName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-recovery"},
+        "MessageRetentionPeriod": 1209600,
+        "VisibilityTimeout": 180,
+        "SqsManagedSseEnabled": true,
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {"Fn::GetAtt": ["PublicationOperationsDeadLetterQueue", "Arn"]},
+          "maxReceiveCount": 3
+        }
+      }
+    },
+    "PublicationAlarmTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Condition": "InstantiateProductionCandidate",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "TopicName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-alarms"},
+        "KmsMasterKeyId": "alias/aws/sns"
+      }
+    },
+    "PublicationAlarmTopicPolicy": {
+      "Type": "AWS::SNS::TopicPolicy",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "Topics": [{"Ref": "PublicationAlarmTopic"}],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Sid": "AllowOnlyPhase7PublicationAlarms",
+            "Effect": "Allow",
+            "Principal": {"Service": "cloudwatch.amazonaws.com"},
+            "Action": "sns:Publish",
+            "Resource": {"Ref": "PublicationAlarmTopic"},
+            "Condition": {
+              "StringEquals": {"aws:SourceAccount": {"Ref": "AWS::AccountId"}},
+              "ArnLike": {"aws:SourceArn": {"Fn::Sub": "arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:mr-lister-phase7-${EnvironmentName}-publication-*"}}
+            }
+          }]
+        }
+      }
+    },
+    "PublicationQueryRole": {
+      "Type": "AWS::IAM::Role",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-query-role"},
+        "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+        "Policies": [{
+          "PolicyName": "ReadOnlyPublicationProjection",
+          "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+            {"Sid": "WriteQueryLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "${PublicationQueryLogGroup.Arn}:*"}},
+            {"Sid": "ReadOwnerPublicationState", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:Query"], "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]}}}
+          ]}
+        }]
+      }
+    },
+    "PublicationRequestRole": {
+      "Type": "AWS::IAM::Role",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-request-role"},
+        "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+        "Policies": [{
+          "PolicyName": "AtomicPublicationRequest",
+          "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+            {"Sid": "WriteRequestLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "${PublicationRequestLogGroup.Arn}:*"}},
+            {"Sid": "ReadRequestAuthority", "Effect": "Allow", "Action": ["dynamodb:GetItem"], "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "OWNER#*", "PUBLICATION#*"]}}},
+            {"Sid": "CommitRequestConditionChecks", "Effect": "Allow", "Action": "dynamodb:ConditionCheckItem", "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "OWNER#*", "PUBLICATION#*"]}}},
+            {"Sid": "CommitRequestPuts", "Effect": "Allow", "Action": "dynamodb:PutItem", "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "OWNER#*", "PUBLICATION#*"]}, "ForAnyValue:StringEquals": {"dynamodb:EnclosingOperation": ["TransactWriteItems"]}}}
+          ]}
+        }]
+      }
+    },
+    "PublicationDispatcherRole": {
+      "Type": "AWS::IAM::Role",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-dispatcher-role"},
+        "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+        "Policies": [{
+          "PolicyName": "DispatchExactPublicationWork",
+          "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+            {"Sid": "WriteDispatcherLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "${PublicationDispatcherLogGroup.Arn}:*"}},
+            {"Sid": "ReadPublicationStream", "Effect": "Allow", "Action": ["dynamodb:DescribeStream", "dynamodb:GetRecords", "dynamodb:GetShardIterator", "dynamodb:ListStreams"], "Resource": {"Ref": "StateTableStreamArn"}},
+            {"Sid": "QueryOnlyDuePublicationWork", "Effect": "Allow", "Action": "dynamodb:Query", "Resource": {"Fn::Sub": "${StateTableArn}/index/DueWorkIndex"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["PUBLICATION_WORK_DUE#0"]}}},
+            {"Sid": "StartOrResolveExactPublicationExecution", "Effect": "Allow", "Action": ["states:StartExecution", "states:DescribeExecution"], "Resource": [{"Ref": "PublicationWorkflowStateMachine"}, {"Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:mr-lister-phase7-${EnvironmentName}-publication:*"}]},
+            {"Sid": "SendSanitizedRecoveryEnvelope", "Effect": "Allow", "Action": "sqs:SendMessage", "Resource": {"Fn::GetAtt": ["PublicationWorkflowRecoveryQueue", "Arn"]}},
+            {"Sid": "SendFailedStreamBatchToOperationsDlq", "Effect": "Allow", "Action": "sqs:SendMessage", "Resource": {"Fn::GetAtt": ["PublicationOperationsDeadLetterQueue", "Arn"]}}
+          ]}
+        }]
+      }
+    },
+    "PublicationWorkerRole": {
+      "Type": "AWS::IAM::Role",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-worker-role"},
+        "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+        "Policies": [{
+          "PolicyName": "OneStepPublicationWorker",
+          "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+            {"Sid": "WriteWorkerLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "${PublicationWorkerLogGroup.Arn}:*"}},
+            {"Sid": "ReadPublicationAuthority", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:Query"], "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]}}},
+            {"Sid": "CommitPublicationConditionChecks", "Effect": "Allow", "Action": "dynamodb:ConditionCheckItem", "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]}}},
+            {"Sid": "CommitPublicationPuts", "Effect": "Allow", "Action": "dynamodb:PutItem", "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]}, "ForAnyValue:StringEquals": {"dynamodb:EnclosingOperation": ["TransactWriteItems"]}}},
+            {"Sid": "ReadExactPrintifyCredential", "Effect": "Allow", "Action": "secretsmanager:GetSecretValue", "Resource": {"Ref": "PrintifySecretArn"}}
+          ]}
+        }]
+      }
+    },
+    "PublicationRecoveryRole": {
+      "Type": "AWS::IAM::Role",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-recovery-role"},
+        "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+        "Policies": [{
+          "PolicyName": "SameExecutionPublicationRecovery",
+          "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+            {"Sid": "WriteRecoveryLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "${PublicationRecoveryLogGroup.Arn}:*"}},
+            {"Sid": "ConsumeRecoveryQueue", "Effect": "Allow", "Action": ["sqs:ChangeMessageVisibility", "sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:ReceiveMessage"], "Resource": {"Fn::GetAtt": ["PublicationWorkflowRecoveryQueue", "Arn"]}},
+            {"Sid": "ResolveOrRedriveSameExecution", "Effect": "Allow", "Action": ["states:DescribeExecution", "states:RedriveExecution"], "Resource": {"Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:mr-lister-phase7-${EnvironmentName}-publication:*"}},
+            {"Sid": "ReadRecoveryAuthority", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:Query"], "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]}}},
+            {"Sid": "SettleRecoveryConditionChecks", "Effect": "Allow", "Action": "dynamodb:ConditionCheckItem", "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]}}},
+            {"Sid": "SettleRecoveryPuts", "Effect": "Allow", "Action": "dynamodb:PutItem", "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]}, "ForAnyValue:StringEquals": {"dynamodb:EnclosingOperation": ["TransactWriteItems"]}}}
+          ]}
+        }]
+      }
+    },
+    "PublicationRetentionRole": {
+      "Type": "AWS::IAM::Role",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-retention-role"},
+        "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+        "Policies": [{
+          "PolicyName": "TerminalPublicationRetention",
+          "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+            {"Sid": "WriteRetentionLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "${PublicationRetentionLogGroup.Arn}:*"}},
+            {"Sid": "ReadTerminalPublicationStream", "Effect": "Allow", "Action": ["dynamodb:DescribeStream", "dynamodb:GetRecords", "dynamodb:GetShardIterator", "dynamodb:ListStreams"], "Resource": {"Ref": "StateTableStreamArn"}},
+            {"Sid": "ReadTerminalPublicationGraph", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:Query"], "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "OWNER#*", "PUBLICATION#*"]}}},
+            {"Sid": "CommitTerminalRetention", "Effect": "Allow", "Action": ["dynamodb:ConditionCheckItem", "dynamodb:PutItem", "dynamodb:UpdateItem"], "Resource": {"Ref": "StateTableArn"}, "Condition": {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "OWNER#*", "PUBLICATION#*"]}, "ForAnyValue:StringEquals": {"dynamodb:EnclosingOperation": ["TransactWriteItems"]}}},
+            {"Sid": "SendFailedRetentionBatchToOperationsDlq", "Effect": "Allow", "Action": "sqs:SendMessage", "Resource": {"Fn::GetAtt": ["PublicationOperationsDeadLetterQueue", "Arn"]}}
+          ]}
+        }]
+      }
+    },
+    "PublicationWorkflowRole": {
+      "Type": "AWS::IAM::Role",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-workflow-role"},
+        "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "states.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+        "Policies": [{
+          "PolicyName": "InvokeOnePublicationWorker",
+          "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+            {"Sid": "InvokeOnlyPublicationWorker", "Effect": "Allow", "Action": "lambda:InvokeFunction", "Resource": {"Fn::GetAtt": ["PublicationWorkerFunction", "Arn"]}},
+            {"Sid": "DeliverPayloadFreeWorkflowLogs", "Effect": "Allow", "Action": ["logs:CreateLogDelivery", "logs:DeleteLogDelivery", "logs:DescribeLogGroups", "logs:DescribeResourcePolicies", "logs:GetLogDelivery", "logs:ListLogDeliveries", "logs:PutResourcePolicy", "logs:UpdateLogDelivery"], "Resource": "*"}
+          ]}
+        }]
+      }
+    },
+    "PublicationRecoveryQueuePolicy": {
+      "Type": "AWS::SQS::QueuePolicy",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "Queues": [{"Ref": "PublicationWorkflowRecoveryQueue"}],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Sid": "AcceptOnlySanitizedWorkflowFailure",
+            "Effect": "Allow",
+            "Principal": {"Service": "events.amazonaws.com"},
+            "Action": "sqs:SendMessage",
+            "Resource": {"Fn::GetAtt": ["PublicationWorkflowRecoveryQueue", "Arn"]},
+            "Condition": {
+              "StringEquals": {"aws:SourceAccount": {"Ref": "AWS::AccountId"}},
+              "ArnEquals": {"aws:SourceArn": {"Fn::GetAtt": ["PublicationWorkflowFailureRule", "Arn"]}}
+            }
+          }]
+        }
+      }
+    },
+    "PublicationQueryFunction": {
+      "Type": "AWS::Serverless::Function",
+      "Condition": "InstantiateProductionCandidate",
+      "DependsOn": "PublicationQueryLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-query"},
+        "CodeUri": {"Bucket": {"Ref": "CandidateCodeS3Bucket"}, "Key": {"Ref": "CandidateCodeS3Key"}, "Version": {"Ref": "CandidateCodeS3ObjectVersion"}},
+        "Handler": "mr_lister.cloud.phase7_production_entrypoints.publication_query_handler",
+        "Role": {"Fn::GetAtt": ["PublicationQueryRole", "Arn"]},
+        "Timeout": 10
+      }
+    },
+    "PublicationRequestFunction": {
+      "Type": "AWS::Serverless::Function",
+      "Condition": "InstantiateProductionCandidate",
+      "DependsOn": "PublicationRequestLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-request"},
+        "CodeUri": {"Bucket": {"Ref": "CandidateCodeS3Bucket"}, "Key": {"Ref": "CandidateCodeS3Key"}, "Version": {"Ref": "CandidateCodeS3ObjectVersion"}},
+        "Handler": "mr_lister.cloud.phase7_production_entrypoints.publication_request_handler",
+        "Role": {"Fn::GetAtt": ["PublicationRequestRole", "Arn"]},
+        "Timeout": 15
+      }
+    },
+    "PublicationDispatcherFunction": {
+      "Type": "AWS::Serverless::Function",
+      "Condition": "InstantiateProductionCandidate",
+      "DependsOn": "PublicationDispatcherLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-dispatcher"},
+        "CodeUri": {"Bucket": {"Ref": "CandidateCodeS3Bucket"}, "Key": {"Ref": "CandidateCodeS3Key"}, "Version": {"Ref": "CandidateCodeS3ObjectVersion"}},
+        "Handler": "mr_lister.cloud.phase7_production_entrypoints.publication_dispatcher_handler",
+        "Role": {"Fn::GetAtt": ["PublicationDispatcherRole", "Arn"]},
+        "Timeout": 30,
+        "Environment": {"Variables": {"MR_LISTER_PUBLICATION_WORKFLOW_ARN": {"Ref": "PublicationWorkflowStateMachine"}, "MR_LISTER_PUBLICATION_RECOVERY_QUEUE_URL": {"Ref": "PublicationWorkflowRecoveryQueue"}}}
+      }
+    },
+    "PublicationWorkerFunction": {
+      "Type": "AWS::Serverless::Function",
+      "Condition": "InstantiateProductionCandidate",
+      "DependsOn": "PublicationWorkerLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-worker"},
+        "CodeUri": {"Bucket": {"Ref": "CandidateCodeS3Bucket"}, "Key": {"Ref": "CandidateCodeS3Key"}, "Version": {"Ref": "CandidateCodeS3ObjectVersion"}},
+        "Handler": "mr_lister.cloud.phase7_production_entrypoints.publication_worker_handler",
+        "Role": {"Fn::GetAtt": ["PublicationWorkerRole", "Arn"]},
+        "Timeout": 60,
+        "Environment": {"Variables": {"MR_LISTER_PRINTIFY_SECRET_ARN": {"Ref": "PrintifySecretArn"}}}
+      }
+    },
+    "PublicationRecoveryFunction": {
+      "Type": "AWS::Serverless::Function",
+      "Condition": "InstantiateProductionCandidate",
+      "DependsOn": "PublicationRecoveryLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-recovery"},
+        "CodeUri": {"Bucket": {"Ref": "CandidateCodeS3Bucket"}, "Key": {"Ref": "CandidateCodeS3Key"}, "Version": {"Ref": "CandidateCodeS3ObjectVersion"}},
+        "Handler": "mr_lister.cloud.phase7_production_entrypoints.publication_recovery_handler",
+        "Role": {"Fn::GetAtt": ["PublicationRecoveryRole", "Arn"]},
+        "Timeout": 60,
+        "Events": {
+          "RecoveryQueue": {
+            "Type": "SQS",
+            "Properties": {
+              "Queue": {"Fn::GetAtt": ["PublicationWorkflowRecoveryQueue", "Arn"]},
+              "BatchSize": 1,
+              "Enabled": false,
+              "FunctionResponseTypes": ["ReportBatchItemFailures"]
+            }
+          }
+        }
+      }
+    },
+    "PublicationRetentionFunction": {
+      "Type": "AWS::Serverless::Function",
+      "Condition": "InstantiateProductionCandidate",
+      "DependsOn": "PublicationRetentionLogGroup",
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-retention"},
+        "CodeUri": {"Bucket": {"Ref": "CandidateCodeS3Bucket"}, "Key": {"Ref": "CandidateCodeS3Key"}, "Version": {"Ref": "CandidateCodeS3ObjectVersion"}},
+        "Handler": "mr_lister.cloud.phase7_production_entrypoints.publication_retention_handler",
+        "Role": {"Fn::GetAtt": ["PublicationRetentionRole", "Arn"]},
+        "Timeout": 60
+      }
+    },
+    "PublicationWorkflowStateMachine": {
+      "Type": "AWS::Serverless::StateMachine",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "Name": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication"},
+        "Type": "STANDARD",
+        "DefinitionUri": "statemachine/publication.asl.json",
+        "DefinitionSubstitutions": {"PublicationWorkerFunctionArn": {"Fn::GetAtt": ["PublicationWorkerFunction", "Arn"]}},
+        "Role": {"Fn::GetAtt": ["PublicationWorkflowRole", "Arn"]},
+        "Logging": {
+          "Level": "ERROR",
+          "IncludeExecutionData": false,
+          "Destinations": [{"CloudWatchLogsLogGroup": {"LogGroupArn": {"Fn::Sub": "${PublicationWorkflowLogGroup.Arn}:*"}}}]
+        },
+        "Tracing": {"Enabled": false}
+      }
+    },
+    "PublicationDispatcherStreamMapping": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "FunctionName": {"Ref": "PublicationDispatcherFunction"},
+        "EventSourceArn": {"Ref": "StateTableStreamArn"},
+        "StartingPosition": "LATEST",
+        "Enabled": false,
+        "BatchSize": 25,
+        "MaximumBatchingWindowInSeconds": 1,
+        "MaximumRecordAgeInSeconds": 300,
+        "MaximumRetryAttempts": 2,
+        "BisectBatchOnFunctionError": true,
+        "DestinationConfig": {"OnFailure": {"Destination": {"Fn::GetAtt": ["PublicationOperationsDeadLetterQueue", "Arn"]}}},
+        "FilterCriteria": {"Filters": [{"Pattern": "{\"eventName\":[\"INSERT\",\"MODIFY\"],\"dynamodb\":{\"Keys\":{\"SK\":{\"S\":[{\"prefix\":\"PUBLICATION_WORK#\"}]}}}}"}]}
+      }
+    },
+    "PublicationRetentionStreamMapping": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "FunctionName": {"Ref": "PublicationRetentionFunction"},
+        "EventSourceArn": {"Ref": "StateTableStreamArn"},
+        "StartingPosition": "LATEST",
+        "Enabled": false,
+        "BatchSize": 1,
+        "MaximumBatchingWindowInSeconds": 0,
+        "MaximumRecordAgeInSeconds": 300,
+        "MaximumRetryAttempts": 2,
+        "BisectBatchOnFunctionError": true,
+        "DestinationConfig": {"OnFailure": {"Destination": {"Fn::GetAtt": ["PublicationOperationsDeadLetterQueue", "Arn"]}}},
+        "FilterCriteria": {"Filters": [{"Pattern": "{\"eventName\":[\"INSERT\"],\"dynamodb\":{\"Keys\":{\"SK\":{\"S\":[\"TERMINAL_JOB_LINK\"]}},\"NewImage\":{\"entity_type\":{\"S\":[\"PUBLICATION_TERMINAL_JOB_LINK\"]}}}}"}]}
+      }
+    },
+    "PublicationDueWorkSweepRule": {
+      "Type": "AWS::Events::Rule",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "Name": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-due-sweep"},
+        "ScheduleExpression": "rate(1 minute)",
+        "State": "DISABLED",
+        "Targets": [{"Id": "PublicationDispatcher", "Arn": {"Fn::GetAtt": ["PublicationDispatcherFunction", "Arn"]}, "Input": "{\"kind\":\"publication_due_sweep\"}"}]
+      }
+    },
+    "PublicationDueWorkSweepPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {"Ref": "PublicationDispatcherFunction"},
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {"Fn::GetAtt": ["PublicationDueWorkSweepRule", "Arn"]}
+      }
+    },
+    "PublicationWorkflowFailureRule": {
+      "Type": "AWS::Events::Rule",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "Name": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-workflow-failure"},
+        "State": "DISABLED",
+        "EventPattern": {
+          "source": ["aws.states"],
+          "detail-type": ["Step Functions Execution Status Change"],
+          "detail": {"status": ["FAILED", "TIMED_OUT", "ABORTED"], "stateMachineArn": [{"Ref": "PublicationWorkflowStateMachine"}]}
+        },
+        "Targets": [{
+          "Id": "PublicationRecoveryQueue",
+          "Arn": {"Fn::GetAtt": ["PublicationWorkflowRecoveryQueue", "Arn"]},
+          "InputTransformer": {
+            "InputPathsMap": {"execution_arn": "$.detail.executionArn", "machine_arn": "$.detail.stateMachineArn", "status": "$.detail.status"},
+            "InputTemplate": "{\"execution_arn\":<execution_arn>,\"machine_arn\":<machine_arn>,\"status\":<status>}"
+          }
+        }]
+      }
+    },
+    "PublicationOutcomeUnknownMetric": {
+      "Type": "AWS::Logs::MetricFilter",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "LogGroupName": {"Ref": "PublicationWorkerLogGroup"},
+        "FilterPattern": "{ $.publication_state = \"publication_outcome_unknown\" }",
+        "MetricTransformations": [{"MetricNamespace": "MrLister/Phase7", "MetricName": "PublicationOutcomeUnknown", "MetricValue": "1", "DefaultValue": 0}]
+      }
+    },
+    "PublicationFunctionsErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-functions-errors"},
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "PublicationAlarmTopic"}],
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching",
+        "Metrics": [
+          {"Id": "total", "Expression": "SUM(METRICS())", "ReturnData": true},
+          {"Id": "query", "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "PublicationQueryFunction"}}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": false},
+          {"Id": "request", "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "PublicationRequestFunction"}}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": false},
+          {"Id": "dispatcher", "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "PublicationDispatcherFunction"}}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": false},
+          {"Id": "worker", "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "PublicationWorkerFunction"}}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": false},
+          {"Id": "recovery", "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "PublicationRecoveryFunction"}}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": false},
+          {"Id": "retention", "MetricStat": {"Metric": {"Namespace": "AWS/Lambda", "MetricName": "Errors", "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "PublicationRetentionFunction"}}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": false}
+        ]
+      }
+    },
+    "PublicationWorkerThrottlesAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-worker-throttles"},
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "PublicationAlarmTopic"}],
+        "Namespace": "AWS/Lambda", "MetricName": "Throttles", "Statistic": "Sum", "Period": 300,
+        "EvaluationPeriods": 1, "DatapointsToAlarm": 1, "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold", "TreatMissingData": "notBreaching",
+        "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "PublicationWorkerFunction"}}]
+      }
+    },
+    "PublicationWorkerDurationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-worker-duration"},
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "PublicationAlarmTopic"}],
+        "Namespace": "AWS/Lambda", "MetricName": "Duration", "Statistic": "Maximum", "Period": 300,
+        "EvaluationPeriods": 1, "DatapointsToAlarm": 1, "Threshold": 54000,
+        "ComparisonOperator": "GreaterThanThreshold", "TreatMissingData": "notBreaching",
+        "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "PublicationWorkerFunction"}}]
+      }
+    },
+    "PublicationWorkflowFailuresAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-workflow-failures"},
+        "ActionsEnabled": true,
+        "AlarmActions": [{"Ref": "PublicationAlarmTopic"}],
+        "ComparisonOperator": "GreaterThanThreshold", "EvaluationPeriods": 1, "DatapointsToAlarm": 1,
+        "Threshold": 0, "TreatMissingData": "notBreaching",
+        "Metrics": [
+          {"Id": "total", "Expression": "SUM(METRICS())", "ReturnData": true},
+          {"Id": "failed", "MetricStat": {"Metric": {"Namespace": "AWS/States", "MetricName": "ExecutionsFailed", "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "PublicationWorkflowStateMachine"}}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": false},
+          {"Id": "timed", "MetricStat": {"Metric": {"Namespace": "AWS/States", "MetricName": "ExecutionsTimedOut", "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "PublicationWorkflowStateMachine"}}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": false},
+          {"Id": "aborted", "MetricStat": {"Metric": {"Namespace": "AWS/States", "MetricName": "ExecutionsAborted", "Dimensions": [{"Name": "StateMachineArn", "Value": {"Ref": "PublicationWorkflowStateMachine"}}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": false}
+        ]
+      }
+    },
+    "PublicationDispatcherIteratorAgeAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-dispatcher-iterator-age"},
+        "ActionsEnabled": true, "AlarmActions": [{"Ref": "PublicationAlarmTopic"}],
+        "Namespace": "AWS/Lambda", "MetricName": "IteratorAge", "Statistic": "Maximum", "Period": 300,
+        "EvaluationPeriods": 1, "DatapointsToAlarm": 1, "Threshold": 120000,
+        "ComparisonOperator": "GreaterThanThreshold", "TreatMissingData": "notBreaching",
+        "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "PublicationDispatcherFunction"}}]
+      }
+    },
+    "PublicationRecoveryQueueDepthAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-recovery-depth"},
+        "ActionsEnabled": true, "AlarmActions": [{"Ref": "PublicationAlarmTopic"}],
+        "Namespace": "AWS/SQS", "MetricName": "ApproximateNumberOfMessagesVisible", "Statistic": "Maximum", "Period": 300,
+        "EvaluationPeriods": 1, "DatapointsToAlarm": 1, "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold", "TreatMissingData": "notBreaching",
+        "Dimensions": [{"Name": "QueueName", "Value": {"Fn::GetAtt": ["PublicationWorkflowRecoveryQueue", "QueueName"]}}]
+      }
+    },
+    "PublicationRecoveryQueueAgeAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-recovery-age"},
+        "ActionsEnabled": true, "AlarmActions": [{"Ref": "PublicationAlarmTopic"}],
+        "Namespace": "AWS/SQS", "MetricName": "ApproximateAgeOfOldestMessage", "Statistic": "Maximum", "Period": 300,
+        "EvaluationPeriods": 1, "DatapointsToAlarm": 1, "Threshold": 300,
+        "ComparisonOperator": "GreaterThanThreshold", "TreatMissingData": "notBreaching",
+        "Dimensions": [{"Name": "QueueName", "Value": {"Fn::GetAtt": ["PublicationWorkflowRecoveryQueue", "QueueName"]}}]
+      }
+    },
+    "PublicationOperationsDeadLetterQueueDepthAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-operations-dlq"},
+        "ActionsEnabled": true, "AlarmActions": [{"Ref": "PublicationAlarmTopic"}],
+        "Namespace": "AWS/SQS", "MetricName": "ApproximateNumberOfMessagesVisible", "Statistic": "Maximum", "Period": 300,
+        "EvaluationPeriods": 1, "DatapointsToAlarm": 1, "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold", "TreatMissingData": "notBreaching",
+        "Dimensions": [{"Name": "QueueName", "Value": {"Fn::GetAtt": ["PublicationOperationsDeadLetterQueue", "QueueName"]}}]
+      }
+    },
+    "PublicationOutcomeUnknownAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "InstantiateProductionCandidate",
+      "Properties": {
+        "AlarmName": {"Fn::Sub": "mr-lister-phase7-${EnvironmentName}-publication-outcome-unknown"},
+        "ActionsEnabled": true, "AlarmActions": [{"Ref": "PublicationAlarmTopic"}],
+        "Namespace": "MrLister/Phase7", "MetricName": "PublicationOutcomeUnknown", "Statistic": "Sum", "Period": 300,
+        "EvaluationPeriods": 1, "DatapointsToAlarm": 1, "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold", "TreatMissingData": "notBreaching"
+      }
+    }
+  },
+  "Outputs": {
+    "DeploymentReadiness": {"Value": "SOURCE_ONLY_DISABLED"},
+    "ResourceInstantiationPossible": {"Value": "false"},
+    "PublicationQueryRegistered": {"Value": "false"},
+    "PublicationRequestRegistered": {"Value": "false"},
+    "PublicationWorkerTriggered": {"Value": "false"},
+    "SellerPublicationEnabled": {"Value": "false"},
+    "ProviderMutationEnabled": {"Value": "false"}
+  }
+}

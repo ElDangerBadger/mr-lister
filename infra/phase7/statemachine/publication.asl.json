@@ -1,0 +1,160 @@
+{
+  "Comment": "Phase 7.15A source-only bounded publication candidate; no deployed authority",
+  "TimeoutSeconds": 1860,
+  "StartAt": "InitializeBoundedPoll",
+  "States": {
+    "InitializeBoundedPoll": {
+      "Type": "Pass",
+      "Parameters": {
+        "owner_id.$": "$.owner_id",
+        "aggregate_id.$": "$.aggregate_id",
+        "poll_count": 0
+      },
+      "Next": "RunOnePublicationStep"
+    },
+    "RunOnePublicationStep": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${PublicationWorkerFunctionArn}",
+        "Payload": {
+          "owner_id.$": "$.owner_id",
+          "aggregate_id.$": "$.aggregate_id"
+        }
+      },
+      "ResultSelector": {
+        "aggregate_state.$": "$.Payload.aggregate_state"
+      },
+      "ResultPath": "$.worker_result",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.workflow_error",
+          "Next": "WorkflowFailed"
+        }
+      ],
+      "Next": "RouteDurableState"
+    },
+    "RouteDurableState": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.worker_result.aggregate_state",
+          "StringEquals": "published",
+          "Next": "Published"
+        },
+        {
+          "Variable": "$.worker_result.aggregate_state",
+          "StringEquals": "publication_failed",
+          "Next": "PublicationFailed"
+        },
+        {
+          "Variable": "$.worker_result.aggregate_state",
+          "StringEquals": "publication_outcome_unknown",
+          "Next": "PublicationOutcomeUnknown"
+        },
+        {
+          "Variable": "$.worker_result.aggregate_state",
+          "StringEquals": "publication_requested",
+          "Next": "CheckFastPollBudget"
+        },
+        {
+          "Or": [
+            {
+              "Variable": "$.worker_result.aggregate_state",
+              "StringEquals": "publication_verifying"
+            },
+            {
+              "Variable": "$.worker_result.aggregate_state",
+              "StringEquals": "publication_reconciling"
+            }
+          ],
+          "Next": "CheckSlowPollBudget"
+        }
+      ],
+      "Default": "WorkflowFailed"
+    },
+    "CheckFastPollBudget": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.poll_count",
+          "NumericLessThan": 90,
+          "Next": "IncrementFastPollCount"
+        }
+      ],
+      "Default": "PollBudgetExhausted"
+    },
+    "IncrementFastPollCount": {
+      "Type": "Pass",
+      "Parameters": {
+        "owner_id.$": "$.owner_id",
+        "aggregate_id.$": "$.aggregate_id",
+        "poll_count.$": "States.MathAdd($.poll_count, 1)"
+      },
+      "Next": "WaitBeforeNextAction"
+    },
+    "WaitBeforeNextAction": {
+      "Type": "Wait",
+      "Seconds": 1,
+      "Next": "RunOnePublicationStep"
+    },
+    "CheckSlowPollBudget": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.poll_count",
+          "NumericLessThan": 90,
+          "Next": "IncrementSlowPollCount"
+        }
+      ],
+      "Default": "PollBudgetExhausted"
+    },
+    "IncrementSlowPollCount": {
+      "Type": "Pass",
+      "Parameters": {
+        "owner_id.$": "$.owner_id",
+        "aggregate_id.$": "$.aggregate_id",
+        "poll_count.$": "States.MathAdd($.poll_count, 1)"
+      },
+      "Next": "WaitBeforeNextRead"
+    },
+    "WaitBeforeNextRead": {
+      "Type": "Wait",
+      "Seconds": 20,
+      "Next": "RunOnePublicationStep"
+    },
+    "Published": {
+      "Type": "Succeed"
+    },
+    "PublicationFailed": {
+      "Type": "Succeed"
+    },
+    "PublicationOutcomeUnknown": {
+      "Type": "Succeed"
+    },
+    "PollBudgetExhausted": {
+      "Type": "Fail",
+      "Error": "PublicationPollBudgetExhausted",
+      "Cause": "The bounded workflow stopped without durable terminal publication state."
+    },
+    "WorkflowFailed": {
+      "Type": "Fail",
+      "Error": "PublicationWorkflowFailed",
+      "Cause": "The publication workflow failed closed; recovery must reread durable authority."
+    }
+  }
+}
