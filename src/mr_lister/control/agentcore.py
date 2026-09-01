@@ -389,7 +389,12 @@ class AgentCorePreparationBridge:
             or follow_up.job_id != completed_job.job_id
             or follow_up.work_type is not WorkType.SYNCHRONIZE_PRODUCT
             or follow_up.review_version != completed_job.review_version
-            or follow_up.status is not WorkRequestStatus.PENDING
+            or follow_up.status
+            not in {
+                WorkRequestStatus.PENDING,
+                WorkRequestStatus.CLAIMED,
+                WorkRequestStatus.DISPATCHED,
+            }
         ):
             raise PreparationResponseError(
                 "The AgentCore preparation response was outside its contract"

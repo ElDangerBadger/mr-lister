@@ -655,7 +655,6 @@ class Phase6ProductMachineWorker:
                 coherent = (
                     exact.image_id == matches[0].image_id
                     and exact.file_name == attempt.file_name
-                    and exact.size_bytes == source.size_bytes
                     and exact.mime_type == source.media_type
                 )
                 if coherent:
@@ -898,7 +897,6 @@ class Phase6ProductMachineWorker:
         if (
             exact != returned
             or exact.file_name != expected_file_name
-            or exact.size_bytes != source.size_bytes
             or exact.mime_type != source.media_type
         ):
             raise PrintifyCatalogMismatchError(

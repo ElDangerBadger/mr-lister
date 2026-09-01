@@ -1782,7 +1782,6 @@ class WorkerControlService:
             source.fingerprint != current.source_artifact_fingerprint
             or attempt.source_artifact_fingerprint != source.fingerprint
             or observation.file_name != attempt.file_name
-            or observation.size_bytes != source.size_bytes
             or observation.mime_type != source.media_type
         ):
             raise InvalidControlStateError("Provider upload evidence does not match pinned source")

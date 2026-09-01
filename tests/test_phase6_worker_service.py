@@ -595,6 +595,7 @@ def test_provider_upload_dimensions_are_persisted_as_provider_authority() -> Non
     claimed, work, attempt_id, file_name = _begin_upload_only(store, clock, worker)
     assert worker.authorize_provider_upload(job_id=claimed.job_id, attempt_id=attempt_id)
     source = store.get_source_artifact(claimed.job_id)
+    provider_size_bytes = source.size_bytes - 1
 
     worker.record_provider_upload_success(
         RecordProviderUploadSuccessCommand(
@@ -607,7 +608,7 @@ def test_provider_upload_dimensions_are_persisted_as_provider_authority() -> Non
                 file_name=file_name,
                 width=1999,
                 height=800,
-                size_bytes=source.size_bytes,
+                size_bytes=provider_size_bytes,
             ),
         )
     )
@@ -615,6 +616,7 @@ def test_provider_upload_dimensions_are_persisted_as_provider_authority() -> Non
     updated = store.get_job(claimed.job_id)
     upload = store.get_uploaded_artwork(claimed.job_id, updated.uploaded_artwork_id or "")
     assert (upload.width, upload.height) == (1999, 800)
+    assert upload.size_bytes == provider_size_bytes
 
 
 def test_available_upload_permit_rebinds_only_to_exact_recovery_work() -> None:

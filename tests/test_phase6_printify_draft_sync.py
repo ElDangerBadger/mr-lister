@@ -927,8 +927,40 @@ def test_upload_reconciliation_uses_bounded_list_then_exact_id_get() -> None:
     exact = client.get_upload(image_id=listed[0].image_id)
 
     assert listed == (exact,)
-    assert transport.calls[0]["query"] == "page=1&limit=100"
+    assert transport.calls[0]["query"] == "page=1&limit=50"
     assert [call["method"] for call in transport.calls] == ["GET", "GET"]
+
+
+def test_upload_reconciliation_paginates_at_printify_maximum_page_size() -> None:
+    uploads = [
+        {
+            "id": f"image_{index}",
+            "file_name": f"upload-{index}.png",
+            "width": 100,
+            "height": 100,
+            "size": 12,
+            "mime_type": "image/png",
+        }
+        for index in range(51)
+    ]
+    transport = ScriptedTransport(
+        [
+            ExpectedRequest("GET", "/v1/uploads.json", payload={"data": uploads[:50]}),
+            ExpectedRequest("GET", "/v1/uploads.json", payload={"data": uploads[50:]}),
+        ]
+    )
+    client = PrintifyDraftOnlyClient(
+        token_provider=lambda: "private-token",
+        transport=transport,
+    )
+
+    listed = client.list_uploads()
+
+    assert tuple(upload.image_id for upload in listed) == tuple(upload["id"] for upload in uploads)
+    assert [call["query"] for call in transport.calls] == [
+        "page=1&limit=50",
+        "page=2&limit=50",
+    ]
 
 
 def test_uncertain_upload_response_never_becomes_a_second_post_authority() -> None:
@@ -1061,7 +1093,8 @@ def test_create_reconciliation_classifies_correlated_payload_conflict_as_ambiguo
         ("PATCH", "shops/42/products/product_1.json"),
         ("POST", "shops/42/products.json?page=1&limit=50"),
         ("GET", "shops/42/products.json?page=21&limit=50"),
-        ("GET", "uploads.json?page=21&limit=100"),
+        ("GET", "uploads.json?page=1&limit=100"),
+        ("GET", "uploads.json?page=21&limit=50"),
         ("POST", "uploads/image_1/archive.json"),
     ],
 )

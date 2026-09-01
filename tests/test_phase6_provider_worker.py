@@ -1026,6 +1026,25 @@ def test_upload_is_checkpointed_only_after_exact_provider_readback() -> None:
     assert control.upload_unknowns[0].code == "PROVIDER_RESPONSE_INVALID"
 
 
+def test_upload_readback_accepts_provider_recompression_with_preserved_identity() -> None:
+    source = _source()
+    recompressed = PrintifyUploadedImage(
+        image_id="image_new",
+        file_name=f"mr-lister-{'a' * 24}-{'8' * 16}.png",
+        width=3021,
+        height=3927,
+        size_bytes=source.size_bytes - 1,
+        mime_type=source.media_type,
+    )
+
+    Phase6ProductMachineWorker._require_upload_readback(
+        returned=recompressed,
+        exact=recompressed,
+        source=source,
+        expected_file_name=recompressed.file_name,
+    )
+
+
 def test_upload_reconciliation_lists_then_reads_exact_candidate_without_mutation() -> None:
     file_name = f"mr-lister-{'a' * 24}-{'8' * 16}.png"
     job = _job(
@@ -1061,7 +1080,7 @@ def test_upload_reconciliation_lists_then_reads_exact_candidate_without_mutation
         file_name=file_name,
         width=3021,
         height=3927,
-        size_bytes=2048,
+        size_bytes=store.source.size_bytes - 1,
         mime_type="image/png",
     )
     resources.expected_source_dimensions = (3021, 3927)
@@ -1072,6 +1091,7 @@ def test_upload_reconciliation_lists_then_reads_exact_candidate_without_mutation
     assert control.upload_observations[0].outcome is ReconciliationOutcome.TARGET_MATCH
     assert control.upload_observations[0].upload is not None
     assert control.upload_observations[0].upload.image_id == "image_new"
+    assert control.upload_observations[0].upload.size_bytes == store.source.size_bytes - 1
     assert resources.geometry_checks == [(store.source.fingerprint, "image_new")]
 
 

@@ -322,6 +322,44 @@ def test_durable_prepare_accepts_only_exact_runtime_and_completed_readback() -> 
     assert "123456789012" not in serialized_audit
 
 
+@pytest.mark.parametrize(
+    "follow_up_status",
+    [WorkRequestStatus.CLAIMED, WorkRequestStatus.DISPATCHED],
+)
+def test_durable_prepare_accepts_follow_up_already_advanced_by_dispatcher(
+    follow_up_status: WorkRequestStatus,
+) -> None:
+    bridge, store, agentcore, audit = make_bridge()
+
+    def complete_and_advance(response: dict[str, Any]) -> None:
+        store.complete_from_response(response)
+        follow_up_id = store.job.active_work_request_id
+        assert follow_up_id is not None
+        updates: dict[str, Any] = {
+            "status": follow_up_status,
+            "attempt_count": 1,
+        }
+        if follow_up_status is WorkRequestStatus.CLAIMED:
+            updates.update(
+                claim_id="claim_phase6_sync_001",
+                lease_expires_at=NOW + timedelta(minutes=1),
+            )
+        else:
+            updates["execution_arn"] = (
+                "arn:aws:states:us-west-2:123456789012:execution:"
+                "mr-lister-synchronize:execution-001"
+            )
+        store.work[follow_up_id] = rebuild(store.work[follow_up_id], **updates)
+
+    agentcore.on_success = complete_and_advance
+
+    result = bridge.invoke(job_id=JOB_ID, work_request_id=WORK_ID)
+
+    assert result.decision.next_action == "human_review"
+    assert store.work[store.job.active_work_request_id or ""].status is follow_up_status
+    assert audit.records[-1].status == "succeeded"
+
+
 def test_durable_prepare_accepts_completed_readback_from_listing_checkpoint_resume() -> None:
     initial_job, initial_work = make_authority()
     resumed_job = rebuild(

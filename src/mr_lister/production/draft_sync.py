@@ -261,7 +261,7 @@ def assert_draft_only_route(*, method: str, path: str) -> None:
         return
     if upload_item and normalized_method == "GET" and not query:
         return
-    if upload_collection and normalized_method == "GET" and query.get("limit") == ["100"]:
+    if upload_collection and normalized_method == "GET" and query.get("limit") == ["50"]:
         page = query.get("page", [""])
         if len(query) == 2 and len(page) == 1 and page[0].isdigit():
             page_number = int(page[0])
@@ -442,7 +442,7 @@ class PrintifyDraftOnlyClient(PrintifyCatalogClient):
         uploads: list[PrintifyUploadedImage] = []
         image_ids: set[str] = set()
         for page in range(1, _MAX_RECONCILIATION_PAGES + 1):
-            payload = self._request_json(method="GET", path=f"uploads.json?page={page}&limit=100")
+            payload = self._request_json(method="GET", path=f"uploads.json?page={page}&limit=50")
             last_page = None
             if isinstance(payload, dict):
                 last_page = payload.get("last_page")
@@ -469,7 +469,7 @@ class PrintifyDraftOnlyClient(PrintifyCatalogClient):
                     )
                 if page >= last_page:
                     return tuple(uploads)
-            elif len(payload) < 100:
+            elif len(payload) < 50:
                 return tuple(uploads)
         raise PrintifyCatalogMismatchError(
             "Printify upload reconciliation exceeded its bounded page limit"
