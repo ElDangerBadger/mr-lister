@@ -519,15 +519,30 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     alarms, and exact IAM separation. All 40 resources use a condition that no allowed parameter
     can satisfy; functions have zero concurrency; every mapping/rule is independently disabled;
     EventBridge has no invoke permission; a failed worker Task remains the exact redrive origin
-    while execution data logging stays disabled; future production handlers are intentionally
-    absent; no API/URL/seller route exists; and SAM lint plus tests pass;
-    provider-free control-plane adapters and sealed runtime artifacts remain incomplete
+    while execution data logging stays disabled; future production entrypoints are intentionally
+    absent; no API/URL/seller route exists; and SAM lint plus tests pass; sealed runtime artifacts
+    remain incomplete
+  - [x] Phase 7.15B provider-free control plane: the bounded due-work dispatcher starts one fixed
+    Standard workflow with deterministic identity and exact ambiguity readback, checks each
+    deadline immediately before start, isolates per-candidate retry so one failure cannot starve
+    later work, and routes expired pristine work through the encrypted recovery queue. Recovery
+    can describe/redrive only the same ARN, carries non-redrivable failures through the immutable
+    deadline, and settles pre-dispatch expiry through the real replay-safe execution service with
+    zero provider calls. Terminal retention strongly resolves owner authority before marker-last
+    TTL assignment. The source checkpoint is
+    `0e3c150cb9cfa11c8047db3a4670f8ec5aa6d864`; it remains unregistered, unsealed, undeployed, and
+    cannot activate the impossible P7.15A template
+  - [ ] Phase 7.15C production closure: release-first entrypoints and sealed runtime artifacts;
+    activation-ready but still disabled infrastructure; EventBridge retry/DLQ and lost-event
+    recovery inventory; poison-row/DLQ replay runbook; clean due-index validation; retention
+    activation/backfill ordering; telemetry/alarm delivery proof; and live IAM, redrive, SQS,
+    retention, deployment, readback, and rollback evidence
   - Current execution order, source/deployment distinctions, and irreversible stop lines are
     authoritative in [`phase7-execution-map.md`](phase7-execution-map.md)
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime
-  - [ ] Channel publication and status polling
-  - [ ] Partial-failure recovery, result links, and immutable reports
-  - [ ] Notify the seller only after publication is positively verified complete
+  - [ ] Deploy and canary-validate channel publication and status polling
+  - [ ] Live-validate partial-failure recovery, safe result links, and immutable reports
+  - [ ] Live-validate seller notification only after publication is positively verified complete
 - [ ] Phase 8 — Hardening, evaluation, and submission
   - [ ] Security, failure-mode, privacy, and cost review
   - [ ] Evaluation evidence and demo rehearsal

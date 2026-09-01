@@ -5,9 +5,9 @@
 **PHASE 7 IN PROGRESS — ACTIVATION ZERO**
 
 Phase 6 remains sealed at seller approval. Phase 7 source contains a substantial, tested
-one-shot publication safety core, but no seller publication route, browser control, production
-publication worker, or generally enabled publication contract exists. Etsy publication has not
-been authorized by deployment.
+one-shot publication safety core and provider-free control plane, but no reachable seller
+publication route, browser control, deployed production publication worker, or generally enabled
+publication contract exists. Etsy publication has not been authorized by deployment.
 
 This document is the authoritative map from the sealed Phase 6 release to a sealable Phase 7
 release. It distinguishes code that is complete from capability that is actually deployed and
@@ -17,7 +17,8 @@ enabled.
 
 | Authority | Current value |
 | --- | --- |
-| Repository source | `5509457faf8242d75ea1e47ff60a429cf38bd0a3` on `main` |
+| Phase 6 protected source baseline | `5509457faf8242d75ea1e47ff60a429cf38bd0a3` |
+| Phase 7 P7.15B source checkpoint | `0e3c150cb9cfa11c8047db3a4670f8ec5aa6d864` on `main` |
 | Phase 6 runtime source | `15a4f2a657e4cf5809de7066d267455d65c8c835` |
 | Phase 6 Provider component | `748e5c4a1e46c500215118685d1f70231b7f28b8bfe8e67cc804da1c33e7c347` |
 | Phase 6 decision | `PHASE 6 COMPLETE AND SEALED` for the functional demo scope |
@@ -45,6 +46,7 @@ role, route, state machine, agent, or browser control.
 | Real request and worker dependency graphs | Complete but unregistered and exact-disabled |
 | Read-only approval guard runtime, bundle builder, SAM template, and verifier | Implemented; current live release not proven |
 | Isolated concurrency-one direct-invoke canary and gated request preparation | Implemented source-only; never deployed or invoked |
+| Provider-free dispatcher, same-ARN recovery, deadline settlement, and terminal-retention control plane | Complete and tested source-only; unregistered and undeployed |
 
 The existing source is not a publication scaffold in the ordinary sense. The safety-sensitive
 domain, persistence, provider, reconciliation, and recovery behavior is already present. The
@@ -111,10 +113,31 @@ has no API, Function URL, seller route, enabled output, or active handler. The w
 one future worker, uses fixed 1-second action and 20-second verification waits, stops after at most
 91 one-step invocations, keeps a failed worker Task as the exact redrive origin while execution
 data logging stays disabled, and has an absolute 1,860-second timeout.
-JSON, structural/IAM/alarm
-tests, Ruff, and SAM lint pass. Provider-free dispatcher/recovery/retention implementations and
-separate release closures remain P7.15B/C work, so the overall infrastructure matrix is not yet
-closed and nothing from this template is deployable.
+JSON, structural/IAM/alarm tests, Ruff, and SAM lint pass. Nothing from this template is
+deployable.
+
+**P7.15B provider-free control-plane checkpoint complete at
+`0e3c150cb9cfa11c8047db3a4670f8ec5aa6d864`.** The bounded due-work inventory and dispatcher use
+one fixed Standard state machine, deterministic execution names, identifier-only input, exact
+readback after ambiguous starts, a final per-item deadline check, and per-candidate retry results
+so one unavailable execution cannot starve later work. Expired pristine work is sent through the
+existing encrypted recovery queue and settles through the real replay-safe execution service
+without starting or inspecting a workflow. Failed executions can only be described and redriven
+on the same exact ARN; the retry horizon carries non-redrivable early failures through the fixed
+30-minute settlement boundary. Terminal retention strongly resolves owner authority before the
+existing marker-last TTL transaction. The handlers and dependency graphs are source-only: there
+is no production entrypoint, default AWS-client factory, provider credential, route, trigger,
+runtime artifact, or activation path.
+
+**P7.15C production closure remains open.** Before activation, build and seal release-first
+production entrypoints and runtime artifacts; derive an activation-ready template whose nonzero
+concurrency and trigger changes remain independently gated and disabled; add EventBridge target
+retry/DLQ policy and a durable recovery inventory for lost workflow-failure events; define
+poison-row inspection and DLQ
+replay; validate the due index before activation; enable retention before accepting requests or
+backfill terminal links; prove telemetry and alarm delivery; and live-validate IAM, same-ARN
+redrive, SQS timing, retention duration, clean deployment, readback, and rollback. Until those
+items close, the overall infrastructure-and-alarm gate remains open.
 
 ### P7.16 — Deployed read-only validation
 
@@ -150,11 +173,12 @@ Only after a successful canary:
 ## Live-state inventory at map creation
 
 On 2026-09-01, the authenticated `mr-lister-bootstrap` profile reported no CloudFormation stack
-whose name contains `phase7`; `mr-lister-phase7-dev` does not exist in that account. The
-`mr-lister-dev` session was expired, so its live state remains unverified until that exact profile
-is authenticated. The repository contains no authoritative Phase 7 deployment release record,
-and the ignored private guard and worker artifacts are stale against current source. Therefore no
-Phase 7 deployment or rollback tuple is currently claimed.
+whose name contains `phase7`; `mr-lister-phase7-dev` does not exist in that account. The exact
+`mr-lister-dev` IAM user now authenticates in account `384627057108`, but its current policy denies
+`cloudformation:ListStacks`, `s3:ListAllMyBuckets`, and `dynamodb:DescribeTable`, so deployment
+inventory and readback cannot proceed under that identity. The repository contains no
+authoritative Phase 7 deployment release record. Therefore no Phase 7 deployment or rollback
+tuple is currently claimed.
 
 A replacement zero-publication guard candidate was then rebuilt from `main` and verified locally:
 

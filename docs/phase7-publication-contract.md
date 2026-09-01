@@ -31,10 +31,10 @@ separate `PublicationAggregate` in `PUBLICATION_REQUESTED`. It is not a persiste
 publication state.
 
 The `PublicationAggregate` exclusively owns publication state. Its `PublicationWorkRequest` and
-future publication dispatcher are separate from the Phase 6 `WorkType`, dispatcher, recovery map,
-and state machines. The control job and owner-job projection must retain an immutable aggregate
-reference and terminal summary for projection, cleanup, and duplicate prevention, but their Phase 6
-state remains `APPROVED`.
+dedicated source-only publication dispatcher are separate from the Phase 6 `WorkType`,
+dispatcher, recovery map, and state machines. The control job and owner-job projection must retain
+an immutable aggregate reference and terminal summary for projection, cleanup, and duplicate
+prevention, but their Phase 6 state remains `APPROVED`.
 
 ## Supported seller flow
 
@@ -112,9 +112,9 @@ One DynamoDB transaction must condition the current owned `APPROVED` record and 
 
 The request transaction makes no Printify, Etsy, AgentCore, model, S3, or Step Functions call.
 Exact replay returns the persisted `PublicationCommandReceipt`; changed-body reuse conflicts;
-concurrent commands have one winner. A future dedicated Phase 7 dispatcher remains the only
-publication Step Functions starter. The Phase 6 dispatcher cannot recognize or start publication
-work.
+concurrent commands have one winner. The dedicated source-only Phase 7 dispatcher is the only
+component designed to start publication Step Functions, and it is not registered or deployed.
+The Phase 6 dispatcher cannot recognize or start publication work.
 
 ## Dedicated provider boundary and root-attempt budgets
 
@@ -405,6 +405,29 @@ Private source-version release becomes eligible at the derived 30-day timestamp;
 reference-aware sweeper still rechecks the exact terminal aggregate and durable source authority
 before changing tags. TTL assignment and source release never delete or unpublish the
 Printify/Etsy product.
+
+## Source-only production control plane
+
+The P7.15B checkpoint implements the dedicated dispatcher, same-execution recovery, pre-dispatch
+deadline settlement, and terminal-retention boundaries without registering a runtime. The
+dispatcher queries only the bounded due-work index, uses the persisted deterministic execution
+name and identifier-only input, verifies ambiguous starts against the exact execution, checks time
+again before each start, and continues past an isolated candidate failure before surfacing one
+sanitized batch retry. It cannot write publication authority.
+
+If pristine work is already expired, the dispatcher does not create a workflow. It sends an exact
+owner/aggregate/work/deadline envelope to the encrypted recovery queue. Recovery strong-loads and
+rebinds durable authority, then delegates to the existing idempotent deadline transition without
+a provider or Step Functions call. Workflow recovery has no start operation: it may describe and
+boundedly redrive only the same exact execution ARN. Non-redrivable failures remain retryable long
+enough to reach the immutable 30-minute deadline. Terminal retention strong-resolves the owner and
+uses the existing marker-last transaction.
+
+These source boundaries do not change activation phase or close the infrastructure gate. They
+have no production entrypoint, default AWS-client construction, route, credential, sealed runtime
+artifact, enabled trigger, deployment, or provider authorization. P7.15C must close the production
+artifact, event-loss recovery, DLQ/replay, retention ordering, telemetry, IAM, deployment/readback,
+and rollback matrix before deployed read-only validation begins.
 
 ## Acceptance and three activation scopes
 
