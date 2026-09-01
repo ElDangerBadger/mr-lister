@@ -20,7 +20,7 @@ from tools.prepare_phase6_web_release import (
 
 _FIXTURE_FILES = {
     "assets/index-BiMmzyh5.css": b"body{color:#123456}\n",
-    "assets/index-LH8ry4bk.js": b'console.log("seller web");\n',
+    "assets/index-DIJgeTwi.js": b'console.log("seller web");\n',
     "favicon.svg": b'<svg xmlns="http://www.w3.org/2000/svg"/>\n',
     "index.html": b"<!doctype html><html><body></body></html>\n",
 }
@@ -68,6 +68,21 @@ def _canonical(value: object) -> bytes:
         )
         + "\n"
     ).encode()
+
+
+def test_release_authority_is_the_final_phase6_browser_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.undo()
+    assert web_release.BROWSER_GATE_BUNDLE_SHA256 == (
+        "977f82ebdb4b0acd35f7db7081cea3a34dc71beeb2d40cd7bec79bb27aeadc21"
+    )
+    assert set(EXPECTED_WEB_RELEASE_FILES) == {
+        "assets/index-BiMmzyh5.css",
+        "assets/index-DIJgeTwi.js",
+        "favicon.svg",
+        "index.html",
+    }
 
 
 def test_manifest_is_canonical_closed_and_binds_upload_metadata(tmp_path: Path) -> None:
@@ -131,7 +146,7 @@ def test_private_manifest_is_create_only_and_mode_0600(tmp_path: Path) -> None:
     (
         "runtime-config.json",
         "runtime-config.example.json",
-        "assets/index-LH8ry4bk.js.map",
+        "assets/index-DIJgeTwi.js.map",
         "robots.txt",
         "nested/extra.txt",
     ),
@@ -173,7 +188,7 @@ def test_symlinked_input_is_rejected_even_when_target_stays_in_repository(
     repository, dist, _contents = _repository(tmp_path)
     target = repository / "replacement.js"
     target.write_bytes(b"replacement")
-    expected = dist / "assets" / "index-LH8ry4bk.js"
+    expected = dist / "assets" / "index-DIJgeTwi.js"
     expected.unlink()
     expected.symlink_to(target)
 
