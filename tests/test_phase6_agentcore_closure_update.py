@@ -117,6 +117,25 @@ def _predecessor_evidence() -> dict[str, object]:
     }
 
 
+def test_ready_endpoint_may_omit_target_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository, closure, _ = _setup(tmp_path, monkeypatch)
+    evidence = _predecessor_evidence()
+    endpoint = evidence["getAgentRuntimeEndpoint"]["response"]  # type: ignore[index]
+    endpoint.pop("targetVersion")  # type: ignore[union-attr]
+    _write(closure / closure_update.PREDECESSOR_EVIDENCE_FILE, evidence)
+
+    documents = closure_update.render_phase6_agentcore_runtime_update_documents(
+        closure,
+        repository_root=repository,
+        now=NOW,
+    )
+
+    assert closure_update.RUNTIME_UPDATE_FILE in documents
+
+
 def _role_evidence(repository: Path) -> dict[str, object]:
     trust, policy, tags = closure_update._expected_role_documents(repository)
     return {

@@ -934,9 +934,8 @@ def _validate_endpoint_response(value: object, *, name: str, version: str, arn: 
         "liveVersion",
         "name",
         "status",
-        "targetVersion",
     }
-    optional = {"description", "failureReason"}
+    optional = {"description", "failureReason", "targetVersion"}
     if (
         not required <= set(document)
         or set(document) - required - optional
@@ -944,7 +943,7 @@ def _validate_endpoint_response(value: object, *, name: str, version: str, arn: 
         or document.get("agentRuntimeEndpointArn") != arn
         or document.get("name") != name
         or document.get("liveVersion") != version
-        or document.get("targetVersion") != version
+        or ("targetVersion" in document and document.get("targetVersion") != version)
         or document.get("status") != "READY"
         or document.get("failureReason") not in (None, "")
         or _ENDPOINT_ID.fullmatch(str(document.get("id"))) is None
