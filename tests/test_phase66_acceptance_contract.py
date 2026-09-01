@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from pydantic import ValidationError
 
 from mr_lister.acceptance.phase6 import (
     PHASE66_CONTRACT_VERSION,
+    PHASE66_FIRST_TIME_SELLER_TASK_SHA256,
     AcceptanceEvidenceClass,
     Phase66AcceptanceManifest,
     evidence_record_json_schema,
@@ -21,6 +23,7 @@ from mr_lister.acceptance.phase6 import (
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "contracts" / "acceptance" / "phase6.6.manifest.json"
 SCHEMA_PATH = ROOT / "contracts" / "acceptance" / "phase6.6.evidence.schema.json"
+MODERATED_TASK_PATH = ROOT / "contracts" / "acceptance" / "phase6.6.first-time-seller-task.json"
 EXPECTED_MANIFEST_DIGEST = "84851fe2ed78072d077cc5e642d0e222619b9a7226367219b536b7e2aaac7d73"
 
 
@@ -141,7 +144,7 @@ def _moderated_record() -> dict[str, object]:
         "moderated_session": {
             "participant_digest": _digest("2"),
             "consent_record_digest": _digest("3"),
-            "task_script_digest": _digest("4"),
+            "task_script_digest": PHASE66_FIRST_TIME_SELLER_TASK_SHA256,
             "session_record_digest": _digest("5"),
             "first_time_seller": True,
             "external_documentation_used": False,
@@ -224,6 +227,18 @@ def test_checked_in_evidence_schema_is_the_exact_generated_structural_contract()
     live = evidence_record_json_schema()
     assert json.loads(checked_in_text) == live
     assert checked_in_text == _render(live)
+
+
+def test_moderated_task_digest_is_exact_checked_in_release_authority() -> None:
+    assert sha256(MODERATED_TASK_PATH.read_bytes()).hexdigest() == (
+        PHASE66_FIRST_TIME_SELLER_TASK_SHA256
+    )
+    moderated = _moderated_record()
+    session = moderated["moderated_session"]
+    assert isinstance(session, dict)
+    session["task_script_digest"] = _digest("4")
+    with pytest.raises(ValidationError):
+        validate_phase66_evidence(moderated)
 
 
 def test_manifest_separates_evidence_classes_and_provider_authority() -> None:

@@ -32,6 +32,7 @@ from pydantic import (
 
 from mr_lister.acceptance.phase6 import (
     PHASE66_CONTRACT_VERSION,
+    PHASE66_FIRST_TIME_SELLER_TASK_SHA256,
     AcceptanceEvidenceClass,
     AcceptanceOutcome,
     ArtifactFormat,
@@ -124,6 +125,108 @@ class Phase66EvidenceSetVerification(BaseModel):
     artifact_byte_count: StrictInt = Field(ge=1, le=_MAX_TOTAL_ARTIFACT_BYTES)
     job_binding_count: StrictInt = Field(ge=1, le=_MAX_EVIDENCE_RECORDS)
     run_count: StrictInt = Field(ge=1, le=_MAX_EVIDENCE_RECORDS)
+
+
+class _ModeratedArtifactModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class _ModeratedAuthenticatedAccess(_ModeratedArtifactModel):
+    invited_seller: Literal[True]
+    mfa_complete: Literal[True]
+    authenticated_session_observed: Literal[True]
+    session_renewal_succeeded: Literal[True]
+    credential_material_retained: Literal[False]
+
+
+class _ModeratedAssistance(_ModeratedArtifactModel):
+    external_documentation_used: Literal[False]
+    moderator_help_used: Literal[False]
+    operator_intervention_count: Literal[0]
+
+
+class _ModeratedFlow(_ModeratedArtifactModel):
+    supported_upload_completed: Literal[True]
+    artwork_normalization_completed: Literal[True]
+    browser_restarted: Literal[True]
+    same_job_recovered_after_restart: Literal[True]
+    same_job_strands_evidence_found: Literal[True]
+    unpublished_printify_draft_reviewed: Literal[True]
+    unpublished_boundary_understood: Literal[True]
+    human_approval_completed: Literal[True]
+    final_job_state: Literal["APPROVED"]
+
+
+class _ModeratedAccessibility(_ModeratedArtifactModel):
+    screen_reader_passed: Literal[True]
+    keyboard_only_passed: Literal[True]
+    visible_focus_passed: Literal[True]
+    contrast_passed: Literal[True]
+    reduced_motion_passed: Literal[True]
+    zoom_200_percent_passed: Literal[True]
+
+
+class _ModeratedManualJourneys(_ModeratedArtifactModel):
+    upload_passed: Literal[True]
+    review_passed: Literal[True]
+    edit_passed: Literal[True]
+    refresh_passed: Literal[True]
+    cancel_passed: Literal[True]
+    retry_passed: Literal[True]
+    logout_passed: Literal[True]
+
+
+class _ModeratedPublication(_ModeratedArtifactModel):
+    publication_disabled: Literal[True]
+    publication_action_absent: Literal[True]
+    provider_draft_state: Literal["unpublished_unlocked"]
+    publication_attempt_count: Literal[0]
+    order_attempt_count: Literal[0]
+    fulfillment_attempt_count: Literal[0]
+    provider_write_authority_is_separate: Literal[True]
+
+
+class _ModeratedPrivacy(_ModeratedArtifactModel):
+    forbidden_field_match_count: Literal[0]
+    sensitive_value_match_count: Literal[0]
+    free_text_value_count: Literal[0]
+    raw_authority_retained: Literal[False]
+    raw_identity_retained: Literal[False]
+
+
+class _FirstTimeSellerSessionArtifact(_ModeratedArtifactModel):
+    """Exact sanitized artifact required to close the blocking moderated seller gate."""
+
+    artifact_contract: Literal["phase6.6-sanitized-moderated-session-record-v1"]
+    gate_id: Literal["moderated.first_time_seller_exit"]
+    result: Literal["passed"]
+    recorded_at: Annotated[
+        str,
+        StringConstraints(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"),
+    ]
+    source_commit_digest: Digest
+    deployment_digest: Digest
+    run_digest: Digest
+    job_digest: Digest
+    actor_digest: Digest
+    work_digest: Digest
+    correlation_digest: Digest
+    provider_primary_record_digest: Digest
+    task_contract_digest: Literal[PHASE66_FIRST_TIME_SELLER_TASK_SHA256]
+    participant_digest: Digest
+    consent_record_digest: Digest
+    session_record_digest: Digest
+    first_time_seller: Literal[True]
+    explicit_consent: Literal[True]
+    completed_supported_flow: Literal[True]
+    duration_seconds: StrictInt = Field(ge=1, le=86_400)
+    authenticated_access: _ModeratedAuthenticatedAccess
+    assistance: _ModeratedAssistance
+    flow: _ModeratedFlow
+    accessibility: _ModeratedAccessibility
+    manual_journeys: _ModeratedManualJourneys
+    publication: _ModeratedPublication
+    privacy: _ModeratedPrivacy
 
 
 def _canonical_json(value: Any) -> bytes:
@@ -451,7 +554,7 @@ def _contains_forbidden_artifact_field(value: object, forbidden: set[str]) -> bo
     return False
 
 
-def _verify_json(file_fd: int) -> None:
+def _verify_json(file_fd: int) -> object:
     with os.fdopen(os.dup(file_fd), "rb") as source:
         source.seek(0)
         _require_bounded_json_depth(source.read())
@@ -470,6 +573,7 @@ def _verify_json(file_fd: int) -> None:
         raise ValueError("sanitized JSON evidence contains forbidden authority fields")
     if value.get("result") != "passed":
         raise ValueError("sanitized JSON evidence must report a passed result")
+    return value
 
 
 def _verify_junit_xml(file_fd: int) -> None:
@@ -638,12 +742,12 @@ def _verify_webm(file_fd: int) -> None:
         raise ValueError("invalid WebM signature")
 
 
-def _verify_format(file_fd: int, artifact: Any, relative_path: str) -> None:
+def _verify_format(file_fd: int, artifact: Any, relative_path: str) -> object | None:
     if PurePosixPath(relative_path).suffix.casefold() != _FORMAT_SUFFIX[artifact.artifact_format]:
         raise EvidenceSetVerificationError("Artifact filename and declared format do not match")
     try:
         if artifact.artifact_format is ArtifactFormat.JSON:
-            _verify_json(file_fd)
+            return _verify_json(file_fd)
         elif artifact.artifact_format is ArtifactFormat.JUNIT_XML:
             _verify_junit_xml(file_fd)
         elif artifact.artifact_format is ArtifactFormat.ZIP:
@@ -668,12 +772,93 @@ def _verify_format(file_fd: int, artifact: Any, relative_path: str) -> None:
         raise EvidenceSetVerificationError(
             "Artifact bytes do not match the declared format"
         ) from None
+    return None
+
+
+def _first_time_seller_artifact_owners(
+    records: tuple[Any, ...],
+) -> dict[str, ModeratedUserEvidenceRecord]:
+    owners: dict[str, ModeratedUserEvidenceRecord] = {}
+    for record in records:
+        if not (
+            isinstance(record, ModeratedUserEvidenceRecord)
+            and record.gate_id == "moderated.first_time_seller_exit"
+        ):
+            continue
+        artifacts = tuple(
+            artifact
+            for artifact in record.artifacts
+            if artifact.kind is ArtifactKind.MODERATED_SESSION_RECORD
+        )
+        if len(artifacts) != 1:
+            raise EvidenceSetVerificationError(
+                "The first-time seller gate requires one exact moderated-session artifact"
+            )
+        owners[artifacts[0].artifact_digest] = record
+    return owners
+
+
+def _verify_first_time_seller_artifact(
+    value: object,
+    *,
+    record: ModeratedUserEvidenceRecord,
+    records: tuple[Any, ...],
+) -> None:
+    try:
+        artifact = _FirstTimeSellerSessionArtifact.model_validate(value)
+    except ValueError:
+        raise EvidenceSetVerificationError(
+            "The first-time seller artifact failed its authoritative schema"
+        ) from None
+
+    providers = tuple(
+        candidate
+        for candidate in records
+        if isinstance(candidate, ProviderDestructiveEvidenceRecord)
+        and candidate.gate_id == "provider.primary_same_job_canary"
+        and candidate.source_commit_digest == record.source_commit_digest
+        and candidate.deployment_digest == record.deployment_digest
+        and candidate.run_digest == record.run_digest
+        and candidate.job_digest == record.job_digest
+    )
+    if len(providers) != 1:
+        raise EvidenceSetVerificationError(
+            "The first-time seller artifact lacks one exact primary provider record"
+        )
+    provider = providers[0]
+    provider_digest = sha256(_canonical_json(provider.model_dump(mode="json"))).hexdigest()
+    session = record.moderated_session
+    recorded_at = record.recorded_at.isoformat().replace("+00:00", "Z")
+    if (
+        artifact.recorded_at != recorded_at
+        or artifact.source_commit_digest != record.source_commit_digest
+        or artifact.deployment_digest != record.deployment_digest
+        or artifact.run_digest != record.run_digest
+        or artifact.job_digest != record.job_digest
+        or artifact.actor_digest != record.actor_digests[0]
+        or artifact.work_digest != record.work_digest
+        or artifact.correlation_digest != record.correlation_digest
+        or artifact.provider_primary_record_digest != provider_digest
+        or artifact.task_contract_digest != session.task_script_digest
+        or artifact.participant_digest != session.participant_digest
+        or artifact.consent_record_digest != session.consent_record_digest
+        or artifact.session_record_digest != session.session_record_digest
+        or artifact.duration_seconds != session.duration_seconds
+        or provider.actor_digests != record.actor_digests
+        or provider.work_digest != record.work_digest
+        or provider.correlation_digest != record.correlation_digest
+    ):
+        raise EvidenceSetVerificationError(
+            "The first-time seller artifact does not bind its exact provider and session authority"
+        )
 
 
 def _verify_artifacts(
     declared: dict[str, Any],
     artifact_files: tuple[Phase66ArtifactFile, ...],
     allowed_root: str | os.PathLike[str],
+    *,
+    records: tuple[Any, ...] | None = None,
 ) -> int:
     references: dict[str, Phase66ArtifactFile] = {}
     relative_paths: set[str] = set()
@@ -685,6 +870,7 @@ def _verify_artifacts(
     if references.keys() != declared.keys():
         raise EvidenceSetVerificationError("Artifact-file bindings must exactly match evidence")
 
+    moderated_owners = _first_time_seller_artifact_owners(records or ())
     root_fd = _open_root(allowed_root)
     total_bytes = 0
     physical_files: set[tuple[int, int]] = set()
@@ -723,7 +909,14 @@ def _verify_artifacts(
                     )
                 if _hash_file(file_fd) != artifact.artifact_digest:
                     raise EvidenceSetVerificationError("Artifact SHA-256 does not match")
-                _verify_format(file_fd, artifact, reference.relative_path)
+                structured_value = _verify_format(file_fd, artifact, reference.relative_path)
+                moderated_owner = moderated_owners.get(artifact_digest)
+                if moderated_owner is not None:
+                    _verify_first_time_seller_artifact(
+                        structured_value,
+                        record=moderated_owner,
+                        records=records or (),
+                    )
                 after = os.fstat(file_fd)
                 if (
                     before.st_size,
@@ -763,7 +956,12 @@ def verify_phase66_evidence_set(
     )
     declared = _declared_artifacts(validated_records)
     validated_files = _validated_artifact_files(artifact_files)
-    artifact_bytes = _verify_artifacts(declared, validated_files, allowed_artifact_root)
+    artifact_bytes = _verify_artifacts(
+        declared,
+        validated_files,
+        allowed_artifact_root,
+        records=validated_records,
+    )
 
     manifest = phase66_acceptance_manifest()
     record_payloads = sorted(

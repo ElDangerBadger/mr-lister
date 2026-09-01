@@ -30,6 +30,12 @@ from pydantic import (
 
 PHASE66_CONTRACT_VERSION = "6.6.0"
 PHASE66_SCHEMA_ID = "https://mr-lister.invalid/contracts/acceptance/phase6.6/evidence.schema.json"
+# SHA-256 of the exact checked-in
+# contracts/acceptance/phase6.6.first-time-seller-task.json bytes.  This is a release authority,
+# not a caller-selected label: changing the moderated task requires an intentional contract reseal.
+PHASE66_FIRST_TIME_SELLER_TASK_SHA256 = (
+    "f8ca6f9c4e6565fc9ba6f08c6094890673f8ca67d34b35c90f69cbcddd867be0"
+)
 _RFC3339 = re.compile(
     r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
     r"(?:\.[0-9]{1,6})?(?:Z|[+-][0-9]{2}:[0-9]{2})$"
@@ -614,7 +620,7 @@ class ProviderCallSummary(_ClosedModel):
 class ModeratedSessionEvidence(_ClosedModel):
     participant_digest: Digest
     consent_record_digest: Digest
-    task_script_digest: Digest
+    task_script_digest: Literal[PHASE66_FIRST_TIME_SELLER_TASK_SHA256]
     session_record_digest: Digest
     first_time_seller: Literal[True]
     external_documentation_used: Literal[False]
@@ -848,6 +854,7 @@ def evidence_record_json_schema() -> dict[str, Any]:
 
 __all__ = [
     "PHASE66_CONTRACT_VERSION",
+    "PHASE66_FIRST_TIME_SELLER_TASK_SHA256",
     "AcceptanceEvidenceClass",
     "AcceptanceOutcome",
     "Phase66AcceptanceManifest",

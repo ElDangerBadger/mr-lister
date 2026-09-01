@@ -278,7 +278,9 @@
           "$ref": "#/$defs/Digest"
         },
         "task_script_digest": {
-          "$ref": "#/$defs/Digest"
+          "const": "f8ca6f9c4e6565fc9ba6f08c6094890673f8ca67d34b35c90f69cbcddd867be0",
+          "title": "Task Script Digest",
+          "type": "string"
         }
       },
       "required": [

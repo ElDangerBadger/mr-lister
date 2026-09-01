@@ -1,0 +1,68 @@
+{
+  "acceptance_manifest_digest": "84851fe2ed78072d077cc5e642d0e222619b9a7226367219b536b7e2aaac7d73",
+  "authority_bindings": [
+    "source_commit_digest",
+    "deployment_digest",
+    "run_digest",
+    "job_digest",
+    "actor_digest",
+    "work_digest",
+    "correlation_digest"
+  ],
+  "contract": "phase6.6-moderated-first-time-seller-task-v1",
+  "evidence_class": "moderated_user",
+  "forbidden_assistance": [
+    "external_documentation",
+    "moderator_help",
+    "operator_intervention"
+  ],
+  "frozen_at": "2026-08-31T20:00:00Z",
+  "gate_id": "moderated.first_time_seller_exit",
+  "manual_accessibility_checks": [
+    "screen_reader",
+    "keyboard_only",
+    "visible_focus",
+    "contrast",
+    "reduced_motion",
+    "zoom_200_percent"
+  ],
+  "manual_journeys": [
+    "upload",
+    "review",
+    "edit",
+    "refresh",
+    "cancel",
+    "retry",
+    "logout"
+  ],
+  "participant_requirements": [
+    "explicit_consent",
+    "first_time_seller",
+    "invited_seller",
+    "mfa_complete",
+    "authenticated_session"
+  ],
+  "privacy_boundary": {
+    "free_text_forbidden": true,
+    "raw_authority_forbidden": true,
+    "raw_identity_forbidden": true,
+    "secrets_forbidden": true
+  },
+  "provider_prerequisite_gate_id": "provider.primary_same_job_canary",
+  "provider_write_authority": "separate_provider_evidence_only",
+  "publication_boundary": {
+    "approval_is_terminal": true,
+    "etsy_publication_is_phase7": true,
+    "publication_must_remain_disabled": true,
+    "provider_draft_must_remain_unpublished": true
+  },
+  "status": "frozen",
+  "task_steps": [
+    "upload_supported_artwork",
+    "recover_same_job_after_browser_restart",
+    "find_same_job_strands_evidence",
+    "review_unpublished_printify_draft",
+    "complete_human_approval",
+    "stop_before_publication"
+  ]
+}

@@ -18,11 +18,13 @@ from mr_lister.acceptance.evidence_set import (
     verify_phase66_evidence_set,
 )
 from mr_lister.acceptance.phase6 import (
+    PHASE66_FIRST_TIME_SELLER_TASK_SHA256,
     AcceptanceEvidenceClass,
     ArtifactFormat,
     ArtifactKind,
     phase66_acceptance_manifest,
     phase66_manifest_digest,
+    validate_phase66_evidence,
 )
 
 
@@ -117,6 +119,100 @@ def _provider_summary(gate_id: str) -> dict[str, Any]:
         "fulfillment_attempt_count": 0,
         "final_state": "not_created",
     }
+
+
+def _first_time_seller_artifact(record: dict[str, Any], provider: dict[str, Any]) -> bytes:
+    session = record["moderated_session"]
+    validated_provider = validate_phase66_evidence(provider)
+    provider_digest = hashlib.sha256(
+        json.dumps(
+            validated_provider.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return json.dumps(
+        {
+            "artifact_contract": "phase6.6-sanitized-moderated-session-record-v1",
+            "gate_id": "moderated.first_time_seller_exit",
+            "result": "passed",
+            "recorded_at": record["recorded_at"],
+            "source_commit_digest": record["source_commit_digest"],
+            "deployment_digest": record["deployment_digest"],
+            "run_digest": record["run_digest"],
+            "job_digest": record["job_digest"],
+            "actor_digest": record["actor_digests"][0],
+            "work_digest": record["work_digest"],
+            "correlation_digest": record["correlation_digest"],
+            "provider_primary_record_digest": provider_digest,
+            "task_contract_digest": PHASE66_FIRST_TIME_SELLER_TASK_SHA256,
+            "participant_digest": session["participant_digest"],
+            "consent_record_digest": session["consent_record_digest"],
+            "session_record_digest": session["session_record_digest"],
+            "first_time_seller": True,
+            "explicit_consent": True,
+            "completed_supported_flow": True,
+            "duration_seconds": session["duration_seconds"],
+            "authenticated_access": {
+                "invited_seller": True,
+                "mfa_complete": True,
+                "authenticated_session_observed": True,
+                "session_renewal_succeeded": True,
+                "credential_material_retained": False,
+            },
+            "assistance": {
+                "external_documentation_used": False,
+                "moderator_help_used": False,
+                "operator_intervention_count": 0,
+            },
+            "flow": {
+                "supported_upload_completed": True,
+                "artwork_normalization_completed": True,
+                "browser_restarted": True,
+                "same_job_recovered_after_restart": True,
+                "same_job_strands_evidence_found": True,
+                "unpublished_printify_draft_reviewed": True,
+                "unpublished_boundary_understood": True,
+                "human_approval_completed": True,
+                "final_job_state": "APPROVED",
+            },
+            "accessibility": {
+                "screen_reader_passed": True,
+                "keyboard_only_passed": True,
+                "visible_focus_passed": True,
+                "contrast_passed": True,
+                "reduced_motion_passed": True,
+                "zoom_200_percent_passed": True,
+            },
+            "manual_journeys": {
+                "upload_passed": True,
+                "review_passed": True,
+                "edit_passed": True,
+                "refresh_passed": True,
+                "cancel_passed": True,
+                "retry_passed": True,
+                "logout_passed": True,
+            },
+            "publication": {
+                "publication_disabled": True,
+                "publication_action_absent": True,
+                "provider_draft_state": "unpublished_unlocked",
+                "publication_attempt_count": 0,
+                "order_attempt_count": 0,
+                "fulfillment_attempt_count": 0,
+                "provider_write_authority_is_separate": True,
+            },
+            "privacy": {
+                "forbidden_field_match_count": 0,
+                "sensitive_value_match_count": 0,
+                "free_text_value_count": 0,
+                "raw_authority_retained": False,
+                "raw_identity_retained": False,
+            },
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
 
 
 def _make_bundle(tmp_path: Path, *, target_session_count: int = 0) -> EvidenceBundle:
@@ -236,7 +332,9 @@ def _make_bundle(tmp_path: Path, *, target_session_count: int = 0) -> EvidenceBu
                 record.update(
                     {
                         "deployment_digest": _digest("deployment"),
-                        "actor_digests": [_digest("moderated-actor")],
+                        "actor_digests": [_digest("provider-actor")],
+                        "work_digest": _digest("primary-work-0"),
+                        "correlation_digest": _digest("primary-correlation-0"),
                         "moderated_session": {
                             "participant_digest": _digest(
                                 f"participant-{gate.gate_id}-{record_number}"
@@ -244,7 +342,7 @@ def _make_bundle(tmp_path: Path, *, target_session_count: int = 0) -> EvidenceBu
                             "consent_record_digest": _digest(
                                 f"consent-{gate.gate_id}-{record_number}"
                             ),
-                            "task_script_digest": _digest("moderated-task-script"),
+                            "task_script_digest": PHASE66_FIRST_TIME_SELLER_TASK_SHA256,
                             "session_record_digest": _digest(
                                 f"session-{gate.gate_id}-{record_number}"
                             ),
@@ -259,6 +357,29 @@ def _make_bundle(tmp_path: Path, *, target_session_count: int = 0) -> EvidenceBu
                 if gate.gate_id == "moderated.first_time_seller_exit":
                     record["job_digest"] = primary_job
             records.append(record)
+
+    primary = next(
+        record for record in records if record["gate_id"] == "provider.primary_same_job_canary"
+    )
+    moderated = next(
+        record for record in records if record["gate_id"] == "moderated.first_time_seller_exit"
+    )
+    moderated_artifact = next(
+        artifact
+        for artifact in moderated["artifacts"]
+        if artifact["kind"] == ArtifactKind.MODERATED_SESSION_RECORD.value
+    )
+    moderated_reference = next(
+        reference
+        for reference in artifact_files
+        if reference["artifact_digest"] == moderated_artifact["artifact_digest"]
+    )
+    contents = _first_time_seller_artifact(moderated, primary)
+    (root / moderated_reference["relative_path"]).write_bytes(contents)
+    moderated_digest = hashlib.sha256(contents).hexdigest()
+    moderated_artifact["artifact_digest"] = moderated_digest
+    moderated_artifact["byte_count"] = len(contents)
+    moderated_reference["artifact_digest"] = moderated_digest
     return EvidenceBundle(root=root, records=records, artifact_files=artifact_files)
 
 
@@ -501,7 +622,62 @@ def test_moderated_records_must_share_the_frozen_task_script(tmp_path: Path) -> 
     )
     target["moderated_session"]["task_script_digest"] = _digest("drifted-task-script")
 
-    with pytest.raises(EvidenceSetVerificationError, match="one task script"):
+    with pytest.raises(EvidenceSetVerificationError, match="failed Phase 6.6 validation"):
+        _verify(bundle)
+
+
+def test_generic_passed_json_cannot_replace_the_moderated_session_artifact(
+    tmp_path: Path,
+) -> None:
+    bundle = _make_bundle(tmp_path)
+    record_index = next(
+        index
+        for index, record in enumerate(bundle.records)
+        if record["gate_id"] == "moderated.first_time_seller_exit"
+    )
+    _replace_artifact_bytes(bundle, record_index, 0, _json_bytes("generic-moderated-claim"))
+
+    with pytest.raises(EvidenceSetVerificationError, match="authoritative schema"):
+        _verify(bundle)
+
+
+@pytest.mark.parametrize(
+    ("path", "replacement", "message"),
+    [
+        (("accessibility", "contrast_passed"), False, "authoritative schema"),
+        (("flow", "same_job_strands_evidence_found"), False, "authoritative schema"),
+        (("publication", "publication_disabled"), False, "authoritative schema"),
+        (("job_digest",), _digest("other-job"), "exact provider and session authority"),
+        (
+            ("provider_primary_record_digest",),
+            _digest("other-provider-record"),
+            "exact provider and session authority",
+        ),
+    ],
+)
+def test_moderated_artifact_facts_and_authorities_are_semantically_verified(
+    tmp_path: Path,
+    path: tuple[str, ...],
+    replacement: object,
+    message: str,
+) -> None:
+    bundle = _make_bundle(tmp_path)
+    record_index = next(
+        index
+        for index, record in enumerate(bundle.records)
+        if record["gate_id"] == "moderated.first_time_seller_exit"
+    )
+    artifact = bundle.records[record_index]["artifacts"][0]
+    reference = _reference_for(bundle, artifact["artifact_digest"])
+    value = json.loads((bundle.root / reference["relative_path"]).read_bytes())
+    target = value
+    for component in path[:-1]:
+        target = target[component]
+    target[path[-1]] = replacement
+    contents = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    _replace_artifact_bytes(bundle, record_index, 0, contents)
+
+    with pytest.raises(EvidenceSetVerificationError, match=message):
         _verify(bundle)
 
 
