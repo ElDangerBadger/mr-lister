@@ -518,8 +518,9 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     workflow, recovery/DLQ and retention seams, payload-free logging, encrypted operational
     alarms, and exact IAM separation. All 40 resources use a condition that no allowed parameter
     can satisfy; functions have zero concurrency; every mapping/rule is independently disabled;
-    EventBridge has no invoke permission; caught Lambda details are discarded; future production
-    handlers are intentionally absent; no API/URL/seller route exists; and SAM lint plus tests pass;
+    EventBridge has no invoke permission; a failed worker Task remains the exact redrive origin
+    while execution data logging stays disabled; future production handlers are intentionally
+    absent; no API/URL/seller route exists; and SAM lint plus tests pass;
     provider-free control-plane adapters and sealed runtime artifacts remain incomplete
   - Current execution order, source/deployment distinctions, and irreversible stop lines are
     authoritative in [`phase7-execution-map.md`](phase7-execution-map.md)

@@ -186,13 +186,10 @@ def test_workflow_is_bounded_payload_closed_and_invokes_only_one_worker() -> Non
             "BackoffRate": 2,
         }
     ]
-    assert task["Catch"] == [
-        {
-            "ErrorEquals": ["States.ALL"],
-            "ResultPath": None,
-            "Next": "WorkflowFailed",
-        }
-    ]
+    # An unhandled Task failure leaves the failed state as the redrive origin. Catching
+    # into a Fail state would make Step Functions redrive re-enter that Fail state and
+    # could never rerun the exact worker Task.
+    assert "Catch" not in task
     assert waits == [
         {"Type": "Wait", "Seconds": 1, "Next": "RunOnePublicationStep"},
         {"Type": "Wait", "Seconds": 20, "Next": "RunOnePublicationStep"},

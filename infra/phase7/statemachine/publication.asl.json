@@ -39,13 +39,6 @@
           "BackoffRate": 2
         }
       ],
-      "Catch": [
-        {
-          "ErrorEquals": ["States.ALL"],
-          "ResultPath": null,
-          "Next": "WorkflowFailed"
-        }
-      ],
       "Next": "RouteDurableState"
     },
     "RouteDurableState": {

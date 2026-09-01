@@ -109,7 +109,8 @@ parameter value; its functions have zero reserved concurrency, its stream/SQS ma
 EventBridge rules are independently disabled, and no EventBridge invoke permission is present. It
 has no API, Function URL, seller route, enabled output, or active handler. The workflow invokes only
 one future worker, uses fixed 1-second action and 20-second verification waits, stops after at most
-91 one-step invocations, discards caught Lambda details, and has an absolute 1,860-second timeout.
+91 one-step invocations, keeps a failed worker Task as the exact redrive origin while execution
+data logging stays disabled, and has an absolute 1,860-second timeout.
 JSON, structural/IAM/alarm
 tests, Ruff, and SAM lint pass. Provider-free dispatcher/recovery/retention implementations and
 separate release closures remain P7.15B/C work, so the overall infrastructure matrix is not yet
