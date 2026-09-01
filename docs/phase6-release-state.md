@@ -21,9 +21,9 @@ checkpoint documents.
 
 | Item | Current authority |
 | --- | --- |
-| Closure implementation source | `7c4d668b2c322f1e4cad1802105567d4a38ee2c8` |
-| Source-commit digest | `e016852a0ab39e2e454878c5ee6030257bcd07faaaaf8d0a3841e5b5f67c4b11` |
-| Offline-evidence binding commit | `75f607eb9f7aa25e58eea746f1a335e567c902e1` |
+| Closure implementation source | `fff69db4f66a4c6c232aebc78f20833ff4329565` |
+| Source-commit digest | `fdfdd9b6ac5d77c4ccc7c7477d6b6555558bbf9ca847f71ad5ac9ecada721275` |
+| Offline-evidence binding commit | `1aa069c0167bed3447440985250cecbfd50056e9` |
 | Package version | `mr-lister 0.1.0` |
 | Phase 6 closure release/version | Closure candidate; not deployed, accepted, or sealed |
 | Application stack | `mr-lister-phase6-dev` in `us-west-2` / `dev`, last authenticated observation `UPDATE_ROLLBACK_FAILED` (last updated `2026-08-31T20:11:17Z`) |
@@ -119,10 +119,12 @@ this stabilization pass.
 
 ## Verification state
 
-The normal checkout completed the CI-equivalent verification path. A detached clean worktree then
-completed fresh Python and locked Node dependency installs and repeated that same path:
+The normal checkout completed the CI-equivalent verification path. GitHub CI then installed from a
+fresh Ubuntu checkout at binding commit `1aa069c…` and repeated the complete CI path. A detached
+local clean worktree also completed fresh Python and locked Node dependency installs before the
+portable-canary-only follow-up; the resulting distributions remain byte-identical:
 
-- Python: **3,341 passed**, 11 explicitly gated live-Bedrock skips, no failures;
+- Python: **3,342 passed**, 11 explicitly gated live-Bedrock skips, no failures;
 - web: ESLint, strict TypeScript, **114 tests**, and production build passed;
 - `npm audit --audit-level=high`: zero vulnerabilities;
 - Ruff lint and formatting, `compileall`, and `git diff --check`: passed;
@@ -137,19 +139,22 @@ completed fresh Python and locked Node dependency installs and repeated that sam
   transport attempts;
 - source-bound offline gates: four passed, manifest digest
   `84851fe2ed78072d077cc5e642d0e222619b9a7226367219b536b7e2aaac7d73`, record-set digest
-  `8392808024da0c0f2a5083eb48c64c7dea8efc72908ca71786b628345c9d4cf9`.
+  `494692257b448c7b838b53b772e41bb8fffb7940c42c8c1496c2884bc5256f3d`.
 
-GitHub CI is eligible from a clean checkout. Its actual `main` result must be recorded after this
-closure line is fast-forwarded and pushed; a local green run is not represented as a remote CI run.
+GitHub CI run
+[`33454157866`](https://github.com/ElDangerBadger/mr-lister/actions/runs/33454157866) passed both
+the `verify` and `web` jobs from a fresh checkout of `main` at binding commit `1aa069c…`. This also
+proves the frozen 5 MiB acceptance canary is reproduced byte-for-byte on Linux; its historical
+SHA-256 authority was preserved rather than resealed.
 
 ## Acceptance matrix
 
 | Gate | Blocking | Current status |
 | --- | --- | --- |
-| `offline.replay_matrix` | Yes | Passed for source `7c4d668…` |
-| `offline.concurrency_matrix` | Yes | Passed for source `7c4d668…` |
-| `offline.cross_owner_matrix` | Yes | Passed for source `7c4d668…` |
-| `offline.browser_matrix` | Yes | Passed for source `7c4d668…`, all three engines |
+| `offline.replay_matrix` | Yes | Passed for source `fff69db…` |
+| `offline.concurrency_matrix` | Yes | Passed for source `fff69db…` |
+| `offline.cross_owner_matrix` | Yes | Passed for source `fff69db…` |
+| `offline.browser_matrix` | Yes | Passed for source `fff69db…`, all three engines |
 | `deployed.edge_auth_owner_smoke` | Yes | Open; historical evidence only and stack recovery required |
 | `deployed.upload_integrity_smoke` | Yes | Open; historical evidence only |
 | `deployed.outbox_recovery_smoke` | Yes | Open; historical evidence only |
