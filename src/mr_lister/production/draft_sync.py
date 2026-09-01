@@ -646,7 +646,7 @@ class PrintifyDraftSynchronizer:
         self._require_job_correlation(job_id, prior_draft)
         current = self._client.get_draft(shop_id=self._shop_id, product_id=product_id)
         self._require_editable_identity(product=current, draft=draft)
-        if not self._contains_canonical(current, prior_draft.provider_payload()):
+        if not self._matches_canonical_product(product=current, draft=prior_draft):
             raise PrintifyCatalogMismatchError(
                 "Printify product no longer matches the exact prior application draft"
             )
@@ -706,7 +706,7 @@ class PrintifyDraftSynchronizer:
                 outcome=CreateReconciliationOutcome.AMBIGUOUS,
                 ambiguity_reason=CreateAmbiguityReason.CANONICAL_CONFLICT,
             )
-        if not self._contains_canonical(product, draft.provider_payload()):
+        if not self._matches_canonical_product(product=product, draft=draft):
             return CreateReconciliationResult(
                 outcome=CreateReconciliationOutcome.AMBIGUOUS,
                 ambiguity_reason=CreateAmbiguityReason.CANONICAL_CONFLICT,
@@ -741,7 +741,7 @@ class PrintifyDraftSynchronizer:
         self._require_job_correlation(job_id, prior_draft)
         product = self._client.get_draft(shop_id=self._shop_id, product_id=product_id)
         self._require_editable_identity(product=product, draft=target_draft)
-        if self._contains_canonical(product, target_draft.provider_payload()):
+        if self._matches_canonical_product(product=product, draft=target_draft):
             try:
                 evidence = self._evidence(
                     operation=DraftSyncOperation.REPLACED,
@@ -754,7 +754,7 @@ class PrintifyDraftSynchronizer:
                 outcome=UpdateReconciliationOutcome.APPLIED,
                 evidence=evidence,
             )
-        if self._contains_canonical(product, prior_draft.provider_payload()):
+        if self._matches_canonical_product(product=product, draft=prior_draft):
             return UpdateReconciliationResult(outcome=UpdateReconciliationOutcome.PRIOR_PAYLOAD)
         return UpdateReconciliationResult(outcome=UpdateReconciliationOutcome.CONFLICT)
 
@@ -802,7 +802,7 @@ class PrintifyDraftSynchronizer:
         draft: CanonicalPrintifyDraft,
     ) -> DraftSynchronizationEvidence:
         canonical_payload = draft.provider_payload()
-        if not cls._contains_canonical(product, canonical_payload):
+        if not cls._matches_canonical_product(product=product, draft=draft):
             raise PrintifyCatalogMismatchError(
                 "Printify product did not match the complete canonical payload"
             )
@@ -835,26 +835,22 @@ class PrintifyDraftSynchronizer:
             mockups=mockups,
         )
 
-    @staticmethod
+    @classmethod
     def _variant_economics(
-        product: dict[str, Any], draft: CanonicalPrintifyDraft
+        cls, product: dict[str, Any], draft: CanonicalPrintifyDraft
     ) -> tuple[DraftVariantEconomics, ...]:
-        raw_variants = product.get("variants")
-        if not isinstance(raw_variants, list):
-            raise PrintifyCatalogMismatchError("Printify product variants were malformed")
-        by_id: dict[int, dict[str, Any]] = {}
-        for raw_variant in raw_variants:
-            if not isinstance(raw_variant, dict):
-                raise PrintifyCatalogMismatchError("Printify product variant was malformed")
-            variant_id = raw_variant.get("id")
-            if isinstance(variant_id, bool) or not isinstance(variant_id, int) or variant_id <= 0:
-                raise PrintifyCatalogMismatchError("Printify product variant ID was malformed")
-            if variant_id in by_id:
-                raise PrintifyCatalogMismatchError("Printify product repeated a variant ID")
-            by_id[variant_id] = raw_variant
+        by_id = cls._variant_records(product)
         expected_ids = {variant.id for variant in draft.variants}
-        if set(by_id) != expected_ids:
+        if not expected_ids.issubset(by_id):
             raise PrintifyCatalogMismatchError("Printify product variant set changed")
+        if any(
+            variant.get("is_enabled") is not False
+            for variant_id, variant in by_id.items()
+            if variant_id not in expected_ids
+        ):
+            raise PrintifyCatalogMismatchError(
+                "Printify product added an enabled variant outside the canonical draft"
+            )
 
         economics = []
         for expected in draft.variants:
@@ -866,11 +862,13 @@ class PrintifyDraftSynchronizer:
                 isinstance(price, bool)
                 or not isinstance(price, int)
                 or price <= 0
+                or price != expected.price
                 or isinstance(cost, bool)
                 or not isinstance(cost, int)
                 or cost < 0
                 or not isinstance(enabled, bool)
                 or not enabled
+                or actual.get("sku") != expected.sku
             ):
                 raise PrintifyCatalogMismatchError(
                     "Printify enabled variant economics were malformed"
@@ -963,6 +961,139 @@ class PrintifyDraftSynchronizer:
         if not isinstance(external, dict):
             raise PrintifyCatalogMismatchError("Printify product external state was malformed")
         return bool(external)
+
+    @staticmethod
+    def _variant_records(product: dict[str, Any]) -> dict[int, dict[str, Any]]:
+        raw_variants = product.get("variants")
+        if not isinstance(raw_variants, list):
+            raise PrintifyCatalogMismatchError("Printify product variants were malformed")
+        by_id: dict[int, dict[str, Any]] = {}
+        for raw_variant in raw_variants:
+            if not isinstance(raw_variant, dict):
+                raise PrintifyCatalogMismatchError("Printify product variant was malformed")
+            variant_id = raw_variant.get("id")
+            if isinstance(variant_id, bool) or not isinstance(variant_id, int) or variant_id <= 0:
+                raise PrintifyCatalogMismatchError("Printify product variant ID was malformed")
+            if variant_id in by_id:
+                raise PrintifyCatalogMismatchError("Printify product repeated a variant ID")
+            by_id[variant_id] = raw_variant
+        return by_id
+
+    @classmethod
+    def _matches_canonical_product(
+        cls, *, product: dict[str, Any], draft: CanonicalPrintifyDraft
+    ) -> bool:
+        """Accept only Printify's inert catalog expansion around the requested draft."""
+
+        canonical_payload = draft.provider_payload()
+        top_level = {
+            key: value
+            for key, value in canonical_payload.items()
+            if key not in {"variants", "print_areas"}
+        }
+        if not cls._contains_canonical(product, top_level):
+            return False
+
+        try:
+            variants_by_id = cls._variant_records(product)
+        except PrintifyCatalogMismatchError:
+            return False
+        expected_variant_ids = {variant.id for variant in draft.variants}
+        if not expected_variant_ids.issubset(variants_by_id):
+            return False
+        for expected in draft.variants:
+            actual = variants_by_id[expected.id]
+            if actual.get("is_enabled") is not True or not cls._contains_canonical(
+                actual, expected.model_dump(mode="json")
+            ):
+                return False
+        disabled_extra_ids = set(variants_by_id) - expected_variant_ids
+        if any(
+            variants_by_id[variant_id].get("is_enabled") is not False
+            for variant_id in disabled_extra_ids
+        ):
+            return False
+
+        return cls._matches_print_areas(
+            product=product,
+            draft=draft,
+            disabled_extra_ids=disabled_extra_ids,
+        )
+
+    @classmethod
+    def _matches_print_areas(
+        cls,
+        *,
+        product: dict[str, Any],
+        draft: CanonicalPrintifyDraft,
+        disabled_extra_ids: set[int],
+    ) -> bool:
+        raw_areas = product.get("print_areas")
+        if not isinstance(raw_areas, list) or len(raw_areas) != len(draft.print_areas):
+            return False
+        seen_variant_ids: set[int] = set()
+        for actual_area, expected_area in zip(raw_areas, draft.print_areas, strict=True):
+            if not isinstance(actual_area, dict):
+                return False
+            raw_variant_ids = actual_area.get("variant_ids")
+            if not isinstance(raw_variant_ids, list):
+                return False
+            area_variant_ids: set[int] = set()
+            for variant_id in raw_variant_ids:
+                if (
+                    isinstance(variant_id, bool)
+                    or not isinstance(variant_id, int)
+                    or variant_id <= 0
+                    or variant_id in seen_variant_ids
+                ):
+                    return False
+                area_variant_ids.add(variant_id)
+                seen_variant_ids.add(variant_id)
+            expected_area_ids = set(expected_area.variant_ids)
+            if not expected_area_ids.issubset(area_variant_ids):
+                return False
+            if not area_variant_ids.difference(expected_area_ids).issubset(disabled_extra_ids):
+                return False
+            if not cls._matches_placeholders(actual_area=actual_area, expected_area=expected_area):
+                return False
+        return True
+
+    @classmethod
+    def _matches_placeholders(
+        cls, *, actual_area: dict[str, Any], expected_area: DraftPrintArea
+    ) -> bool:
+        raw_placeholders = actual_area.get("placeholders")
+        if not isinstance(raw_placeholders, list):
+            return False
+        by_position: dict[str, dict[str, Any]] = {}
+        for raw_placeholder in raw_placeholders:
+            if not isinstance(raw_placeholder, dict):
+                return False
+            position = raw_placeholder.get("position")
+            images = raw_placeholder.get("images")
+            if (
+                not isinstance(position, str)
+                or not position
+                or position in by_position
+                or not isinstance(images, list)
+            ):
+                return False
+            by_position[position] = raw_placeholder
+
+        expected_positions = {placeholder.position for placeholder in expected_area.placeholders}
+        if len(expected_positions) != len(expected_area.placeholders):
+            return False
+        for expected in expected_area.placeholders:
+            actual = by_position.get(expected.position)
+            if actual is None or not cls._contains_canonical(
+                actual, expected.model_dump(mode="json")
+            ):
+                return False
+        return all(
+            placeholder["images"] == []
+            for position, placeholder in by_position.items()
+            if position not in expected_positions
+        )
 
     @classmethod
     def _contains_canonical(cls, actual: Any, expected: Any) -> bool:

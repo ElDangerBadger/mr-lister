@@ -512,8 +512,17 @@ def parse_current_product_costs(
         if type(variant_id) is not int or variant_id <= 0 or variant_id in by_id:
             raise PrintifyCatalogMismatchError("Printify product variant identity was malformed")
         by_id[variant_id] = raw_variant
-    if set(by_id) != set(variant_ids):
+    configured_ids = set(variant_ids)
+    if not configured_ids.issubset(by_id):
         raise PrintifyCatalogMismatchError("Printify product variant set changed")
+    if any(
+        raw_variant.get("is_enabled") is not False
+        for variant_id, raw_variant in by_id.items()
+        if variant_id not in configured_ids
+    ):
+        raise PrintifyCatalogMismatchError(
+            "Printify product added an enabled variant outside configured authority"
+        )
     variants: list[ProductVariantCostEvidence] = []
     for variant_id in variant_ids:
         raw_variant = by_id[variant_id]

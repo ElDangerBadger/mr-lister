@@ -159,6 +159,24 @@ def provider_product(draft, *, product_id: str = "product_1", **updates: object)
     return product
 
 
+def provider_normalized_product(draft, *, product_id: str = "product_1"):
+    """Model Printify's inert expansion to the complete provider catalog."""
+
+    product = provider_product(draft, product_id=product_id)
+    product["variants"].append(
+        {
+            "id": 9000,
+            "price": 2999,
+            "cost": 1300,
+            "is_enabled": False,
+            "sku": "",
+        }
+    )
+    product["print_areas"][0]["variant_ids"].append(9000)
+    product["print_areas"][0]["placeholders"].append({"position": "back", "images": []})
+    return product
+
+
 def synchronizer(expected: list[ExpectedRequest]):
     transport = ScriptedTransport(expected)
     client = PrintifyDraftOnlyClient(
@@ -285,6 +303,27 @@ def test_first_authorized_sync_posts_exactly_once_and_returns_evidence(listing) 
     assert not transport.expected
 
 
+def test_initial_create_accepts_disabled_provider_catalog_expansion(listing) -> None:
+    draft = canonical_draft(listing)
+    product = provider_normalized_product(draft)
+    sync, transport, _client = synchronizer(
+        [
+            ExpectedRequest("POST", "/v1/shops/42/products.json", payload=product),
+            ExpectedRequest(
+                "GET",
+                "/v1/shops/42/products/product_1.json",
+                payload=product,
+            ),
+        ]
+    )
+
+    evidence = sync.synchronize(job_id="job_phase6_sync", draft=draft, product_id=None)
+
+    assert evidence.operation is DraftSyncOperation.CREATED
+    assert tuple(item.variant_id for item in evidence.variants) == (1000,)
+    assert [call["method"] for call in transport.calls] == ["POST", "GET"]
+
+
 def test_later_revision_gets_then_puts_same_immutable_product_id(listing) -> None:
     draft = canonical_draft(listing)
     changed = draft.model_copy(update={"title": "Seller revised geometric badger shirt"})
@@ -321,6 +360,43 @@ def test_later_revision_gets_then_puts_same_immutable_product_id(listing) -> Non
     assert all(call["path"].endswith("/product_1.json") for call in transport.calls)
     assert json.loads(transport.calls[1]["body"])["title"] == changed.title
     assert not transport.expected
+
+
+def test_later_revision_accepts_disabled_provider_catalog_expansion(listing) -> None:
+    prior = canonical_draft(listing)
+    changed = prior.model_copy(update={"title": "Seller revised geometric badger shirt"})
+    prior_product = provider_normalized_product(prior)
+    changed_product = provider_normalized_product(changed)
+    sync, transport, _client = synchronizer(
+        [
+            ExpectedRequest(
+                "GET",
+                "/v1/shops/42/products/product_1.json",
+                payload=prior_product,
+            ),
+            ExpectedRequest(
+                "PUT",
+                "/v1/shops/42/products/product_1.json",
+                payload=changed_product,
+            ),
+            ExpectedRequest(
+                "GET",
+                "/v1/shops/42/products/product_1.json",
+                payload=changed_product,
+            ),
+        ]
+    )
+
+    evidence = sync.synchronize(
+        job_id="job_phase6_sync",
+        draft=changed,
+        product_id="product_1",
+        prior_draft=prior,
+    )
+
+    assert evidence.operation is DraftSyncOperation.REPLACED
+    assert tuple(item.variant_id for item in evidence.variants) == (1000,)
+    assert [call["method"] for call in transport.calls] == ["GET", "PUT", "GET"]
 
 
 @pytest.mark.parametrize(
@@ -616,6 +692,43 @@ def test_update_reconciliation_is_get_only_and_classifies_exact_payload(
     assert [call["method"] for call in transport.calls] == ["GET"]
 
 
+@pytest.mark.parametrize(
+    ("observed", "expected_outcome"),
+    [
+        ("target", UpdateReconciliationOutcome.APPLIED),
+        ("prior", UpdateReconciliationOutcome.PRIOR_PAYLOAD),
+    ],
+)
+def test_update_reconciliation_accepts_disabled_provider_catalog_expansion(
+    listing,
+    observed,
+    expected_outcome,
+) -> None:
+    prior = canonical_draft(listing)
+    target = prior.model_copy(update={"title": "Seller revised geometric badger shirt"})
+    observed_draft = target if observed == "target" else prior
+    product = provider_normalized_product(observed_draft)
+    sync, transport, _client = synchronizer(
+        [
+            ExpectedRequest(
+                "GET",
+                "/v1/shops/42/products/product_1.json",
+                payload=product,
+            )
+        ]
+    )
+
+    result = sync.reconcile_update(
+        job_id="job_phase6_sync",
+        product_id="product_1",
+        target_draft=target,
+        prior_draft=prior,
+    )
+
+    assert result.outcome is expected_outcome
+    assert [call["method"] for call in transport.calls] == ["GET"]
+
+
 def test_create_reconciliation_classifies_zero_with_one_get_and_no_post(listing) -> None:
     draft = canonical_draft(listing)
     sync, transport, _client = synchronizer(
@@ -652,6 +765,82 @@ def test_create_reconciliation_classifies_one_exact_canonical_match(listing) -> 
     assert result.outcome is CreateReconciliationOutcome.ONE
     assert result.evidence is not None
     assert result.evidence.product_id == "product_1"
+    assert [call["method"] for call in transport.calls] == ["GET", "GET"]
+
+
+def test_create_reconciliation_accepts_disabled_provider_catalog_expansion(listing) -> None:
+    draft = canonical_draft(listing)
+    product = provider_normalized_product(draft)
+    sync, transport, _client = synchronizer(
+        [
+            ExpectedRequest(
+                "GET",
+                "/v1/shops/42/products.json",
+                payload={"data": [product]},
+            ),
+            ExpectedRequest(
+                "GET",
+                "/v1/shops/42/products/product_1.json",
+                payload=product,
+            ),
+        ]
+    )
+
+    result = sync.reconcile_initial_create(job_id="job_phase6_sync", draft=draft)
+
+    assert result.outcome is CreateReconciliationOutcome.ONE
+    assert result.evidence is not None
+    assert tuple(item.variant_id for item in result.evidence.variants) == (1000,)
+    assert [call["method"] for call in transport.calls] == ["GET", "GET"]
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        "enabled_extra_variant",
+        "unknown_print_area_variant",
+        "duplicate_print_area_variant",
+        "nonempty_extra_placeholder",
+        "duplicate_requested_placeholder",
+        "requested_image_placement",
+    ],
+)
+def test_provider_catalog_expansion_rejects_non_inert_drift(listing, drift) -> None:
+    draft = canonical_draft(listing)
+    product = provider_normalized_product(draft)
+    if drift == "enabled_extra_variant":
+        product["variants"][-1]["is_enabled"] = True
+    elif drift == "unknown_print_area_variant":
+        product["print_areas"][0]["variant_ids"].append(9001)
+    elif drift == "duplicate_print_area_variant":
+        product["print_areas"][0]["variant_ids"].append(9000)
+    elif drift == "nonempty_extra_placeholder":
+        product["print_areas"][0]["placeholders"][-1]["images"] = [
+            dict(product["print_areas"][0]["placeholders"][0]["images"][0])
+        ]
+    elif drift == "duplicate_requested_placeholder":
+        product["print_areas"][0]["placeholders"].append({"position": "front", "images": []})
+    else:
+        product["print_areas"][0]["placeholders"][0]["images"][0]["x"] = 0.4
+    sync, transport, _client = synchronizer(
+        [
+            ExpectedRequest(
+                "GET",
+                "/v1/shops/42/products.json",
+                payload={"data": [product]},
+            ),
+            ExpectedRequest(
+                "GET",
+                "/v1/shops/42/products/product_1.json",
+                payload=product,
+            ),
+        ]
+    )
+
+    result = sync.reconcile_initial_create(job_id="job_phase6_sync", draft=draft)
+
+    assert result.outcome is CreateReconciliationOutcome.AMBIGUOUS
+    assert result.ambiguity_reason is CreateAmbiguityReason.CANONICAL_CONFLICT
     assert [call["method"] for call in transport.calls] == ["GET", "GET"]
 
 

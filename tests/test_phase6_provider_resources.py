@@ -534,8 +534,10 @@ def test_current_product_costs_use_one_exact_draft_get() -> None:
         "is_locked": False,
         "external": {},
         "variants": [
+            {"id": 9000, "price": 2999, "cost": 1300, "is_enabled": False},
             {"id": 1001, "price": 2999, "cost": 1200, "is_enabled": True},
             {"id": 1002, "price": 2999, "cost": 1250, "is_enabled": True},
+            {"id": 9001, "price": 2999, "cost": 1350, "is_enabled": False},
         ],
     }
     transport = ScriptedTransport(
@@ -571,6 +573,31 @@ def test_current_product_costs_use_one_exact_draft_get() -> None:
     assert "product_private_1" not in audit.records[0].model_dump_json()
 
 
+@pytest.mark.parametrize("extra_enabled", [True, 0, None])
+def test_product_cost_parser_rejects_extra_variant_unless_strictly_disabled(
+    extra_enabled: object,
+) -> None:
+    product = {
+        "id": "product_private_1",
+        "shop_id": 42,
+        "is_locked": False,
+        "external": {},
+        "variants": [
+            {"id": 1001, "price": 2999, "cost": 1200, "is_enabled": True},
+            {"id": 9000, "price": 2999, "cost": 1300, "is_enabled": extra_enabled},
+        ],
+    }
+
+    with pytest.raises(PrintifyCatalogMismatchError, match="outside configured authority"):
+        parse_current_product_costs(
+            product,
+            shop_id=42,
+            product_sync_fingerprint="5" * 64,
+            variant_ids=(1001,),
+            observed_at=NOW,
+        )
+
+
 @pytest.mark.parametrize(
     "update",
     [
@@ -580,6 +607,12 @@ def test_current_product_costs_use_one_exact_draft_get() -> None:
             "variants": [
                 {"id": 1001, "price": 2999, "cost": 1200, "is_enabled": True},
                 {"id": 1002, "price": 2999, "cost": 1250, "is_enabled": True},
+            ]
+        },
+        {
+            "variants": [
+                {"id": 1001, "price": 2999, "cost": 1200, "is_enabled": True},
+                {"id": 1001, "price": 2999, "cost": 1200, "is_enabled": False},
             ]
         },
     ],
