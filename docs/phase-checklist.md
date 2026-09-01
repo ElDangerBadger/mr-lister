@@ -505,6 +505,14 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     source closure used by request creation. The tool constructs no provider, secret, Lambda, S3,
     or publication-POST client; no live request, upload, deployment, invocation, or provider call
     ran at this checkpoint
+  - [x] Phase 7.14 isolated offline seller/API browser matrix: strict Phase 7 request, receipt,
+    status, and safe-link contracts plus an authenticated client and accessible publication
+    workspace cover irreversible confirmation, exactly-one POST submission, stable in-memory
+    idempotency authority, conflict/response-loss GET recovery without resubmission, restart from
+    every durable state, terminal unknown outcome, and notification only after positive
+    verification. The implementation is outside the active Vite graph, the frozen composer fails
+    before client construction, build verification rejects capability leakage, active `web/src`
+    and all backend/SAM/IAM/runtime files remain unchanged, and seller publication stays disabled
   - Current execution order, source/deployment distinctions, and irreversible stop lines are
     authoritative in [`phase7-execution-map.md`](phase7-execution-map.md)
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime

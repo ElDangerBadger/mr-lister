@@ -82,6 +82,17 @@ unregistered and unreachable in the sealed Phase 6 deployment. The matrix must c
 
 No browser control becomes reachable while contract `7.0.1` remains generally disabled.
 
+**Source checkpoint complete.** The strict contracts, authenticated GET/POST client, and
+publication workspace live under `web/offline/phase7` outside the active Vite import graph. The
+frozen activation composer fails before constructing a client, active `web/src` contains no
+publication route or marker, and production-build verification rejects any leaked Phase 7 route,
+confirmation literal, or workspace marker. The browser/API matrix covers explicit confirmation,
+exactly one request, stable in-memory idempotency authority, conflict and response-loss recovery
+through GET only, restart from every durable state, terminal unknown outcome, canonical Etsy
+links, positive-verification-only notification, read-only retry, keyboard cancellation, and focus
+return. Full web verification is green with 131 tests. This source checkpoint does not register or
+deploy a route and does not change the current activation phase.
+
 ### P7.15 — Complete the production infrastructure and alarm matrix
 
 Compose and seal separate publication query/request functions, dispatcher, bounded polling
