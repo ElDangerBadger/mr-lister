@@ -14,6 +14,8 @@ verification.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import json
 import os
 import secrets
@@ -22,11 +24,8 @@ import struct
 import zlib
 from collections.abc import Sequence
 from hashlib import sha256
-from io import BytesIO
 from pathlib import Path
 from typing import Any, Final
-
-from PIL import Image
 
 from mr_lister.acceptance.evidence_set import (
     EvidenceSetVerificationError,
@@ -38,10 +37,16 @@ from mr_lister.control.source_artwork import verify_phase6_source_artwork
 REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[1]
 PRIVATE_WORKSPACE_ROOT: Final = REPOSITORY_ROOT / ".mr_lister_private" / "phase66-acceptance"
 CANARY_FILENAME: Final = "phase66-primary-canary.png"
+CANARY_BASE_FIXTURE: Final = (
+    REPOSITORY_ROOT / "tools" / "fixtures" / "phase66-primary-canary-base.png.b64"
+)
 RECORDS_FILENAME: Final = "records.json"
 ARTIFACT_INDEX_FILENAME: Final = "artifact-files.json"
 
 _CANARY_WIDTH = 512
+_CANARY_BASE_SIZE = 9_145
+_CANARY_BASE_SHA256 = "19414506bcb0c3024c7d49c05b64d47216fd6ff753a8c95411562197a76bc346"
+_CANARY_SHA256 = "d32bfa718ba9073db3da4e9aefb995212e46215d880e17b1dedc241f496691cc"
 _PADDING_CHUNK_TYPE = b"mrLT"
 _MAX_CONTROL_FILE_BYTES = 100 * 1024 * 1024
 
@@ -236,27 +241,31 @@ def _png_chunk(chunk_type: bytes, payload: bytes) -> bytes:
 def exact_phase66_canary_png() -> bytes:
     """Return a fully decodable, mixed-alpha, square PNG of exactly 5 MiB."""
 
-    image = Image.new("RGBA", (_CANARY_WIDTH, _CANARY_WIDTH), (20, 40, 92, 0))
-    pixels = image.load()
-    for y in range(_CANARY_WIDTH):
-        for x in range(_CANARY_WIDTH):
-            distance = (x - _CANARY_WIDTH // 2) ** 2 + (y - _CANARY_WIDTH // 2) ** 2
-            if distance < 180**2:
-                alpha = 255 if (x + y) % 11 else 196
-                pixels[x, y] = (24 + x % 160, 80 + y % 120, 184, alpha)
-
-    output = BytesIO()
-    image.save(output, format="PNG", optimize=False)
-    base = output.getvalue()
-    if not base.endswith(b"\x00\x00\x00\x00IEND\xaeB`\x82"):
-        raise Phase66LiveAcceptanceError("Canary PNG encoder produced an unexpected envelope")
+    # A Pillow-generated PNG is not a byte-level authority: its IDAT compression can vary with
+    # the platform-linked zlib implementation.  The small canonical seed preserves the already
+    # frozen canary bytes while the large exact-size ancillary chunk remains generated locally.
+    try:
+        base = base64.b64decode(CANARY_BASE_FIXTURE.read_bytes().strip(), validate=True)
+    except (OSError, binascii.Error):
+        raise Phase66LiveAcceptanceError(
+            "Canonical canary seed is unavailable or invalid"
+        ) from None
+    if (
+        len(base) != _CANARY_BASE_SIZE
+        or sha256(base).hexdigest() != _CANARY_BASE_SHA256
+        or not base.endswith(b"\x00\x00\x00\x00IEND\xaeB`\x82")
+    ):
+        raise Phase66LiveAcceptanceError("Canonical canary seed does not match frozen authority")
     iend = base[-12:]
     before_iend = base[:-12]
     padding_size = PHASE6_MAX_SOURCE_ARTWORK_BYTES - len(base) - 12
     if padding_size < 0:
         raise Phase66LiveAcceptanceError("Canary PNG base image exceeds the Phase 6 limit")
     padded = before_iend + _png_chunk(_PADDING_CHUNK_TYPE, b"\0" * padding_size) + iend
-    if len(padded) != PHASE6_MAX_SOURCE_ARTWORK_BYTES:
+    if (
+        len(padded) != PHASE6_MAX_SOURCE_ARTWORK_BYTES
+        or sha256(padded).hexdigest() != _CANARY_SHA256
+    ):
         raise Phase66LiveAcceptanceError("Canary PNG did not reach its exact byte authority")
     verified = verify_phase6_source_artwork(
         filename=CANARY_FILENAME,

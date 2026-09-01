@@ -32,6 +32,9 @@ def test_exact_canary_png_is_five_mib_and_passes_phase6_authority() -> None:
     contents = live_acceptance.exact_phase66_canary_png()
 
     assert len(contents) == PHASE6_MAX_SOURCE_ARTWORK_BYTES
+    assert sha256(contents).hexdigest() == (
+        "d32bfa718ba9073db3da4e9aefb995212e46215d880e17b1dedc241f496691cc"
+    )
     verified = verify_phase6_source_artwork(
         filename=live_acceptance.CANARY_FILENAME,
         content_type="image/png",
@@ -41,6 +44,21 @@ def test_exact_canary_png_is_five_mib_and_passes_phase6_authority() -> None:
     )
     assert (verified.width, verified.height) == (512, 512)
     assert (verified.alpha_minimum, verified.alpha_maximum) == (0, 255)
+
+
+def test_exact_canary_png_rejects_a_noncanonical_seed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    corrupt = tmp_path / "canary.b64"
+    corrupt.write_bytes(b"aW52YWxpZA==\n")
+    monkeypatch.setattr(live_acceptance, "CANARY_BASE_FIXTURE", corrupt)
+
+    with pytest.raises(
+        live_acceptance.Phase66LiveAcceptanceError,
+        match="does not match frozen authority",
+    ):
+        live_acceptance.exact_phase66_canary_png()
 
 
 def test_canary_output_is_private_and_reports_no_local_path(
