@@ -71,6 +71,15 @@ TARGET_AGENTCORE_QUALIFIER: Final = "phase6_v3_dev"
 TARGET_AGENTCORE_ENDPOINT_ARN: Final = (
     f"{AGENTCORE_RUNTIME_ARN}/runtime-endpoint/{TARGET_AGENTCORE_QUALIFIER}"
 )
+TARGET_RELEASE_FINGERPRINT: Final = (
+    "f34ab73042014fccce2cb3733624f005a4ccc10bb065b39c3e20befd3c33923f"
+)
+TARGET_LAMBDA_ARCHIVE_SHA256: Final = (
+    "bf5ef1a13329814934f73cef81e7ec52153e508f11ed7945921501927ea58d5e"
+)
+TARGET_AGENTCORE_BINDING_FINGERPRINT: Final = (
+    "d8194386435d2f941d0942b102595830c1efc48e9bc4890457b46e17e0df3196"
+)
 
 _FUNCTION_LOGICAL_IDS: Final = (
     "DispatcherFunction",
@@ -155,15 +164,16 @@ class Phase6ArtworkClosureBinding:
             if (
                 self.lambda_artifact_bucket != LAMBDA_ARTIFACT_BUCKET
                 or _FINGERPRINT.fullmatch(self.release_fingerprint) is None
-                or self.release_fingerprint
-                in {PREDECESSOR_RELEASE_FINGERPRINT, REVIEW_QUERY_RELEASE_FINGERPRINT, "0" * 64}
+                or self.release_fingerprint != TARGET_RELEASE_FINGERPRINT
                 or key_match is None
                 or key_match.group(1) != self.release_fingerprint
-                or key_match.group(2) == "0" * 64
+                or key_match.group(2) != TARGET_LAMBDA_ARCHIVE_SHA256
                 or self.agentcore_runtime_arn != AGENTCORE_RUNTIME_ARN
                 or self.agentcore_runtime_version != TARGET_AGENTCORE_RUNTIME_VERSION
                 or self.agentcore_runtime_qualifier != TARGET_AGENTCORE_QUALIFIER
                 or self.agentcore_runtime_endpoint_arn != TARGET_AGENTCORE_ENDPOINT_ARN
+                or self.agentcore_runtime_binding_fingerprint
+                != TARGET_AGENTCORE_BINDING_FINGERPRINT
                 or self.agentcore_runtime_binding_fingerprint != expected_binding
             ):
                 raise ValueError

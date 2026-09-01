@@ -144,6 +144,9 @@ def test_render_changes_only_three_functions_and_four_agentcore_parameters(
 
 
 def test_binding_derives_and_requires_exact_v3_release_authority() -> None:
+    assert RELEASE == closure.TARGET_RELEASE_FINGERPRINT
+    assert ARCHIVE == closure.TARGET_LAMBDA_ARCHIVE_SHA256
+    assert BINDING_FINGERPRINT == closure.TARGET_AGENTCORE_BINDING_FINGERPRINT
     assert BINDING_FINGERPRINT == agentcore_runtime_binding_fingerprint(
         runtime_arn=closure.AGENTCORE_RUNTIME_ARN,
         endpoint_arn=closure.TARGET_AGENTCORE_ENDPOINT_ARN,
@@ -172,6 +175,28 @@ def test_binding_derives_and_requires_exact_v3_release_authority() -> None:
     for override in invalid:
         with pytest.raises(closure.Phase6ArtworkClosureError):
             _binding(**override)
+
+
+def test_binding_rejects_a_structurally_valid_nonclosure_release() -> None:
+    other_release = "a" * 64
+    other_archive = "b" * 64
+    other_binding = agentcore_runtime_binding_fingerprint(
+        runtime_arn=closure.AGENTCORE_RUNTIME_ARN,
+        endpoint_arn=closure.TARGET_AGENTCORE_ENDPOINT_ARN,
+        qualifier=closure.TARGET_AGENTCORE_QUALIFIER,
+        runtime_version=closure.TARGET_AGENTCORE_RUNTIME_VERSION,
+        release_fingerprint=other_release,
+    )
+
+    with pytest.raises(closure.Phase6ArtworkClosureError):
+        _binding(
+            release_fingerprint=other_release,
+            lambda_artifact_key=(
+                "private/deployments/lambda/releases/"
+                f"{other_release}/phase6-lambda-{other_archive}.zip"
+            ),
+            agentcore_runtime_binding_fingerprint=other_binding,
+        )
 
 
 @pytest.mark.parametrize(
@@ -364,5 +389,8 @@ def test_fixed_predecessor_and_bounded_resource_authority() -> None:
         "ProviderDraftFunction",
         "UploadApiFunction",
     )
+    assert closure.TARGET_RELEASE_FINGERPRINT == RELEASE
+    assert closure.TARGET_LAMBDA_ARCHIVE_SHA256 == ARCHIVE
+    assert closure.TARGET_AGENTCORE_BINDING_FINGERPRINT == BINDING_FINGERPRINT
     assert len(closure._FUNCTION_LOGICAL_IDS) == 10
     assert len(set(closure._FUNCTION_LOGICAL_IDS)) == 10
