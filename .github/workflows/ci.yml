@@ -45,6 +45,13 @@ jobs:
           sam validate --lint --template-file infra/phase6/runtime-role-bootstrap.json
           sam validate --lint --template-file infra/phase6/runtime-update-bootstrap.json
           sam validate --lint --template-file infra/phase6/web-edge-role-bootstrap.json
+      - name: Phase 7 SAM validation
+        env:
+          SAM_CLI_TELEMETRY: "0"
+        run: |
+          sam validate --lint --template-file infra/phase7/template.json
+          sam validate --lint --template-file infra/phase7/canary-template.json
+          sam validate --lint --template-file infra/phase7/production-disabled-template.json
       - name: Test
         run: python -m pytest
       - name: Build

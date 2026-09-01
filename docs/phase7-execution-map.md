@@ -104,11 +104,13 @@ during source and infrastructure verification.
 `infra/phase7/production-disabled-template.json` defines the intended six role-separated
 functions, one bounded Standard workflow, recovery and dead-letter queues, retention and
 dispatcher seams, payload-free workflow logging, encrypted alarm topic, and complete alarm
-categories. Every one of its 41 resources shares a condition that cannot be true for any allowed
-parameter value; its stream/SQS mappings and EventBridge rules are independently disabled; it has
-no API, Function URL, seller route, enabled output, or active handler. The workflow invokes only
+categories. Every one of its 40 resources shares a condition that cannot be true for any allowed
+parameter value; its functions have zero reserved concurrency, its stream/SQS mappings and
+EventBridge rules are independently disabled, and no EventBridge invoke permission is present. It
+has no API, Function URL, seller route, enabled output, or active handler. The workflow invokes only
 one future worker, uses fixed 1-second action and 20-second verification waits, stops after at most
-91 one-step invocations, and has an absolute 1,860-second timeout. JSON, structural/IAM/alarm
+91 one-step invocations, discards caught Lambda details, and has an absolute 1,860-second timeout.
+JSON, structural/IAM/alarm
 tests, Ruff, and SAM lint pass. Provider-free dispatcher/recovery/retention implementations and
 separate release closures remain P7.15B/C work, so the overall infrastructure matrix is not yet
 closed and nothing from this template is deployable.

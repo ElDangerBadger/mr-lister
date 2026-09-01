@@ -79,6 +79,7 @@ def test_topology_is_separate_role_bounded_and_contains_no_seller_route() -> Non
         "AWS::ApiGateway::RestApi",
         "AWS::ApiGatewayV2::Api",
         "AWS::CloudFront::Distribution",
+        "AWS::Lambda::Permission",
         "AWS::Lambda::Url",
         "AWS::Serverless::Api",
         "AWS::Serverless::HttpApi",
@@ -94,6 +95,7 @@ def test_topology_is_separate_role_bounded_and_contains_no_seller_route() -> Non
 def test_candidate_functions_are_version_bound_exact_disabled_and_unimplemented() -> None:
     template = _template()
     variables = template["Globals"]["Function"]["Environment"]["Variables"]
+    assert template["Globals"]["Function"]["ReservedConcurrentExecutions"] == 0
     assert variables == {
         "MR_LISTER_PHASE7_SCAFFOLD_ONLY": "true",
         "MR_LISTER_PHASE7_QUERY_ENABLED": "false",
@@ -182,6 +184,13 @@ def test_workflow_is_bounded_payload_closed_and_invokes_only_one_worker() -> Non
             "IntervalSeconds": 2,
             "MaxAttempts": 2,
             "BackoffRate": 2,
+        }
+    ]
+    assert task["Catch"] == [
+        {
+            "ErrorEquals": ["States.ALL"],
+            "ResultPath": None,
+            "Next": "WorkflowFailed",
         }
     ]
     assert waits == [

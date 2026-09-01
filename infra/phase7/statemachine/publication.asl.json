@@ -42,7 +42,7 @@
       "Catch": [
         {
           "ErrorEquals": ["States.ALL"],
-          "ResultPath": "$.workflow_error",
+          "ResultPath": null,
           "Next": "WorkflowFailed"
         }
       ],

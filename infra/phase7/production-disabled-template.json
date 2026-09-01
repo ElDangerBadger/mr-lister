@@ -53,7 +53,7 @@
       "Architectures": ["arm64"],
       "MemorySize": 512,
       "Timeout": 30,
-      "ReservedConcurrentExecutions": 1,
+      "ReservedConcurrentExecutions": 0,
       "LoggingConfig": {
         "LogFormat": "JSON",
         "ApplicationLogLevel": "ERROR",
@@ -489,16 +489,6 @@
         "ScheduleExpression": "rate(1 minute)",
         "State": "DISABLED",
         "Targets": [{"Id": "PublicationDispatcher", "Arn": {"Fn::GetAtt": ["PublicationDispatcherFunction", "Arn"]}, "Input": "{\"kind\":\"publication_due_sweep\"}"}]
-      }
-    },
-    "PublicationDueWorkSweepPermission": {
-      "Type": "AWS::Lambda::Permission",
-      "Condition": "InstantiateProductionCandidate",
-      "Properties": {
-        "Action": "lambda:InvokeFunction",
-        "FunctionName": {"Ref": "PublicationDispatcherFunction"},
-        "Principal": "events.amazonaws.com",
-        "SourceArn": {"Fn::GetAtt": ["PublicationDueWorkSweepRule", "Arn"]}
       }
     },
     "PublicationWorkflowFailureRule": {

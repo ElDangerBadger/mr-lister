@@ -516,9 +516,10 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
   - [x] Phase 7.15A impossible-to-activate production topology: a separate source-only SAM
     template fixes six role-separated function boundaries, a bounded one-worker Standard
     workflow, recovery/DLQ and retention seams, payload-free logging, encrypted operational
-    alarms, and exact IAM separation. All 41 resources use a condition that no allowed parameter
-    can satisfy, every mapping/rule is independently disabled, future production handlers are
-    intentionally absent, no API/URL/seller route exists, and SAM lint plus structural tests pass;
+    alarms, and exact IAM separation. All 40 resources use a condition that no allowed parameter
+    can satisfy; functions have zero concurrency; every mapping/rule is independently disabled;
+    EventBridge has no invoke permission; caught Lambda details are discarded; future production
+    handlers are intentionally absent; no API/URL/seller route exists; and SAM lint plus tests pass;
     provider-free control-plane adapters and sealed runtime artifacts remain incomplete
   - Current execution order, source/deployment distinctions, and irreversible stop lines are
     authoritative in [`phase7-execution-map.md`](phase7-execution-map.md)
