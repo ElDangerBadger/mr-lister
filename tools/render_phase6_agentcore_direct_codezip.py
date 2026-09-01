@@ -130,6 +130,7 @@ class VerifiedAgentCoreArchive:
     size_bytes: int
     checksum_sha256_base64: str
     descriptor_sha256: str
+    local_path: Path = Path(".mr_lister_private/phase6-artifacts/phase6-agentcore.zip")
 
     def __post_init__(self) -> None:
         if (
@@ -140,6 +141,8 @@ class VerifiedAgentCoreArchive:
             or not isinstance(self.checksum_sha256_base64, str)
             or not self.checksum_sha256_base64
             or _HEX_64.fullmatch(self.descriptor_sha256) is None
+            or not isinstance(self.local_path, Path)
+            or self.local_path.name != _ARCHIVE_FILENAME
         ):
             raise Phase6AgentCoreDirectCodeZipError(_GENERIC_ERROR)
 
@@ -249,6 +252,7 @@ def verify_phase6_agentcore_direct_codezip_artifact(
             size_bytes=archive_path.stat().st_size,
             checksum_sha256_base64=base64.b64encode(archive_digest.digest()).decode("ascii"),
             descriptor_sha256=descriptor_digest,
+            local_path=archive_path,
         )
     except Phase6AgentCoreDirectCodeZipError:
         raise
@@ -268,12 +272,13 @@ def render_phase6_agentcore_upload_plan(
         ):
             raise ValueError
         expectation = _remote_expectation(binding, archive)
+        local_path = archive.local_path.as_posix()
         plan: dict[str, object] = {
             "accountId": binding.account_id,
             "artifact": {
                 "checksumSHA256Base64": archive.checksum_sha256_base64,
                 "descriptorSHA256": archive.descriptor_sha256,
-                "localPath": ".mr_lister_private/phase6-artifacts/phase6-agentcore.zip",
+                "localPath": local_path,
                 "sha256": archive.sha256,
                 "sizeBytes": archive.size_bytes,
             },
@@ -303,7 +308,7 @@ def render_phase6_agentcore_upload_plan(
                 "--key",
                 binding.key,
                 "--body",
-                ".mr_lister_private/phase6-artifacts/phase6-agentcore.zip",
+                local_path,
                 "--expected-bucket-owner",
                 binding.account_id,
                 "--if-none-match",

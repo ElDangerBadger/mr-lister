@@ -1169,6 +1169,12 @@ def test_artifact_verifier_checks_descriptor_release_archive_hash_and_size(
     assert verified.checksum_sha256_base64 == base64.b64encode(sha256(raw_archive).digest()).decode(
         "ascii"
     )
+    plan = json.loads(direct.render_phase6_agentcore_upload_plan(binding, verified))
+    expected_archive_path = (artifacts / "phase6-agentcore.zip").resolve().as_posix()
+    assert plan["artifact"]["localPath"] == expected_archive_path
+    assert plan["putObjectArguments"][plan["putObjectArguments"].index("--body") + 1] == (
+        expected_archive_path
+    )
 
     with pytest.raises(direct.Phase6AgentCoreDirectCodeZipError):
         direct.verify_phase6_agentcore_direct_codezip_artifact(
