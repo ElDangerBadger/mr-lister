@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Mapping
-from datetime import datetime
+from datetime import datetime, timedelta
 from hashlib import md5
 from typing import Any, Protocol
 
@@ -20,10 +20,14 @@ from mr_lister.publication.execution_service import PublicationExecutionService
 from mr_lister.publication.orchestration import PublicationWorkDispatcher
 from mr_lister.publication.orchestration_dynamodb import (
     DynamoDBPublicationDueWorkInventory,
+    DynamoDBPublicationRecoveryInventory,
     DynamoDBPublicationTerminalIdentityResolver,
 )
 from mr_lister.publication.orchestration_recovery import (
+    DEFAULT_PUBLICATION_RECOVERY_STALE_AFTER,
     PublicationPreDispatchDeadlineEnvelope,
+    PublicationRecoverySweeper,
+    PublicationWorkflowFailureEnvelope,
     PublicationWorkflowRecovery,
 )
 from mr_lister.publication.profile_eligibility import (
@@ -39,6 +43,7 @@ from mr_lister.review_profile import ExactReviewProductProfile
 from .phase7_operations import (
     Phase7PublicationDispatcherHandler,
     Phase7PublicationRecoveryHandler,
+    Phase7PublicationRecoverySweepHandler,
     Phase7PublicationRetentionHandler,
 )
 
@@ -53,8 +58,8 @@ class _SqsSendMessageClient(Protocol):
     def send_message(self, **request: Any) -> Mapping[str, Any]: ...
 
 
-class _SqsPublicationDeadlineSettlementSink:
-    """Send only the exact encrypted-queue envelope for pre-dispatch expiry."""
+class _SqsPublicationRecoverySink:
+    """Send one exact internal recovery envelope to the fixed encrypted queue."""
 
     __slots__ = ("_client", "_queue_url")
 
@@ -64,12 +69,23 @@ class _SqsPublicationDeadlineSettlementSink:
         self._client = client
         self._queue_url = queue_url
 
-    def send(self, envelope: PublicationPreDispatchDeadlineEnvelope) -> None:
+    def send(
+        self,
+        envelope: PublicationPreDispatchDeadlineEnvelope | PublicationWorkflowFailureEnvelope,
+    ) -> None:
         try:
-            exact = PublicationPreDispatchDeadlineEnvelope.model_validate(
-                envelope.model_dump(mode="python"),
-                strict=True,
-            )
+            if isinstance(envelope, PublicationPreDispatchDeadlineEnvelope):
+                exact = PublicationPreDispatchDeadlineEnvelope.model_validate(
+                    envelope.model_dump(mode="python"),
+                    strict=True,
+                )
+            elif isinstance(envelope, PublicationWorkflowFailureEnvelope):
+                exact = PublicationWorkflowFailureEnvelope.model_validate(
+                    envelope.model_dump(mode="python"),
+                    strict=True,
+                )
+            else:
+                raise ValueError
             if exact != envelope:
                 raise ValueError
             body = json.dumps(
@@ -89,7 +105,11 @@ class _SqsPublicationDeadlineSettlementSink:
             ):
                 raise ValueError
         except Exception:
-            raise RuntimeError("Phase 7 deadline recovery enqueue failed safely") from None
+            raise RuntimeError("Phase 7 recovery enqueue failed safely") from None
+
+
+class _SqsPublicationDeadlineSettlementSink(_SqsPublicationRecoverySink):
+    """Backward-compatible name for the now-shared exact recovery-queue boundary."""
 
 
 def compose_publication_dispatcher_handler(
@@ -121,13 +141,15 @@ def compose_publication_dispatcher_handler(
         state_machine_arn=state_machine_arn,
         clock=clock,
     )
-    deadline_sink = _SqsPublicationDeadlineSettlementSink(
+    recovery_sink = _SqsPublicationRecoverySink(
         client=sqs,  # type: ignore[arg-type]
         queue_url=recovery_queue_url,
     )
     return Phase7PublicationDispatcherHandler(
         dispatcher=dispatcher,
-        deadline_sink=deadline_sink,
+        deadline_sink=recovery_sink,
+        recovery_sink=recovery_sink,
+        state_machine_arn=state_machine_arn,
     )
 
 
@@ -154,7 +176,78 @@ def compose_publication_recovery_handler(
         ("describe_execution", "redrive_execution"),
         "Phase 7 recovery dependency is unavailable",
     )
-    selected_clock = clock
+    recovery = _compose_publication_workflow_recovery(
+        state_table=state_table,
+        state_machine_arn=state_machine_arn,
+        release_manifest_fingerprint=release_manifest_fingerprint,
+        exact_profile=exact_profile,
+        eligibility=eligibility,
+        dynamodb=dynamodb,
+        step_functions=step_functions,
+        clock=clock,
+    )
+    return Phase7PublicationRecoveryHandler(recovery=recovery)
+
+
+def compose_publication_recovery_sweep_handler(
+    *,
+    state_table: str,
+    state_machine_arn: str,
+    release_manifest_fingerprint: str,
+    exact_profile: ExactReviewProductProfile,
+    eligibility: PublicationProfileEligibility,
+    dynamodb: object,
+    step_functions: object,
+    clock: Callable[[], datetime] | None = None,
+    stale_after: timedelta = DEFAULT_PUBLICATION_RECOVERY_STALE_AFTER,
+) -> Phase7PublicationRecoverySweepHandler:
+    """Compose a query-only inventory with same-ARN recovery and no start/provider seam."""
+
+    _require_methods(
+        dynamodb,
+        ("get_item", "query", "transact_write_items"),
+        "Phase 7 recovery dependency is unavailable",
+    )
+    _require_methods(
+        step_functions,
+        ("describe_execution", "redrive_execution"),
+        "Phase 7 recovery dependency is unavailable",
+    )
+    inventory = DynamoDBPublicationRecoveryInventory(
+        client=dynamodb,  # type: ignore[arg-type]
+        table_name=state_table,
+    )
+    recovery = _compose_publication_workflow_recovery(
+        state_table=state_table,
+        state_machine_arn=state_machine_arn,
+        release_manifest_fingerprint=release_manifest_fingerprint,
+        exact_profile=exact_profile,
+        eligibility=eligibility,
+        dynamodb=dynamodb,
+        step_functions=step_functions,
+        clock=clock,
+    )
+    return Phase7PublicationRecoverySweepHandler(
+        sweeper=PublicationRecoverySweeper(
+            inventory=inventory,
+            recovery=recovery,
+            clock=clock,
+            stale_after=stale_after,
+        )
+    )
+
+
+def _compose_publication_workflow_recovery(
+    *,
+    state_table: str,
+    state_machine_arn: str,
+    release_manifest_fingerprint: str,
+    exact_profile: ExactReviewProductProfile,
+    eligibility: PublicationProfileEligibility,
+    dynamodb: object,
+    step_functions: object,
+    clock: Callable[[], datetime] | None,
+) -> PublicationWorkflowRecovery:
     store = DynamoDBPublicationExecutionStore(
         client=dynamodb,
         table_name=state_table,
@@ -164,16 +257,15 @@ def compose_publication_recovery_handler(
         profiles=PinnedPublicationProfileAuthority(exact_profile),
         profile_eligibility=PinnedPublicationProfileEligibilityAuthority(eligibility),
         release_manifest_fingerprint=release_manifest_fingerprint,
-        clock=selected_clock,
+        clock=clock,
     )
-    recovery = PublicationWorkflowRecovery(
+    return PublicationWorkflowRecovery(
         store=store,
         execution=execution,
         step_functions=step_functions,  # type: ignore[arg-type]
         state_machine_arn=state_machine_arn,
-        clock=selected_clock,
+        clock=clock,
     )
-    return Phase7PublicationRecoveryHandler(recovery=recovery)
 
 
 def compose_publication_retention_handler(
@@ -181,6 +273,7 @@ def compose_publication_retention_handler(
     state_table: str,
     dynamodb: object,
     clock: Callable[[], datetime] | None = None,
+    metric_logger: Callable[[str], object] = print,
 ) -> Phase7PublicationRetentionHandler:
     """Join strong terminal identity resolution to the existing marker-last TTL service."""
 
@@ -201,6 +294,7 @@ def compose_publication_retention_handler(
     return Phase7PublicationRetentionHandler(
         resolver=resolver,
         retention=retention,
+        metric_logger=metric_logger,
     )
 
 
@@ -212,5 +306,6 @@ def _require_methods(value: object, methods: tuple[str, ...], message: str) -> N
 __all__ = [
     "compose_publication_dispatcher_handler",
     "compose_publication_recovery_handler",
+    "compose_publication_recovery_sweep_handler",
     "compose_publication_retention_handler",
 ]

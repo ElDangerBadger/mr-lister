@@ -39,6 +39,7 @@ from mr_lister.publication.execution_dynamodb import (
 from mr_lister.publication.execution_models import (
     PublicationCallPurpose,
     PublicationExecutionOperation,
+    PublicationExecutionWorkStatus,
 )
 from mr_lister.publication.execution_service import PublicationExecutionService
 from mr_lister.publication.execution_store import (
@@ -215,6 +216,24 @@ def test_pristine_rows_load_owner_first_with_one_bounded_strong_query() -> None:
     assert hidden.type.__name__ == "PublicationNotFoundError"
 
 
+def test_recovery_load_resolves_owner_from_a_strong_root_then_rebinds_full_authority() -> None:
+    harness, store, client = _dynamo_harness()
+    client.get_requests.clear()
+
+    loaded = store.load_execution_authority_by_aggregate(harness.aggregate_id)
+
+    assert loaded.aggregate.aggregate_id == harness.aggregate_id
+    assert client.get_requests[0] == {
+        "TableName": TABLE_NAME,
+        "Key": {
+            "PK": {"S": f"PUBLICATION#{harness.aggregate_id}"},
+            "SK": {"S": "META"},
+        },
+        "ConsistentRead": True,
+    }
+    assert client.query_requests[-1]["ConsistentRead"] is True
+
+
 def test_fifty_six_product_reads_load_across_strong_query_pages() -> None:
     harness, store, client = _dynamo_harness()
     harness.dispatch_and_reconstruct()
@@ -309,6 +328,7 @@ def test_dispatch_replaces_exact_four_roots_and_appends_event_receipt() -> None:
 
     result = harness.service.dispatch_work(command)
     replay = harness.service.dispatch_work(command)
+    evolved = store.load_execution_authority(OWNER_ID, harness.aggregate_id)
 
     assert replay.receipt == result.receipt
     actions = client.transactions[-1]["TransactItems"]
@@ -327,9 +347,63 @@ def test_dispatch_replaces_exact_four_roots_and_appends_event_receipt() -> None:
         ":expected_payload" in action["Put"].get("ExpressionAttributeValues", {})
         for action in actions[:4]
     )
+    work_item = actions[3]["Put"]["Item"]
+    assert work_item["recovery_pk"] == {"S": "PUBLICATION_WORK_RECOVERY#0"}
+    assert work_item["recovery_sk"] == {
+        "S": (
+            f"{int(evolved.work.updated_at.timestamp()):020d}#"
+            f"{harness.aggregate_id}#{authority.work.work_request_id}"
+        )
+    }
+    assert "dispatch_pk" not in work_item
+    assert "dispatch_sk" not in work_item
     assert actions[-1]["ConditionCheck"]["Key"]["PK"]["S"].startswith("JOB#")
-    evolved = store.load_execution_authority(OWNER_ID, harness.aggregate_id)
     assert evolved.expected_aggregate == evolved.aggregate
+
+
+@pytest.mark.parametrize(
+    ("accepted", "expected_status"),
+    [
+        (True, PublicationExecutionWorkStatus.VERIFYING),
+        (False, PublicationExecutionWorkStatus.RECONCILING),
+    ],
+)
+def test_every_active_post_dispatch_status_remains_on_publication_recovery_index(
+    accepted: bool,
+    expected_status: PublicationExecutionWorkStatus,
+) -> None:
+    harness, store, client = _dynamo_harness()
+    harness.dispatch_and_reconstruct()
+    harness.complete_preflight()
+    _, claim = harness.claim_publish()
+    evidence = harness.publish_evidence(claim, accepted=accepted)
+    harness.clock.tick()
+
+    harness.service.record_post_outcome(
+        harness.command(
+            RecordPublicationPostOutcomeCommand,
+            f"recovery_index_{expected_status.value}",
+            evidence=evidence,
+        )
+    )
+
+    authority = store.load_execution_authority(OWNER_ID, harness.aggregate_id)
+    assert authority.work.status is expected_status
+    work_item = client.items[
+        (
+            f"PUBLICATION#{harness.aggregate_id}",
+            f"PUBLICATION_WORK#{authority.work.work_request_id}",
+        )
+    ]
+    assert work_item["recovery_pk"] == {"S": "PUBLICATION_WORK_RECOVERY#0"}
+    assert work_item["recovery_sk"] == {
+        "S": (
+            f"{int(authority.work.updated_at.timestamp()):020d}#"
+            f"{harness.aggregate_id}#{authority.work.work_request_id}"
+        )
+    }
+    assert "dispatch_pk" not in work_item
+    assert "dispatch_sk" not in work_item
 
 
 def test_audit_and_evidence_stage_use_exact_claim_authority_and_audit_cas() -> None:
@@ -571,6 +645,15 @@ def test_positive_terminal_transaction_persists_report_result_and_job_link() -> 
         "TERMINAL_JOB_LINK",
         f"EXECUTION_RECEIPT#{result.receipt.operation_id}",
     }.issubset(sort_keys)
+    terminal_work_item = next(
+        action["Put"]["Item"]
+        for action in actions
+        if "Put" in action and action["Put"]["Item"]["SK"]["S"].startswith("PUBLICATION_WORK#")
+    )
+    assert "recovery_pk" not in terminal_work_item
+    assert "recovery_sk" not in terminal_work_item
+    assert "dispatch_pk" not in terminal_work_item
+    assert "dispatch_sk" not in terminal_work_item
     authority = store.load_execution_authority(OWNER_ID, harness.aggregate_id)
     assert authority.result is not None
     assert authority.notification is not None

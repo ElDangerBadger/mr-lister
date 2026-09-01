@@ -258,6 +258,8 @@ def test_dynamo_request_is_exactly_fifteen_bounded_isolated_actions() -> None:
         item for item in publication_items if item["SK"]["S"].startswith("PUBLICATION_WORK#")
     )
     assert work_item["dispatch_pk"] == {"S": "PUBLICATION_WORK_DUE#0"}
+    assert "recovery_pk" not in work_item
+    assert "recovery_sk" not in work_item
     assert not any(item["SK"]["S"].startswith("WORK#") for item in publication_items)
     assert not any("expires_at" in item for item in put_items)
     updated_job = put_items[0]

@@ -18,10 +18,12 @@ from mr_lister.publication.orchestration import (
 from mr_lister.publication.orchestration_recovery import (
     PublicationPreDispatchDeadlineEnvelope,
     PublicationRecoveryBoundaryInvalidError,
+    PublicationRecoveryCandidate,
     PublicationRecoveryConflictError,
     PublicationRecoveryDependencyUnavailableError,
     PublicationRecoveryDisposition,
     PublicationRecoveryResult,
+    PublicationRecoverySweeper,
     PublicationWorkflowFailureEnvelope,
     PublicationWorkflowRecovery,
 )
@@ -93,6 +95,8 @@ def _authority(
     permit: PublicationPermitState = PublicationPermitState.AVAILABLE,
     deadline: datetime = NOW + timedelta(minutes=30),
     mutation: bool = False,
+    work_status: PublicationExecutionWorkStatus = PublicationExecutionWorkStatus.DISPATCHED,
+    updated_at: datetime = NOW - timedelta(minutes=3),
 ) -> SimpleNamespace:
     return SimpleNamespace(
         snapshot=SimpleNamespace(owner_id=OWNER_ID, verification_deadline=deadline),
@@ -112,6 +116,8 @@ def _authority(
             work_request_id=WORK_ID,
             execution_name=EXECUTION_NAME,
             verification_deadline=deadline,
+            status=work_status,
+            updated_at=updated_at,
             record_version=1,
         ),
         mutation_claim=(
@@ -163,6 +169,51 @@ def _deadline_envelope() -> PublicationPreDispatchDeadlineEnvelope:
     )
 
 
+def _recovery_candidate(
+    *,
+    aggregate_id: str = AGGREGATE_ID,
+    work_request_id: str = WORK_ID,
+    indexed_at: datetime = NOW - timedelta(minutes=3),
+) -> PublicationRecoveryCandidate:
+    return PublicationRecoveryCandidate(
+        aggregate_id=aggregate_id,
+        work_request_id=work_request_id,
+        indexed_at_epoch_second=int(indexed_at.timestamp()),
+    )
+
+
+class RecordingRecoveryInventory:
+    def __init__(self, *candidates: object) -> None:
+        self.candidates = tuple(candidates)
+        self.calls: list[dict[str, object]] = []
+
+    def list_recovery_candidates(
+        self,
+        *,
+        updated_before: datetime,
+        limit: int,
+    ) -> tuple[Any, ...]:
+        self.calls.append({"updated_before": updated_before, "limit": limit})
+        return self.candidates
+
+
+class RecordingScheduledRecovery:
+    def __init__(self, *outcomes: object) -> None:
+        self.outcomes = list(outcomes)
+        self.calls: list[PublicationRecoveryCandidate] = []
+
+    def recover_scheduled(
+        self,
+        candidate: PublicationRecoveryCandidate,
+    ) -> PublicationRecoveryResult:
+        self.calls.append(candidate)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        assert isinstance(outcome, PublicationRecoveryResult)
+        return outcome
+
+
 class RecoveryHarness(PublicationWorkflowRecovery):
     def __init__(
         self,
@@ -173,6 +224,7 @@ class RecoveryHarness(PublicationWorkflowRecovery):
     ) -> None:
         self.authorities = list(authorities)
         self.loaded_inputs: list[tuple[str, str]] = []
+        self.loaded_aggregates: list[str] = []
         self.recording_execution = execution or RecordingExecution()
         super().__init__(
             store=ExplosiveDependency(),
@@ -184,6 +236,12 @@ class RecoveryHarness(PublicationWorkflowRecovery):
 
     def _load_authority(self, workflow_input: Any) -> Any:
         self.loaded_inputs.append((workflow_input.owner_id, workflow_input.aggregate_id))
+        if not self.authorities:
+            raise AssertionError("unexpected authority reload")
+        return self.authorities.pop(0)
+
+    def _load_authority_by_aggregate(self, aggregate_id: str) -> Any:
+        self.loaded_aggregates.append(aggregate_id)
         if not self.authorities:
             raise AssertionError("unexpected authority reload")
         return self.authorities.pop(0)
@@ -216,6 +274,158 @@ def test_failed_worker_task_redrives_only_the_same_exact_execution() -> None:
     ]
     assert len(step_functions.redrive_calls[0]["clientToken"]) == 64
     assert recovery.loaded_inputs == [(OWNER_ID, AGGREGATE_ID)]
+
+
+def test_scheduled_candidate_strongly_rebinds_then_reuses_same_arn_recovery() -> None:
+    step_functions = RecordingStepFunctions(_observation())
+    recovery = RecoveryHarness(_authority(), step_functions=step_functions)
+
+    result = recovery.recover_scheduled(_recovery_candidate())
+
+    assert result.disposition is PublicationRecoveryDisposition.REDRIVEN
+    assert recovery.loaded_aggregates == [AGGREGATE_ID]
+    assert step_functions.describe_calls == [{"executionArn": EXECUTION_ARN}]
+    assert step_functions.redrive_calls[0]["executionArn"] == EXECUTION_ARN
+
+
+def test_scheduled_gsi_lag_is_a_stale_hint_and_terminal_lag_is_already_settled() -> None:
+    step_functions = RecordingStepFunctions(_observation())
+    newer = RecoveryHarness(
+        _authority(updated_at=NOW - timedelta(minutes=1)),
+        step_functions=step_functions,
+    )
+    terminal = RecoveryHarness(
+        _authority(
+            state=PublicationState.PUBLICATION_FAILED,
+            work_status=PublicationExecutionWorkStatus.FAILED,
+            updated_at=NOW,
+        ),
+        step_functions=step_functions,
+    )
+
+    assert (
+        newer.recover_scheduled(
+            _recovery_candidate(indexed_at=NOW - timedelta(minutes=3))
+        ).disposition
+        is PublicationRecoveryDisposition.STALE_HINT
+    )
+    assert (
+        terminal.recover_scheduled(
+            _recovery_candidate(indexed_at=NOW - timedelta(minutes=3))
+        ).disposition
+        is PublicationRecoveryDisposition.TERMINAL
+    )
+    assert step_functions.describe_calls == []
+    assert step_functions.redrive_calls == []
+
+
+def test_scheduled_candidate_reuses_deadline_settlement_without_start_or_provider() -> None:
+    initial = _authority(deadline=NOW)
+    terminal = _authority(
+        state=PublicationState.PUBLICATION_FAILED,
+        deadline=NOW,
+        work_status=PublicationExecutionWorkStatus.FAILED,
+        updated_at=NOW,
+    )
+    execution = RecordingExecution()
+    step_functions = RecordingStepFunctions(_observation())
+    recovery = RecoveryHarness(
+        initial,
+        terminal,
+        step_functions=step_functions,
+        execution=execution,
+    )
+
+    result = recovery.recover_scheduled(_recovery_candidate())
+
+    assert result.disposition is PublicationRecoveryDisposition.DEADLINE_SETTLED
+    assert len(execution.deadline_commands) == 1
+    assert step_functions.redrive_calls == []
+
+
+def test_scheduled_cross_bound_identity_fails_closed_before_describe() -> None:
+    step_functions = RecordingStepFunctions(_observation())
+    recovery = RecoveryHarness(_authority(), step_functions=step_functions)
+
+    with pytest.raises(PublicationRecoveryConflictError):
+        recovery.recover_scheduled(_recovery_candidate(work_request_id="foreign_work"))
+
+    assert step_functions.describe_calls == []
+    assert step_functions.redrive_calls == []
+
+
+def test_scheduled_malformed_execution_status_cannot_trigger_deadline_settlement() -> None:
+    execution = RecordingExecution()
+    recovery = RecoveryHarness(
+        _authority(deadline=NOW),
+        step_functions=RecordingStepFunctions(_observation(status="UNKNOWN")),
+        execution=execution,
+    )
+
+    with pytest.raises(PublicationRecoveryBoundaryInvalidError):
+        recovery.recover_scheduled(_recovery_candidate())
+
+    assert execution.deadline_commands == []
+
+
+def test_bounded_sweep_isolates_candidate_failure_and_surfaces_saturation() -> None:
+    first = _recovery_candidate(aggregate_id="publication_first", work_request_id="work_first")
+    second = _recovery_candidate(aggregate_id="publication_second", work_request_id="work_second")
+    inventory = RecordingRecoveryInventory(first, second)
+    recovery = RecordingScheduledRecovery(
+        PublicationRecoveryConflictError("private conflicting authority"),
+        PublicationRecoveryResult(PublicationRecoveryDisposition.RUNNING, 0),
+    )
+    sweeper = PublicationRecoverySweeper(
+        inventory=inventory,
+        recovery=recovery,  # type: ignore[arg-type]
+        clock=lambda: NOW,
+    )
+
+    result = sweeper.sweep(limit=2)
+
+    assert result.candidate_count == 2
+    assert result.batch_limit_reached is True
+    assert result.retry_required_count == 1
+    assert result.running_count == 1
+    assert recovery.calls == [first, second]
+    assert inventory.calls == [{"updated_before": NOW - timedelta(minutes=2), "limit": 2}]
+
+
+def test_sweep_keeps_non_redrivable_work_retryable_until_immutable_deadline() -> None:
+    candidate = _recovery_candidate()
+    inventory = RecordingRecoveryInventory(candidate)
+    recovery = RecordingScheduledRecovery(
+        PublicationRecoveryResult(PublicationRecoveryDisposition.NON_REDRIVABLE, 3)
+    )
+    sweeper = PublicationRecoverySweeper(
+        inventory=inventory,
+        recovery=recovery,  # type: ignore[arg-type]
+        clock=lambda: NOW,
+    )
+
+    result = sweeper.sweep()
+
+    assert result.candidate_count == 1
+    assert result.batch_limit_reached is False
+    assert result.non_redrivable_count == 1
+    assert result.retry_required_count == 1
+    assert recovery.calls == [candidate]
+
+
+def test_sweep_rejects_malformed_inventory_as_a_whole_without_recovery() -> None:
+    inventory = RecordingRecoveryInventory(object())
+    recovery = RecordingScheduledRecovery()
+    sweeper = PublicationRecoverySweeper(
+        inventory=inventory,
+        recovery=recovery,  # type: ignore[arg-type]
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(PublicationRecoveryBoundaryInvalidError):
+        sweeper.sweep()
+
+    assert recovery.calls == []
 
 
 @pytest.mark.parametrize(

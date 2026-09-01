@@ -18,10 +18,15 @@ from mr_lister.publication.models import PublicationWorkRequest
 from mr_lister.publication.orchestration import publication_execution_name
 from mr_lister.publication.orchestration_dynamodb import (
     DynamoDBPublicationDueWorkInventory,
+    DynamoDBPublicationRecoveryInventory,
     DynamoDBPublicationTerminalIdentityResolver,
     PublicationOrchestrationBoundaryInvalidError,
     PublicationOrchestrationDependencyUnavailableError,
     PublicationTerminalIdentity,
+)
+from mr_lister.publication.orchestration_recovery import (
+    PublicationRecoveryBoundaryInvalidError,
+    PublicationRecoveryDependencyUnavailableError,
 )
 
 NOW = datetime(2026, 9, 1, 18, 0, tzinfo=UTC)
@@ -135,6 +140,20 @@ def _terminal_item(aggregate: ExecutionPublicationAggregate) -> dict[str, dict[s
     }
 
 
+def _recovery_item(
+    *,
+    aggregate_id: str,
+    work_request_id: str,
+    updated_at: datetime,
+) -> dict[str, dict[str, str]]:
+    return {
+        "PK": _s(f"PUBLICATION#{aggregate_id}"),
+        "SK": _s(f"PUBLICATION_WORK#{work_request_id}"),
+        "recovery_pk": _s("PUBLICATION_WORK_RECOVERY#0"),
+        "recovery_sk": _s(f"{int(updated_at.timestamp()):020d}#{aggregate_id}#{work_request_id}"),
+    }
+
+
 class RecordingReadClient:
     def __init__(self) -> None:
         self.query_response: object = {"Items": [], "Count": 0, "ScannedCount": 0}
@@ -163,6 +182,10 @@ def _inventory(client: RecordingReadClient) -> DynamoDBPublicationDueWorkInvento
 
 def _resolver(client: RecordingReadClient) -> DynamoDBPublicationTerminalIdentityResolver:
     return DynamoDBPublicationTerminalIdentityResolver(client=client, table_name=TABLE_NAME)
+
+
+def _recovery_inventory(client: RecordingReadClient) -> DynamoDBPublicationRecoveryInventory:
+    return DynamoDBPublicationRecoveryInventory(client=client, table_name=TABLE_NAME)
 
 
 def test_due_inventory_uses_only_exact_bounded_gsi_query_and_stable_order() -> None:
@@ -303,6 +326,89 @@ def test_due_inventory_rejects_unordered_duplicate_and_future_authority() -> Non
         _inventory(client).list_due_publication_work(now=NOW, limit=1)
 
 
+def test_recovery_inventory_uses_one_exact_bounded_keys_only_query_without_scan() -> None:
+    client = RecordingReadClient()
+    updated = NOW - timedelta(minutes=2)
+    client.query_response = {
+        "Items": [
+            _recovery_item(
+                aggregate_id="publication_one",
+                work_request_id="publication_work_one",
+                updated_at=updated,
+            )
+        ],
+        "Count": 1,
+        "ScannedCount": 1,
+    }
+
+    candidates = _recovery_inventory(client).list_recovery_candidates(
+        updated_before=NOW,
+        limit=1,
+    )
+
+    assert candidates[0].aggregate_id == "publication_one"
+    assert candidates[0].work_request_id == "publication_work_one"
+    assert candidates[0].indexed_at_epoch_second == int(updated.timestamp())
+    assert client.query_calls == [
+        {
+            "TableName": TABLE_NAME,
+            "IndexName": "ExecutionRecoveryIndex",
+            "KeyConditionExpression": (
+                "recovery_pk = :recovery_pk AND recovery_sk <= :recovery_sk"
+            ),
+            "ExpressionAttributeValues": {
+                ":recovery_pk": _s("PUBLICATION_WORK_RECOVERY#0"),
+                ":recovery_sk": _s(f"{int(NOW.timestamp()):020d}#~"),
+            },
+            "ProjectionExpression": "PK, SK, recovery_pk, recovery_sk",
+            "ScanIndexForward": True,
+            "Limit": 1,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("PK", _s("PUBLICATION#foreign")),
+        ("SK", _s("PUBLICATION_WORK#foreign")),
+        ("recovery_pk", _s("WORK_RECOVERY#0")),
+        (
+            "recovery_sk",
+            _s("00000000001788319200#publication_foreign#publication_work_foreign"),
+        ),
+    ],
+)
+def test_recovery_inventory_fails_closed_on_cross_bound_or_malformed_index_rows(
+    field: str,
+    replacement: dict[str, str],
+) -> None:
+    client = RecordingReadClient()
+    item = _recovery_item(
+        aggregate_id="publication_one",
+        work_request_id="publication_work_one",
+        updated_at=NOW - timedelta(minutes=2),
+    )
+    item[field] = replacement
+    client.query_response = {"Items": [item], "Count": 1, "ScannedCount": 1}
+
+    with pytest.raises(PublicationRecoveryBoundaryInvalidError):
+        _recovery_inventory(client).list_recovery_candidates(updated_before=NOW, limit=1)
+
+
+def test_recovery_inventory_sanitizes_dependency_failure_and_rejects_bad_bounds() -> None:
+    client = RecordingReadClient()
+    client.query_error = RuntimeError("private owner payload")
+    with pytest.raises(PublicationRecoveryDependencyUnavailableError) as captured:
+        _recovery_inventory(client).list_recovery_candidates(updated_before=NOW, limit=1)
+    assert "private" not in str(captured.value)
+
+    client.query_error = None
+    with pytest.raises(ValueError, match="between 1 and 25"):
+        _recovery_inventory(client).list_recovery_candidates(updated_before=NOW, limit=26)
+    assert len(client.query_calls) == 1
+
+
 def test_terminal_resolver_uses_one_exact_strong_meta_read() -> None:
     client = RecordingReadClient()
     aggregate = _terminal_aggregate()
@@ -417,6 +523,7 @@ def test_adapter_source_has_no_client_construction_or_mutation_capability() -> N
         ".update_item(",
         ".delete_item(",
         ".transact_write_items(",
+        ".scan(",
         "start_execution(",
         "redrive_execution(",
     ):

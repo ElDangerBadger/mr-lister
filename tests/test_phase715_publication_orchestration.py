@@ -218,6 +218,58 @@ def test_exact_existing_execution_resolves_idempotent_replay() -> None:
     ]
 
 
+@pytest.mark.parametrize("status", ["FAILED", "TIMED_OUT", "ABORTED"])
+def test_exact_failed_existing_execution_routes_same_arn_recovery(status: str) -> None:
+    candidate = _candidate()
+    described = _exact_description(candidate)
+    described["status"] = status
+    step_functions = RecordingStepFunctions(
+        start_error=_client_error("ExecutionAlreadyExists"),
+        described=described,
+    )
+
+    result = _dispatcher(RecordingLocator(candidate), step_functions).dispatch_due()[0]
+
+    assert result.disposition is PublicationDispatchDisposition.RECOVERY_REQUIRED
+    assert result.execution_arn == publication_execution_arn(
+        MACHINE_ARN,
+        candidate.execution_name,
+    )
+    assert result.recovery_status == status
+
+
+def test_successful_existing_execution_with_pristine_due_work_is_a_conflict_retry() -> None:
+    candidate = _candidate()
+    described = _exact_description(candidate)
+    described["status"] = "SUCCEEDED"
+    step_functions = RecordingStepFunctions(
+        start_error=_client_error("ExecutionAlreadyExists"),
+        described=described,
+    )
+
+    result = _dispatcher(RecordingLocator(candidate), step_functions).dispatch_due()[0]
+
+    assert result.disposition is PublicationDispatchDisposition.RETRY_REQUIRED
+    assert result.execution_arn is None
+    assert result.recovery_status is None
+
+
+@pytest.mark.parametrize("status", [None, "UNKNOWN"])
+def test_existing_execution_readback_requires_one_closed_status(status: object) -> None:
+    candidate = _candidate()
+    described: dict[str, Any] = _exact_description(candidate)
+    described["status"] = status
+    step_functions = RecordingStepFunctions(
+        start_error=_client_error("ExecutionAlreadyExists"),
+        described=described,
+    )
+
+    result = _dispatcher(RecordingLocator(candidate), step_functions).dispatch_due()[0]
+
+    assert result.disposition is PublicationDispatchDisposition.RETRY_REQUIRED
+    assert result.execution_arn is None
+
+
 @pytest.mark.parametrize(
     "start_error",
     [

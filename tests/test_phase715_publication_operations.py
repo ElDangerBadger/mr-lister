@@ -10,10 +10,12 @@ import pytest
 
 from mr_lister.cloud.phase7_operations import (
     PUBLICATION_DUE_SWEEP_EVENT,
+    PUBLICATION_RECOVERY_SWEEP_EVENT,
     Phase7OperationsExecutionError,
     Phase7OperationsInvocationError,
     Phase7PublicationDispatcherHandler,
     Phase7PublicationRecoveryHandler,
+    Phase7PublicationRecoverySweepHandler,
     Phase7PublicationRetentionHandler,
     build_disabled_phase7_operations_handler,
 )
@@ -34,6 +36,8 @@ from mr_lister.publication.orchestration_recovery import (
     PublicationPreDispatchDeadlineEnvelope,
     PublicationRecoveryDisposition,
     PublicationRecoveryResult,
+    PublicationRecoverySweepResult,
+    PublicationWorkflowFailureEnvelope,
 )
 
 NOW = datetime(2026, 9, 1, 18, 0, tzinfo=UTC)
@@ -75,6 +79,20 @@ class RecordingDeadlineSink:
             raise self.error
 
 
+def _dispatcher_handler(
+    dispatcher: RecordingDispatcher,
+    *,
+    deadline_sink: RecordingDeadlineSink | None = None,
+    recovery_sink: RecordingDeadlineSink | None = None,
+) -> Phase7PublicationDispatcherHandler:
+    return Phase7PublicationDispatcherHandler(
+        dispatcher=dispatcher,
+        deadline_sink=deadline_sink or RecordingDeadlineSink(),
+        recovery_sink=recovery_sink or RecordingDeadlineSink(),
+        state_machine_arn=MACHINE_ARN,
+    )
+
+
 class RecordingRecovery:
     def __init__(
         self,
@@ -96,6 +114,18 @@ class RecordingRecovery:
         self.deadline_envelopes.append(envelope)
         if self.error is not None:
             raise self.error
+        return self.result
+
+
+class RecordingRecoverySweeper:
+    def __init__(self, result: PublicationRecoverySweepResult | Exception) -> None:
+        self.result = result
+        self.calls: list[int] = []
+
+    def sweep(self, *, limit: int) -> PublicationRecoverySweepResult:
+        self.calls.append(limit)
+        if isinstance(self.result, Exception):
+            raise self.result
         return self.result
 
 
@@ -164,12 +194,14 @@ def _sqs_event(*, body: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
-def _completion() -> PublicationRetentionCompletionAuthority:
+def _completion(
+    terminal_state: str = "publication_failed",
+) -> PublicationRetentionCompletionAuthority:
     values: dict[str, Any] = {
         "job_id": "job_one",
         "aggregate_id": AGGREGATE_ID,
         "job_record_version": 3,
-        "terminal_state": "publication_failed",
+        "terminal_state": terminal_state,
         "terminal_at": NOW,
         "terminal_summary_fingerprint": "b" * 64,
         "source_artifact_fingerprint": "c" * 64,
@@ -223,10 +255,7 @@ def test_dispatcher_accepts_exact_schedule_and_stream_as_one_bounded_wakeup() ->
     )
     dispatcher = RecordingDispatcher(results)
     deadline_sink = RecordingDeadlineSink()
-    handler = Phase7PublicationDispatcherHandler(
-        dispatcher=dispatcher,
-        deadline_sink=deadline_sink,
-    )
+    handler = _dispatcher_handler(dispatcher, deadline_sink=deadline_sink)
 
     scheduled = handler(PUBLICATION_DUE_SWEEP_EVENT)
     streamed = handler({"Records": [_stream_record(), _stream_record(event_id="event_two")]})
@@ -238,6 +267,7 @@ def test_dispatcher_accepts_exact_schedule_and_stream_as_one_bounded_wakeup() ->
         "candidate_count": 3,
         "started_count": 1,
         "confirmed_existing_count": 1,
+        "recovery_required_count": 0,
         "deadline_expired_count": 1,
     }
     assert streamed == {**scheduled, "source": "dynamodb_stream"}
@@ -274,18 +304,12 @@ def test_dispatcher_accepts_exact_schedule_and_stream_as_one_bounded_wakeup() ->
 def test_dispatcher_rejects_malformed_wakeups_before_due_query(event: dict[str, Any]) -> None:
     dispatcher = RecordingDispatcher()
     with pytest.raises(Phase7OperationsInvocationError):
-        Phase7PublicationDispatcherHandler(
-            dispatcher=dispatcher,
-            deadline_sink=RecordingDeadlineSink(),
-        )(event)
+        _dispatcher_handler(dispatcher)(event)
     assert dispatcher.calls == []
 
 
 def test_dispatcher_dependency_failure_is_identifier_free() -> None:
-    handler = Phase7PublicationDispatcherHandler(
-        dispatcher=RecordingDispatcher(error=RuntimeError(AGGREGATE_ID)),
-        deadline_sink=RecordingDeadlineSink(),
-    )
+    handler = _dispatcher_handler(RecordingDispatcher(error=RuntimeError(AGGREGATE_ID)))
     with pytest.raises(Phase7OperationsExecutionError) as captured:
         handler(PUBLICATION_DUE_SWEEP_EVENT)
     assert captured.value.__cause__ is None
@@ -301,14 +325,41 @@ def test_dispatcher_retries_when_expired_work_cannot_reach_recovery_queue() -> N
         NOW,
         None,
     )
-    handler = Phase7PublicationDispatcherHandler(
-        dispatcher=RecordingDispatcher((expired,)),
+    handler = _dispatcher_handler(
+        RecordingDispatcher((expired,)),
         deadline_sink=RecordingDeadlineSink(error=RuntimeError(AGGREGATE_ID)),
     )
     with pytest.raises(Phase7OperationsExecutionError) as captured:
         handler(PUBLICATION_DUE_SWEEP_EVENT)
     assert captured.value.__cause__ is None
     assert AGGREGATE_ID not in str(captured.value)
+
+
+def test_dispatcher_routes_failed_existing_execution_to_exact_recovery_queue_envelope() -> None:
+    result = PublicationDispatchResult(
+        PublicationDispatchDisposition.RECOVERY_REQUIRED,
+        OWNER_ID,
+        AGGREGATE_ID,
+        WORK_ID,
+        NOW,
+        EXECUTION_ARN,
+        "FAILED",
+    )
+    recovery_sink = RecordingDeadlineSink()
+
+    response = _dispatcher_handler(
+        RecordingDispatcher((result,)),
+        recovery_sink=recovery_sink,
+    )(PUBLICATION_DUE_SWEEP_EVENT)
+
+    assert response["recovery_required_count"] == 1
+    assert recovery_sink.envelopes == [
+        PublicationWorkflowFailureEnvelope(
+            execution_arn=EXECUTION_ARN,
+            machine_arn=MACHINE_ARN,
+            status="FAILED",
+        )
+    ]
 
 
 def test_dispatcher_delivers_independent_results_before_aggregate_retry() -> None:
@@ -339,10 +390,7 @@ def test_dispatcher_delivers_independent_results_before_aggregate_retry() -> Non
         ),
     )
     sink = RecordingDeadlineSink()
-    handler = Phase7PublicationDispatcherHandler(
-        dispatcher=RecordingDispatcher(results),
-        deadline_sink=sink,
-    )
+    handler = _dispatcher_handler(RecordingDispatcher(results), deadline_sink=sink)
 
     with pytest.raises(Phase7OperationsExecutionError):
         handler(PUBLICATION_DUE_SWEEP_EVENT)
@@ -358,6 +406,7 @@ def test_dispatcher_delivers_independent_results_before_aggregate_retry() -> Non
         (PublicationRecoveryDisposition.RUNNING, False),
         (PublicationRecoveryDisposition.PENDING_REDRIVE, False),
         (PublicationRecoveryDisposition.TERMINAL, False),
+        (PublicationRecoveryDisposition.STALE_HINT, False),
         (PublicationRecoveryDisposition.DEADLINE_SETTLED, False),
         (PublicationRecoveryDisposition.NON_REDRIVABLE, True),
     ],
@@ -402,6 +451,135 @@ def test_recovery_routes_pre_dispatch_deadline_without_workflow_recovery() -> No
     ]
 
 
+def test_clean_recovery_sweep_returns_only_aggregate_counters() -> None:
+    sweeper = RecordingRecoverySweeper(
+        PublicationRecoverySweepResult(
+            candidate_count=7,
+            batch_limit_reached=False,
+            running_count=2,
+            pending_redrive_count=1,
+            terminal_count=1,
+            stale_hint_count=1,
+            redriven_count=1,
+            deadline_settled_count=1,
+            non_redrivable_count=0,
+            retry_required_count=0,
+        )
+    )
+
+    response = Phase7PublicationRecoverySweepHandler(sweeper=sweeper)(
+        PUBLICATION_RECOVERY_SWEEP_EVENT
+    )
+
+    assert response == {
+        "contract_version": "7.0.1",
+        "source": "recovery_sweep",
+        "candidate_count": 7,
+        "batch_limit_reached": False,
+        "running_count": 2,
+        "pending_redrive_count": 1,
+        "terminal_count": 1,
+        "stale_hint_count": 1,
+        "redriven_count": 1,
+        "deadline_settled_count": 1,
+        "non_redrivable_count": 0,
+        "retry_required_count": 0,
+        "retry_required": False,
+    }
+    assert sweeper.calls == [25]
+
+
+@pytest.mark.parametrize(
+    ("batch_limit_reached", "retry_required_count"),
+    [(True, 0), (False, 1), (True, 1)],
+)
+def test_recovery_sweep_fails_after_processing_when_alarm_or_retry_is_required(
+    batch_limit_reached: bool,
+    retry_required_count: int,
+) -> None:
+    sweeper = RecordingRecoverySweeper(
+        PublicationRecoverySweepResult(
+            candidate_count=25 if batch_limit_reached else 1,
+            batch_limit_reached=batch_limit_reached,
+            running_count=1,
+            pending_redrive_count=0,
+            terminal_count=0,
+            stale_hint_count=0,
+            redriven_count=0,
+            deadline_settled_count=0,
+            non_redrivable_count=0,
+            retry_required_count=retry_required_count,
+        )
+    )
+
+    with pytest.raises(Phase7OperationsExecutionError):
+        Phase7PublicationRecoverySweepHandler(sweeper=sweeper)(PUBLICATION_RECOVERY_SWEEP_EVENT)
+
+    assert sweeper.calls == [25]
+
+
+def test_recovery_sweep_fails_for_non_redrivable_work_even_if_retry_counter_drifts() -> None:
+    sweeper = RecordingRecoverySweeper(
+        PublicationRecoverySweepResult(
+            candidate_count=1,
+            batch_limit_reached=False,
+            running_count=0,
+            pending_redrive_count=0,
+            terminal_count=0,
+            stale_hint_count=0,
+            redriven_count=0,
+            deadline_settled_count=0,
+            non_redrivable_count=1,
+            retry_required_count=0,
+        )
+    )
+
+    with pytest.raises(Phase7OperationsExecutionError):
+        Phase7PublicationRecoverySweepHandler(sweeper=sweeper)(PUBLICATION_RECOVERY_SWEEP_EVENT)
+
+    assert sweeper.calls == [25]
+
+
+def test_full_running_recovery_page_fails_as_an_explicit_continuation_blocker() -> None:
+    sweeper = RecordingRecoverySweeper(
+        PublicationRecoverySweepResult(
+            candidate_count=25,
+            batch_limit_reached=True,
+            running_count=25,
+            pending_redrive_count=0,
+            terminal_count=0,
+            stale_hint_count=0,
+            redriven_count=0,
+            deadline_settled_count=0,
+            non_redrivable_count=0,
+            retry_required_count=0,
+        )
+    )
+
+    with pytest.raises(Phase7OperationsExecutionError):
+        Phase7PublicationRecoverySweepHandler(sweeper=sweeper)(PUBLICATION_RECOVERY_SWEEP_EVENT)
+
+    assert sweeper.calls == [25]
+
+
+def test_recovery_sweep_rejects_nonexact_schedule_and_sanitizes_dependency_failure() -> None:
+    sweeper = RecordingRecoverySweeper(
+        PublicationRecoverySweepResult(0, False, 0, 0, 0, 0, 0, 0, 0, 0)
+    )
+    handler = Phase7PublicationRecoverySweepHandler(sweeper=sweeper)
+    with pytest.raises(Phase7OperationsInvocationError):
+        handler({"kind": "publication_recovery_sweep", "extra": True})
+    assert sweeper.calls == []
+
+    failed = Phase7PublicationRecoverySweepHandler(
+        sweeper=RecordingRecoverySweeper(RuntimeError(AGGREGATE_ID))
+    )
+    with pytest.raises(Phase7OperationsExecutionError) as captured:
+        failed(PUBLICATION_RECOVERY_SWEEP_EVENT)
+    assert captured.value.__cause__ is None
+    assert AGGREGATE_ID not in str(captured.value)
+
+
 def test_recovery_malformed_event_fails_before_boundary_and_dependency_retries_message() -> None:
     recovery = RecordingRecovery(
         PublicationRecoveryResult(PublicationRecoveryDisposition.TERMINAL, 0)
@@ -423,9 +601,11 @@ def test_recovery_malformed_event_fails_before_boundary_and_dependency_retries_m
 def test_retention_resolves_owner_strongly_and_returns_only_sanitized_counts() -> None:
     resolver = RecordingResolver(PublicationTerminalIdentity(AGGREGATE_ID, OWNER_ID))
     retention = RecordingRetention(_completion())
+    metric_logs: list[str] = []
     response = Phase7PublicationRetentionHandler(
         resolver=resolver,
         retention=retention,
+        metric_logger=metric_logs.append,
     )({"Records": [_stream_record(terminal=True)]})
 
     assert resolver.calls == [AGGREGATE_ID]
@@ -439,6 +619,31 @@ def test_retention_resolves_owner_strongly_and_returns_only_sanitized_counts() -
     }
     assert OWNER_ID not in json.dumps(response)
     assert AGGREGATE_ID not in json.dumps(response)
+    assert metric_logs == []
+
+
+def test_retention_emits_exact_outcome_unknown_metric_only_after_assignment() -> None:
+    metric_logs: list[str] = []
+    handler = Phase7PublicationRetentionHandler(
+        resolver=RecordingResolver(PublicationTerminalIdentity(AGGREGATE_ID, OWNER_ID)),
+        retention=RecordingRetention(_completion("publication_outcome_unknown")),
+        metric_logger=metric_logs.append,
+    )
+
+    handler({"Records": [_stream_record(terminal=True)]})
+
+    assert metric_logs == ['{"publication_state":"publication_outcome_unknown"}']
+
+
+def test_retention_metric_failure_retries_after_idempotent_assignment() -> None:
+    handler = Phase7PublicationRetentionHandler(
+        resolver=RecordingResolver(PublicationTerminalIdentity(AGGREGATE_ID, OWNER_ID)),
+        retention=RecordingRetention(_completion("publication_outcome_unknown")),
+        metric_logger=Explosive(),
+    )
+
+    with pytest.raises(Phase7OperationsExecutionError):
+        handler({"Records": [_stream_record(terminal=True)]})
 
 
 def test_retention_rejects_non_key_stream_and_cross_bound_identity() -> None:

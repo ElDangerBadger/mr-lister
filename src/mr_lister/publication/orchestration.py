@@ -55,6 +55,10 @@ _TRANSIENT_TRANSPORT_ERRORS = (
     TimeoutError,
 )
 _MAX_DISPATCH_BATCH = 25
+_EXACT_EXECUTION_STATUSES = frozenset(
+    {"RUNNING", "SUCCEEDED", "FAILED", "TIMED_OUT", "ABORTED", "PENDING_REDRIVE"}
+)
+_FAILED_EXECUTION_STATUSES = frozenset({"FAILED", "TIMED_OUT", "ABORTED"})
 
 
 class PublicationDispatchError(RuntimeError):
@@ -101,6 +105,7 @@ class PublicationDispatchCandidate(PublicationModel):
 class PublicationDispatchDisposition(StrEnum):
     STARTED = "started"
     CONFIRMED_EXISTING = "confirmed_existing"
+    RECOVERY_REQUIRED = "recovery_required"
     DEADLINE_EXPIRED = "deadline_expired"
     RETRY_REQUIRED = "retry_required"
 
@@ -113,6 +118,7 @@ class PublicationDispatchResult:
     work_request_id: str
     verification_deadline: datetime
     execution_arn: str | None
+    recovery_status: Literal["FAILED", "TIMED_OUT", "ABORTED"] | None = None
 
 
 class PublicationDispatchLocator(Protocol):
@@ -259,35 +265,53 @@ class PublicationWorkDispatcher:
         except ClientError as error:
             code = str(error.response.get("Error", {}).get("Code", ""))
             if code == "ExecutionAlreadyExists" or code in _TRANSIENT_STEP_FUNCTIONS_CODES:
-                self._require_exact_execution(
+                status = self._require_exact_execution(
                     expected_arn=expected_arn,
                     execution_name=candidate.execution_name,
                     expected_input=payload,
                 )
+                if status == "SUCCEEDED":
+                    raise PublicationDispatchIdentityConflictError(
+                        "Successful workflow lacks durable terminal publication authority"
+                    ) from None
                 return PublicationDispatchResult(
-                    disposition=PublicationDispatchDisposition.CONFIRMED_EXISTING,
+                    disposition=(
+                        PublicationDispatchDisposition.RECOVERY_REQUIRED
+                        if status in _FAILED_EXECUTION_STATUSES
+                        else PublicationDispatchDisposition.CONFIRMED_EXISTING
+                    ),
                     owner_id=candidate.owner_id,
                     aggregate_id=candidate.aggregate_id,
                     work_request_id=candidate.work_request_id,
                     verification_deadline=candidate.verification_deadline,
                     execution_arn=expected_arn,
+                    recovery_status=(status if status in _FAILED_EXECUTION_STATUSES else None),
                 )
             raise PublicationDispatchRejectedError(
                 "Step Functions rejected fixed publication dispatch"
             ) from None
         except _TRANSIENT_TRANSPORT_ERRORS:
-            self._require_exact_execution(
+            status = self._require_exact_execution(
                 expected_arn=expected_arn,
                 execution_name=candidate.execution_name,
                 expected_input=payload,
             )
+            if status == "SUCCEEDED":
+                raise PublicationDispatchIdentityConflictError(
+                    "Successful workflow lacks durable terminal publication authority"
+                ) from None
             return PublicationDispatchResult(
-                disposition=PublicationDispatchDisposition.CONFIRMED_EXISTING,
+                disposition=(
+                    PublicationDispatchDisposition.RECOVERY_REQUIRED
+                    if status in _FAILED_EXECUTION_STATUSES
+                    else PublicationDispatchDisposition.CONFIRMED_EXISTING
+                ),
                 owner_id=candidate.owner_id,
                 aggregate_id=candidate.aggregate_id,
                 work_request_id=candidate.work_request_id,
                 verification_deadline=candidate.verification_deadline,
                 execution_arn=expected_arn,
+                recovery_status=(status if status in _FAILED_EXECUTION_STATUSES else None),
             )
         except Exception:
             raise PublicationDispatchDependencyUnavailableError(
@@ -312,7 +336,7 @@ class PublicationWorkDispatcher:
         expected_arn: str,
         execution_name: str,
         expected_input: str,
-    ) -> None:
+    ) -> str:
         try:
             evidence = self._step_functions.describe_execution(executionArn=expected_arn)
         except (ClientError, *_TRANSIENT_TRANSPORT_ERRORS):
@@ -328,10 +352,12 @@ class PublicationWorkDispatcher:
             or evidence.get("stateMachineArn") != self._state_machine_arn
             or evidence.get("name") != execution_name
             or evidence.get("input") != expected_input
+            or evidence.get("status") not in _EXACT_EXECUTION_STATUSES
         ):
             raise PublicationDispatchIdentityConflictError(
                 "Existing publication execution does not match durable authority"
             )
+        return str(evidence["status"])
 
     @staticmethod
     def _exact_candidate(candidate: object) -> PublicationDispatchCandidate:

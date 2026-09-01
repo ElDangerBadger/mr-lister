@@ -25,13 +25,30 @@ from mr_lister.publication.orchestration import (
     PublicationDispatchConfigurationError,
     PublicationDispatchDependencyUnavailableError,
 )
+from mr_lister.publication.orchestration_recovery import (
+    MAX_PUBLICATION_RECOVERY_BATCH,
+    PublicationRecoveryBoundaryInvalidError,
+    PublicationRecoveryCandidate,
+    PublicationRecoveryDependencyUnavailableError,
+)
 
 PUBLICATION_DUE_WORK_INDEX = "DueWorkIndex"
 PUBLICATION_DUE_WORK_PARTITION = "PUBLICATION_WORK_DUE#0"
 MAX_PUBLICATION_DUE_WORK_BATCH = 25
+PUBLICATION_RECOVERY_INDEX = "ExecutionRecoveryIndex"
+PUBLICATION_RECOVERY_PARTITION = "PUBLICATION_WORK_RECOVERY#0"
 
 _TABLE_NAME = re.compile(r"^[A-Za-z0-9_.-]{3,255}$")
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+_PUBLICATION_KEY = re.compile(r"^PUBLICATION#(?P<identifier>[A-Za-z0-9][A-Za-z0-9_-]{0,127})$")
+_PUBLICATION_WORK_KEY = re.compile(
+    r"^PUBLICATION_WORK#(?P<identifier>[A-Za-z0-9][A-Za-z0-9_-]{0,127})$"
+)
+_RECOVERY_SORT_KEY = re.compile(
+    r"^(?P<epoch>[0-9]{20})#"
+    r"(?P<aggregate>[A-Za-z0-9][A-Za-z0-9_-]{0,127})#"
+    r"(?P<work>[A-Za-z0-9][A-Za-z0-9_-]{0,127})$"
+)
 _MAX_EPOCH_SECOND = 253402300799
 _TERMINAL_STATES = frozenset(
     {
@@ -264,6 +281,142 @@ class DynamoDBPublicationDueWorkInventory:
                     "Publication due-work execution identity is invalid"
                 ) from None
             candidates.append(candidate)
+        return tuple(candidates)
+
+
+class DynamoDBPublicationRecoveryInventory:
+    """Query only the publication partition of the existing KEYS_ONLY recovery GSI."""
+
+    __slots__ = ("_client", "_table_name")
+
+    def __init__(self, *, client: DynamoDBQueryClient, table_name: str) -> None:
+        if client is None:
+            raise ValueError("Publication recovery client is required")
+        self._client = client
+        self._table_name = _validated_table_name(table_name)
+
+    def list_recovery_candidates(
+        self,
+        *,
+        updated_before: datetime,
+        limit: int,
+    ) -> tuple[PublicationRecoveryCandidate, ...]:
+        if type(limit) is not int or not 1 <= limit <= MAX_PUBLICATION_RECOVERY_BATCH:
+            raise ValueError("Publication recovery limit must be between 1 and 25")
+        try:
+            cutoff_epoch = _utc_epoch_second(updated_before)
+        except ValueError:
+            raise ValueError("Publication recovery cutoff must be UTC-aware") from None
+        cutoff_sort_key = f"{cutoff_epoch:020d}#~"
+        request = {
+            "TableName": self._table_name,
+            "IndexName": PUBLICATION_RECOVERY_INDEX,
+            "KeyConditionExpression": (
+                "recovery_pk = :recovery_pk AND recovery_sk <= :recovery_sk"
+            ),
+            "ExpressionAttributeValues": {
+                ":recovery_pk": _s(PUBLICATION_RECOVERY_PARTITION),
+                ":recovery_sk": _s(cutoff_sort_key),
+            },
+            "ProjectionExpression": "PK, SK, recovery_pk, recovery_sk",
+            "ScanIndexForward": True,
+            "Limit": limit,
+        }
+        try:
+            response = self._client.query(**request)
+        except Exception:
+            raise PublicationRecoveryDependencyUnavailableError(
+                "Publication recovery inventory is unavailable"
+            ) from None
+        return self._parse_recovery_response(
+            response,
+            cutoff_epoch=cutoff_epoch,
+            limit=limit,
+        )
+
+    @staticmethod
+    def _parse_recovery_response(
+        response: object,
+        *,
+        cutoff_epoch: int,
+        limit: int,
+    ) -> tuple[PublicationRecoveryCandidate, ...]:
+        if not isinstance(response, Mapping):
+            raise PublicationRecoveryBoundaryInvalidError(
+                "Publication recovery response is invalid"
+            )
+        raw_items = response.get("Items")
+        if not isinstance(raw_items, list) or len(raw_items) > limit:
+            raise PublicationRecoveryBoundaryInvalidError(
+                "Publication recovery response exceeds its bounded contract"
+            )
+        count = response.get("Count")
+        if count is not None and (type(count) is not int or count != len(raw_items)):
+            raise PublicationRecoveryBoundaryInvalidError(
+                "Publication recovery response count is invalid"
+            )
+        scanned_count = response.get("ScannedCount")
+        if scanned_count is not None and (
+            type(scanned_count) is not int or scanned_count < len(raw_items)
+        ):
+            raise PublicationRecoveryBoundaryInvalidError(
+                "Publication recovery scanned count is invalid"
+            )
+
+        candidates: list[PublicationRecoveryCandidate] = []
+        identities: set[tuple[str, str]] = set()
+        previous_sort_key: str | None = None
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict) or set(raw_item) != {
+                "PK",
+                "SK",
+                "recovery_pk",
+                "recovery_sk",
+            }:
+                raise PublicationRecoveryBoundaryInvalidError("Publication recovery row is invalid")
+            try:
+                partition_key = _av_string(raw_item, "PK")
+                sort_key = _av_string(raw_item, "SK")
+                recovery_partition = _av_string(raw_item, "recovery_pk")
+                recovery_sort_key = _av_string(raw_item, "recovery_sk")
+            except PublicationOrchestrationBoundaryInvalidError:
+                raise PublicationRecoveryBoundaryInvalidError(
+                    "Publication recovery row is invalid"
+                ) from None
+            aggregate_match = _PUBLICATION_KEY.fullmatch(partition_key)
+            work_match = _PUBLICATION_WORK_KEY.fullmatch(sort_key)
+            recovery_match = _RECOVERY_SORT_KEY.fullmatch(recovery_sort_key)
+            if (
+                recovery_partition != PUBLICATION_RECOVERY_PARTITION
+                or aggregate_match is None
+                or work_match is None
+                or recovery_match is None
+                or recovery_match.group("aggregate") != aggregate_match.group("identifier")
+                or recovery_match.group("work") != work_match.group("identifier")
+                or int(recovery_match.group("epoch")) > cutoff_epoch
+                or previous_sort_key is not None
+                and recovery_sort_key <= previous_sort_key
+            ):
+                raise PublicationRecoveryBoundaryInvalidError(
+                    "Publication recovery row differs from its exact index authority"
+                )
+            identity = (
+                aggregate_match.group("identifier"),
+                work_match.group("identifier"),
+            )
+            if identity in identities:
+                raise PublicationRecoveryBoundaryInvalidError(
+                    "Publication recovery response contains duplicate authority"
+                )
+            identities.add(identity)
+            previous_sort_key = recovery_sort_key
+            candidates.append(
+                PublicationRecoveryCandidate(
+                    aggregate_id=identity[0],
+                    work_request_id=identity[1],
+                    indexed_at_epoch_second=int(recovery_match.group("epoch")),
+                )
+            )
         return tuple(candidates)
 
 

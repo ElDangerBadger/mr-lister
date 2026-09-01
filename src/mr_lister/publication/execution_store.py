@@ -398,6 +398,11 @@ class PublicationExecutionStore(Protocol):
         aggregate_id: str,
     ) -> PublicationExecutionAuthority: ...
 
+    def load_execution_authority_by_aggregate(
+        self,
+        aggregate_id: str,
+    ) -> PublicationExecutionAuthority: ...
+
     def load_source_authority(
         self,
         owner_id: str,
@@ -650,6 +655,19 @@ class InMemoryPublicationExecutionStore:
                 tombstone=self._tombstones.get(aggregate_id),
                 terminal_job_link=self._terminal_job_links.get(aggregate_id),
             )
+
+    def load_execution_authority_by_aggregate(
+        self,
+        aggregate_id: str,
+    ) -> PublicationExecutionAuthority:
+        """Resolve the persisted owner before delegating to the exact authority load."""
+
+        with self._lock:
+            aggregate = self._aggregates.get(aggregate_id)
+            if aggregate is None:
+                raise PublicationNotFoundError()
+            owner_id = aggregate.owner_id
+        return self.load_execution_authority(owner_id, aggregate_id)
 
     def load_source_authority(
         self,

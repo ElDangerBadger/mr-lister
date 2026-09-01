@@ -23,14 +23,20 @@ from mr_lister.publication.orchestration_recovery import (
     PublicationPreDispatchDeadlineEnvelope,
     PublicationRecoveryDisposition,
     PublicationRecoveryResult,
+    PublicationRecoverySweepResult,
     PublicationWorkflowFailureEnvelope,
 )
 
 PUBLICATION_DUE_SWEEP_EVENT = {"kind": "publication_due_sweep"}
+PUBLICATION_RECOVERY_SWEEP_EVENT = {"kind": "publication_recovery_sweep"}
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 _MESSAGE_ID = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _MAX_DISPATCH_BATCH = 25
+_STATE_MACHINE_ARN = re.compile(
+    r"^arn:(aws|aws-us-gov|aws-cn):states:[a-z0-9-]+:\d{12}:"
+    r"stateMachine:[A-Za-z0-9_-]{1,80}$"
+)
 
 
 class Phase7OperationsError(RuntimeError):
@@ -51,6 +57,14 @@ class PublicationDispatcher(Protocol):
 
 class PublicationDeadlineSettlementSink(Protocol):
     def send(self, envelope: PublicationPreDispatchDeadlineEnvelope) -> None: ...
+
+
+class PublicationWorkflowRecoverySink(Protocol):
+    def send(self, envelope: PublicationWorkflowFailureEnvelope) -> None: ...
+
+
+class PublicationRecoverySweeperBoundary(Protocol):
+    def sweep(self, *, limit: int) -> PublicationRecoverySweepResult: ...
 
 
 class PublicationWorkflowRecoveryBoundary(Protocol):
@@ -81,16 +95,22 @@ class PublicationRetentionBoundary(Protocol):
 class Phase7PublicationDispatcherHandler:
     """Treat valid KEYS_ONLY stream records as one wake-up for the bounded due query."""
 
-    __slots__ = ("_deadline_sink", "_dispatcher")
+    __slots__ = ("_deadline_sink", "_dispatcher", "_recovery_sink", "_state_machine_arn")
 
     def __init__(
         self,
         *,
         dispatcher: PublicationDispatcher,
         deadline_sink: PublicationDeadlineSettlementSink,
+        recovery_sink: PublicationWorkflowRecoverySink,
+        state_machine_arn: str,
     ) -> None:
+        if _STATE_MACHINE_ARN.fullmatch(state_machine_arn) is None:
+            raise ValueError("Phase 7 publication state-machine ARN is invalid")
         self._dispatcher = dispatcher
         self._deadline_sink = deadline_sink
+        self._recovery_sink = recovery_sink
+        self._state_machine_arn = state_machine_arn
 
     def __call__(
         self,
@@ -110,7 +130,7 @@ class Phase7PublicationDispatcherHandler:
                     if not isinstance(result, PublicationDispatchResult):
                         raise ValueError
                     if result.disposition is PublicationDispatchDisposition.DEADLINE_EXPIRED:
-                        if result.execution_arn is not None:
+                        if result.execution_arn is not None or result.recovery_status is not None:
                             raise ValueError
                         self._deadline_sink.send(
                             PublicationPreDispatchDeadlineEnvelope(
@@ -120,11 +140,29 @@ class Phase7PublicationDispatcherHandler:
                                 verification_deadline=result.verification_deadline,
                             )
                         )
+                    elif result.disposition is PublicationDispatchDisposition.RECOVERY_REQUIRED:
+                        if (
+                            not isinstance(result.execution_arn, str)
+                            or not result.execution_arn
+                            or result.recovery_status not in {"FAILED", "TIMED_OUT", "ABORTED"}
+                        ):
+                            raise ValueError
+                        self._recovery_sink.send(
+                            PublicationWorkflowFailureEnvelope(
+                                execution_arn=result.execution_arn,
+                                machine_arn=self._state_machine_arn,
+                                status=result.recovery_status,
+                            )
+                        )
                     elif result.disposition is PublicationDispatchDisposition.RETRY_REQUIRED:
-                        if result.execution_arn is not None:
+                        if result.execution_arn is not None or result.recovery_status is not None:
                             raise ValueError
                         retry_required = True
-                    elif not isinstance(result.execution_arn, str) or not result.execution_arn:
+                    elif (
+                        not isinstance(result.execution_arn, str)
+                        or not result.execution_arn
+                        or result.recovery_status is not None
+                    ):
                         raise ValueError
                     counts[result.disposition] += 1
                 except Exception:
@@ -139,6 +177,7 @@ class Phase7PublicationDispatcherHandler:
                 "confirmed_existing_count": counts[
                     PublicationDispatchDisposition.CONFIRMED_EXISTING
                 ],
+                "recovery_required_count": counts[PublicationDispatchDisposition.RECOVERY_REQUIRED],
                 "deadline_expired_count": counts[PublicationDispatchDisposition.DEADLINE_EXPIRED],
             }
         except Phase7OperationsInvocationError:
@@ -181,6 +220,59 @@ class Phase7PublicationDispatcherHandler:
         except Exception:
             raise Phase7OperationsInvocationError(
                 "Phase 7 publication dispatcher invocation is invalid"
+            ) from None
+
+
+class Phase7PublicationRecoverySweepHandler:
+    """Run one exact scheduled, bounded recovery-index sweep and return counters only."""
+
+    __slots__ = ("_sweeper",)
+
+    def __init__(self, *, sweeper: PublicationRecoverySweeperBoundary) -> None:
+        self._sweeper = sweeper
+
+    def __call__(
+        self,
+        event: Mapping[str, Any],
+        context: object | None = None,
+    ) -> dict[str, Any]:
+        del context
+        if not isinstance(event, Mapping) or dict(event) != PUBLICATION_RECOVERY_SWEEP_EVENT:
+            raise Phase7OperationsInvocationError(
+                "Phase 7 publication recovery sweep invocation is invalid"
+            )
+        try:
+            result = self._sweeper.sweep(limit=_MAX_DISPATCH_BATCH)
+            if not isinstance(result, PublicationRecoverySweepResult):
+                raise ValueError
+            if (
+                result.retry_required_count > 0
+                or result.non_redrivable_count > 0
+                or result.batch_limit_reached
+            ):
+                # EventBridge discards successful return values.  A failed invocation is the
+                # durable alarm/DLQ signal for poison, dependency, non-redrivable work, or
+                # first-page saturation.  Without durable continuation authority, saturation is
+                # an operator stop rather than a claim that later index rows were inspected.
+                raise RuntimeError
+            return {
+                "contract_version": "7.0.1",
+                "source": "recovery_sweep",
+                "candidate_count": result.candidate_count,
+                "batch_limit_reached": result.batch_limit_reached,
+                "running_count": result.running_count,
+                "pending_redrive_count": result.pending_redrive_count,
+                "terminal_count": result.terminal_count,
+                "stale_hint_count": result.stale_hint_count,
+                "redriven_count": result.redriven_count,
+                "deadline_settled_count": result.deadline_settled_count,
+                "non_redrivable_count": result.non_redrivable_count,
+                "retry_required_count": result.retry_required_count,
+                "retry_required": False,
+            }
+        except Exception:
+            raise Phase7OperationsExecutionError(
+                "Phase 7 publication recovery sweep failed safely"
             ) from None
 
 
@@ -268,16 +360,18 @@ class Phase7PublicationRecoveryHandler:
 class Phase7PublicationRetentionHandler:
     """Strongly resolve a terminal stream key before replay-safe TTL assignment."""
 
-    __slots__ = ("_resolver", "_retention")
+    __slots__ = ("_metric_logger", "_resolver", "_retention")
 
     def __init__(
         self,
         *,
         resolver: PublicationTerminalIdentityResolver,
         retention: PublicationRetentionBoundary,
+        metric_logger: Callable[[str], object] = print,
     ) -> None:
         self._resolver = resolver
         self._retention = retention
+        self._metric_logger = metric_logger
 
     def __call__(
         self,
@@ -303,6 +397,14 @@ class Phase7PublicationRetentionHandler:
             )
             if exact != completion or exact.aggregate_id != aggregate_id:
                 raise ValueError
+            if exact.terminal_state == "publication_outcome_unknown":
+                self._metric_logger(
+                    json.dumps(
+                        {"publication_state": exact.terminal_state},
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                )
             return {
                 "contract_version": "7.0.1",
                 "source": "terminal_stream",
@@ -406,16 +508,20 @@ def _attribute_string(value: object) -> str:
 
 __all__ = [
     "PUBLICATION_DUE_SWEEP_EVENT",
+    "PUBLICATION_RECOVERY_SWEEP_EVENT",
     "Phase7OperationsError",
     "Phase7OperationsExecutionError",
     "Phase7OperationsInvocationError",
     "Phase7PublicationDispatcherHandler",
     "Phase7PublicationRecoveryHandler",
+    "Phase7PublicationRecoverySweepHandler",
     "Phase7PublicationRetentionHandler",
     "PublicationDeadlineSettlementSink",
     "PublicationDispatcher",
+    "PublicationRecoverySweeperBoundary",
     "PublicationRetentionBoundary",
     "PublicationTerminalIdentityResolver",
     "PublicationWorkflowRecoveryBoundary",
+    "PublicationWorkflowRecoverySink",
     "build_disabled_phase7_operations_handler",
 ]

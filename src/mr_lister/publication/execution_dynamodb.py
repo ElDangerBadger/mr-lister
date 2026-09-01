@@ -36,6 +36,7 @@ from mr_lister.publication.execution_models import (
     PublicationCallClaim,
     PublicationExecutionAuthority,
     PublicationExecutionReceipt,
+    PublicationExecutionWorkStatus,
     PublicationMutationClaim,
     PublicationNotification,
     PublicationPostObservation,
@@ -138,6 +139,18 @@ def _record_item(
                 dispatch_pk=_s("PUBLICATION_WORK_DUE#0"),
                 dispatch_sk=_s(
                     f"{int(record.next_dispatch_at.timestamp()):020d}#{record.work_request_id}"
+                ),
+            )
+        elif isinstance(record, ExecutionPublicationWork) and record.status in {
+            PublicationExecutionWorkStatus.DISPATCHED,
+            PublicationExecutionWorkStatus.VERIFYING,
+            PublicationExecutionWorkStatus.RECONCILING,
+        }:
+            item.update(
+                recovery_pk=_s("PUBLICATION_WORK_RECOVERY#0"),
+                recovery_sk=_s(
+                    f"{int(record.updated_at.timestamp()):020d}#"
+                    f"{record.aggregate_id}#{record.work_request_id}"
                 ),
             )
     return item
@@ -513,6 +526,23 @@ class DynamoDBPublicationExecutionStore:
                 PublicationTerminalJobLink,
             ),
         )
+
+    def load_execution_authority_by_aggregate(
+        self,
+        aggregate_id: str,
+    ) -> PublicationExecutionAuthority:
+        """Strongly resolve owner authority from one exact publication aggregate root."""
+
+        item = self._get(_publication_pk(aggregate_id), "META")
+        if item is None or item.get("entity_type", {}).get("S") not in {
+            "PUBLICATION_AGGREGATE",
+            "PUBLICATION_EXECUTION_AGGREGATE",
+        }:
+            raise PublicationNotFoundError()
+        owner_id = item.get("owner_id", {}).get("S")
+        if not isinstance(owner_id, str):
+            self._invalid("Publication aggregate owner authority is invalid")
+        return self.load_execution_authority(owner_id, aggregate_id)
 
     def load_source_authority(
         self,

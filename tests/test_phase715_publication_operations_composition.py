@@ -15,10 +15,12 @@ from mr_lister.cloud.phase7_configuration import load_phase7_read_configuration
 from mr_lister.cloud.phase7_operations import (
     Phase7PublicationDispatcherHandler,
     Phase7PublicationRecoveryHandler,
+    Phase7PublicationRecoverySweepHandler,
     Phase7PublicationRetentionHandler,
 )
 from mr_lister.publication.orchestration_recovery import (
     PublicationPreDispatchDeadlineEnvelope,
+    PublicationWorkflowFailureEnvelope,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -151,6 +153,16 @@ def test_all_three_real_graphs_compose_without_dependency_io() -> None:
         step_functions=step_functions,
         clock=lambda: NOW,
     )
+    recovery_sweep = composition.compose_publication_recovery_sweep_handler(
+        state_table=configuration.state_table,
+        state_machine_arn=MACHINE_ARN,
+        release_manifest_fingerprint=configuration.release_manifest_fingerprint,
+        exact_profile=configuration.profile.exact,
+        eligibility=configuration.eligibility,
+        dynamodb=dynamodb,
+        step_functions=step_functions,
+        clock=lambda: NOW,
+    )
     retention = composition.compose_publication_retention_handler(
         state_table=configuration.state_table,
         dynamodb=dynamodb,
@@ -159,6 +171,7 @@ def test_all_three_real_graphs_compose_without_dependency_io() -> None:
 
     assert isinstance(dispatcher, Phase7PublicationDispatcherHandler)
     assert isinstance(recovery, Phase7PublicationRecoveryHandler)
+    assert isinstance(recovery_sweep, Phase7PublicationRecoverySweepHandler)
     assert isinstance(retention, Phase7PublicationRetentionHandler)
     assert dynamodb.calls == []
     assert step_functions.calls == []
@@ -195,6 +208,34 @@ def test_deadline_sink_emits_only_the_exact_replay_safe_queue_body() -> None:
             ),
         }
     ]
+
+
+def test_shared_recovery_sink_emits_exact_failed_execution_envelope() -> None:
+    sqs = RecordingSQS()
+    sink = composition._SqsPublicationRecoverySink(
+        client=sqs,
+        queue_url=QUEUE_URL,
+    )
+
+    sink.send(
+        PublicationWorkflowFailureEnvelope(
+            execution_arn=(
+                "arn:aws:states:us-west-2:123456789012:"
+                "execution:mr-lister-phase7-dev-publication:publication_execution_one"
+            ),
+            machine_arn=MACHINE_ARN,
+            status="FAILED",
+        )
+    )
+
+    assert json.loads(sqs.calls[0]["MessageBody"]) == {
+        "execution_arn": (
+            "arn:aws:states:us-west-2:123456789012:"
+            "execution:mr-lister-phase7-dev-publication:publication_execution_one"
+        ),
+        "machine_arn": MACHINE_ARN,
+        "status": "FAILED",
+    }
 
 
 @pytest.mark.parametrize(
@@ -254,6 +295,17 @@ def test_deadline_sink_rejects_non_aws_queue_url_without_dependency_io() -> None
             dynamodb=dynamodb,
             step_functions=states,
         ),
+        lambda dynamodb, states, _sqs, config: (
+            composition.compose_publication_recovery_sweep_handler(
+                state_table=config.state_table,
+                state_machine_arn=MACHINE_ARN,
+                release_manifest_fingerprint=config.release_manifest_fingerprint,
+                exact_profile=config.profile.exact,
+                eligibility=config.eligibility,
+                dynamodb=dynamodb,
+                step_functions=states,
+            )
+        ),
         lambda dynamodb, _states, _sqs, config: composition.compose_publication_retention_handler(
             state_table=config.state_table,
             dynamodb=dynamodb,
@@ -286,4 +338,8 @@ def test_composition_has_no_default_client_provider_secret_or_runtime_registrati
         encoding="utf-8"
     )
     assert "phase7_operations" not in active_entrypoints
-    assert not (ROOT / "src/mr_lister/cloud/phase7_production_entrypoints.py").exists()
+    production_entrypoints = (
+        ROOT / "src/mr_lister/cloud/phase7_production_entrypoints.py"
+    ).read_text(encoding="utf-8")
+    assert "phase7_operations_composition" not in production_entrypoints
+    assert "import boto3" not in production_entrypoints
