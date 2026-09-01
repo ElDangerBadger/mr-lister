@@ -19,7 +19,10 @@ The Phase 6 product path is deliberately bounded:
 > One submission with one or more artworks -> one independent job and calibrated unpublished
 > Printify product per accepted file -> seller review -> exact-version approval -> STOP.
 
-Etsy publication is Phase 7. It is disabled and is not part of the Phase 6 acceptance path.
+Etsy publication is Phase 7. It is disabled and is not part of the Phase 6 acceptance path. The
+implemented safety core and the ordered path to read-only validation, one-listing canary, general
+availability, and seal are tracked in the
+[`Phase 7 execution map`](docs/phase7-execution-map.md).
 
 ## Why it exists
 

@@ -447,7 +447,8 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     rejected attestations. The SAM role has only logs plus `GetItem`/`Query`, and the function has
     no route, URL, event source, resource policy, secret, provider transport, or mutation surface.
     The source-retained Phase 7.4 query scaffold is impossible to instantiate with any valid guard
-    release fingerprint, leaving an exact nine-resource deployed guard topology
+    release fingerprint, leaving an exact nine-resource deployable guard topology. Deployment is
+    not claimed until an authoritative Phase 7 release record captures the live stack tuple
   - [x] Phase 7.7 exact-disabled seller-request composition checkpoint: the strict unregistered
     `POST /v1/jobs/{job_id}/publish` adapter authenticates before observing request material,
     derives owner and approval-decision authority server-side, binds strong review/approval ETag
@@ -504,6 +505,8 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     source closure used by request creation. The tool constructs no provider, secret, Lambda, S3,
     or publication-POST client; no live request, upload, deployment, invocation, or provider call
     ran at this checkpoint
+  - Current execution order, source/deployment distinctions, and irreversible stop lines are
+    authoritative in [`phase7-execution-map.md`](phase7-execution-map.md)
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime
   - [ ] Channel publication and status polling
   - [ ] Partial-failure recovery, result links, and immutable reports
