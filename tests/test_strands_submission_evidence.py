@@ -24,19 +24,21 @@ def test_readme_exposes_real_strands_loop_and_evidence() -> None:
     assert "src/mr_lister/agent/agentcore_sdk.py" in readme
     assert "tests/test_strands_real_loop.py" in readme
     assert "docs/strands-submission-evidence.md" in readme
-    assert "still an open acceptance gate" in readme
+    assert "Phase 6 is deployed and sealed for the functional hackathon-demo scope" in readme
+    assert "hardening and is not claimed as completed" in readme
 
 
-def test_submission_gate_requires_same_job_fail_closed_strands_path() -> None:
+def test_submission_gate_records_same_job_fail_closed_strands_path_complete() -> None:
     checklist = _read("docs/phase-checklist.md")
     contract = _read("docs/phase6-seller-control-contract.md")
 
-    assert "Required Strands production and submission path (blocking Phase 6 exit)" in checklist
+    assert "[x] Required Strands production and submission path" in checklist
     assert (
-        "[ ] Durable `PREPARE` work invokes the exact AgentCore Strands runtime fail-closed"
+        "[x] Durable `PREPARE` work invokes the exact AgentCore Strands runtime fail-closed"
         in checklist
     )
-    assert "[ ] End-to-end acceptance proves upload -> Strands model/tool loop" in checklist
+    assert "[x] End-to-end acceptance proves upload -> Strands model/tool loop" in checklist
+    assert "frozen formal hardening evidence remains deferred" in checklist
     assert "`PREPARE` fails closed if the exact AgentCore" in contract
     assert "It cannot bypass the runtime or fall back to a direct model" in contract
 

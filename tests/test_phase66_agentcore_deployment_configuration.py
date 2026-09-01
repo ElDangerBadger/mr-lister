@@ -404,9 +404,10 @@ def test_release_verification_refuses_any_other_artifact_path_before_writing(
     assert list(repository.iterdir()) == []
 
 
-def test_readme_states_unresolved_external_and_retention_gates() -> None:
+def test_readme_states_deployed_runtime_and_external_retention_controls() -> None:
     readme = (ROOT / "infra/agentcore/mrlisterphase6/README.md").read_text(encoding="utf-8")
-    assert "has not been deployed" in readme
+    assert "deployed Phase 6 preparation runtime" in readme
+    assert "phase6_v4_dev" in readme
     assert "retentionInDays=14" in readme
     assert "mandatory before traffic" in readme
     assert "physical runtime ID" in readme
