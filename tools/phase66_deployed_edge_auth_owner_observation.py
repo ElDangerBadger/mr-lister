@@ -311,9 +311,11 @@ def _deployment(path: Path) -> _DeploymentAuthorityDocument:
     return value
 
 
-def _baseline(path: Path) -> Mapping[str, Any]:
+def _validate_baseline_document(value: object) -> Mapping[str, Any]:
+    """Validate the exact baseline object shared with its tracked producer."""
+
     try:
-        value = _mapping(_read_json(path, "baseline preflight"), "baseline preflight")
+        value = _mapping(value, "baseline preflight")
         if set(value) != _BASELINE_FIELDS or value.get("baseline_contract") != BASELINE_FORMAT:
             raise ValueError
         if any(not _is_digest(value.get(field)) for field in _DIGEST_FIELDS):
@@ -374,6 +376,10 @@ def _baseline(path: Path) -> Mapping[str, Any]:
             "baseline preflight does not match the exact sanitized read-only contract"
         ) from None
     return value
+
+
+def _baseline(path: Path) -> Mapping[str, Any]:
+    return _validate_baseline_document(_read_json(path, "baseline preflight"))
 
 
 def _browser_checkpoint(path: Path) -> _BrowserCheckpoint:
