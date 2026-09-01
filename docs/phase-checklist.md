@@ -513,15 +513,11 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     verification. The implementation is outside the active Vite graph, the frozen composer fails
     before client construction, build verification rejects capability leakage, active `web/src`
     and all backend/SAM/IAM/runtime files remain unchanged, and seller publication stays disabled
-  - [x] Phase 7.15A impossible-to-activate production topology: a separate source-only SAM
-    template fixes six role-separated function boundaries, a bounded one-worker Standard
-    workflow, recovery/DLQ and retention seams, payload-free logging, encrypted operational
-    alarms, and exact IAM separation. All 40 resources use a condition that no allowed parameter
-    can satisfy; functions have zero concurrency; every mapping/rule is independently disabled;
-    EventBridge has no invoke permission; a failed worker Task remains the exact redrive origin
-    while execution data logging stays disabled; future production entrypoints are intentionally
-    absent; no API/URL/seller route exists; and SAM lint plus tests pass; sealed runtime artifacts
-    remain incomplete
+  - [x] Phase 7.15A historical impossible-to-activate topology checkpoint: the original 40-resource
+    source-only SAM topology fixed the six roles, bounded workflow, recovery/DLQ and retention
+    seams, payload-free logging, encrypted alarms, and exact IAM separation behind an impossible
+    condition. P7.15C now deliberately supersedes the current template's instantiation model;
+    P7.15A remains historical evidence rather than a description of the current file
   - [x] Phase 7.15B provider-free control plane: the bounded due-work dispatcher starts one fixed
     Standard workflow with deterministic identity and exact ambiguity readback, checks each
     deadline immediately before start, isolates per-candidate retry so one failure cannot starve
@@ -530,13 +526,29 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     deadline, and settles pre-dispatch expiry through the real replay-safe execution service with
     zero provider calls. Terminal retention strongly resolves owner authority before marker-last
     TTL assignment. The source checkpoint is
-    `0e3c150cb9cfa11c8047db3a4670f8ec5aa6d864`; it remains unregistered, unsealed, undeployed, and
-    cannot activate the impossible P7.15A template
-  - [ ] Phase 7.15C production closure: release-first entrypoints and sealed runtime artifacts;
-    activation-ready but still disabled infrastructure; EventBridge retry/DLQ and lost-event
-    recovery inventory; poison-row/DLQ replay runbook; clean due-index validation; retention
-    activation/backfill ordering; telemetry/alarm delivery proof; and live IAM, redrive, SQS,
-    retention, deployment, readback, and rollback evidence
+    `0e3c150cb9cfa11c8047db3a4670f8ec5aa6d864`; P7.15C supersedes its packaging state while
+    retaining the provider-free, unregistered, and disabled guarantees
+  - [ ] Phase 7.15C production closure
+    - [x] Local/source closure at `d76e3fa464752d6b1f3923ef4f559a916e7dc515`: six release-first
+      refusal handlers; deterministic 74-module ARM64 release; exact contract/profile/template/
+      workflow binding; 48-resource `PRODUCTION_DISABLED` topology; EventBridge retry/DLQ and
+      customer-managed alarm encryption; restricted redrive; read-only preflight; one-message DLQ
+      triage; retention-first runbook; and complete local verification
+    - [x] Active-work recovery contract: only `DISPATCHED`, `VERIFYING`, and `RECONCILING` carry
+      `PUBLICATION_WORK_RECOVERY#0`; pending and terminal work omit recovery attributes; one
+      ascending max-25 `ExecutionRecoveryIndex` query performs a strong aggregate/owner/graph
+      rebind and same-ARN-only Describe/Redrive; it never scans, starts a workflow, or constructs a
+      provider; stale hints and terminal rows are no-ops; malformed/foreign rows fail closed; later
+      rows in the bounded page still run; non-redrivable, retry, and saturation outcomes fail the
+      invocation for EventBridge/DLQ/alarm visibility
+    - [ ] Production-disabled live closure: versioned S3 upload and binding; reviewed change set;
+      deployment/readback/idle proof; live IAM negatives; same-ARN redrive; SQS timing;
+      EventBridge-to-DLQ-to-subscriber alarm delivery; retention/backfill; and tested rollback
+    - [ ] Operations continuation closure: a narrow AWS adapter for the injected preflight/DLQ
+      libraries; durable settlement readback before any DLQ delete; source-specific replay
+      authority for event-source failures; exact terminal rebind for retention replay; and durable
+      cursor/shard authority before claiming fair automatic traversal beyond a saturated 25-row
+      recovery page
   - Current execution order, source/deployment distinctions, and irreversible stop lines are
     authoritative in [`phase7-execution-map.md`](phase7-execution-map.md)
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime

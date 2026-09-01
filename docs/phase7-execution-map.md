@@ -19,6 +19,9 @@ enabled.
 | --- | --- |
 | Phase 6 protected source baseline | `5509457faf8242d75ea1e47ff60a429cf38bd0a3` |
 | Phase 7 P7.15B source checkpoint | `0e3c150cb9cfa11c8047db3a4670f8ec5aa6d864` on `main` |
+| Phase 7 P7.15C local source checkpoint | `d76e3fa464752d6b1f3923ef4f559a916e7dc515` on `main` |
+| P7.15C production-disabled release | `267b291ad3649ab047ec00eb3367e9e248b0e1196d99450de1dfc6d621119b2c` |
+| P7.15C production-disabled archive | `ca71db0b3204ad6f454e57128aceb74728899cd8bba0f075edc2a58cedefb508` |
 | Phase 6 runtime source | `15a4f2a657e4cf5809de7066d267455d65c8c835` |
 | Phase 6 Provider component | `748e5c4a1e46c500215118685d1f70231b7f28b8bfe8e67cc804da1c33e7c347` |
 | Phase 6 decision | `PHASE 6 COMPLETE AND SEALED` for the functional demo scope |
@@ -47,6 +50,10 @@ role, route, state machine, agent, or browser control.
 | Read-only approval guard runtime, bundle builder, SAM template, and verifier | Implemented; current live release not proven |
 | Isolated concurrency-one direct-invoke canary and gated request preparation | Implemented source-only; never deployed or invoked |
 | Provider-free dispatcher, same-ARN recovery, deadline settlement, and terminal-retention control plane | Complete and tested source-only; unregistered and undeployed |
+| Lost-event recovery index/sweep and failed-start readback | Complete locally; bounded at 25, same-ARN-only, no scan or provider construction |
+| Six release-first production-disabled entrypoints and deterministic ARM64 artifact | Complete and sealed locally; every handler verifies then refuses without reading its event |
+| Production-disabled SAM topology, target retry/DLQ, alarm KMS, and restricted redrive authority | Complete locally; 48 resources may instantiate only in inert `PRODUCTION_DISABLED` mode |
+| Due/recovery preflight, one-message DLQ triage, and operations runbook | Complete as injected source boundaries; no default AWS adapter and no live evidence yet |
 
 The existing source is not a publication scaffold in the ordinary sense. The safety-sensitive
 domain, persistence, provider, reconciliation, and recovery behavior is already present. The
@@ -102,21 +109,18 @@ workflow, worker, dead-letter/recovery path, retention integration, least-privil
 alarms, and operational notification. Keep every seller route and provider mutation disabled
 during source and infrastructure verification.
 
-**P7.15A inert-topology checkpoint complete.** A separate
-`infra/phase7/production-disabled-template.json` defines the intended six role-separated
-functions, one bounded Standard workflow, recovery and dead-letter queues, retention and
-dispatcher seams, payload-free workflow logging, encrypted alarm topic, and complete alarm
-categories. Every one of its 40 resources shares a condition that cannot be true for any allowed
-parameter value; its functions have zero reserved concurrency, its stream/SQS mappings and
-EventBridge rules are independently disabled, and no EventBridge invoke permission is present. It
-has no API, Function URL, seller route, enabled output, or active handler. The workflow invokes only
-one future worker, uses fixed 1-second action and 20-second verification waits, stops after at most
-91 one-step invocations, keeps a failed worker Task as the exact redrive origin while execution
-data logging stays disabled, and has an absolute 1,860-second timeout.
-JSON, structural/IAM/alarm tests, Ruff, and SAM lint pass. Nothing from this template is
-deployable.
+**P7.15A inert-topology checkpoint was completed historically.** A separate
+`infra/phase7/production-disabled-template.json` defined six role-separated functions, one bounded
+Standard workflow, recovery and dead-letter queues, retention and dispatcher seams, payload-free
+workflow logging, an encrypted alarm topic, and complete alarm categories. At that checkpoint all
+40 resources shared an impossible condition and production entrypoints were absent. The workflow
+invokes only one future worker, uses fixed 1-second action and 20-second verification waits, stops
+after at most 91 one-step invocations, keeps a failed worker Task as the exact redrive origin while
+execution data logging stays disabled, and has an absolute 1,860-second timeout. P7.15C
+deliberately supersedes the template's instantiation model; P7.15A remains historical evidence
+rather than a description of the current file.
 
-**P7.15B provider-free control-plane checkpoint complete at
+**P7.15B provider-free control-plane checkpoint was completed at
 `0e3c150cb9cfa11c8047db3a4670f8ec5aa6d864`.** The bounded due-work inventory and dispatcher use
 one fixed Standard state machine, deterministic execution names, identifier-only input, exact
 readback after ambiguous starts, a final per-item deadline check, and per-candidate retry results
@@ -125,19 +129,29 @@ existing encrypted recovery queue and settles through the real replay-safe execu
 without starting or inspecting a workflow. Failed executions can only be described and redriven
 on the same exact ARN; the retry horizon carries non-redrivable early failures through the fixed
 30-minute settlement boundary. Terminal retention strongly resolves owner authority before the
-existing marker-last TTL transaction. The handlers and dependency graphs are source-only: there
-is no production entrypoint, default AWS-client factory, provider credential, route, trigger,
-runtime artifact, or activation path.
+existing marker-last TTL transaction. At that checkpoint the handlers and dependency graphs were
+source-only, with no production entrypoint, runtime artifact, or activation path. P7.15C now
+supersedes that packaging state while retaining its provider-free and disabled guarantees.
 
-**P7.15C production closure remains open.** Before activation, build and seal release-first
-production entrypoints and runtime artifacts; derive an activation-ready template whose nonzero
-concurrency and trigger changes remain independently gated and disabled; add EventBridge target
-retry/DLQ policy and a durable recovery inventory for lost workflow-failure events; define
-poison-row inspection and DLQ
-replay; validate the due index before activation; enable retention before accepting requests or
-backfill terminal links; prove telemetry and alarm delivery; and live-validate IAM, same-ARN
-redrive, SQS timing, retention duration, clean deployment, readback, and rollback. Until those
-items close, the overall infrastructure-and-alarm gate remains open.
+**P7.15C local/source closure is complete at
+`d76e3fa464752d6b1f3923ef4f559a916e7dc515`.** The candidate contains six release-first refusal
+entrypoints, a deterministic 74-module Python 3.12 ARM64 closure, the reviewed 14-wheel dependency
+authority, exact contract/profile/topology/workflow binding, an activation-ready but inert
+48-resource template, EventBridge target retry/DLQ policy, customer-managed alarm encryption,
+restricted queue redrive, durable active-work recovery indexing, a bounded recovery sweep, exact
+one-message DLQ triage, read-only preflight, and an operations runbook. All functions retain zero
+reserved concurrency, all mappings/rules are disabled, no API or Function URL exists, the worker
+role has no provider-secret authority, and every packaged handler verifies the release before
+refusing without observing its event.
+
+**P7.15C production/live closure remains open.** Upload and bind the exact versioned archive,
+review a change set, deploy/read back the disabled stack, prove an idle interval, validate live IAM
+and negative capability, exercise same-ARN redrive and SQS timing, deliver EventBridge exhaustion
+through the DLQ and alarm receiver, validate retention/backfill ordering, and capture a tested
+rollback tuple. A saturated 25-row recovery page is an explicit alarm/operator stop; provably fair
+automatic traversal beyond that page requires new durable continuation authority and is not
+claimed. The preflight and DLQ tools remain injected libraries until a narrow AWS operator adapter
+is reviewed. Until the live items close, the overall infrastructure-and-alarm gate remains open.
 
 ### P7.16 — Deployed read-only validation
 
@@ -193,6 +207,34 @@ A replacement zero-publication guard candidate was then rebuilt from `main` and 
 The checked dependency artifact, deterministic archive, release-first verifier, and focused
 read-only infrastructure tests passed. This candidate is retained only in the ignored private
 release area. It has not been uploaded or deployed and is not yet a rollback point.
+
+The P7.15C production-disabled candidate was then built twice from source checkpoint
+`d76e3fa464752d6b1f3923ef4f559a916e7dc515`; byte comparison proved both builds identical:
+
+| Candidate authority | Value |
+| --- | --- |
+| Release manifest | `267b291ad3649ab047ec00eb3367e9e248b0e1196d99450de1dfc6d621119b2c` |
+| Archive SHA-256 | `ca71db0b3204ad6f454e57128aceb74728899cd8bba0f075edc2a58cedefb508` |
+| Archive size | `62,982,212` bytes |
+| Deployment manifest | `e3167d5377f60f04d048d4f52bc97c96e4a3ca409399199e76a29acfba2dfd42` |
+| Source manifest | `9b40735033c833317e039174f98fa417441b4ed50d49799a75e66c4c32d8c6c2` |
+| Dependency manifest | `4945e5c68931676783932eb33b933f40e107765296fcfdd9f2ea6363ef6ce04f` |
+| Topology binding | `0c9e1c22c2e9b1ff28ff925381d6ade979a2edea0692e04f5455a29ca33a0768` |
+| Deployment descriptor | `4f2b5628f0411d8fe808e758a60a0912329710105600f9be3eef135b6430fa21` |
+| Disabled template | `2e920d09c7838a48471278d98b823ef6d914db5c8b5d9915cda465b8748dbe32` |
+| Publication workflow | `9a6112c85b35e775d1e60681a0ca14e6740cd0aea82b2ac33b5aa74b86fc3098` |
+
+The candidate remains in the ignored private release area. It has not been uploaded or deployed,
+so it is not a live release or rollback point.
+
+The intentional recovery-index and strong aggregate-rebind changes also resealed the historical
+P7.9 triggerless worker source checkpoint. Its manifest changed from
+`ca44431e5cfe3b0222560bc8bd8f6d7aa58468257760eae2768de5234a3412e8` to
+`7dd3d5b7c2e2cf691aa9a2d7234cd211d7fb5d8419710724a7bbb5a4788d361c`; its archive changed from
+`9f8a6916b4bf6cc3c7fe384de1d5b5d6a7a3b8244e5d2701b8cdf1e5c47cfa2e` to
+`747cb0719a9242cb85531f2152746b60fefcca9e79e145cd415f9e03ab064c96`.
+This is a reviewed consequence of the active-work recovery attributes and strong rebind, not a
+suppressed drift check.
 
 ## Stop lines
 

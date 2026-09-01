@@ -406,28 +406,47 @@ reference-aware sweeper still rechecks the exact terminal aggregate and durable 
 before changing tags. TTL assignment and source release never delete or unpublish the
 Printify/Etsy product.
 
-## Source-only production control plane
+## Production-disabled control plane
 
-The P7.15B checkpoint implements the dedicated dispatcher, same-execution recovery, pre-dispatch
+P7.15B historically implemented the dedicated dispatcher, same-execution recovery, pre-dispatch
 deadline settlement, and terminal-retention boundaries without registering a runtime. The
 dispatcher queries only the bounded due-work index, uses the persisted deterministic execution
 name and identifier-only input, verifies ambiguous starts against the exact execution, checks time
 again before each start, and continues past an isolated candidate failure before surfacing one
 sanitized batch retry. It cannot write publication authority.
 
-If pristine work is already expired, the dispatcher does not create a workflow. It sends an exact
-owner/aggregate/work/deadline envelope to the encrypted recovery queue. Recovery strong-loads and
-rebinds durable authority, then delegates to the existing idempotent deadline transition without
-a provider or Step Functions call. Workflow recovery has no start operation: it may describe and
-boundedly redrive only the same exact execution ARN. Non-redrivable failures remain retryable long
-enough to reach the immutable 30-minute deadline. Terminal retention strong-resolves the owner and
-uses the existing marker-last transaction.
+P7.15C adds the lost-event recovery authority. Active `DISPATCHED`, `VERIFYING`, and `RECONCILING`
+work carries:
 
-These source boundaries do not change activation phase or close the infrastructure gate. They
-have no production entrypoint, default AWS-client construction, route, credential, sealed runtime
-artifact, enabled trigger, deployment, or provider authorization. P7.15C must close the production
-artifact, event-loss recovery, DLQ/replay, retention ordering, telemetry, IAM, deployment/readback,
-and rollback matrix before deployed read-only validation begins.
+- base key `PK=PUBLICATION#{aggregate_id}` and `SK=PUBLICATION_WORK#{work_request_id}`;
+- `recovery_pk=PUBLICATION_WORK_RECOVERY#0`; and
+- `recovery_sk={updated_epoch:020d}#{aggregate_id}#{work_request_id}`.
+
+Pending and terminal work omits both recovery attributes. The sweep makes one ascending,
+maximum-25 `ExecutionRecoveryIndex` Query and never scans. Each KEYS_ONLY hint is strongly rebound
+to the aggregate, owner, work, and deterministic execution identity before any Step Functions
+read. `RUNNING` and `PENDING_REDRIVE` confirm the existing execution;
+`FAILED`, `TIMED_OUT`, and `ABORTED` route exact recovery; `SUCCEEDED` with still-pristine durable
+authority is a conflict/retry; missing or unknown observations fail closed. Recovery can only
+Describe or Redrive the same ARN. It cannot call StartExecution, construct a provider, grant a
+publication permit, or write dispatcher authority. Terminal rows and ordinary stale GSI hints are
+no-ops. A poison row does not prevent later candidates in the same bounded page from being
+considered, but retry-required, non-redrivable, or saturated pages fail after processing so the
+EventBridge retry/DLQ/alarm path is observable. A saturated first page is an operator stop, not a
+claim of fair traversal beyond 25; a provable continuation requires new durable cursor/shard
+authority.
+
+The local P7.15C candidate seals six release-first entrypoints, the complete production
+composition closure, exact disabled topology/workflow inputs, and the checked dependency tree.
+Each deployed entrypoint authenticates the release and exact disabled environment, then refuses
+without observing its event or importing an application/provider graph. All Lambda concurrency is
+zero, every mapping/rule is disabled, no API/Function URL or provider-secret IAM exists, and
+contract `7.0.1` remains at `offline_implementation` with `publication_enabled=false`.
+
+This local seal does not close the infrastructure gate. Versioned upload, change-set review,
+disabled deployment/readback, idle proof, live IAM negatives, alarm delivery, recovery/SQS timing,
+retention/backfill, a narrow operator adapter, and rollback evidence remain required before
+deployed read-only validation begins.
 
 ## Acceptance and three activation scopes
 
