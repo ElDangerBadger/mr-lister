@@ -3,7 +3,8 @@
 The Phase 6 economics path needs current fulfillment shipping without acquiring any
 provider mutation capability.  This module therefore exposes exactly one Printify
 operation: the documented V2 standard-shipping ``GET`` for a blueprint/provider pair.
-It validates the complete response before selecting the configured variant IDs.
+Printify returns that method for every destination, so the ingestion boundary selects
+the US resources before strictly validating the configured variant IDs.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ from mr_lister.production.printify import (
 
 PRINTIFY_V2_API_ORIGIN = "https://api.printify.com"
 PRINTIFY_V2_API_BASE_URL = f"{PRINTIFY_V2_API_ORIGIN}/v2/"
-MAX_STANDARD_SHIPPING_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_STANDARD_SHIPPING_RESPONSE_BYTES = 16 * 1024 * 1024
 
 _STANDARD_SHIPPING_PATH = re.compile(
     r"^/v2/catalog/blueprints/([1-9][0-9]*)/print_providers/"
@@ -103,6 +104,10 @@ class _PrintifyStandardResource(_StrictModel):
 
 class _PrintifyStandardEnvelope(_StrictModel):
     data: tuple[_PrintifyStandardResource, ...] = Field(min_length=1)
+
+
+class _PrintifyShippingEnvelope(_StrictModel):
+    data: tuple[Any, ...] = Field(min_length=1)
 
 
 class StandardUsVariantShipping(_StrictModel):
@@ -217,7 +222,21 @@ def parse_standard_us_shipping(
     if len(expected) != len(set(expected)):
         raise PrintifyCatalogMismatchError("Configured Printify variant IDs are not unique")
     try:
-        envelope = _PrintifyStandardEnvelope.model_validate(payload)
+        raw_envelope = _PrintifyShippingEnvelope.model_validate(payload)
+    except ValidationError as error:
+        raise PrintifyCatalogMismatchError(
+            "Printify V2 standard-shipping response was malformed"
+        ) from error
+    us_resources: list[dict[str, Any]] = []
+    for resource in raw_envelope.data:
+        if not isinstance(resource, dict) or not isinstance(resource.get("type"), str):
+            raise PrintifyCatalogMismatchError(
+                "Printify V2 standard-shipping response was malformed"
+            )
+        if resource["type"] == "variant_shipping_standard_us":
+            us_resources.append(resource)
+    try:
+        envelope = _PrintifyStandardEnvelope.model_validate({"data": us_resources})
     except ValidationError as error:
         raise PrintifyCatalogMismatchError(
             "Printify V2 standard-shipping response was malformed"
@@ -226,11 +245,25 @@ def parse_standard_us_shipping(
     by_variant: dict[int, _PrintifyStandardResource] = {}
     for resource in envelope.data:
         variant_id = resource.attributes.variant_id
-        if variant_id in by_variant:
+        existing = by_variant.get(variant_id)
+        if existing is None:
+            by_variant[variant_id] = resource
+            continue
+        existing_terms = (
+            existing.attributes.handling_time,
+            existing.attributes.shipping_cost,
+        )
+        observed_terms = (
+            resource.attributes.handling_time,
+            resource.attributes.shipping_cost,
+        )
+        if observed_terms != existing_terms:
             raise PrintifyCatalogMismatchError(
-                "Printify V2 standard-shipping response repeated a variant ID"
+                "Printify V2 standard-shipping response repeated a variant ID "
+                "with conflicting shipping terms"
             )
-        by_variant[variant_id] = resource
+        if resource.attributes.shipping_plan_id < existing.attributes.shipping_plan_id:
+            by_variant[variant_id] = resource
     missing = [variant_id for variant_id in expected if variant_id not in by_variant]
     if missing:
         raise PrintifyCatalogMismatchError(

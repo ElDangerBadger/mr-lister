@@ -29,16 +29,19 @@ def _resource(
     *,
     first_item: int = 399,
     additional_item: int = 219,
+    country_code: str = "US",
+    resource_type: str = "variant_shipping_standard_us",
+    shipping_plan_id: str = "65a7c0825b50fcd56a018e02",
 ) -> dict[str, object]:
     # This intentionally mirrors Printify's documented V2 standard response shape.
     return {
-        "type": "variant_shipping_standard_us",
+        "type": resource_type,
         "id": str(variant_id),
         "attributes": {
             "shippingType": "standard",
-            "country": {"code": "US"},
+            "country": {"code": country_code},
             "variantId": variant_id,
-            "shippingPlanId": "65a7c0825b50fcd56a018e02",
+            "shippingPlanId": shipping_plan_id,
             "handlingTime": {"from": 4, "to": 8},
             "shippingCost": {
                 "firstItem": {"amount": first_item, "currency": "USD"},
@@ -173,6 +176,47 @@ def test_parser_accepts_the_exact_thirty_profile_variants_among_a_larger_catalog
     assert len(evidence.variants) == 30
 
 
+def test_parser_selects_us_resources_from_the_all_country_standard_catalog() -> None:
+    payload = {
+        "data": [
+            _resource(
+                23494,
+                country_code="CA",
+                resource_type="variant_shipping_standard_ca",
+            ),
+            _resource(
+                23495,
+                country_code="REST_OF_THE_WORLD",
+                resource_type="variant_shipping_standard_rest_of_the_world",
+            ),
+            _resource(23495, first_item=425, shipping_plan_id="plan-b"),
+            _resource(23494, first_item=399, shipping_plan_id="plan-b"),
+            _resource(23495, first_item=425, shipping_plan_id="plan-a"),
+            _resource(23494, first_item=399, shipping_plan_id="plan-a"),
+        ]
+    }
+
+    evidence = parse_standard_us_shipping(
+        payload,
+        blueprint_id=145,
+        print_provider_id=39,
+        expected_variant_ids=(23494, 23495),
+        observed_at=NOW,
+    )
+    reversed_evidence = parse_standard_us_shipping(
+        {"data": list(reversed(payload["data"]))},
+        blueprint_id=145,
+        print_provider_id=39,
+        expected_variant_ids=(23494, 23495),
+        observed_at=NOW,
+    )
+
+    assert [item.variant_id for item in evidence.variants] == [23494, 23495]
+    assert [item.first_item_cents for item in evidence.variants] == [399, 425]
+    assert [item.shipping_plan_id for item in evidence.variants] == ["plan-a", "plan-a"]
+    assert evidence.fingerprint == reversed_evidence.fingerprint
+
+
 def test_shipping_fingerprint_is_independent_of_configured_variant_order() -> None:
     payload = _envelope((23494, 23495))
     first = parse_standard_us_shipping(
@@ -204,10 +248,10 @@ def test_parser_rejects_a_missing_configured_variant() -> None:
         )
 
 
-def test_parser_rejects_duplicate_provider_variant_evidence() -> None:
-    with pytest.raises(PrintifyCatalogMismatchError, match="repeated"):
+def test_parser_rejects_duplicate_provider_variant_with_conflicting_shipping_terms() -> None:
+    with pytest.raises(PrintifyCatalogMismatchError, match="conflicting shipping terms"):
         parse_standard_us_shipping(
-            {"data": [_resource(23494), _resource(23494)]},
+            {"data": [_resource(23494), _resource(23494, first_item=400)]},
             blueprint_id=145,
             print_provider_id=39,
             expected_variant_ids=(23494,),
