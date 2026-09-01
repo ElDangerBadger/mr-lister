@@ -57,8 +57,9 @@ an accepted release until its source-bound offline gates, deployment-bound gates
 provider canaries, accessibility evidence, and moderated first-time-seller gate all close. The
 authenticated same-job Strands run is therefore still an open acceptance gate. That distinction is
 tracked explicitly in the
-[phase checklist](docs/phase-checklist.md) and
-[Phase 6.2](docs/phase6-provider-integration.md) and
+[phase checklist](docs/phase-checklist.md),
+[authoritative Phase 6 release-state record](docs/phase6-release-state.md),
+[Phase 6.2](docs/phase6-provider-integration.md), and
 [Phase 6.3](docs/phase6-review-projection.md) evidence.
 
 ### Verify Strands locally in 60 seconds

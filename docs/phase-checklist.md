@@ -361,6 +361,9 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       verify public HTTPS `/health` returns `200` with `{"status":"ok"}`
     - [ ] Run explicitly authorized deployed non-destructive, double-gated unpublished Printify,
       and moderated first-time-seller acceptance and attach sanitized evidence
+    - Current authority: [`phase6-release-state.md`](phase6-release-state.md). It records the exact
+      closure source, input contract, green local/clean verification, failed live-stack rollback,
+      gate matrix, rollback point, and remaining blockers.
     - [ ] Bind one final closure source/deployment and rerun all 11 blocking gates. Historical
       records pass gates 1–7 only at source `e130292`; deployed gates 5–7 additionally bind
       deployment digest `5f26e318…`. They cannot seal a changed source. Provider gates 8–10 and
@@ -371,21 +374,25 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       contract.
     - [ ] Complete manual screen-reader/contrast evidence and remaining edit, refresh, cancel,
       retry, upload, and logout journeys against the final bundle
-    - Evidence: the quota-compatible core-deployment checkpoint at source commit `678ea4f` passed
+    - Historical evidence: the quota-compatible core-deployment checkpoint at source commit
+      `678ea4f` passed
       2,318 Python tests with 11 gated live-Bedrock skips plus the 62-test web gate, lint, strict
       typecheck, production build, SAM lint, and diff hygiene. The final deployment-fix checkpoint
       passed 2,855 Python tests with 11 gated live-Bedrock skips plus Ruff lint and format checks.
-      The live `us-west-2` stack is `UPDATE_COMPLETE` as `WEB_EDGE_ACTIVE_DRAFT_ONLY` with 125
-      complete resources; the exact CloudFront distribution is `Deployed`; the five sealed
-      seller-web objects are versioned and readable; and Route 53 change
-      `/change/C00461842KB849WKZV8W0` reached `INSYNC` with public A and AAAA resolution.
+      At that historical checkpoint, the live `us-west-2` stack was `UPDATE_COMPLETE` as
+      `WEB_EDGE_ACTIVE_DRAFT_ONLY` with 125 complete resources; the exact CloudFront distribution
+      was `Deployed`; the five sealed seller-web objects were versioned and readable; and Route 53
+      change `/change/C00461842KB849WKZV8W0` reached `INSYNC` with public A and AAAA resolution.
       The activation correction retained the sealed code and raised only dispatcher and settlement
       timeouts from 30 to 120 seconds before enabling the reviewed draft-only backend. Two
       scheduled dispatcher runs then completed with zero errors (35.2-second cold start and
       14.9-millisecond warm run), zero provider-draft invocations, zero running workflows, an empty
       recovery queue, and zero unexpected table rows. Seller invitation, authenticated full-flow,
       cross-owner/version/concurrency, unpublished Printify, and moderated first-time-seller
-      acceptance remain open. Acceptance details:
+      acceptance remained open. The current closure pass instead last observed the application
+      stack in `UPDATE_ROLLBACK_FAILED`; public health is unproven until the reviewed rollback
+      recovery completes. Current status:
+      [`phase6-release-state.md`](phase6-release-state.md). Acceptance mechanics:
       [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
 - [ ] Phase 7 — Etsy publication through Printify
   - [x] Freeze publication-disabled contract 7.0.1: separate aggregate authority, complete

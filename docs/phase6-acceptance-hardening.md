@@ -159,6 +159,9 @@ Lambda, EventBridge, Step Functions, DynamoDB, API, retention, cleanup, and reco
 this offline checkpoint, the scaffold marker prevented these handlers from executing in AWS. The
 later active draft-only transition enabled the reviewed Phase 6 handlers; current-release
 acceptance remains source- and deployment-bound and must be rerun after changes.
+The current pass/open decision and deployment-recovery boundary are recorded in the
+[`authoritative Phase 6 release state`](phase6-release-state.md); historical checkpoints in this
+document do not override it.
 
 ## Frozen gate order
 

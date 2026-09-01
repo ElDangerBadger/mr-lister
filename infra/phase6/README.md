@@ -1,5 +1,9 @@
 # Phase 6.6 AWS infrastructure, source scaffold, and deployed private web edge
 
+For current deployment and acceptance status, use the
+[`authoritative Phase 6 release-state record`](../../docs/phase6-release-state.md). Deployment
+descriptions below are historical checkpoints unless explicitly identified as current.
+
 This directory is a new SAM application. It does not modify or replace the retained Phase 4 or
 Phase 5 evidence stacks.
 
@@ -110,17 +114,24 @@ should delete the bootstrap stack to detach and remove the developer managed pol
 role is intentionally retained because it is recorded on the foundation stack. Follow
 `FOUNDATION_DEPLOYMENT.md` for the exact capture and verification sequence.
 
-## Active backend and deployed web edge
+## Historical active backend and current recovery state
 
-The corrected core and additive seller web edge are deployed to `mr-lister-phase6-dev` as
-`WEB_EDGE_ACTIVE_DRAFT_ONLY`. They contain the exact sealed Linux ARM64 application release, seven
-healthy Lambda functions, four Standard workflows, the pinned AgentCore v1 endpoint, the five
+The corrected core and additive seller web edge were deployed to `mr-lister-phase6-dev` as
+`WEB_EDGE_ACTIVE_DRAFT_ONLY`. That historical checkpoint contained the exact sealed Linux ARM64
+application release, seven healthy Lambda functions, four Standard workflows, the pinned
+AgentCore v1 endpoint, the five
 reviewed active triggers, Cognito, HTTP API, private S3/CloudFront seller web resources, no
 maintenance concurrency caps, and 120-second dispatcher and settlement timeouts. The review-query
-Lambda uses its verified 512 MB/30-second runtime envelope. The application remains draft-only and
-has no publication, order, or fulfillment surface. Route 53 apex A and AAAA aliases point
-`massskutiny.com` to the deployed distribution, and HTTPS `/health` returns `200` with
-`{"status":"ok"}`.
+Lambda used its verified 512 MB/30-second runtime envelope. The application remained draft-only
+and had no publication, order, or fulfillment surface. Route 53 apex A and AAAA aliases pointed
+`massskutiny.com` to the deployed distribution, and HTTPS `/health` returned `200` with
+`{"status":"ok"}` at that checkpoint.
+
+The current closure pass last observed this application stack in `UPDATE_ROLLBACK_FAILED` after an
+archive-read permission failure stranded rollback. The affected functions appeared restored to
+their predecessor archive, but the stack is not terminal and current public health is unproven.
+The exact recovery and rollback point are recorded in the release-state record. No closure release
+is deployed or accepted.
 
 The complete `template.json` remains a source scaffold and is **not a direct deployment target**.
 Its global scaffold value and activation settings would regress the proven backend. Follow
@@ -136,7 +147,7 @@ The later no-replacement health correction used template SHA-256
 `ReviewQueryApiFunction` runtime envelope from 256 MB/15 seconds to 512 MB/30 seconds.
 [`tools/render_phase6_review_query_runtime_envelope.py`](../../tools/render_phase6_review_query_runtime_envelope.py)
 reproduces that final target from the sealed additive predecessor and source template without
-contacting AWS; the current live-state verifier binds the corrected target, while the historical
+contacting AWS; the historical live-state verifier binds the corrected target, while the historical
 78-add change-set verifier remains bound to its `74560f…` predecessor.
 
 Role-separated composition roots now construct the tested API, dispatcher, preparation, provider,
@@ -147,16 +158,17 @@ and reproducible narrow source manifests isolate ordinary Lambda code from the A
 The cleanup/recovery schedules, encrypted recovery DLQ, release/runtime bindings, least-capability
 IAM, and closed alarm/SNS transport are present in this template. Recovery can describe an exact
 execution and settle durable authority, but cannot start, stop, or redrive workflows. The sealed
-application code, core recovery boundary, alarm, identity, API, and web surfaces are active and
-verified at the infrastructure and public-health levels. Authenticated seller acceptance remains
-open.
+application code, core recovery boundary, alarm, identity, API, and web surfaces were verified at
+the historical infrastructure and public-health checkpoint. Stack recovery and fresh health
+verification now precede authenticated seller acceptance.
 
 The controlled Linux ARM64 artifacts, target import smoke, sealed Lambda and AgentCore trees,
-versioned S3 objects, runtime v1, endpoint, active draft-only deployment, sealed static bundle, and
-DNS aliases are complete. Remaining Phase 6 work is the explicitly authorized seller invitation
-and deployed acceptance sequence. Backend activation does not authorize publication, orders, or
-fulfillment; authenticated full-flow, cross-owner/version/concurrency, unpublished Printify, and
-moderated first-time-seller evidence remain separate approval boundaries.
+versioned S3 objects, runtime v1, endpoint, historical active draft-only deployment, sealed static
+bundle, and DNS aliases remain deployment history. Remaining Phase 6 work begins with stack
+recovery, then the explicitly authorized seller invitation and deployed acceptance sequence.
+Backend activation does not authorize publication, orders, or fulfillment; authenticated
+full-flow, cross-owner/version/concurrency, unpublished Printify, and moderated first-time-seller
+evidence remain separate approval boundaries.
 
 The query role may read and presign only the exact pinned S3 object version after application
 ownership checks. It cannot write DynamoDB, call KMS, read a secret, or proxy artwork bytes through
