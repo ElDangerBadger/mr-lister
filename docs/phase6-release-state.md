@@ -5,10 +5,11 @@
 **PHASE 6 NOT YET COMPLETE**
 
 This is the authoritative current-state record for Phase 6 as of 2026-08-31. The implementation
-and clean-checkout verification baseline are green, but the deployed application stack requires
-recovery and the final deployment-bound, provider-write, accessibility, and moderated-seller gates
-remain open. Phase 6 must not be described as sealed until every blocking item below is attached to
-one source/deployment authority.
+and clean-checkout verification baseline are green, and the deployed application stack has been
+recovered to a healthy terminal state. The exact closure release is not deployed, however, and the
+final deployment-bound, provider-write, accessibility, and moderated-seller gates remain open.
+Phase 6 must not be described as sealed until every blocking item below is attached to one
+source/deployment authority.
 
 The frozen gate definition remains
 [`phase6.6.manifest.json`](../contracts/acceptance/phase6.6.manifest.json). The reconciled artwork
@@ -26,42 +27,39 @@ checkpoint documents.
 | Offline-evidence binding commit | `1aa069c0167bed3447440985250cecbfd50056e9` |
 | Package version | `mr-lister 0.1.0` |
 | Phase 6 closure release/version | Closure candidate; not deployed, accepted, or sealed |
-| Application stack | `mr-lister-phase6-dev` in `us-west-2` / `dev`, last authenticated observation `UPDATE_ROLLBACK_FAILED` (last updated `2026-08-31T20:11:17Z`) |
-| Certifiable deployed version | None while the stack is nonterminal; the observed functions form the two-component mosaic below |
+| Application stack | `mr-lister-phase6-dev` in `us-west-2` / `dev`; recovery reached `UPDATE_ROLLBACK_COMPLETE` at `2026-09-01T02:49:08Z` |
+| Certifiable deployed version | Recovered historical draft-only predecessor/hotfix mosaic below; not the closure implementation source |
 | Affected-function predecessor/rollback tuple | release `0c6211a5b0244e9c86d635e6c02e7bc49e5e948d68895b4aaa982c0b0b2e187b`; archive `baf152b732ce8574b6a6925bae7ab4ff849c1b83d4137076c52c6682553f9d48`; VersionId `pHutjLzKNpukwJ75Qs9s8YzXUAvgxZuS` |
 | Review-query hotfix tuple | release `6e32d16ce16371a65815e2931e0a897a34bbbce5526300438d4fc29061813571`; archive `122958c1df7ed916de122ca95c5cf9b8a34c385a45b706f396d2907c29cb8f9c`; VersionId `zFS0yxHW0Jm0qZrHjirfQCwYyZwXAeVc` |
 | Failed candidate attempt | release `2c1b2b5e47994832f0cd1be9fb8088e2b0b7e7be7aa18a117c09f5530fb7c549`; archive `ba6fbe0c46226918694dafc16d902c4d37228a58202e462c18f332e055e156c8`; VersionId `YIKUgrblt9kZxIwtaGysI0Wv480K6pJ3`; not accepted |
-| Deployment health | Unproven after the failed update; the latest public `/health` attempt timed out |
+| Deployment health | Public and direct API `/health` returned `200` with `{"status":"ok"}` after recovery |
 | Seller publication | Disabled; Etsy publication remains Phase 7 |
 
-The candidate update shown above failed because the retained CloudFormation
-role could not read the exact candidate archive. Rollback then failed because the same role no
-longer retained read authority for the predecessor archive. The affected Lambda configurations
-were last observed back on the predecessor code, but the stack itself was not terminal and the
-deployment is not accepted. `ReviewQueryApiFunction` remains on its separate immutable hotfix, so
-the deployed functions are a deliberate code mosaic rather than one closure release.
+The candidate update shown above failed because the retained CloudFormation role could not read
+the exact candidate archive. Rollback then failed because the same role no longer retained read
+authority for the predecessor archive. Recovery restored the required separately paired reads,
+continued rollback without skipped resources, and verified the affected Lambda configurations on
+the exact predecessor code. `ReviewQueryApiFunction` remains on its separate immutable hotfix, so
+the deployed functions are a deliberate historical code mosaic rather than one closure release.
 
 The source templates now support two separately paired, exact S3 key/VersionId statements during
 an update—one live rollback archive and one candidate. They enforce complete tuples, distinct
 expanded bindings, scalar key/version pairing, and nonempty Stage B authority. The runbooks require
 both reads to remain until the application stack becomes terminal, then contract to one live
-statement; they prohibit premature contraction and rollback resource skipping. That repair is
-locally verified but has not been applied to AWS.
+statement; they prohibit premature contraction and rollback resource skipping. The repair was
+applied through the reviewed `phase6-rollback-recovery-20260901T024551Z` change set, which modified
+only `CoreRuntimeExecutionRole.Policies` without replacement. IAM readback and simulation proved
+both exact pairs and denied both crossed pairs. After terminal rollback and Lambda/health
+verification, `phase6-rollback-authority-contract-20260901T025008Z` removed the candidate read;
+the owner stack reached `UPDATE_COMPLETE` at `2026-09-01T02:51:15Z` with exactly one predecessor
+archive statement.
 
-AWS discovery initially used valid credentials, but a later readback reported an expired or
-invalid AWS CLI login grant. No recovery mutation was attempted. Before any live recovery command,
-renew the exact bootstrap profile with:
+The root/bootstrap recovery boundary is closed. The separate dev session is expired and must be
+renewed before the remaining deployed and provider acceptance work:
 
 ```shell
-aws login --profile mr-lister-bootstrap
+aws login --profile mr-lister-dev
 ```
-
-Then create and review a role-owner stack change set with exact predecessor and candidate reads,
-execute it only after its resource diff is accepted, continue the application rollback with no
-`resources-to-skip`, wait for
-`UPDATE_ROLLBACK_COMPLETE`, verify function bindings and public health, and contract candidate read
-authority. Follow
-[`SIMPLE_ROOT_RUNTIME_DEPLOYMENT.md`](../infra/phase6/SIMPLE_ROOT_RUNTIME_DEPLOYMENT.md#recover-an-archive-read-rollback-failure).
 
 ### Rollback point
 
@@ -155,7 +153,7 @@ SHA-256 authority was preserved rather than resealed.
 | `offline.concurrency_matrix` | Yes | Passed for source `fff69db…` |
 | `offline.cross_owner_matrix` | Yes | Passed for source `fff69db…` |
 | `offline.browser_matrix` | Yes | Passed for source `fff69db…`, all three engines |
-| `deployed.edge_auth_owner_smoke` | Yes | Open; historical evidence only and stack recovery required |
+| `deployed.edge_auth_owner_smoke` | Yes | Open; recovery complete, but historical evidence only |
 | `deployed.upload_integrity_smoke` | Yes | Open; historical evidence only |
 | `deployed.outbox_recovery_smoke` | Yes | Open; historical evidence only |
 | `provider.primary_same_job_canary` | Yes | Open; never completed for a closure release |
@@ -174,13 +172,12 @@ Additional blocking acceptance outside the already-frozen manifest remains open:
 
 ## Smallest blocker list
 
-1. Authenticate `mr-lister-bootstrap`, apply the reviewed dual exact-archive role-owner change,
-   complete rollback without skips, contract authority, and prove stack and public health.
-2. Deploy one exact closure source without enabling publication, then rerun deployed gates 5–7
-   plus the additive artwork/authenticated accessibility matrix against that same deployment.
-3. Open the explicit run and provider-write gates and complete unpublished Printify same-job,
+1. Renew `mr-lister-dev`, deploy one exact closure source without enabling publication, then rerun
+   deployed gates 5–7 plus the additive artwork/authenticated accessibility matrix against that
+   same deployment.
+2. Open the explicit run and provider-write gates and complete unpublished Printify same-job,
    concurrency, and seller-cancellation canaries with sanitized ledgers.
-4. Complete the manual accessibility journeys and one moderated first-time-seller exit.
+3. Complete the manual accessibility journeys and one moderated first-time-seller exit.
 
-Until all four blocker groups close against one source/deployment authority, Phase 7 work remains
+Until all three blocker groups close against one source/deployment authority, Phase 7 work remains
 paused and **Phase 6 is not sealed**.

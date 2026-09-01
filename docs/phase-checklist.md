@@ -389,9 +389,10 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       14.9-millisecond warm run), zero provider-draft invocations, zero running workflows, an empty
       recovery queue, and zero unexpected table rows. Seller invitation, authenticated full-flow,
       cross-owner/version/concurrency, unpublished Printify, and moderated first-time-seller
-      acceptance remained open. The current closure pass instead last observed the application
-      stack in `UPDATE_ROLLBACK_FAILED`; public health is unproven until the reviewed rollback
-      recovery completes. Current status:
+      acceptance remained open. The closure pass recovered the later archive-read failure without
+      skipped resources: the application stack reached `UPDATE_ROLLBACK_COMPLETE`, the role owner
+      contracted to the exact predecessor archive, and public/direct health returned `200`. The
+      exact closure release and its deployment-bound acceptance gates remain open. Current status:
       [`phase6-release-state.md`](phase6-release-state.md). Acceptance mechanics:
       [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
 - [ ] Phase 7 — Etsy publication through Printify

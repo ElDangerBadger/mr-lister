@@ -127,11 +127,12 @@ and had no publication, order, or fulfillment surface. Route 53 apex A and AAAA 
 `massskutiny.com` to the deployed distribution, and HTTPS `/health` returned `200` with
 `{"status":"ok"}` at that checkpoint.
 
-The current closure pass last observed this application stack in `UPDATE_ROLLBACK_FAILED` after an
-archive-read permission failure stranded rollback. The affected functions appeared restored to
-their predecessor archive, but the stack is not terminal and current public health is unproven.
-The exact recovery and rollback point are recorded in the release-state record. No closure release
-is deployed or accepted.
+The current closure pass recovered a later archive-read rollback failure through two reviewed,
+non-replacing role-policy changes. Rollback continued without skipped resources and reached
+`UPDATE_ROLLBACK_COMPLETE`; the affected functions are on their exact predecessor archive, the
+candidate read is contracted, and public/direct health returned `200`. The exact recovery and
+rollback point are recorded in the release-state record. No closure release is deployed or
+accepted.
 
 The complete `template.json` remains a source scaffold and is **not a direct deployment target**.
 Its global scaffold value and activation settings would regress the proven backend. Follow
