@@ -12,6 +12,13 @@ transition is valid. ADR 0009 defines the persisted human-review pause. This doc
 requirements; current pass/open status is recorded only in
 [`docs/phase6-release-state.md`](phase6-release-state.md).
 
+Present-state note (2026-09-01): the exact draft-only closure release is deployed. An authenticated
+current-release walkthrough joined one job's AgentCore/Strands preparation evidence to its seller
+review, restored complete production and standard-U.S.-shipping economics for all 30 variants,
+showed one editable unpublished Printify draft with five mockups, and ended at `APPROVED` through
+the explicit keep-unpublished decision. This is the accepted functional hackathon-demo path. It
+does not claim that the separately frozen Phase 6.6 formal evidence artifact set has passed.
+
 ## Phase exit
 
 An authenticated first-time seller uploads one or more supported owned artworks in one submission.
@@ -302,8 +309,9 @@ Phase 6.3 implements this as a strict owner-first, read-only application project
 sync evidence now includes exact color/size/placement identity and structured mockup coverage, and
 the seller economics-refresh capability is backed by a real authority-checked command. Phase 6.4
 added the strict authenticated HTTP adapters and exact-version preview signer; their reviewed
-Lambda composition was deployed in the active draft-only stack. Final-source live acceptance,
-rather than composition, remains open. See
+Lambda composition is deployed in the active draft-only release. The authenticated current-release
+walkthrough exercised the same-job projection through economics recovery, consolidated review, and
+approval while the provider draft remained editable and unpublished. See
 [`phase6-review-projection.md`](phase6-review-projection.md).
 
 Product/provider labels in this projection are deterministic renderings of the immutable profile
@@ -610,7 +618,10 @@ There is no deployed `/publish`, order, fulfillment, raw report, or arbitrary ob
 
 ## Acceptance gates
 
-Phase 6 cannot close until all of the following are evidenced:
+A full formal Phase 6.6 evidence closure requires all of the following. The authoritative
+[`Phase 6 release-state record`](phase6-release-state.md) separately records the narrower
+owner-approved functional hackathon-demo seal and identifies which hardening evidence remains
+unclaimed:
 
 - [ ] The frozen artwork matrix proves required PNG and SVG inputs; transparent and opaque
       backgrounds; portrait, landscape, and square geometry; picker, single drag/drop, and multiple

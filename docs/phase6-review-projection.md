@@ -4,6 +4,11 @@ Phase 6.3 adds one strict, owner-scoped, read-only application projection over t
 authority records. It does not introduce another lifecycle, write to the operational store, call a
 model or provider, or grant publication authority.
 
+Present-state note (2026-09-01): this projection is deployed in the exact draft-only closure
+release. An authenticated current-release walkthrough exercised the same-job review, retry, and
+approval path while preserving the unpublished boundary. Formal Phase 6.6 evidence artifacts not
+produced by that walkthrough remain unclaimed.
+
 ## Seller review assembled
 
 [`SellerReviewProjectionService`](../src/mr_lister/control/projection.py) checks ownership first,
@@ -108,8 +113,13 @@ interface have been composed and deployed as the active draft-only backend. The 
 template remains a fail-closed validation/build input; it is not a claim that the deployed stack is
 still scaffold-only.
 
-Phase 6 is not yet accepted or sealed. Current-release evidence must still prove the authenticated,
-same-job path from a supported single- or multiple-artwork submission through AgentCore/Strands,
-one unpublished Printify product, consolidated review, and the human decision boundary. The
-remaining deployed cross-owner/concurrency and manual accessibility/first-time-seller gates also
-remain open. Approval stops at `APPROVED`; publication is outside Phase 6.
+The current release's authenticated same-job walkthrough joined AgentCore/Strands provenance,
+listing and artwork review, one editable unpublished Printify draft, five mockups, production and
+standard-U.S.-shipping readback, and an estimated-proceeds range across all 30 variants. One retry
+restored the missing economics without another upload or product, and the explicit
+keep-unpublished action ended at `APPROVED`. Publication remains outside Phase 6.
+
+The frozen deployed cross-owner/concurrency canaries, exact provider-ledger gate, and moderated
+manual accessibility/first-time-seller artifacts are not claimed as passed. Their formal
+hardening status is distinct from the accepted functional hackathon-demo path and is recorded in
+[`phase6-release-state.md`](phase6-release-state.md).

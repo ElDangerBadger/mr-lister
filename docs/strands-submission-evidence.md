@@ -1,11 +1,12 @@
 # Strands Agents submission evidence
 
-Status date: 2026-08-31
+Status date: 2026-09-01
 
 This is the public traceability map for Mr Lister's required Strands Agents implementation. It is
 written so a judge—or an automated first-pass reviewer—can verify in under a minute that Strands is
-the real agent framework, understand the non-trivial work it performs, and distinguish completed
-evidence from the remaining same-job acceptance gate.
+the real agent framework, understand the non-trivial work it performs, and distinguish the
+completed current-release same-job path from the still-unclaimed formal Phase 6.6 hardening
+artifacts.
 
 ## Event requirement
 
@@ -41,11 +42,11 @@ commercially permitted.
 | The loop has bounded turns/tokens and strict structured output | [`agent/runtime.py`](../src/mr_lister/agent/runtime.py), [`agent/contracts.py`](../src/mr_lister/agent/contracts.py) | [`test_agent_tools.py`](../tests/test_agent_tools.py) | `cycles`, token counts, `next_action`, and framework identity in audit output |
 | The agent acts through meaningful custom tools | [`agent/tools.py`](../src/mr_lister/agent/tools.py) | Real `@tool` schemas and capability-scope tests in [`test_agent_tools.py`](../tests/test_agent_tools.py) | Live canary selected `inspect_staged_review` and `validate_staged_listing` |
 | Agent capability changes by trusted application mode | [`build_preparation_agent`](../src/mr_lister/agent/runtime.py) | Prepare/review/revise tool-set assertions in [`test_agent_tools.py`](../tests/test_agent_tools.py) | Review canary had no prepare, revise, approve, or publish capability |
-| The Strands agent runs through the official AgentCore SDK boundary | [`agent/agentcore_sdk.py`](../src/mr_lister/agent/agentcore_sdk.py) | [`test_agentcore_sdk.py`](../tests/test_agentcore_sdk.py) | Runtime version 2 reached `READY` in `us-west-2` and completed a live invocation |
+| The Strands agent runs through the official AgentCore SDK boundary | [`agent/agentcore_sdk.py`](../src/mr_lister/agent/agentcore_sdk.py) | [`test_agentcore_sdk.py`](../tests/test_agentcore_sdk.py) | The current Phase 6 AgentCore v4 deployment completed an authenticated same-job invocation; the historical version 2 canary remains separate evidence |
 | Agent output cannot claim human approval or publication | [`PreparationDecision`](../src/mr_lister/agent/contracts.py), [`AGENT_SYSTEM_PROMPT`](../src/mr_lister/agent/runtime.py) | Authority and prompt-injection tests in [`test_agent_tools.py`](../tests/test_agent_tools.py) | Live result returned human review and `publication_authorized=false` |
-| Runtime evidence names Strands without exposing seller data | [`agent/observability.py`](../src/mr_lister/agent/observability.py) | [`test_agent_observability.py`](../tests/test_agent_observability.py) | Current response/audit contract requires `strands-agents` and `mr-lister-preparation`; redeployed canary pending |
-| Durable Phase 6 preparation uses the real SDK agent and exactly one job-scoped tool | [`agent/phase6.py`](../src/mr_lister/agent/phase6.py) | [`test_phase6_strands_runtime.py`](../tests/test_phase6_strands_runtime.py) | Active draft-only composition deployed; current-release same-job acceptance pending |
-| The AgentCore boundary binds exact owner/job/work input to immutable Strands evidence | [`control/agentcore.py`](../src/mr_lister/control/agentcore.py) | [`test_phase6_agentcore_bridge.py`](../tests/test_phase6_agentcore_bridge.py), [`test_phase6_preparation_settlement.py`](../tests/test_phase6_preparation_settlement.py) | Offline complete; same-job live canary pending |
+| Runtime evidence names Strands without exposing seller data | [`agent/observability.py`](../src/mr_lister/agent/observability.py) | [`test_agent_observability.py`](../tests/test_agent_observability.py) | The current-release seller review showed the fixed `strands-agents` framework, `mr-lister-preparation` agent, and `record_prepared_review` tool identity |
+| Durable Phase 6 preparation uses the real SDK agent and exactly one job-scoped tool | [`agent/phase6.py`](../src/mr_lister/agent/phase6.py) | [`test_phase6_strands_runtime.py`](../tests/test_phase6_strands_runtime.py) | An authenticated current-release job completed durable `PREPARE` through AgentCore/Strands and reached seller review |
+| The AgentCore boundary binds exact owner/job/work input to immutable Strands evidence | [`control/agentcore.py`](../src/mr_lister/control/agentcore.py) | [`test_phase6_agentcore_bridge.py`](../tests/test_phase6_agentcore_bridge.py), [`test_phase6_preparation_settlement.py`](../tests/test_phase6_preparation_settlement.py) | Sanitized Strands correlation was joined to the same seller job and remained visible through approval |
 
 The sanitized public summary combines historical live-canary metrics and tool selection with
 explicitly labeled current-source identity metadata in
@@ -65,25 +66,20 @@ Completed now:
 - structured output permanently requires human review and denies publication authority;
 - credential-free tests execute the actual SDK loop;
 - a live AgentCore canary used the intended tools and emitted sanitized cycle/tool/token evidence;
-- the current source response and audit contracts require fixed Strands framework/agent identity,
-  with redeployment evidence still pending.
+- the current release completed an authenticated durable `PREPARE` invocation through AgentCore v4,
+  identified `strands-agents`, `mr-lister-preparation`, and `record_prepared_review`, and joined its
+  sanitized correlation to that same job's review;
+- one retry restored complete production and standard-U.S.-shipping economics, after which the
+  seller explicitly approved while keeping the one editable Printify draft unpublished.
 
 The Phase 6.2 source contains a fail-closed, work-bound AgentCore bridge and a genuine single-tool
 Strands preparation runtime with immutable same-job evidence. The reviewed Lambda adapters and
-workers have since been composed and deployed as the active draft-only backend. Deployment alone
-does not close the source- and deployment-bound same-job acceptance gate.
-
-Still mandatory before the product or submission may claim a current-release end-to-end Strands
-path:
-
-- an authenticated current-release `PREPARE` run must prove that durable work invokes the exact
-  AgentCore Strands runtime with no direct deterministic or non-Strands fallback;
-- the resulting Strands audit correlation must belong to the same seller job later displayed in
-  consolidated review;
-- an end-to-end acceptance test and demo must visibly show upload, Strands tool use, structured
-  response, staged listing, and the human decision gate.
-
-These are blocking Phase 6/8 checklist items, not optional polish.
+workers are composed and deployed as the active draft-only backend. The current-release walkthrough
+therefore establishes the functional hackathon-demo end-to-end Strands path rather than merely a
+deployment claim. It does not assert that the frozen Phase 6.6 exact canary counts, artifact ledger,
+two-actor probes, or moderated-user evidence have passed; those remain separately tracked formal
+hardening evidence in the
+[`Phase 6 release-state record`](phase6-release-state.md).
 
 ## Five-minute demo proof
 

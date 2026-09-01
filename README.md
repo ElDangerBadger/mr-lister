@@ -48,15 +48,13 @@ approval, cancellation, idempotency, and irreversible marketplace actions.
 | Deployed AgentCore canary and tool-selection results | [`docs/phase3-controller-evaluation.md`](docs/phase3-controller-evaluation.md) |
 | Requirement-to-code/test/demo traceability | [`docs/strands-submission-evidence.md`](docs/strands-submission-evidence.md) |
 
-The Phase 3 runtime was deployed and live-tested as a synthetic, non-publishing canary. Phase 6.2
-contains the durable `PREPARE` bridge, genuine single-tool Strands runtime, and exact same-job
-evidence contract. Phase 6.3 joins that persisted evidence into the owner-scoped seller review
-alongside artwork, listing, product, mockups, validation, and economics. Phase 6 runtime and web
-resources have progressed beyond the original scaffold. Source-bound offline gates 1–4 are closed
-for the unchanged closure implementation source, but the candidate is not an accepted release:
-deployment-bound gates, unpublished provider canaries, accessibility evidence, and the moderated
-first-time-seller gate remain open. The authenticated same-job Strands run is therefore still an open acceptance gate.
-That distinction is tracked explicitly in the
+Phase 6 is deployed and sealed for the functional hackathon-demo scope. Its durable `PREPARE`
+bridge runs the genuine single-tool Strands path, and the owner-scoped seller review joins that
+same job's artwork, listing, product, mockups, validation, economics, and sanitized Strands
+provenance. The final MassSkutiny walkthrough completed the authenticated production flow through
+seller approval while the Printify draft remained editable and unpublished. The frozen Phase 6.6
+manifest's broader deployed-canary and moderated-research evidence remains explicit post-demo
+hardening and is not claimed as completed. That distinction is tracked in the
 [phase checklist](docs/phase-checklist.md),
 [authoritative Phase 6 release-state record](docs/phase6-release-state.md),
 [Phase 6.2](docs/phase6-provider-integration.md), and
@@ -98,10 +96,9 @@ npm ci
 npm run check
 ```
 
-The seller UI implementation is offline-tested and the private hosting topology has been deployed
-historically. That deployed bundle and its smoke evidence are not the closure release and do not
-substitute for rerunning the remaining acceptance set against one exact final source/deployment
-authority. See
+The seller UI and private hosting topology are deployed as the sealed Phase 6 functional-demo
+release. The production walkthrough proved the authenticated same-job review and approval path;
+the stricter frozen hardening evidence remains separately tracked. See
 [`docs/phase6-accessible-seller-interface.md`](docs/phase6-accessible-seller-interface.md) and
 [`docs/architecture/0012-phase65-browser-and-hosting-boundary.md`](docs/architecture/0012-phase65-browser-and-hosting-boundary.md).
 

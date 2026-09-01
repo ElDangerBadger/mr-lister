@@ -2,182 +2,143 @@
 
 ## Decision
 
-**PHASE 6 NOT YET COMPLETE**
+**PHASE 6 COMPLETE AND SEALED**
 
-This is the authoritative current-state record for Phase 6 as of 2026-08-31. The implementation
-and clean-checkout verification baseline are green, and the deployed application stack has been
-recovered to a healthy terminal state. The exact closure release is not deployed, however, and the
-final deployment-bound, provider-write, accessibility, and moderated-seller gates remain open.
-Phase 6 must not be described as sealed until every blocking item below is attached to one
-source/deployment authority.
+Phase 6 is functionally complete for the hackathon demo as of 2026-09-01. The accepted product
+boundary is an authenticated seller preparing one or more artworks, receiving one independent
+unpublished Printify draft per accepted file, reviewing the generated work and live economics,
+and recording an approval. The flow stops at approval. It cannot publish to Etsy.
 
-The frozen gate definition remains
-[`phase6.6.manifest.json`](../contracts/acceptance/phase6.6.manifest.json). The reconciled artwork
-matrix and other additive product requirements remain authoritative in the
-[`Phase 6 seller-control contract`](phase6-seller-control-contract.md). This record is the authority
-for their current pass/open status and supersedes present-tense deployment claims in historical
-checkpoint documents.
+This decision follows the 2026-09-01 stabilization instruction to keep the green runtime fixed,
+use the minimum honest demo acceptance criteria, and avoid changing the runtime only to collect
+more evidence. The frozen [`phase6.6.manifest.json`](../contracts/acceptance/phase6.6.manifest.json)
+is unchanged. Its exhaustive deployed-canary and moderated-research artifact set remains a
+strict post-demo hardening program; it is not represented here as completed. The seal therefore
+means **functional Phase 6 demo release**, not completion of every artifact demanded by that
+stricter assurance program.
 
-## Release identity and deployment state
+## Authoritative release identity
 
-| Item | Current authority |
+| Item | Sealed authority |
 | --- | --- |
-| Closure implementation source | `fff69db4f66a4c6c232aebc78f20833ff4329565` |
-| Source-commit digest | `fdfdd9b6ac5d77c4ccc7c7477d6b6555558bbf9ca847f71ad5ac9ecada721275` |
-| Offline-evidence binding commit | `1aa069c0167bed3447440985250cecbfd50056e9` |
+| Runtime source commit | `15a4f2a657e4cf5809de7066d267455d65c8c835` |
+| Deployment renderer commit | `6937f5fde2856bf396f44a5926e5229f8e5cd0e6` |
 | Package version | `mr-lister 0.1.0` |
-| Phase 6 closure release/version | Closure candidate; not deployed, accepted, or sealed |
-| Application stack | `mr-lister-phase6-dev` in `us-west-2` / `dev`; recovery reached `UPDATE_ROLLBACK_COMPLETE` at `2026-09-01T02:49:08Z` |
-| Certifiable deployed version | Recovered historical draft-only predecessor/hotfix mosaic below; not the closure implementation source |
-| Affected-function predecessor/rollback tuple | release `0c6211a5b0244e9c86d635e6c02e7bc49e5e948d68895b4aaa982c0b0b2e187b`; archive `baf152b732ce8574b6a6925bae7ab4ff849c1b83d4137076c52c6682553f9d48`; VersionId `pHutjLzKNpukwJ75Qs9s8YzXUAvgxZuS` |
-| Review-query hotfix tuple | release `6e32d16ce16371a65815e2931e0a897a34bbbce5526300438d4fc29061813571`; archive `122958c1df7ed916de122ca95c5cf9b8a34c385a45b706f396d2907c29cb8f9c`; VersionId `zFS0yxHW0Jm0qZrHjirfQCwYyZwXAeVc` |
-| Failed candidate attempt | release `2c1b2b5e47994832f0cd1be9fb8088e2b0b7e7be7aa18a117c09f5530fb7c549`; archive `ba6fbe0c46226918694dafc16d902c4d37228a58202e462c18f332e055e156c8`; VersionId `YIKUgrblt9kZxIwtaGysI0Wv480K6pJ3`; not accepted |
-| Deployment health | Public and direct API `/health` returned `200` with `{"status":"ok"}` after recovery |
+| Application stack | `mr-lister-phase6-dev`, `us-west-2`, `UPDATE_COMPLETE` at `2026-09-01T18:01:13Z` |
+| Deployment readiness | `WEB_EDGE_ACTIVE_DRAFT_ONLY` |
+| Application template | SHA-256 `ee2941498cadbaf365c703b1694ec791c93ed9fdb9c2631a8d3117a6b11bd4a3`, S3 VersionId `0Ct1y8MH62B6XSA_sMVUSEjnITvkT7uY` |
+| Provider component release | `748e5c4a1e46c500215118685d1f70231b7f28b8bfe8e67cc804da1c33e7c347` |
+| Provider archive | SHA-256 `0a12ede1b86c47069fda57938d1b0d50aeab6acca5d04ab536446d2f414de405`, S3 VersionId `w60dzk3jW5BZVxy0_SfoKWYVy_3.oL8g` |
+| Preparation component | release `9bc5e1727cfcf68b40847d1a2e416300640779898c9bf884f6f9e442b0225d9e`, code SHA-256 (base64) `2xedxftXVGGUgrE1BfeJlGnpPoILvhhRSVOEmsG5Wcc=` |
+| Strands runtime | AgentCore runtime `mr_lister_phase6-4HoPmq2hCI`, endpoint/qualifier `phase6_v4_dev`, version `4`, binding `e1403259a1a1a67ce47b725f0bec2d9a5aa38673fad338924f12b9360880b922` |
 | Seller publication | Disabled; Etsy publication remains Phase 7 |
 
-The candidate update shown above failed because the retained CloudFormation role could not read
-the exact candidate archive. Rollback then failed because the same role no longer retained read
-authority for the predecessor archive. Recovery restored the required separately paired reads,
-continued rollback without skipped resources, and verified the affected Lambda configurations on
-the exact predecessor code. `ReviewQueryApiFunction` remains on its separate immutable hotfix, so
-the deployed functions are a deliberate historical code mosaic rather than one closure release.
-
-The source templates now support two separately paired, exact S3 key/VersionId statements during
-an update—one live rollback archive and one candidate. They enforce complete tuples, distinct
-expanded bindings, scalar key/version pairing, and nonempty Stage B authority. The runbooks require
-both reads to remain until the application stack becomes terminal, then contract to one live
-statement; they prohibit premature contraction and rollback resource skipping. The repair was
-applied through the reviewed `phase6-rollback-recovery-20260901T024551Z` change set, which modified
-only `CoreRuntimeExecutionRole.Policies` without replacement. IAM readback and simulation proved
-both exact pairs and denied both crossed pairs. After terminal rollback and Lambda/health
-verification, `phase6-rollback-authority-contract-20260901T025008Z` removed the candidate read;
-the owner stack reached `UPDATE_COMPLETE` at `2026-09-01T02:51:15Z` with exactly one predecessor
-archive statement.
-
-The root/bootstrap recovery boundary is closed. The separate dev session is expired and must be
-renewed before the remaining deployed and provider acceptance work:
-
-```shell
-aws login --profile mr-lister-dev
-```
-
-### Rollback point
-
-The exact rollback archive for the affected functions is:
-
-- release fingerprint:
-  `0c6211a5b0244e9c86d635e6c02e7bc49e5e948d68895b4aaa982c0b0b2e187b`;
-- archive SHA-256:
-  `baf152b732ce8574b6a6925bae7ab4ff849c1b83d4137076c52c6682553f9d48`;
-- S3 VersionId: `pHutjLzKNpukwJ75Qs9s8YzXUAvgxZuS`.
-
-This operational rollback point is distinct from historical acceptance evidence. Historical gates
-1–7 bind source `e130292…`; deployed gates 5–7 also bind deployment digest `5f26e318…`. Those
-records remain useful history but cannot accept the closure source.
+This is intentionally a component-bound deployment tuple. The ProviderDraft hotfix changed only
+that function; the application stack's older global `ReleaseFingerprint` parameter and the
+unchanged Preparation and AgentCore component identities were retained. CloudFormation events
+confirmed that only `ProviderDraftFunction` updated. The retained deployment role was contracted
+after success to one exact-version read for the new provider archive, and termination protection
+remained enabled.
 
 ## Frozen artwork input contract
 
 The canonical contract is
 [`contracts/artwork/phase6.0.0.json`](../contracts/artwork/phase6.0.0.json):
 
-- one submission accepts one through five files through a picker, single-file drag/drop, or
+- one submission accepts one through five files through the picker, single-file drag/drop, or
   multiple-file drag/drop;
-- every accepted file follows the same ingestion path and creates one independent job;
-- PNG and safe self-contained SVG are required Phase 6 formats;
-- JPG/JPEG is included after a low-risk assessment of the browser-side ingestion boundary;
-- PNG bytes are validated and preserved; SVG and JPG/JPEG are normalized before the upload intent
-  into proportional canonical PNG;
-- square, portrait, and landscape artwork are valid; placement is width-driven and height follows
-  the native aspect ratio;
-- artwork is never cropped, distorted, padded, or forced square;
-- transparent and opaque/background-filled artwork are valid seller choices, while a file with no
-  visible pixel is invalid;
-- per-file validation, processing, review, failure, and retry state isolate an invalid sibling
-  without blocking valid files.
+- every accepted file follows the same ingestion/normalization path and creates an independent
+  job;
+- PNG and safe self-contained SVG are required formats; JPG/JPEG is included through the same
+  bounded browser ingestion boundary;
+- PNG bytes are validated and preserved; SVG and JPG/JPEG are normalized before upload into
+  canonical PNG;
+- square, portrait, and landscape artwork are valid; placement sizing is width-driven and height
+  follows the native aspect ratio;
+- artwork is not cropped, distorted, padded, or forced square;
+- transparent and opaque/background-filled artwork are both valid seller choices; and
+- per-file validation and recovery isolate an invalid file without blocking valid siblings.
 
-Downstream storage, worker, Strands, Printify draft, and review boundaries consume canonical PNG
-and do not branch on source format. The browser and backend enforce the same dimensional and
-visibility contract.
+Downstream storage, workers, Strands orchestration, Printify draft creation, and seller review
+consume the canonical representation and do not branch on the original file type. PDF remains a
+nonblocking future ingestion format. The smallest future PDF contract is one page normalized to
+canonical PNG; multi-page document processing is outside Phase 6.
 
-PDF remains nonblocking for Phase 6. Reliable rendering would add a parser or native renderer plus
-worker, CSP, packaging, and security surface. The smallest future contract is a single-page artwork
-PDF normalized at the ingestion boundary to canonical PNG; multi-page PDF is out of Phase 6 scope.
+## Functional acceptance
 
-## Product boundary
+The final real-seller walkthrough used the public `massskutiny.com` application and the existing
+MassSkutiny seller account. It reused one private job and one private provider product throughout;
+their exact identifiers remain only in access-controlled evidence:
 
-The accepted Phase 6 flow remains:
+- authenticated upload: transparent PNG, `1,693,269` bytes, accepted through the production web
+  and API path;
+- same-job Strands evidence: framework `strands-agents`, agent `mr-lister-preparation`, review
+  version `1`, and tool `record_prepared_review`;
+- Printify result: one editable and unpublished product, with five front mockups and all 30
+  configured variants;
+- live economics: connected production readback plus standard U.S. shipping produced an
+  estimated proceeds range of `$8.53–$11.45` across 30 variants;
+- seller decision: the explicit **Approve draft — keep unpublished** confirmation moved the same
+  job to `Complete / Approved`; and
+- terminal boundary: the page continued to state **Unpublished — not on Etsy**, and no publish,
+  order, or fulfillment action was exposed or invoked.
 
-> authenticated seller -> one or more artworks -> validation and canonical normalization ->
-> artwork intelligence -> same-job Strands orchestration -> listing generation -> unpublished
-> Printify draft creation -> seller review -> approval -> STOP
+The walkthrough exposed one real defect before closure: Printify's shipping endpoint returned a
+bounded but much larger multinational catalog with duplicate, equivalent U.S. plan rows. The
+provider ingestion boundary now selects the exact standard-U.S. resource type, accepts duplicate
+rows only when their cost and handling terms agree, chooses deterministically, and still fails
+closed on conflicting data. The same job's single retry passed after that targeted deployment; no
+second upload or product was created.
 
-There is no Phase 6 publish action, publication worker activation, order, or fulfillment path.
-Existing disabled/sealed Phase 7 source in repository history was not activated or extended during
-this stabilization pass.
+## Acceptance-gate classification
 
-## Verification state
-
-The normal checkout completed the CI-equivalent verification path. GitHub CI then installed from a
-fresh Ubuntu checkout at binding commit `1aa069c…` and repeated the complete CI path. A detached
-local clean worktree also completed fresh Python and locked Node dependency installs before the
-portable-canary-only follow-up; the resulting distributions remain byte-identical:
-
-- Python: **3,342 passed**, 11 explicitly gated live-Bedrock skips, no failures;
-- web: ESLint, strict TypeScript, **114 tests**, and production build passed;
-- `npm audit --audit-level=high`: zero vulnerabilities;
-- Ruff lint and formatting, `compileall`, and `git diff --check`: passed;
-- all three contract exporters: passed with no drift;
-- all six Phase 6 SAM templates: passed `sam validate --lint`;
-- isolated sdist and wheel builds: passed and were byte-identical between normal and clean
-  checkouts;
-- distribution boundary: the sdist contains only the explicit tracked source/package files and no
-  private, staging, deployment, or ignored workspace payload;
-- exact production browser bundle: Chromium, Firefox, and WebKit passed with bundle digest
-  `977f82ebdb4b0acd35f7db7081cea3a34dc71beeb2d40cd7bec79bb27aeadc21` and zero provider
-  transport attempts;
-- source-bound offline gates: four passed, manifest digest
-  `84851fe2ed78072d077cc5e642d0e222619b9a7226367219b536b7e2aaac7d73`, record-set digest
-  `494692257b448c7b838b53b772e41bb8fffb7940c42c8c1496c2884bc5256f3d`.
-
-GitHub CI run
-[`33454157866`](https://github.com/ElDangerBadger/mr-lister/actions/runs/33454157866) passed both
-the `verify` and `web` jobs from a fresh checkout of `main` at binding commit `1aa069c…`. This also
-proves the frozen 5 MiB acceptance canary is reproduced byte-for-byte on Linux; its historical
-SHA-256 authority was preserved rather than resealed.
-
-## Acceptance matrix
-
-| Gate | Blocking | Current status |
+| Gate or concern | Classification at seal | Demo decision |
 | --- | --- | --- |
-| `offline.replay_matrix` | Yes | Passed for source `fff69db…` |
-| `offline.concurrency_matrix` | Yes | Passed for source `fff69db…` |
-| `offline.cross_owner_matrix` | Yes | Passed for source `fff69db…` |
-| `offline.browser_matrix` | Yes | Passed for source `fff69db…`, all three engines |
-| `deployed.edge_auth_owner_smoke` | Yes | Open; recovery complete, but historical evidence only |
-| `deployed.upload_integrity_smoke` | Yes | Open; historical evidence only |
-| `deployed.outbox_recovery_smoke` | Yes | Open; historical evidence only |
-| `provider.primary_same_job_canary` | Yes | Open; never completed for a closure release |
-| `provider.concurrency_canary` | Yes | Open; never completed for a closure release |
-| `provider.cancellation_canary` | Yes | Open; never completed for a closure release |
-| `moderated.first_time_seller_exit` | Yes | Open; never completed |
-| `moderated.five_session_target` | No | Open; five sessions remain the evidence target |
+| Offline replay, concurrency, cross-owner, and three-browser matrices | Provable now | Passed; source-bound automated evidence is green |
+| Artwork type/shape/background parity, single/multiple handling, per-file errors, retry, and accessibility basics | Provable now | Passed through contract, unit, component, and browser coverage; the real flow additionally proved a transparent PNG |
+| Authenticated full flow, same-job Strands, unpublished Printify draft, live economics, seller review, and approval stop | Manually provable | Passed in the MassSkutiny walkthrough above |
+| Exact deployed edge/upload/outbox manifest artifact bundle | Manually provable with existing canary tooling | Deferred; nonessential for the demo after the real authenticated flow and green offline coverage |
+| Exact five-MiB provider ledger canary | Manually provable with a separately authorized provider mutation | Deferred; the functional same-job provider outcome passed, but the frozen five-MiB/ledger artifact gate is not claimed |
+| Live revise/approve/cancel concurrency and separate cancellation canaries | Manually provable with deliberately competing/provider-mutating runs | Deferred; nonessential demo stress evidence, with the behavior already proved offline |
+| Manual screen-reader/contrast matrix | Manually provable | Deferred usability hardening; semantic, keyboard, focus, reflow, reduced-motion, and axe coverage are green |
+| Moderated first-time-seller and five-session study | Manually provable research | Deferred and nonessential for the hackathon demo; the MassSkutiny run is not misrepresented as intervention-free research |
+| Runtime changes solely to emit stricter evidence | Would require runtime modification | Not authorized and not required; no such change was made |
 
-Additional blocking acceptance outside the already-frozen manifest remains open:
+No functional demo blocker remains. The deferred rows are explicit future assurance work and do
+not reopen this sealed runtime.
 
-- execute and attach the final artwork matrix across PNG/SVG and included JPG/JPEG, picker and
-  single/multiple drag/drop, geometry/background variants, per-file retry, and browser/backend
-  parity against the accepted deployment;
-- complete manual screen-reader and contrast evidence plus edit, refresh, cancel, retry, upload,
-  and logout journeys against the final bundle.
+## Verification and CI
 
-## Smallest blocker list
+- full Python suite: **3,674 passed**, 11 explicitly gated live-Bedrock skips;
+- web suite: ESLint, strict TypeScript, **114 tests**, production build, and artifact verification
+  passed;
+- Ruff lint and formatting, three contract drift checks, six Phase 6 SAM lint validations,
+  Python sdist/wheel builds, compile checks, and diff hygiene passed;
+- locked dependency audit reported zero high-severity vulnerabilities; and
+- GitHub Actions run
+  [`33540053154`](https://github.com/ElDangerBadger/mr-lister/actions/runs/33540053154)
+  passed both `verify` and `web` from a fresh checkout of `main` at deployment renderer commit
+  `6937f5f`.
 
-1. Renew `mr-lister-dev`, deploy one exact closure source without enabling publication, then rerun
-   deployed gates 5–7 plus the additive artwork/authenticated accessibility matrix against that
-   same deployment.
-2. Open the explicit run and provider-write gates and complete unpublished Printify same-job,
-   concurrency, and seller-cancellation canaries with sanitized ledgers.
-3. Complete the manual accessibility journeys and one moderated first-time-seller exit.
+Authenticated browser evidence is retained outside Git under the ignored private release root
+with restrictive permissions. Normal and clean-checkout verification do not depend on that
+private evidence.
 
-Until all three blocker groups close against one source/deployment authority, Phase 7 work remains
-paused and **Phase 6 is not sealed**.
+## Rollback point
+
+The immediate predecessor remains available as an exact-version rollback:
+
+- Provider release `3bfccee40d144f284827da221df40a787f7d09242698d177b51bbcc1414b7308`;
+- Provider archive SHA-256
+  `e5f17ee5063a2a6aaf490df899d7c98d5a79c97b6d29911260214a6ac599cc9b`;
+- Provider archive S3 VersionId `yKXCfg0bAMU0Kyu6xAoM2hXtS3KxxHkC`;
+- application template SHA-256
+  `4fac9ab9cfa5712c521644ad6934f775e1283cd9d604b674f68a62cbfcbaeda6`;
+- application template S3 VersionId `2IqLmyJ_0OWLXypdjH258FmXQ2YrmtmD`; and
+- AgentCore v4 remains unchanged during rollback.
+
+## Phase boundary
+
+Phase 6 is sealed at seller approval. No new Phase 7 implementation was started by this closure
+pass. Etsy publication is part of the final product, but it belongs to Phase 7 and remains disabled
+until separately authorized, deployed, and accepted.

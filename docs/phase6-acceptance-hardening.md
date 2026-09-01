@@ -8,6 +8,14 @@ combined to close a changed stabilization release: the verifier requires exact s
 and deployment bindings plus its gate-specific run, actor, and job joins. No provider-destructive
 or moderated first-time-seller gate is claimed as passed here.
 
+Current-release scope note (2026-09-01): an authenticated walkthrough has now completed the
+same-job AgentCore/Strands, unpublished Printify review, economics recovery, and explicit approval
+path on the exact deployed draft-only release. The owner accepted that result as the functional
+hackathon-demo seal. It does not rewrite this manifest or claim its exact sample, count, artifact,
+two-actor, concurrency, cancellation, accessibility, or moderated-session requirements. In this
+document, “Phase 6 exit” continues to mean full formal Phase 6.6 evidence closure; the authoritative
+release record distinguishes that hardening target from demo acceptance.
+
 The source manifest is
 [`contracts/acceptance/phase6.6.manifest.json`](../contracts/acceptance/phase6.6.manifest.json).
 The exact moderated first-time-seller task is frozen separately in
@@ -185,7 +193,8 @@ concurrency, an encrypted DLQ, bounded retries, identifier-free embedded metrics
 Lambda, EventBridge, Step Functions, DynamoDB, API, retention, cleanup, and recovery alarms. At
 this offline checkpoint, the scaffold marker prevented these handlers from executing in AWS. The
 later active draft-only transition enabled the reviewed Phase 6 handlers; current-release
-acceptance remains source- and deployment-bound and must be rerun after changes.
+formal evidence remains source- and deployment-bound and is not inferred from the functional demo
+walkthrough.
 The current pass/open decision and deployment-recovery boundary are recorded in the
 [`authoritative Phase 6 release state`](phase6-release-state.md); historical checkpoints in this
 document do not override it.

@@ -5,6 +5,11 @@ Phase 6.1 introduces a separate `2.0.0` application-control boundary under
 This slice does not call Printify, publish, order, fulfill, expose an HTTP API, or deploy cloud
 resources.
 
+Present-state note (2026-09-01): this historical slice now underpins the deployed draft-only Phase 6
+release. An authenticated current-release job exercised retry and exact-version approval through
+this lifecycle and ended at `APPROVED` with its provider draft still editable and unpublished. The
+separately frozen formal Phase 6.6 evidence artifact set is not claimed as passed here.
+
 ## Authority boundary
 
 The application owns the legal lifecycle graph and validates every command bundle before either
@@ -56,6 +61,7 @@ publication/provider-call surfaces.
 Phase 6.2 now implements the offline same-product PUT/readback workers, one-shot upload and write
 permits, bounded GET-only reconciliation, immutable economics evidence, checkpointed Strands
 preparation bridge, and four Standard Step Functions definitions. Phase 6.1 remains the authority
-foundation beneath that work. The complete Phase 6.2 evidence and the deliberately open cloud
-deployment gate are recorded in
+foundation beneath that work. The Phase 6.2 path is now deployed and has completed the functional
+same-job walkthrough; its current release state and still-unclaimed formal hardening evidence are
+recorded in
 [`phase6-provider-integration.md`](phase6-provider-integration.md).

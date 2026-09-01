@@ -2,10 +2,12 @@
 
 Phase 6.2 introduced the application and worker core for durable preparation, one-product-per-job
 draft synchronization, reconciliation, and estimated-proceeds evidence. The composition adapters
-and draft-only cloud path were subsequently deployed. That historical deployment is not the final
-Phase 6 release: the closure source and deployment must still pass the source-bound, deployed,
-provider-write, accessibility, and moderated acceptance gates recorded in the authoritative
-[`phase checklist`](phase-checklist.md) and frozen
+and draft-only cloud path are deployed in the exact current Phase 6 closure release. On 2026-09-01,
+an authenticated same-job walkthrough completed AgentCore/Strands preparation, retained one
+editable unpublished Printify draft, restored production and standard-U.S.-shipping economics for
+all 30 variants, displayed five mockups, and ended at `APPROVED` without a duplicate upload,
+duplicate product, or publication action. This closes the functional hackathon-demo path; it does
+not claim the artifact-specific gates in the frozen
 [`Phase 6.6 acceptance manifest`](../contracts/acceptance/phase6.6.manifest.json).
 
 ## Application authority
@@ -127,11 +129,14 @@ The Phase 6.2 implementation checkpoint recorded:
 The seven warnings in the full suite are deprecations emitted by installed Bedrock AgentCore
 dependencies, not application failures.
 
-## Open Phase 6.2 release gate
+## Current Phase 6.2 release state
 
-- bind the final closure source and exact Phase 6 deployment under one release authority;
-- prove the same owner-scoped Job traverses pinned upload, AgentCore/Strands, structured preparation,
-  one unpublished provider product, economics projection, and the human decision boundary;
-- verify exact IAM, secret rotation/revocation, provider eventual consistency, privacy, latency, and
-  cost through explicitly authorized live canaries;
-- retain zero Phase 6 publication, order, or fulfillment calls.
+- the final closure source and exact deployment are bound under the release authority recorded in
+  [`phase6-release-state.md`](phase6-release-state.md);
+- one authenticated owner-scoped job traversed pinned upload, AgentCore/Strands, structured
+  preparation, one unpublished provider product, complete economics, and the human approval
+  boundary;
+- the observed retry reused the existing job and product, and approval retained the unpublished,
+  editable provider state with zero publication action;
+- exact formal IAM/rotation, provider concurrency/cancellation, ledger-count, privacy, latency, and
+  cost canaries remain unclaimed Phase 6.6 hardening evidence rather than demo-release blockers.

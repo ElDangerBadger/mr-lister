@@ -1,7 +1,10 @@
 # Phase 6 AgentCore deployment configuration
 
-This is an isolated, production-intent configuration slice for the Phase 6 preparation runtime.
-It has not been deployed and contains no cloud credentials or observed AWS identifiers.
+This is the isolated configuration slice for the deployed Phase 6 preparation runtime. The sealed
+functional-demo release uses immutable AgentCore runtime version 4 through qualifier
+`phase6_v4_dev`; exact deployment authority is recorded in
+[`docs/phase6-release-state.md`](../../../docs/phase6-release-state.md). This tracked directory
+contains no cloud credentials.
 
 The reviewed templates declare one `mr_lister_phase6` CodeZip runtime. Its only code location is
 `../../../.mr_lister_private/phase6-deployment/agentcore`, its interpreter is Python 3.12 (matching

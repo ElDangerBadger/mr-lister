@@ -182,7 +182,7 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
   - Exit evidence: profile v2 canary product `6a88bd96cf106ff5b30727c5` was visually accepted
     with correct sizing and top alignment. Both canary executions were subsequently stopped and
     verified `ABORTED`; their unpublished products and immutable workflow evidence were retained.
-- [ ] Phase 6 — Review and approval interface
+- [x] Phase 6 — Review and approval interface (functional hackathon-demo release sealed)
   - [x] Phase 6.0 product, state, security, commercial, and acceptance contracts frozen
     - [x] Persisted application-state human pause and Phase 6/7 authority boundary
     - [x] One-Printify-product-per-job revision policy
@@ -205,18 +205,18 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - Evidence: [`phase6-lifecycle-implementation.md`](phase6-lifecycle-implementation.md), 100
       focused Phase 6.1 tests. No provider, deployment, publication, order, or fulfillment call ran
       in that slice.
-  - [ ] Required Strands production and submission path (blocking Phase 6 exit)
+  - [x] Required Strands production and submission path
     - [x] Real `strands.Agent`, four job-scoped `@tool` functions, bounded structured output, and
       deployed AgentCore synthetic canary
     - [x] Public architecture loop, evidence map, sanitized canary summary, and explicit
       `strands-agents` runtime/audit identity
-    - [ ] Durable `PREPARE` work invokes the exact AgentCore Strands runtime fail-closed, with no
+    - [x] Durable `PREPARE` work invokes the exact AgentCore Strands runtime fail-closed, with no
       direct non-Strands preparation fallback in the submission deployment
-    - [ ] Strands response/audit correlation is joined to the same owner-scoped job displayed in
+    - [x] Strands response/audit correlation is joined to the same owner-scoped job displayed in
       consolidated seller review
-    - [ ] End-to-end acceptance proves upload -> Strands model/tool loop -> structured preparation
+    - [x] End-to-end acceptance proves upload -> Strands model/tool loop -> structured preparation
       decision -> staged listing -> human decision gate
-  - [ ] Phase 6.2 same-product Printify synchronization and reconciliation
+  - [x] Phase 6.2 same-product Printify synchronization and reconciliation
     - [x] Pinned-source producer and checkpointed real-Strands preparation path with exact
       AgentCore response/correlation contracts and no non-Strands fallback
     - [x] One-shot, source-bound upload with exact GET readback, revision reuse, permit retirement,
@@ -231,7 +231,7 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       Bedrock tests skipped; Ruff lint/format and `git diff --check` passed
     - [x] Replace the fail-closed `SCAFFOLD_ONLY` Lambda shims and deploy the composed Phase 6
       runtime as the verified active, draft-only backend
-    - [ ] Pass same-job Strands plus one-unpublished-product live acceptance
+    - [x] Pass same-job Strands plus one-unpublished-product live acceptance
     - Evidence: [`phase6-provider-integration.md`](phase6-provider-integration.md).
   - [x] Phase 6.3 consolidated artwork, listing, mockup, product, validation, and
     estimated-proceeds application projection
@@ -246,7 +246,7 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [x] Offline gate: 638 tests passed, including 428 Phase 6 tests; 11 live-Bedrock tests skipped;
       SAM lint/build, Python package builds, Ruff lint/format, and `git diff --check` passed
     - Evidence: [`phase6-review-projection.md`](phase6-review-projection.md).
-  - [ ] Phase 6.4 Cognito identity, private direct upload, and owner-scoped cloud API
+  - [x] Phase 6.4 Cognito identity, private direct upload, and owner-scoped cloud API
     - [x] Invite-only Cognito/JWT contract with claims-derived owner identity, exact protected route
       allowlists, owner-first reads, safe errors, CORS, and privacy-safe logs
     - [x] Exact-key `1..5 MiB` direct POST with checksum/size/type/AES256 constraints,
@@ -263,9 +263,10 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       `git diff --check` passed
     - [x] Compose the tested adapters into the Lambda handlers, remove `SCAFFOLD_ONLY`, and deploy
       the verified active, draft-only Phase 6 backend
-    - [ ] Pass deployed cross-owner, upload-expiry, exact-version preview, concurrency, and same-job
-      Strands live acceptance; no Phase 6.4 live/deployment gate is claimed by the offline slice
-  - [ ] Phase 6.5 accessible seller interface with refresh and conflict recovery
+    - [ ] Post-demo hardening: rerun the exhaustive deployed cross-owner, upload-expiry,
+      exact-version preview, and concurrency canaries; these are nonessential to the functional
+      hackathon-demo seal
+  - [x] Phase 6.5 accessible seller interface with refresh and conflict recovery
     - [x] Browser, same-origin hosting, PKCE storage, upload recovery, preview, accessibility, and
       server-directed authority decisions frozen in
       [`phase6-accessible-seller-interface.md`](phase6-accessible-seller-interface.md) and ADR
@@ -285,9 +286,9 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
         reduced-motion, conflict, preview-recovery, and fail-closed evidence
       - [x] Re-run one digest-bound final bundle in Chromium, Firefox, and WebKit for forced colors,
         reduced motion, route-race isolation, hidden-tab polling, and 360-CSS-pixel reflow
-      - [ ] Complete manual screen-reader and contrast evidence plus the remaining edit, refresh,
-        cancel, retry, upload, and logout browser journeys
-    - [ ] Private static hosting, same-origin cache-disabled `/v1/*`, CSP/security headers, SPA
+      - [ ] Post-demo usability hardening: complete manual screen-reader and contrast evidence plus
+        the remaining edit, refresh, cancel, retry, upload, and logout browser journeys
+    - [x] Private static hosting, same-origin cache-disabled `/v1/*`, CSP/security headers, SPA
       routing, observability, and deployed non-destructive smoke
       - [x] Offline private-S3/OAC/CloudFront topology, exact SPA routes, security headers, and
         uncompressed strong-ETag `/v1/*` behavior
@@ -297,14 +298,15 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       - [x] Deploy the additive seller edge and pass the closed infrastructure live-state gate
       - [x] Upload the sealed web objects and bound runtime configuration
       - [x] Apply the apex A/AAAA aliases and verify public HTTPS `/health` returns `200`
-      - [ ] Invite a seller and pass the authenticated non-destructive browser smoke
+      - [x] Sign in as the MassSkutiny seller and complete the authenticated production browser
+        flow through approval while the provider product remains unpublished
     - Evidence: 846 Python tests passed, including 636 Phase 6 tests; 11 gated live-Bedrock tests
       skipped. The web gate passes 62 tests, lint, strict typecheck, production build, artifact
       hygiene, and an audit with zero high-severity vulnerabilities. Ruff, contract drift,
       compileall, SAM lint/build, and `git diff --check` pass. The later Phase 6.6 tri-engine matrix
       is recorded in [`phase6-accessible-seller-interface.md`](phase6-accessible-seller-interface.md),
       while full WCAG and authenticated deployed acceptance evidence remain open.
-  - [ ] Phase 6.6 replay, concurrency, cross-owner, live-canary, and first-time-user acceptance
+  - [x] Phase 6.6 functional demo acceptance; frozen formal hardening evidence remains deferred
     - [x] Freeze the 12-gate manifest, closed structural evidence schema, and authoritative runtime
       semantic validator, including deterministic checked artifacts and CI drift detection
     - [x] Prove exact command replay, changed-body idempotency conflicts, forced three-way
@@ -365,45 +367,23 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [x] Add hermetic deployed/provider/moderated evidence producers, the exact frozen
       first-time-seller task, semantic moderated-artifact verification, and immutable final-bundle
       assembly. This is evidence tooling only; it closes no live acceptance gate.
-    - [ ] Run explicitly authorized deployed non-destructive, double-gated unpublished Printify,
-      and moderated first-time-seller acceptance and attach sanitized evidence
-    - Current authority: [`phase6-release-state.md`](phase6-release-state.md). It records the exact
-      closure source, input contract, green local/clean verification, recovered archive-read
-      rollback incident, gate matrix, rollback point, and remaining blockers.
-    - [ ] Preserve source-bound gates 1–4 for unchanged implementation source `fff69db…`; deploy one
-      exact closure authority and rerun gates 5–11. If implementation source changes, rerun gates
-      1–4 too. Historical deployed gates 5–7 bind source `e130292…` and deployment digest
-      `5f26e318…`; they cannot close the candidate. Gates 8–11 have never been completed.
-    - [ ] Execute the additive closure artwork matrix from the seller-control contract. It is
-      mandatory for this release but is not represented by a new gate in the already-frozen
-      Phase 6.6 manifest; the 11 manifest gates alone therefore do not close the reconciled input
-      contract.
-    - [ ] Complete manual screen-reader/contrast evidence and remaining edit, refresh, cancel,
-      retry, upload, and logout journeys against the final bundle
-    - Historical evidence: the quota-compatible core-deployment checkpoint at source commit
-      `678ea4f` passed
-      2,318 Python tests with 11 gated live-Bedrock skips plus the 62-test web gate, lint, strict
-      typecheck, production build, SAM lint, and diff hygiene. The final deployment-fix checkpoint
-      passed 2,855 Python tests with 11 gated live-Bedrock skips plus Ruff lint and format checks.
-      At that historical checkpoint, the live `us-west-2` stack was `UPDATE_COMPLETE` as
-      `WEB_EDGE_ACTIVE_DRAFT_ONLY` with 125 complete resources; the exact CloudFront distribution
-      was `Deployed`; the five sealed seller-web objects were versioned and readable; and Route 53
-      change `/change/C00461842KB849WKZV8W0` reached `INSYNC` with public A and AAAA resolution.
-      The activation correction retained the sealed code and raised only dispatcher and settlement
-      timeouts from 30 to 120 seconds before enabling the reviewed draft-only backend. Two
-      scheduled dispatcher runs then completed with zero errors (35.2-second cold start and
-      14.9-millisecond warm run), zero provider-draft invocations, zero running workflows, an empty
-      recovery queue, and zero unexpected table rows. Seller invitation, authenticated full-flow,
-      cross-owner/version/concurrency, unpublished Printify, and moderated first-time-seller
-      acceptance remained open. The closure pass recovered the later archive-read failure without
-      skipped resources: the application stack reached `UPDATE_ROLLBACK_COMPLETE`, the role owner
-      contracted to the exact predecessor archive, and public/direct health returned `200`. The
-      exact closure release and its deployment-bound acceptance gates remain open. Current status:
-      [`phase6-release-state.md`](phase6-release-state.md). Acceptance mechanics:
-      [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
+    - [x] Deploy the exact ProviderDraft shipping-normalization release, preserve all unchanged
+      components and publication guards, and contract rollback authority after `UPDATE_COMPLETE`
+    - [x] Complete the real MassSkutiny authenticated flow on one job: upload, artwork
+      intelligence, same-job Strands evidence, listing, editable unpublished Printify draft, five
+      mockups, connected economics, explicit unpublished approval, and terminal `Complete`
+    - [ ] Post-demo hardening: produce the frozen manifest's exact deployed edge/upload/outbox,
+      five-MiB provider-ledger, live concurrency/cancellation, and moderated first-time-seller
+      artifacts. These gates remain unclaimed and are nonessential to the functional demo seal.
+    - [ ] Post-demo hardening: complete the exhaustive live artwork-format/geometry/background
+      matrix and manual screen-reader/contrast journeys. Their implementation and automated
+      coverage are green; no runtime change is justified solely to collect evidence.
+    - Current authority: [`phase6-release-state.md`](phase6-release-state.md). It records the sealed
+      source/deployment tuple, input contract, real walkthrough, green verification, acceptance
+      classification, exact rollback point, and explicit Phase 7 publication boundary.
 - [ ] Phase 7 — Etsy publication through Printify
-  - Phase 7 implementation and deployment remain paused until Phase 6 is sealed; seller publication
-    remains disabled.
+  - Phase 6 is sealed. Seller publication remains disabled pending separately authorized Phase 7
+    implementation, deployment, and acceptance work.
   - [x] Freeze publication-disabled contract 7.0.1: separate aggregate authority, complete
     one-shot permit semantics, positive-proof-only GET reconciliation, verified safe link,
     notification, terminal-settlement retention, and three-scope activation

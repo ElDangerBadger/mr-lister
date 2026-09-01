@@ -3,6 +3,11 @@
 Phase 6.5 renders the application-owned Phase 6 projections and commands. It does not introduce a
 new lifecycle, infer business authority in the browser, publish to Etsy, or call Printify directly.
 
+Present-state note (2026-09-01): the exact seller bundle is deployed and completed an authenticated
+current-release upload-to-review walkthrough, including same-job Strands provenance, retryable
+economics recovery, explicit keep-unpublished approval, and the final unpublished state. The
+separate full manual screen-reader/contrast and moderated-user artifact gates are not claimed.
+
 ## Seller journey
 
 1. Cognito restores or establishes the invite-only seller session with authorization code and
@@ -92,10 +97,13 @@ digest-bound production bundle through Chromium, Firefox, and WebKit. All three 
 same authentication/review/approval, stale-readback focus, tab recovery, route-race, hidden/offline
 polling, forced-colors, reduced-motion, and 360-CSS-pixel reflow flows and produced trace ZIPs. The
 sanitized summary records zero provider transport attempts and no commerce surface. Full manual
-screen-reader/contrast coverage and the remaining command journeys remain open. The backend and
-seller edge were subsequently activated in draft-only mode and historical non-destructive smoke
-evidence was captured, but all source- and deployment-bound gates must be rerun against the final
-closure commit and deployment before release acceptance.
+screen-reader/contrast coverage and the remaining command journeys remain formal hardening targets.
+The backend and seller edge are active in draft-only mode. The current-release authenticated
+walkthrough reached consolidated review, displayed five mockups and complete 30-variant economics,
+recovered one retryable economics failure, and ended at `APPROVED` while still visibly
+`Unpublished — not on Etsy`.
 
-Phase 6.6 retains the destructive/provider live canaries, deployed cross-owner/concurrency probes,
-and moderated first-time-seller evidence.
+Phase 6.6 retains the exact provider-ledger canaries, deployed cross-owner/concurrency probes, full
+manual accessibility journeys, and moderated first-time-seller evidence as unclaimed formal
+hardening artifacts. The functional hackathon-demo seal does not represent those artifacts as
+passed; see [`phase6-release-state.md`](phase6-release-state.md).
