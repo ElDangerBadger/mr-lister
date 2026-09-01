@@ -359,15 +359,21 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [x] Upload the separately approved sealed static bundle and bound runtime configuration
     - [x] Render, review, and separately apply the apex A/AAAA aliases to the verified distribution;
       verify public HTTPS `/health` returns `200` with `{"status":"ok"}`
+    - [x] Seal the bounded artwork-closure renderer and AgentCore v3 update inputs while preserving
+      the deployed draft-only mosaic and disabled publication boundary. This is implementation and
+      local-tooling readiness only; it closes no live acceptance gate.
+    - [x] Add hermetic deployed/provider/moderated evidence producers, the exact frozen
+      first-time-seller task, semantic moderated-artifact verification, and immutable final-bundle
+      assembly. This is evidence tooling only; it closes no live acceptance gate.
     - [ ] Run explicitly authorized deployed non-destructive, double-gated unpublished Printify,
       and moderated first-time-seller acceptance and attach sanitized evidence
     - Current authority: [`phase6-release-state.md`](phase6-release-state.md). It records the exact
-      closure source, input contract, green local/clean verification, failed live-stack rollback,
-      gate matrix, rollback point, and remaining blockers.
-    - [ ] Bind one final closure source/deployment and rerun all 11 blocking gates. Historical
-      records pass gates 1–7 only at source `e130292`; deployed gates 5–7 additionally bind
-      deployment digest `5f26e318…`. They cannot seal a changed source. Provider gates 8–10 and
-      moderated gate 11 have never been completed.
+      closure source, input contract, green local/clean verification, recovered archive-read
+      rollback incident, gate matrix, rollback point, and remaining blockers.
+    - [ ] Preserve source-bound gates 1–4 for unchanged implementation source `fff69db…`; deploy one
+      exact closure authority and rerun gates 5–11. If implementation source changes, rerun gates
+      1–4 too. Historical deployed gates 5–7 bind source `e130292…` and deployment digest
+      `5f26e318…`; they cannot close the candidate. Gates 8–11 have never been completed.
     - [ ] Execute the additive closure artwork matrix from the seller-control contract. It is
       mandatory for this release but is not represented by a new gate in the already-frozen
       Phase 6.6 manifest; the 11 manifest gates alone therefore do not close the reconciled input
@@ -396,6 +402,8 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       [`phase6-release-state.md`](phase6-release-state.md). Acceptance mechanics:
       [`phase6-acceptance-hardening.md`](phase6-acceptance-hardening.md).
 - [ ] Phase 7 — Etsy publication through Printify
+  - Phase 7 implementation and deployment remain paused until Phase 6 is sealed; seller publication
+    remains disabled.
   - [x] Freeze publication-disabled contract 7.0.1: separate aggregate authority, complete
     one-shot permit semantics, positive-proof-only GET reconciliation, verified safe link,
     notification, terminal-settlement retention, and three-scope activation

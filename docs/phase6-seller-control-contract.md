@@ -8,7 +8,9 @@ artwork boundary was reconciled for the Phase 6 closure pass on 2026-08-31; its 
 machine-readable authority is
 [`contracts/artwork/phase6.0.0.json`](../contracts/artwork/phase6.0.0.json). ADR 0008 remains the
 authority rule: application commands and atomic storage conditions decide whether a state
-transition is valid. ADR 0009 defines the persisted human-review pause.
+transition is valid. ADR 0009 defines the persisted human-review pause. This document defines
+requirements; current pass/open status is recorded only in
+[`docs/phase6-release-state.md`](phase6-release-state.md).
 
 ## Phase exit
 

@@ -10,6 +10,8 @@ or moderated first-time-seller gate is claimed as passed here.
 
 The source manifest is
 [`contracts/acceptance/phase6.6.manifest.json`](../contracts/acceptance/phase6.6.manifest.json).
+The exact moderated first-time-seller task is frozen separately in
+[`contracts/acceptance/phase6.6.first-time-seller-task.json`](../contracts/acceptance/phase6.6.first-time-seller-task.json).
 The checked-in closed structural evidence schema is
 [`contracts/acceptance/phase6.6.evidence.schema.json`](../contracts/acceptance/phase6.6.evidence.schema.json).
 The strict runtime models, authoritative semantic validator, and schema function live in
@@ -17,10 +19,12 @@ The strict runtime models, authoritative semantic validator, and schema function
 export and drift checking in
 [`tools/export_phase66_acceptance_contract.py`](../tools/export_phase66_acceptance_contract.py).
 JSON Schema validates transport shape, types, closed fields, and local constraints; it is not a
-standalone acceptance decision. Every consumer must pass each record through
-`validate_phase66_evidence`, which additionally enforces the frozen gate's exact assertion order,
-required artifact kinds, cross-field authority joins, and provider-specific invariants.
-Evidence binds the
+standalone acceptance decision. Every record must pass `validate_phase66_evidence`, which enforces
+the frozen gate's exact assertion order, required artifact kinds, cross-field authority joins, and
+provider-specific invariants. A candidate record set must also pass the full-set verifier in
+[`src/mr_lister/acceptance/evidence_set.py`](../src/mr_lister/acceptance/evidence_set.py). It
+semantically validates the gate-11 moderated-session artifact, its exact frozen task digest, and its
+same-source/deployment/run/job/provider/session joins. Evidence binds the
 canonical manifest through its SHA-256 digest, so records from another gate revision cannot be
 silently counted toward Phase 6 exit.
 
@@ -31,12 +35,15 @@ silently counted toward Phase 6 exit.
 | `offline` | No deployed or provider call | Exact source-commit and manifest digests |
 | `deployed_non_destructive` | Named AWS acceptance resources; zero provider calls | Deployment digest and one or two actor digests |
 | `provider_destructive` | Only the bounded unpublished Printify draft mutations named by the gate | Separate run-gate and provider-write-gate digests, root rejection, exact count limits |
-| `moderated_user` | Observed user-session evidence | Participant, consent, task-script, session, deployment, actor, and optional job digests |
+| `moderated_user` | Observed user-session evidence | Participant, consent, exact frozen task, session, deployment, actor, and gate-specific job authority |
 
 Provider mutation is forbidden in offline and deployed-non-destructive records. A moderated user
 record is also never provider-write authority. If a moderated session uses the real provider, its
 provider effects require a separate double-gated provider-destructive record bound to the same
-sanitized run and job digests.
+sanitized run and job digests. The blocking gate-11 record must bind the same sanitized source,
+deployment, run, job, actor, work, and Strands-correlation authority as its primary provider record.
+Only the nonblocking five-session target may omit job authority when a session is not used to close
+the first-time-seller exit gate.
 
 The first successful, intervention-free first-time-seller session is a Phase 6 exit gate. The
 five-session target remains separate and nonblocking for technical Phase 6 closure; it is the
@@ -67,6 +74,19 @@ secures generated directories and files to owner-only permissions. Published sou
 documentation never contain machine-local paths, credentials, raw identifiers, or evidence
 payloads.
 
+The hermetic producer and assembly boundaries are
+[`capture_phase66_deployment_authority.py`](../tools/capture_phase66_deployment_authority.py),
+[`capture_phase66_agentcore_deployment_authority.py`](../tools/capture_phase66_agentcore_deployment_authority.py),
+[`capture_phase66_upload_integrity_preflight.py`](../tools/capture_phase66_upload_integrity_preflight.py),
+[`prepare_phase66_edge_revalidation.py`](../tools/prepare_phase66_edge_revalidation.py),
+[`prepare_phase66_upload_integrity_evidence.py`](../tools/prepare_phase66_upload_integrity_evidence.py),
+[`prepare_phase66_outbox_recovery_evidence.py`](../tools/prepare_phase66_outbox_recovery_evidence.py),
+[`phase66_provider_acceptance.py`](../tools/phase66_provider_acceptance.py),
+[`prepare_phase66_moderated_evidence.py`](../tools/prepare_phase66_moderated_evidence.py), and
+[`assemble_phase66_evidence_bundle.py`](../tools/assemble_phase66_evidence_bundle.py). Their presence
+and local tests do not close a gate. Only executed, authority-bound evidence in one final verified
+bundle can do so.
+
 ## Sanitized evidence boundary
 
 Evidence records have no free-text observation field and no raw identifier or payload escape
@@ -91,6 +111,13 @@ require bounded canary, deployment, and log-audit artifacts as applicable. Every
 requires a provider-call ledger plus its canary summary, and the primary same-job canary also
 requires a log audit. Moderated gates require a separate moderated-session record. Artifact
 digests must be unique within the evidence record; assertion booleans alone cannot close a gate.
+
+The blocking moderated artifact must carry the exact frozen task digest and semantically prove an
+invited first-time seller with explicit consent and MFA, no external documentation or moderator
+help, zero operator intervention, browser restart and same-job recovery, same-job Strands evidence,
+an unpublished Printify draft, the required accessibility and manual journeys, human approval, and
+an absent/disabled publication surface with zero publication, order, or fulfillment attempts. It
+must join the exact primary provider record rather than serving as a generic passed-session artifact.
 
 Provider-destructive evidence additionally requires both gate digests and records maximum
 authorized versus observed product POST and PUT counts. The two gate digests must be distinct. The

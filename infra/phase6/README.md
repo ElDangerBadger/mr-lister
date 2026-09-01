@@ -1,10 +1,10 @@
-# Phase 6.6 AWS infrastructure, source scaffold, and deployed private web edge
+# Phase 6.6 AWS infrastructure and deployed private seller edge
 
 For current deployment and acceptance status, use the
 [`authoritative Phase 6 release-state record`](../../docs/phase6-release-state.md). Deployment
 descriptions below are historical checkpoints unless explicitly identified as current.
 
-This directory is a new SAM application. It does not modify or replace the retained Phase 4 or
+This directory is a dedicated SAM application. It does not modify or replace the retained Phase 4 or
 Phase 5 evidence stacks.
 
 The template defines the Phase 6 operational table with due-work and owner-job indexes, a private
@@ -114,7 +114,7 @@ should delete the bootstrap stack to detach and remove the developer managed pol
 role is intentionally retained because it is recorded on the foundation stack. Follow
 `FOUNDATION_DEPLOYMENT.md` for the exact capture and verification sequence.
 
-## Historical active backend and current recovery state
+## Historical active backend and recovered current baseline
 
 The corrected core and additive seller web edge were deployed to `mr-lister-phase6-dev` as
 `WEB_EDGE_ACTIVE_DRAFT_ONLY`. That historical checkpoint contained the exact sealed Linux ARM64
@@ -134,10 +134,19 @@ candidate read is contracted, and public/direct health returned `200`. The exact
 rollback point are recorded in the release-state record. No closure release is deployed or
 accepted.
 
-The complete `template.json` remains a source scaffold and is **not a direct deployment target**.
-Its global scaffold value and activation settings would regress the proven backend. Follow
-[`WEB_EDGE_TRANSITION.md`](WEB_EDGE_TRANSITION.md) instead. The checked renderer recomputes the
-exact active predecessor (SHA-256
+The bounded closure update inputs are rendered and verified locally only. The intended update is
+limited to the preparation-dispatch, provider-draft, and upload-API functions plus the AgentCore v3
+`phase6_v3_dev` target. Those changes still require reviewed deployment authority and cannot be
+treated as deployed or accepted evidence.
+
+The complete `template.json` remains a validation/build source template and is **not a direct
+deployment target**. Its global scaffold value and activation settings would regress the proven
+backend. [`WEB_EDGE_TRANSITION.md`](WEB_EDGE_TRANSITION.md) is retained as a historical checkpoint;
+it is not the current closure deployment path. Current closure targets are rendered offline by
+[`tools/render_phase6_artwork_closure.py`](../../tools/render_phase6_artwork_closure.py) and
+[`tools/render_phase6_agentcore_closure_update.py`](../../tools/render_phase6_agentcore_closure_update.py).
+Neither renderer authorizes deployment; use the release-state record for current status and
+authorization. The historical web-edge renderer recomputes the exact active predecessor (SHA-256
 `f0e1c0cfcf1b80d8c5277aacd68cb9a0246bedc882246c448a8772ebe4d87a78`), preserves all 40 existing
 resource subtrees byte-for-byte, and adds exactly 62 source resources. After the SAM transform,
 the review gate requires `47 -> 125` resources with exactly 78 additions and no modification,
@@ -165,11 +174,13 @@ verification now precede authenticated seller acceptance.
 
 The controlled Linux ARM64 artifacts, target import smoke, sealed Lambda and AgentCore trees,
 versioned S3 objects, runtime v1, endpoint, historical active draft-only deployment, sealed static
-bundle, and DNS aliases remain deployment history. Remaining Phase 6 work begins with stack
-recovery, then the explicitly authorized seller invitation and deployed acceptance sequence.
+bundle, and DNS aliases remain deployment history. Stack recovery is complete. Remaining Phase 6
+work begins with credential validation, reviewed closure deployment, and the explicitly authorized
+seller invitation and deployed acceptance sequence.
 Backend activation does not authorize publication, orders, or fulfillment; authenticated
 full-flow, cross-owner/version/concurrency, unpublished Printify, and moderated first-time-seller
-evidence remain separate approval boundaries.
+evidence remain separate approval boundaries. Etsy publication remains disabled and belongs to
+Phase 7.
 
 The query role may read and presign only the exact pinned S3 object version after application
 ownership checks. It cannot write DynamoDB, call KMS, read a secret, or proxy artwork bytes through
@@ -186,10 +197,10 @@ env PATH="$PWD/.venv/bin:$PATH" sam build --template-file infra/phase6/template.
 python -m pytest -q tests/test_phase6_infrastructure.py tests/test_phase65_hosting_infrastructure.py
 ```
 
-The source template above remains a scaffold validation target. For the additive web-edge update,
-first render the fixed private deployment target as described in
-[`WEB_EDGE_TRANSITION.md`](WEB_EDGE_TRANSITION.md), then validate that exact file and its closed
-transition controls:
+The source template above remains a scaffold validation target. The following additive web-edge
+commands are retained only for reproducing the historical transition checkpoint described in
+[`WEB_EDGE_TRANSITION.md`](WEB_EDGE_TRANSITION.md); they are not current closure deployment
+instructions:
 
 ```shell
 sam validate --lint --template-file .mr_lister_private/phase6-web-edge-transition/template.web-edge-active-draft-only.local.json
@@ -203,3 +214,15 @@ python -m pytest -q \
   tests/test_phase6_web_live_state.py \
   tests/test_phase6_dns_alias_change.py
 ```
+
+Validate the current closure renderers offline with:
+
+```shell
+python -m pytest -q \
+  tests/test_phase6_artwork_closure_renderer.py \
+  tests/test_phase6_agentcore_closure_update.py \
+  tests/test_capture_phase66_agentcore_deployment_authority.py
+```
+
+Passing these tests proves only deterministic local tooling. It does not close a deployment,
+provider-write, accessibility, or moderated-seller gate.

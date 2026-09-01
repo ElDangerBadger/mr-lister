@@ -52,11 +52,11 @@ The Phase 3 runtime was deployed and live-tested as a synthetic, non-publishing 
 contains the durable `PREPARE` bridge, genuine single-tool Strands runtime, and exact same-job
 evidence contract. Phase 6.3 joins that persisted evidence into the owner-scoped seller review
 alongside artwork, listing, product, mockups, validation, and economics. Phase 6 runtime and web
-resources have progressed beyond the original scaffold, but the current closure candidate is not
-an accepted release until its source-bound offline gates, deployment-bound gates, unpublished
-provider canaries, accessibility evidence, and moderated first-time-seller gate all close. The
-authenticated same-job Strands run is therefore still an open acceptance gate. That distinction is
-tracked explicitly in the
+resources have progressed beyond the original scaffold. Source-bound offline gates 1–4 are closed
+for the unchanged closure implementation source, but the candidate is not an accepted release:
+deployment-bound gates, unpublished provider canaries, accessibility evidence, and the moderated
+first-time-seller gate remain open. The authenticated same-job Strands run is therefore still an
+open acceptance gate. That distinction is tracked explicitly in the
 [phase checklist](docs/phase-checklist.md),
 [authoritative Phase 6 release-state record](docs/phase6-release-state.md),
 [Phase 6.2](docs/phase6-provider-integration.md), and
@@ -79,8 +79,9 @@ python -m pytest -q \
 
 The Phase 6.5 implementation includes a strict React/TypeScript seller application under
 [`web/`](web/). It accepts one or multiple PNG, safe self-contained SVG, or JPG/JPEG artworks;
-normalizes every file to a proportional canonical PNG without cropping, padding, distortion, or
-square enforcement; and gives every file its own private job and progress/recovery state. It also
+validates and preserves PNG bytes while normalizing SVG and JPG/JPEG to proportional canonical PNG
+without cropping, padding, distortion, or square enforcement; and gives every file its own private
+job and progress/recovery state. It also
 provides consolidated artwork/listing/mockup/economics review, a prominent same-job Strands
 evidence card, and the five server-authorized seller actions. The interface keeps
 **Unpublished — not on Etsy** visible throughout and contains no browser publication, order, or
@@ -97,9 +98,10 @@ npm ci
 npm run check
 ```
 
-The seller UI and hosting topology are offline-tested. Deployment history and historical smoke
-evidence do not substitute for rerunning the complete acceptance set against one final source
-commit and deployment. See
+The seller UI implementation is offline-tested and the private hosting topology has been deployed
+historically. That deployed bundle and its smoke evidence are not the closure release and do not
+substitute for rerunning the remaining acceptance set against one exact final source/deployment
+authority. See
 [`docs/phase6-accessible-seller-interface.md`](docs/phase6-accessible-seller-interface.md) and
 [`docs/architecture/0012-phase65-browser-and-hosting-boundary.md`](docs/architecture/0012-phase65-browser-and-hosting-boundary.md).
 

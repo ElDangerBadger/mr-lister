@@ -1,6 +1,15 @@
-# Simple root-assisted Phase 6 core deployment
+# Historical simple root-assisted Phase 6 inert-core deployment
 
-This is the preferred one-off demo path for the inert Phase 6 core runtime. It deliberately avoids
+> [!WARNING]
+> This is a historical initial inert-core and rollback-recovery runbook. Do not execute sections
+> 1–4 for the current closure candidate. Use the
+> [authoritative Phase 6 release-state record](../../docs/phase6-release-state.md) for current status
+> and authorization. The current offline target renderers are
+> [`render_phase6_artwork_closure.py`](../../tools/render_phase6_artwork_closure.py) and
+> [`render_phase6_agentcore_closure_update.py`](../../tools/render_phase6_agentcore_closure_update.py);
+> neither authorizes deployment. Etsy publication remains disabled and belongs to Phase 7.
+
+This was the preferred one-off demo path for the inert Phase 6 core runtime. It deliberately avoided
 temporary developer upload policies, group-policy detachment, upload-authority revocation, and an
 isolated deployer role.
 
@@ -151,7 +160,11 @@ environment bindings, and log retention.
 This does not activate intake, publish approval, or the seller web surface; those remain separate
 later gates.
 
-## Recover an archive-read rollback failure
+## Historical archive-read rollback recovery
+
+The incident below has been recovered and is preserved solely as forensic deployment history. Do
+not replay it unless the same exact state is independently verified and current deployment authority
+explicitly calls for this procedure.
 
 If the application stack is already `UPDATE_ROLLBACK_FAILED` because the retained role cannot read
 the predecessor archive, do not retry the application update. First identify which bootstrap stack
@@ -191,5 +204,5 @@ three `Live*` values. Preserve both immutable objects and the failed attempt evi
 
 `runtime-update-bootstrap.json` and `RUNTIME_UPDATE_REVIEW.md` remain the stricter alternative.
 They add temporary developer upload/readback/deployer authority, group-attached freeze policies,
-CloudTrail joins, and a nineteen-input offline verifier. They are not required by this simple
-one-off path.
+CloudTrail joins, and a nineteen-input offline verifier. They were not required by this historical
+simple one-off path and are not current closure instructions.
