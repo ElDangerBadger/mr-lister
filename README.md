@@ -55,8 +55,8 @@ alongside artwork, listing, product, mockups, validation, and economics. Phase 6
 resources have progressed beyond the original scaffold. Source-bound offline gates 1–4 are closed
 for the unchanged closure implementation source, but the candidate is not an accepted release:
 deployment-bound gates, unpublished provider canaries, accessibility evidence, and the moderated
-first-time-seller gate remain open. The authenticated same-job Strands run is therefore still an
-open acceptance gate. That distinction is tracked explicitly in the
+first-time-seller gate remain open. The authenticated same-job Strands run is therefore still an open acceptance gate.
+That distinction is tracked explicitly in the
 [phase checklist](docs/phase-checklist.md),
 [authoritative Phase 6 release-state record](docs/phase6-release-state.md),
 [Phase 6.2](docs/phase6-provider-integration.md), and
