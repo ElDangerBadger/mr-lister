@@ -52,6 +52,9 @@ jobs:
           sam validate --lint --template-file infra/phase7/template.json
           sam validate --lint --template-file infra/phase7/canary-template.json
           sam validate --lint --template-file infra/phase7/production-disabled-template.json
+          python -m tools.render_phase715c_operations_update \
+            --output /tmp/phase715c-operations-update.json
+          sam validate --lint --template-file /tmp/phase715c-operations-update.json
       - name: Test
         run: python -m pytest
       - name: Build

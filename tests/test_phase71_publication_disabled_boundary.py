@@ -137,6 +137,12 @@ PHASE715_CONTROL_PLANE_CLOUD_FILES = {
     ROOT / "src/mr_lister/cloud/phase7_operations_composition.py",
 }
 
+PHASE715C_OPERATIONS_CLOUD_FILES = {
+    ROOT / "src/mr_lister/cloud/phase715c_operations_composition.py",
+    ROOT / "src/mr_lister/cloud/phase715c_operations_entrypoints.py",
+    ROOT / "src/mr_lister/cloud/phase715c_operations_handlers.py",
+}
+
 PHASE7_CLOUD_FILES = (
     PHASE74_CLOUD_FILES
     | PHASE75_OFFLINE_CLOUD_FILES
@@ -146,6 +152,7 @@ PHASE7_CLOUD_FILES = (
     | PHASE79_CONFIGURATION_CLOUD_FILES
     | PHASE710_CANARY_CLOUD_FILES
     | PHASE715_CONTROL_PLANE_CLOUD_FILES
+    | PHASE715C_OPERATIONS_CLOUD_FILES
 )
 
 EXPECTED_OFFLINE_PUBLICATION_FILES = {
@@ -595,17 +602,20 @@ def test_phase75_retention_is_offline_injected_and_adds_no_source_tag_writer() -
     assert "delete_object" not in adapter_source
     assert "DeleteItem" not in adapter_source
 
-    operations_composition = ROOT / "src/mr_lister/cloud/phase7_operations_composition.py"
+    operations_compositions = {
+        ROOT / "src/mr_lister/cloud/phase7_operations_composition.py",
+        ROOT / "src/mr_lister/cloud/phase715c_operations_composition.py",
+    }
     adapter_importers = {
         path
         for path in (ROOT / "src" / "mr_lister" / "cloud").glob("*.py")
         if adapter_module in _imports(path)
     }
-    assert adapter_importers == {operations_composition}
+    assert adapter_importers == operations_compositions
 
     for path in (ROOT / "src" / "mr_lister" / "cloud").glob("*.py"):
         imports = _imports(path)
-        if path == operations_composition:
+        if path in operations_compositions:
             assert imports.intersection(core_modules) == {"mr_lister.publication.retention"}
             continue
         assert adapter_module not in imports, path.relative_to(ROOT)
