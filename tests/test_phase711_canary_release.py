@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import copy
 import csv
 import json
 import subprocess
@@ -56,6 +57,10 @@ from tools.build_phase711_canary_release import (
     seal_canary_release,
     verify_canary_deployment_artifact,
     write_linux_arm64_dependency_manifest,
+)
+from tools.verify_phase716_canary_deployment import (
+    Phase716CanaryDeploymentError,
+    verify_canary_deployment_observations,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -227,6 +232,257 @@ def _manifest(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_bytes())
     assert isinstance(value, dict)
     return value
+
+
+def _deployment_observations(artifact, binding: PublicationCanaryBinding) -> dict[str, Any]:  # type: ignore[no-untyped-def]
+    environment = "dev"
+    region = "us-west-2"
+    account = "123456789012"
+    stack_name = "mr-lister-phase7-canary-dev"
+    function_name = "mr-lister-phase7-dev-publication-canary"
+    role_name = f"{function_name}-role"
+    bucket = "mr-lister-phase7-artifacts-dev"
+    key = f"phase7/releases/{artifact.release_fingerprint}/canary.zip"
+    version = "v1.token-2"
+    secret_arn = f"arn:aws:secretsmanager:{region}:{account}:secret:mr-lister/printify/dev-Ab12Cd"
+    archive = artifact.archive_path.read_bytes()
+    function_arn = f"arn:aws:lambda:{region}:{account}:function:{function_name}"
+    parameters = {
+        "ApplicationReleaseFingerprint": artifact.application_release_fingerprint,
+        "CanaryBindingFingerprint": artifact.binding_fingerprint,
+        "CanaryCodeS3Bucket": bucket,
+        "CanaryCodeS3Key": key,
+        "CanaryCodeS3ObjectVersion": version,
+        "CanaryMode": artifact.binding_mode,
+        "CanaryReleaseFingerprint": artifact.release_fingerprint,
+        "EnvironmentName": environment,
+        "PrintifySecretArn": secret_arn,
+    }
+    outputs = {
+        "ApplicationReleaseFingerprint": artifact.application_release_fingerprint,
+        "PublicationCanaryBindingFingerprint": artifact.binding_fingerprint,
+        "PublicationCanaryFunctionArn": function_arn,
+        "PublicationCanaryMode": artifact.binding_mode,
+        "PublicationCanaryReleaseFingerprint": artifact.release_fingerprint,
+        "SellerPublicationEnabled": "false",
+    }
+    table_arn = f"arn:aws:dynamodb:{region}:{account}:table/mr-lister-phase6-dev"
+    leading_keys = {"ForAllValues:StringLike": {"dynamodb:LeadingKeys": ["JOB#*", "PUBLICATION#*"]}}
+    policy = {
+        "Statement": [
+            {
+                "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                "Effect": "Allow",
+                "Resource": (
+                    f"arn:aws:logs:{region}:{account}:log-group:/aws/lambda/{function_name}:*"
+                ),
+                "Sid": "WritePublicationCanaryLogs",
+            },
+            {
+                "Action": ["dynamodb:GetItem", "dynamodb:Query"],
+                "Condition": leading_keys,
+                "Effect": "Allow",
+                "Resource": table_arn,
+                "Sid": "ReadExactPublicationAuthority",
+            },
+            {
+                "Action": "dynamodb:ConditionCheckItem",
+                "Condition": leading_keys,
+                "Effect": "Allow",
+                "Resource": table_arn,
+                "Sid": "CommitExactPublicationAuthorityConditionChecks",
+            },
+            {
+                "Action": "dynamodb:PutItem",
+                "Condition": {
+                    **leading_keys,
+                    "ForAnyValue:StringEquals": {
+                        "dynamodb:EnclosingOperation": ["TransactWriteItems"]
+                    },
+                },
+                "Effect": "Allow",
+                "Resource": table_arn,
+                "Sid": "CommitExactPublicationAuthorityPuts",
+            },
+            {
+                "Action": "secretsmanager:GetSecretValue",
+                "Effect": "Allow",
+                "Resource": secret_arn,
+                "Sid": "ReadExactPublicationCredential",
+            },
+        ],
+        "Version": "2012-10-17",
+    }
+    environment_variables = {
+        "MR_LISTER_AWS_ACCOUNT_ID": account,
+        "MR_LISTER_ENVIRONMENT": environment,
+        "MR_LISTER_PHASE7_CANARY_BINDING_FINGERPRINT": artifact.binding_fingerprint,
+        "MR_LISTER_PHASE7_CANARY_ENABLED": "true",
+        "MR_LISTER_PHASE7_CANARY_MODE": artifact.binding_mode,
+        "MR_LISTER_PHASE7_CANARY_RELEASE_FINGERPRINT": artifact.release_fingerprint,
+        "MR_LISTER_PHASE7_PUBLICATION_ENABLED": "false",
+        "MR_LISTER_PHASE7_QUERY_ENABLED": "false",
+        "MR_LISTER_PHASE7_REQUEST_ENABLED": "false",
+        "MR_LISTER_PHASE7_SCAFFOLD_ONLY": "false",
+        "MR_LISTER_PRINTIFY_SECRET_ARN": secret_arn,
+        "MR_LISTER_PRODUCT_PROFILE_FINGERPRINT": CANARY_PROFILE_FINGERPRINT,
+        "MR_LISTER_PRODUCT_PROFILE_ID": "gildan_64000_swiftpod",
+        "MR_LISTER_PRODUCT_PROFILE_PATH": (
+            "/var/task/config/product_profiles/gildan_64000_swiftpod.json"
+        ),
+        "MR_LISTER_PRODUCT_PROFILE_VERSION": "2",
+        "MR_LISTER_RELEASE_FINGERPRINT": artifact.application_release_fingerprint,
+        "MR_LISTER_STATE_TABLE": "mr-lister-phase6-dev",
+    }
+    assert binding.fingerprint == artifact.binding_fingerprint
+    return {
+        "deployment_root": artifact.deployment_root,
+        "archive_path": artifact.archive_path,
+        "descriptor_path": artifact.descriptor_path,
+        "head_observation": {
+            "ChecksumSHA256": base64.b64encode(sha256(archive).digest()).decode("ascii"),
+            "ContentLength": len(archive),
+            "ContentType": "application/zip",
+            "Metadata": {
+                "mr-lister-archive-sha256": artifact.archive_fingerprint,
+                "mr-lister-release-fingerprint": artifact.release_fingerprint,
+            },
+            "ServerSideEncryption": "AES256",
+            "VersionId": version,
+        },
+        "stack_observation": {
+            "Stacks": [
+                {
+                    "Outputs": [
+                        {"OutputKey": name, "OutputValue": value} for name, value in outputs.items()
+                    ],
+                    "Parameters": [
+                        {"ParameterKey": name, "ParameterValue": value}
+                        for name, value in parameters.items()
+                    ],
+                    "StackId": (
+                        f"arn:aws:cloudformation:{region}:{account}:stack/{stack_name}/stack-id"
+                    ),
+                    "StackName": stack_name,
+                    "StackStatus": "CREATE_COMPLETE",
+                }
+            ]
+        },
+        "stack_resources_observation": {
+            "StackResourceSummaries": [
+                {
+                    "LogicalResourceId": "PublicationCanaryLogGroup",
+                    "PhysicalResourceId": f"/aws/lambda/{function_name}",
+                    "ResourceStatus": "CREATE_COMPLETE",
+                    "ResourceType": "AWS::Logs::LogGroup",
+                },
+                {
+                    "LogicalResourceId": "PublicationCanaryFunctionRole",
+                    "PhysicalResourceId": role_name,
+                    "ResourceStatus": "CREATE_COMPLETE",
+                    "ResourceType": "AWS::IAM::Role",
+                },
+                {
+                    "LogicalResourceId": "PublicationCanaryFunction",
+                    "PhysicalResourceId": function_name,
+                    "ResourceStatus": "CREATE_COMPLETE",
+                    "ResourceType": "AWS::Lambda::Function",
+                },
+            ]
+        },
+        "lambda_configuration_observation": {
+            "Architectures": ["arm64"],
+            "CodeSha256": base64.b64encode(sha256(archive).digest()).decode("ascii"),
+            "CodeSize": len(archive),
+            "Environment": {"Variables": environment_variables},
+            "FunctionArn": function_arn,
+            "FunctionName": function_name,
+            "Handler": CANARY_ENTRYPOINT,
+            "LastUpdateStatus": "Successful",
+            "LoggingConfig": {
+                "ApplicationLogLevel": "ERROR",
+                "LogFormat": "JSON",
+                "LogGroup": f"/aws/lambda/{function_name}",
+                "SystemLogLevel": "WARN",
+            },
+            "MemorySize": 512,
+            "PackageType": "Zip",
+            "Role": f"arn:aws:iam::{account}:role/{role_name}",
+            "Runtime": "python3.12",
+            "State": "Active",
+            "Timeout": 60,
+            "Version": "$LATEST",
+        },
+        "lambda_concurrency_observation": {"ReservedConcurrentExecutions": 1},
+        "role_observation": {
+            "Role": {
+                "Arn": f"arn:aws:iam::{account}:role/{role_name}",
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Principal": {"Service": "lambda.amazonaws.com"},
+                        }
+                    ],
+                    "Version": "2012-10-17",
+                },
+                "CreateDate": "2026-09-02T12:00:00+00:00",
+                "MaxSessionDuration": 3600,
+                "Path": "/",
+                "RoleId": "A" * 20,
+                "RoleName": role_name,
+                "Tags": [
+                    {"Key": "Project", "Value": "MrLister"},
+                    {"Key": "Environment", "Value": environment},
+                    {"Key": "Phase", "Value": "7-isolated-canary"},
+                ],
+            }
+        },
+        "inline_policy_observation": {
+            "PolicyDocument": policy,
+            "PolicyName": "ExactBoundPublicationCanary",
+            "RoleName": role_name,
+        },
+        "inline_policy_list_observation": {
+            "IsTruncated": False,
+            "PolicyNames": ["ExactBoundPublicationCanary"],
+        },
+        "attached_policy_list_observation": {
+            "AttachedPolicies": [],
+            "IsTruncated": False,
+        },
+        "event_source_observation": {"EventSourceMappings": []},
+        "versions_observation": {
+            "Versions": [{"FunctionName": function_name, "Version": "$LATEST"}]
+        },
+        "aliases_observation": {"Aliases": []},
+        "url_configs_observation": {"FunctionUrlConfigs": []},
+        "absence_observation": {
+            "function_name": function_name,
+            "get_function_event_invoke_config": {
+                "error_code": "ResourceNotFoundException",
+                "http_status_code": 404,
+            },
+            "get_function_url_config": {
+                "error_code": "ResourceNotFoundException",
+                "http_status_code": 404,
+            },
+            "get_policy": {
+                "error_code": "ResourceNotFoundException",
+                "http_status_code": 404,
+            },
+        },
+        "expected_mode": artifact.binding_mode,
+        "stack_name": stack_name,
+        "environment_name": environment,
+        "bucket": bucket,
+        "key": key,
+        "version_id": version,
+        "printify_secret_arn": secret_arn,
+        "region": region,
+        "account_id": account,
+    }
 
 
 def test_source_bundle_is_deterministic_sanitized_and_narrow(tmp_path: Path) -> None:
@@ -415,3 +671,183 @@ def test_source_rejects_a_canonical_but_semantically_invalid_binding(tmp_path: P
 
     with pytest.raises(Phase711CanaryReleaseError):
         _source(tmp_path, "invalid-binding", binding_path)
+
+
+def test_read_only_canary_deployment_readback_is_exact_and_sanitized(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding_path, binding = _binding(tmp_path)
+    artifact = _sealed(tmp_path, "deployment-readback", binding_path, monkeypatch)
+    observations = _deployment_observations(artifact, binding)
+
+    verified = verify_canary_deployment_observations(**observations)
+
+    assert verified.stack_name == "mr-lister-phase7-canary-dev"
+    assert verified.function_name == "mr-lister-phase7-dev-publication-canary"
+    assert verified.release_fingerprint == artifact.release_fingerprint
+    assert verified.application_release_fingerprint == artifact.application_release_fingerprint
+    assert verified.binding_fingerprint == artifact.binding_fingerprint
+    assert verified.binding_mode == PublicationCanaryMode.READ_ONLY_PREFLIGHT.value
+    assert verified.archive_fingerprint == artifact.archive_fingerprint
+    assert observations["printify_secret_arn"] not in repr(verified)
+
+
+def test_read_only_canary_deployment_readback_rejects_every_authority_expansion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding_path, binding = _binding(tmp_path)
+    artifact = _sealed(tmp_path, "deployment-adversarial", binding_path, monkeypatch)
+    pristine = _deployment_observations(artifact, binding)
+
+    for drift in (
+        "s3_version",
+        "mutable_version_label",
+        "s3_checksum",
+        "s3_metadata",
+        "shared_stack_name",
+        "stack_binding",
+        "stack_publication_output",
+        "fourth_api_resource",
+        "release_environment",
+        "application_environment",
+        "binding_environment",
+        "mode_environment",
+        "expected_mode",
+        "concurrency",
+        "cross_account_secret",
+        "role_boundary",
+        "iam_action",
+        "attached_policy",
+        "event_source",
+        "function_url",
+        "resource_policy",
+    ):
+        observations = copy.deepcopy(pristine)
+        if drift == "s3_version":
+            observations["head_observation"]["VersionId"] = "different-version"
+        elif drift == "mutable_version_label":
+            observations["version_id"] = "latest"
+            observations["head_observation"]["VersionId"] = "latest"
+            parameters = observations["stack_observation"]["Stacks"][0]["Parameters"]
+            next(
+                item for item in parameters if item["ParameterKey"] == "CanaryCodeS3ObjectVersion"
+            )["ParameterValue"] = "latest"
+        elif drift == "s3_checksum":
+            observations["head_observation"]["ChecksumSHA256"] = "wrong"
+        elif drift == "s3_metadata":
+            observations["head_observation"]["Metadata"]["mr-lister-release-fingerprint"] = "a" * 64
+        elif drift == "shared_stack_name":
+            observations["stack_name"] = "mr-lister-phase7-dev"
+            stack = observations["stack_observation"]["Stacks"][0]
+            stack["StackName"] = "mr-lister-phase7-dev"
+            stack["StackId"] = (
+                "arn:aws:cloudformation:us-west-2:123456789012:stack/mr-lister-phase7-dev/stack-id"
+            )
+        elif drift == "stack_binding":
+            parameters = observations["stack_observation"]["Stacks"][0]["Parameters"]
+            next(item for item in parameters if item["ParameterKey"] == "CanaryBindingFingerprint")[
+                "ParameterValue"
+            ] = "a" * 64
+        elif drift == "stack_publication_output":
+            outputs = observations["stack_observation"]["Stacks"][0]["Outputs"]
+            next(item for item in outputs if item["OutputKey"] == "SellerPublicationEnabled")[
+                "OutputValue"
+            ] = "true"
+        elif drift == "fourth_api_resource":
+            observations["stack_resources_observation"]["StackResourceSummaries"].append(
+                {
+                    "LogicalResourceId": "UnexpectedApi",
+                    "PhysicalResourceId": "api-id",
+                    "ResourceStatus": "CREATE_COMPLETE",
+                    "ResourceType": "AWS::ApiGatewayV2::Api",
+                }
+            )
+        elif drift in {
+            "release_environment",
+            "application_environment",
+            "binding_environment",
+            "mode_environment",
+        }:
+            variable = {
+                "release_environment": "MR_LISTER_PHASE7_CANARY_RELEASE_FINGERPRINT",
+                "application_environment": "MR_LISTER_RELEASE_FINGERPRINT",
+                "binding_environment": "MR_LISTER_PHASE7_CANARY_BINDING_FINGERPRINT",
+                "mode_environment": "MR_LISTER_PHASE7_CANARY_MODE",
+            }[drift]
+            observations["lambda_configuration_observation"]["Environment"]["Variables"][
+                variable
+            ] = "publish_once" if drift == "mode_environment" else "a" * 64
+        elif drift == "expected_mode":
+            observations["expected_mode"] = "publish_once"
+        elif drift == "concurrency":
+            observations["lambda_concurrency_observation"]["ReservedConcurrentExecutions"] = 0
+        elif drift == "cross_account_secret":
+            foreign_secret = observations["printify_secret_arn"].replace(
+                ":123456789012:", ":999999999999:"
+            )
+            observations["printify_secret_arn"] = foreign_secret
+            parameters = observations["stack_observation"]["Stacks"][0]["Parameters"]
+            next(item for item in parameters if item["ParameterKey"] == "PrintifySecretArn")[
+                "ParameterValue"
+            ] = foreign_secret
+            observations["lambda_configuration_observation"]["Environment"]["Variables"][
+                "MR_LISTER_PRINTIFY_SECRET_ARN"
+            ] = foreign_secret
+            observations["inline_policy_observation"]["PolicyDocument"]["Statement"][4][
+                "Resource"
+            ] = foreign_secret
+        elif drift == "role_boundary":
+            observations["role_observation"]["Role"]["PermissionsBoundary"] = {
+                "PermissionsBoundaryArn": "arn:aws:iam::123456789012:policy/unreviewed",
+                "PermissionsBoundaryType": "Policy",
+            }
+        elif drift == "iam_action":
+            observations["inline_policy_observation"]["PolicyDocument"]["Statement"][1][
+                "Action"
+            ].append("dynamodb:Scan")
+        elif drift == "attached_policy":
+            observations["attached_policy_list_observation"]["AttachedPolicies"].append(
+                {
+                    "PolicyArn": "arn:aws:iam::aws:policy/AdministratorAccess",
+                    "PolicyName": "AdministratorAccess",
+                }
+            )
+        elif drift == "event_source":
+            observations["event_source_observation"]["EventSourceMappings"].append(
+                {"UUID": "unexpected-trigger"}
+            )
+        elif drift == "function_url":
+            observations["url_configs_observation"]["FunctionUrlConfigs"].append(
+                {"AuthType": "NONE", "FunctionUrl": "https://example.invalid"}
+            )
+        else:
+            observations["absence_observation"]["get_policy"] = {
+                "error_code": "Success",
+                "http_status_code": 200,
+            }
+
+        with pytest.raises(Phase716CanaryDeploymentError) as captured:
+            verify_canary_deployment_observations(**observations)
+        assert str(captured.value) == "Phase 7 canary deployment observation is invalid"
+        assert captured.value.__cause__ is None
+        assert pristine["printify_secret_arn"] not in str(captured.value)
+
+
+def test_canary_deployment_verifier_requires_the_explicit_exact_publish_once_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding_path, binding = _binding(tmp_path, mode=PublicationCanaryMode.PUBLISH_ONCE)
+    artifact = _sealed(tmp_path, "publish-once-deployment", binding_path, monkeypatch)
+    observations = _deployment_observations(artifact, binding)
+
+    verified = verify_canary_deployment_observations(**observations)
+    assert verified.binding_mode == PublicationCanaryMode.PUBLISH_ONCE.value
+
+    observations["expected_mode"] = PublicationCanaryMode.READ_ONLY_PREFLIGHT.value
+    with pytest.raises(Phase716CanaryDeploymentError) as captured:
+        verify_canary_deployment_observations(**observations)
+    assert str(captured.value) == "Phase 7 canary deployment observation is invalid"
+    assert captured.value.__cause__ is None
