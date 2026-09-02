@@ -320,6 +320,13 @@ def test_workflow_is_bounded_payload_closed_and_invokes_only_one_worker() -> Non
     assert workflow["DefinitionUri"] == "statemachine/publication.asl.json"
     assert workflow["Logging"]["IncludeExecutionData"] is False
     assert workflow["Logging"]["Level"] == "ERROR"
+    assert workflow["Logging"]["Destinations"] == [
+        {
+            "CloudWatchLogsLogGroup": {
+                "LogGroupArn": {"Fn::GetAtt": ["PublicationWorkflowLogGroup", "Arn"]}
+            }
+        }
+    ]
 
 
 def test_roles_keep_provider_mutation_and_control_plane_authority_separate() -> None:

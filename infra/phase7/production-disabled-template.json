@@ -539,7 +539,7 @@
         "Logging": {
           "Level": "ERROR",
           "IncludeExecutionData": false,
-          "Destinations": [{"CloudWatchLogsLogGroup": {"LogGroupArn": {"Fn::Sub": "${PublicationWorkflowLogGroup.Arn}:*"}}}]
+          "Destinations": [{"CloudWatchLogsLogGroup": {"LogGroupArn": {"Fn::GetAtt": ["PublicationWorkflowLogGroup", "Arn"]}}}]
         },
         "Tracing": {"Enabled": false}
       }
