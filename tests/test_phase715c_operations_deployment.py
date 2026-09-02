@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+import tools.verify_phase715c_operations_deployment as verifier
 from tools.render_phase715c_operations_update import (
     BASE_TEMPLATE,
     RECOVERY_HANDLER,
@@ -26,6 +27,7 @@ from tools.verify_phase715c_operations_deployment import (
     Phase715cOperationsDeploymentError,
     verify_change_set_observation,
     verify_operations_lambda_readback,
+    verify_phase6_application_release_observation,
     verify_predecessor_rollback_readback,
     verify_processed_template_delta,
     verify_s3_head_observation,
@@ -185,6 +187,32 @@ def _stack(*, operations: bool, status: str) -> dict[str, Any]:
                     {"Key": "Phase", "Value": "7.15C-production-disabled"},
                     {"Key": "Project", "Value": "MrLister"},
                 ],
+            }
+        ]
+    }
+
+
+def _phase6_stack(
+    *,
+    application_release: str = APPLICATION_RELEASE,
+    status: str = "UPDATE_COMPLETE",
+) -> dict[str, Any]:
+    return {
+        "Stacks": [
+            {
+                "Parameters": [
+                    {"ParameterKey": "EnvironmentName", "ParameterValue": "dev"},
+                    {
+                        "ParameterKey": "ReleaseFingerprint",
+                        "ParameterValue": application_release,
+                    },
+                ],
+                "StackId": (
+                    f"arn:aws:cloudformation:{REGION}:{ACCOUNT_ID}:"
+                    "stack/mr-lister-phase6-dev/stack-id"
+                ),
+                "StackName": "mr-lister-phase6-dev",
+                "StackStatus": status,
             }
         ]
     }
@@ -473,6 +501,7 @@ def test_change_set_s3_stack_lambda_and_safety_readbacks_are_exact(tmp_path: Pat
         bucket=BUCKET,
         object_version=OBJECT_VERSION,
     )
+    assert len(verify_phase6_application_release_observation(descriptor, _phase6_stack())) == 64
     parameters = verify_stack_transition(
         _stack(operations=False, status="CREATE_COMPLETE"),
         _stack(operations=True, status="UPDATE_COMPLETE"),
@@ -523,6 +552,33 @@ def test_change_set_s3_stack_lambda_and_safety_readbacks_are_exact(tmp_path: Pat
     unsafe["eventbridge_rules"][1]["state"] = "ENABLED"
     with pytest.raises(Phase715cOperationsDeploymentError):
         verify_safety_readback(unsafe, stack_parameters=parameters)
+
+
+@pytest.mark.parametrize(
+    "drift",
+    ("release", "environment", "stack_name", "stack_account", "stack_status", "duplicate"),
+)
+def test_phase6_application_release_readback_rejects_every_binding_drift(drift: str) -> None:
+    descriptor = _descriptor(b"archive")
+    observation = _phase6_stack()
+    stack = observation["Stacks"][0]
+    if drift == "release":
+        stack["Parameters"][1]["ParameterValue"] = "c" * 64
+    elif drift == "environment":
+        stack["Parameters"][0]["ParameterValue"] = "prod"
+    elif drift == "stack_name":
+        stack["StackName"] = "mr-lister-phase6-prod"
+    elif drift == "stack_account":
+        stack["StackId"] = stack["StackId"].replace(ACCOUNT_ID, "999999999999")
+    elif drift == "stack_status":
+        stack["StackStatus"] = "UPDATE_IN_PROGRESS"
+    else:
+        stack["Parameters"].append(
+            {"ParameterKey": "ReleaseFingerprint", "ParameterValue": APPLICATION_RELEASE}
+        )
+
+    with pytest.raises(Phase715cOperationsDeploymentError):
+        verify_phase6_application_release_observation(descriptor, observation)
 
 
 def test_change_set_rejects_a_third_resource_or_replacement() -> None:
@@ -596,3 +652,107 @@ def test_exact_predecessor_rollback_tuple_requires_full_restoration() -> None:
             rollback_concurrencies,
             _safety(),
         )
+
+
+def test_deployment_cli_requires_and_forwards_the_raw_phase6_stack_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    capture = tmp_path / "capture.json"
+    capture.write_text("{}", encoding="utf-8")
+    received: dict[str, object] = {}
+
+    def verify(**values: object) -> dict[str, object]:
+        received.update(values)
+        return {"result": "passed"}
+
+    monkeypatch.setattr(verifier, "verify_operations_deployment_evidence", verify)
+    assert (
+        verifier.main(
+            [
+                "deployment",
+                "--deployment",
+                str(tmp_path),
+                "--archive",
+                str(capture),
+                "--descriptor",
+                str(capture),
+                "--update-template",
+                str(capture),
+                "--predecessor-processed-json",
+                str(capture),
+                "--target-processed-json",
+                str(capture),
+                "--change-set-json",
+                str(capture),
+                "--head-object-json",
+                str(capture),
+                "--predecessor-stack-json",
+                str(capture),
+                "--target-stack-json",
+                str(capture),
+                "--phase6-stack-json",
+                str(capture),
+                "--lambda-configurations-json",
+                str(capture),
+                "--lambda-concurrencies-json",
+                str(capture),
+                "--safety-json",
+                str(capture),
+                "--bucket",
+                BUCKET,
+                "--object-version",
+                OBJECT_VERSION,
+                "--change-set-name",
+                CHANGE_SET_NAME,
+            ]
+        )
+        == 0
+    )
+    assert received["phase6_stack_observation"] == {}
+    assert json.loads(capsys.readouterr().out) == {"result": "passed"}
+
+
+def test_rollback_cli_forwards_every_exact_readback_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    capture = tmp_path / "capture.json"
+    capture.write_text("{}", encoding="utf-8")
+    received: list[object] = []
+
+    def verify(*values: object) -> dict[str, object]:
+        received.extend(values)
+        return {"result": "passed"}
+
+    monkeypatch.setattr(verifier, "verify_predecessor_rollback_readback", verify)
+    assert (
+        verifier.main(
+            [
+                "rollback",
+                "--predecessor-processed-json",
+                str(capture),
+                "--rollback-processed-json",
+                str(capture),
+                "--predecessor-stack-json",
+                str(capture),
+                "--rollback-stack-json",
+                str(capture),
+                "--predecessor-lambda-configurations-json",
+                str(capture),
+                "--rollback-lambda-configurations-json",
+                str(capture),
+                "--predecessor-lambda-concurrencies-json",
+                str(capture),
+                "--rollback-lambda-concurrencies-json",
+                str(capture),
+                "--safety-json",
+                str(capture),
+            ]
+        )
+        == 0
+    )
+    assert received == [{}] * 9
+    assert json.loads(capsys.readouterr().out) == {"result": "passed"}

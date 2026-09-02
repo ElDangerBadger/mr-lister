@@ -82,7 +82,7 @@ _MAPPING_SPECS: Final = (
         event_source="phase6_stream",
     ),
     _MappingSpec(
-        logical_id="PublicationRecoveryQueueMapping",
+        logical_id="PublicationRecoveryFunctionRecoveryQueue",
         function_name="mr-lister-phase7-dev-publication-recovery",
         event_source="recovery_queue",
     ),

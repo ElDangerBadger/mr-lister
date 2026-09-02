@@ -7,10 +7,11 @@ counts.  Dynamic resource identifiers and seller configuration are never copied 
 
 from __future__ import annotations
 
+import argparse
 import base64
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from hashlib import sha256
 from pathlib import Path
@@ -32,6 +33,7 @@ REGION: Final = "us-west-2"
 ENVIRONMENT_NAME: Final = "dev"
 STACK_NAME: Final = "mr-lister-phase7-dev"
 STATE_TABLE_NAME: Final = "mr-lister-phase6-dev"
+PHASE6_STACK_NAME: Final = STATE_TABLE_NAME
 PUBLICATION_WORKFLOW_ARN: Final = (
     "arn:aws:states:us-west-2:384627057108:stateMachine:mr-lister-phase7-dev-publication"
 )
@@ -369,6 +371,48 @@ def verify_stack_transition(
         raise Phase715cOperationsDeploymentError(_GENERIC_ERROR) from None
 
 
+def verify_phase6_application_release_observation(
+    descriptor: Mapping[str, object],
+    observation: Mapping[str, object],
+) -> str:
+    """Bind the operations runtime to the exact deployed Phase 6 release parameter."""
+
+    try:
+        application_release = descriptor.get("application_release_fingerprint")
+        stack = _one_stack(observation)
+        parameters = _key_value_records(
+            stack.get("Parameters"),
+            "ParameterKey",
+            "ParameterValue",
+        )
+        stack_id = stack.get("StackId")
+        if (
+            not isinstance(application_release, str)
+            or _FINGERPRINT.fullmatch(application_release) is None
+            or application_release == "0" * 64
+            or stack.get("StackName") != PHASE6_STACK_NAME
+            or stack.get("StackStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}
+            or not isinstance(stack_id, str)
+            or not stack_id.startswith(
+                f"arn:aws:cloudformation:{REGION}:{ACCOUNT_ID}:stack/{PHASE6_STACK_NAME}/"
+            )
+            or parameters.get("EnvironmentName") != ENVIRONMENT_NAME
+            or parameters.get("ReleaseFingerprint") != application_release
+        ):
+            raise ValueError
+        return _fingerprint(
+            {
+                "application_release_fingerprint": application_release,
+                "environment_name": ENVIRONMENT_NAME,
+                "stack_id": stack_id,
+                "stack_name": PHASE6_STACK_NAME,
+                "stack_status": stack["StackStatus"],
+            }
+        )
+    except Exception:
+        raise Phase715cOperationsDeploymentError(_GENERIC_ERROR) from None
+
+
 def verify_operations_lambda_readback(
     descriptor: Mapping[str, object],
     configurations: Mapping[str, object],
@@ -590,6 +634,7 @@ def verify_operations_deployment_evidence(
     head_object_observation: Mapping[str, object],
     predecessor_stack_observation: Mapping[str, object],
     target_stack_observation: Mapping[str, object],
+    phase6_stack_observation: Mapping[str, object],
     configurations: Mapping[str, object],
     concurrencies: Mapping[str, object],
     safety_observation: Mapping[str, object],
@@ -624,6 +669,10 @@ def verify_operations_deployment_evidence(
             bucket=bucket,
             object_version=object_version,
         )
+        phase6_binding_fingerprint = verify_phase6_application_release_observation(
+            descriptor,
+            phase6_stack_observation,
+        )
         stack_parameters = verify_stack_transition(
             predecessor_stack_observation,
             target_stack_observation,
@@ -646,6 +695,7 @@ def verify_operations_deployment_evidence(
             "lambda_readback_count": 2,
             "lambda_readback_sha256": lambda_fingerprint,
             "operations_release_fingerprint": descriptor["release_fingerprint"],
+            "phase6_application_binding_sha256": phase6_binding_fingerprint,
             "processed_template_sha256": processed_template_fingerprint,
             "result": "passed",
             "safety_readback_count": 12,
@@ -1176,9 +1226,98 @@ def _read_json_mapping(path: Path) -> Mapping[str, object]:
         raise Phase715cOperationsDeploymentError(_GENERIC_ERROR) from None
 
 
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="mode", required=True)
+
+    deployment = commands.add_parser(
+        "deployment",
+        help="verify the provider-free operations update and deployed readback",
+    )
+    deployment.add_argument("--deployment", type=Path, required=True)
+    deployment.add_argument("--archive", type=Path, required=True)
+    deployment.add_argument("--descriptor", type=Path, required=True)
+    deployment.add_argument("--update-template", type=Path, required=True)
+    deployment.add_argument("--predecessor-processed-json", type=Path, required=True)
+    deployment.add_argument("--target-processed-json", type=Path, required=True)
+    deployment.add_argument("--change-set-json", type=Path, required=True)
+    deployment.add_argument("--head-object-json", type=Path, required=True)
+    deployment.add_argument("--predecessor-stack-json", type=Path, required=True)
+    deployment.add_argument("--target-stack-json", type=Path, required=True)
+    deployment.add_argument("--phase6-stack-json", type=Path, required=True)
+    deployment.add_argument("--lambda-configurations-json", type=Path, required=True)
+    deployment.add_argument("--lambda-concurrencies-json", type=Path, required=True)
+    deployment.add_argument("--safety-json", type=Path, required=True)
+    deployment.add_argument("--bucket", required=True)
+    deployment.add_argument("--object-version", required=True)
+    deployment.add_argument("--change-set-name", required=True)
+
+    rollback = commands.add_parser(
+        "rollback",
+        help="verify exact restoration of the immutable production-disabled predecessor",
+    )
+    rollback.add_argument("--predecessor-processed-json", type=Path, required=True)
+    rollback.add_argument("--rollback-processed-json", type=Path, required=True)
+    rollback.add_argument("--predecessor-stack-json", type=Path, required=True)
+    rollback.add_argument("--rollback-stack-json", type=Path, required=True)
+    rollback.add_argument("--predecessor-lambda-configurations-json", type=Path, required=True)
+    rollback.add_argument("--rollback-lambda-configurations-json", type=Path, required=True)
+    rollback.add_argument("--predecessor-lambda-concurrencies-json", type=Path, required=True)
+    rollback.add_argument("--rollback-lambda-concurrencies-json", type=Path, required=True)
+    rollback.add_argument("--safety-json", type=Path, required=True)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Verify one complete capture set and emit only the sanitized proof document."""
+
+    arguments = _parser().parse_args(argv)
+    if arguments.mode == "deployment":
+        result = verify_operations_deployment_evidence(
+            deployment_root=arguments.deployment,
+            archive_path=arguments.archive,
+            descriptor_path=arguments.descriptor,
+            update_template_path=arguments.update_template,
+            predecessor_processed_observation=_read_json_mapping(
+                arguments.predecessor_processed_json
+            ),
+            target_processed_observation=_read_json_mapping(arguments.target_processed_json),
+            change_set_observation=_read_json_mapping(arguments.change_set_json),
+            head_object_observation=_read_json_mapping(arguments.head_object_json),
+            predecessor_stack_observation=_read_json_mapping(arguments.predecessor_stack_json),
+            target_stack_observation=_read_json_mapping(arguments.target_stack_json),
+            phase6_stack_observation=_read_json_mapping(arguments.phase6_stack_json),
+            configurations=_read_json_mapping(arguments.lambda_configurations_json),
+            concurrencies=_read_json_mapping(arguments.lambda_concurrencies_json),
+            safety_observation=_read_json_mapping(arguments.safety_json),
+            bucket=arguments.bucket,
+            object_version=arguments.object_version,
+            change_set_name=arguments.change_set_name,
+        )
+    else:
+        result = verify_predecessor_rollback_readback(
+            _read_json_mapping(arguments.predecessor_processed_json),
+            _read_json_mapping(arguments.rollback_processed_json),
+            _read_json_mapping(arguments.predecessor_stack_json),
+            _read_json_mapping(arguments.rollback_stack_json),
+            _read_json_mapping(arguments.predecessor_lambda_configurations_json),
+            _read_json_mapping(arguments.rollback_lambda_configurations_json),
+            _read_json_mapping(arguments.predecessor_lambda_concurrencies_json),
+            _read_json_mapping(arguments.rollback_lambda_concurrencies_json),
+            _read_json_mapping(arguments.safety_json),
+        )
+    print(_canonical(result).decode("utf-8"), end="")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
+
+
 __all__ = [
     "ACCOUNT_ID",
     "ENVIRONMENT_NAME",
+    "PHASE6_STACK_NAME",
     "PREDECESSOR_ARCHIVE_SHA256",
     "PREDECESSOR_ARCHIVE_SIZE_BYTES",
     "PREDECESSOR_CODE_S3_KEY",
@@ -1193,6 +1332,7 @@ __all__ = [
     "verify_change_set_observation",
     "verify_operations_deployment_evidence",
     "verify_operations_lambda_readback",
+    "verify_phase6_application_release_observation",
     "verify_predecessor_rollback_readback",
     "verify_processed_template_delta",
     "verify_s3_head_observation",

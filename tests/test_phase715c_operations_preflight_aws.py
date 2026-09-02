@@ -214,6 +214,11 @@ def test_adapter_uses_only_exact_read_calls_and_emits_identifier_free_evidence()
 
     result = run_phase715c_operations_preflight_aws(provider=provider)
 
+    assert {spec.logical_id for spec in adapter._MAPPING_SPECS} == {
+        "PublicationDispatcherStreamMapping",
+        "PublicationRecoveryFunctionRecoveryQueue",
+        "PublicationRetentionStreamMapping",
+    }
     assert provider.calls == ["cloudformation", "lambda", "events", "dynamodb"]
     assert provider.cloudformation.calls == [
         {"StackName": adapter.PHASE6_STACK_NAME},
