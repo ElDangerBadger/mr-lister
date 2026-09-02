@@ -20,11 +20,11 @@ The Phase 6 product path is deliberately bounded:
 > Printify product per accepted file -> seller review -> exact-version approval -> STOP.
 
 Etsy publication is Phase 7. It is disabled and is not part of the Phase 6 acceptance path. The
-offline safety core now includes the P7.15C production-disabled local candidate: refusal-first
-entrypoints, inert infrastructure, bounded lost-event recovery, and operator safety boundaries.
-It is not deployed or activated, and it grants no seller publication route or provider mutation.
-The remaining path through production-disabled deployment, read-only validation, one-listing
-canary, general availability, and seal is tracked in the
+P7.15C production-disabled release is now deployed but inert: refusal-first entrypoints, zero
+Lambda concurrency, disabled triggers, bounded lost-event recovery, and operator safety
+boundaries. It grants no seller publication route, provider credential access, or provider
+mutation. The remaining path through non-provider operations closure, read-only validation,
+one-listing canary, general availability, and seal is tracked in the
 [`Phase 7 execution map`](docs/phase7-execution-map.md) and
 [`production-disabled operations runbook`](docs/phase7-production-operations.md).
 

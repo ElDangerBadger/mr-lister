@@ -529,11 +529,12 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     `0e3c150cb9cfa11c8047db3a4670f8ec5aa6d864`; P7.15C supersedes its packaging state while
     retaining the provider-free, unregistered, and disabled guarantees
   - [ ] Phase 7.15C production closure
-    - [x] Local/source closure at `d76e3fa464752d6b1f3923ef4f559a916e7dc515`: six release-first
+    - [x] Source/deployment closure at `7c933dd2cfd76e418d57ce1e25d9f6ffe3c69d3f`: six release-first
       refusal handlers; deterministic 74-module ARM64 release; exact contract/profile/template/
-      workflow binding; 48-resource `PRODUCTION_DISABLED` topology; EventBridge retry/DLQ and
-      customer-managed alarm encryption; restricted redrive; read-only preflight; one-message DLQ
-      triage; retention-first runbook; and complete local verification
+      workflow binding; 48-resource source SAM template and 49-resource processed
+      `PRODUCTION_DISABLED` topology; EventBridge retry/DLQ and customer-managed alarm encryption;
+      restricted redrive; read-only preflight; one-message DLQ triage; retention-first runbook; and
+      complete local verification
     - [x] Active-work recovery contract: only `DISPATCHED`, `VERIFYING`, and `RECONCILING` carry
       `PUBLICATION_WORK_RECOVERY#0`; pending and terminal work omit recovery attributes; one
       ascending max-25 `ExecutionRecoveryIndex` query performs a strong aggregate/owner/graph
@@ -541,9 +542,13 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       provider; stale hints and terminal rows are no-ops; malformed/foreign rows fail closed; later
       rows in the bounded page still run; non-redrivable, retry, and saturation outcomes fail the
       invocation for EventBridge/DLQ/alarm visibility
-    - [ ] Production-disabled live closure: versioned S3 upload and binding; reviewed change set;
-      deployment/readback/idle proof; live IAM negatives; same-ARN redrive; SQS timing;
-      EventBridge-to-DLQ-to-subscriber alarm delivery; retention/backfill; and tested rollback
+    - [x] Production-disabled deployment/readback closure: exact versioned S3 archive and template;
+      reviewed 49-add/no-mutation change set; `CREATE_COMPLETE` stack; exact artifact, Lambda, IAM,
+      trigger, queue, workflow, log, alarm, and negative-capability readback; temporally separated
+      idle proof; unchanged Phase 6 stack; and green CI run `33580123287`
+    - [ ] Non-provider operations/rollback closure: same-ARN redrive; SQS timing;
+      EventBridge-to-DLQ-to-subscriber alarm delivery; recovery-loss and saturation diagnosis;
+      retention/backfill ordering; and a tested rollback tuple for the successful stack
     - [ ] Operations continuation closure: a narrow AWS adapter for the injected preflight/DLQ
       libraries; durable settlement readback before any DLQ delete; source-specific replay
       authority for event-source failures; exact terminal rebind for retention replay; and durable

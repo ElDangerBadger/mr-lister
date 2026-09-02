@@ -4,10 +4,10 @@
 
 **PHASE 7 IN PROGRESS — ACTIVATION ZERO**
 
-Phase 6 remains sealed at seller approval. Phase 7 source contains a substantial, tested
-one-shot publication safety core and provider-free control plane, but no reachable seller
-publication route, browser control, deployed production publication worker, or generally enabled
-publication contract exists. Etsy publication has not been authorized by deployment.
+Phase 6 remains sealed at seller approval. Phase 7 contains a substantial, tested one-shot
+publication safety core and a deployed but inert provider-free control plane, but no reachable
+seller publication route, browser control, enabled production publication worker, or generally
+enabled publication contract exists. Etsy publication has not been authorized by deployment.
 
 This document is the authoritative map from the sealed Phase 6 release to a sealable Phase 7
 release. It distinguishes code that is complete from capability that is actually deployed and
@@ -19,9 +19,9 @@ enabled.
 | --- | --- |
 | Phase 6 protected source baseline | `5509457faf8242d75ea1e47ff60a429cf38bd0a3` |
 | Phase 7 P7.15B source checkpoint | `0e3c150cb9cfa11c8047db3a4670f8ec5aa6d864` on `main` |
-| Phase 7 P7.15C local source checkpoint | `d76e3fa464752d6b1f3923ef4f559a916e7dc515` on `main` |
-| P7.15C production-disabled release | `267b291ad3649ab047ec00eb3367e9e248b0e1196d99450de1dfc6d621119b2c` |
-| P7.15C production-disabled archive | `ca71db0b3204ad6f454e57128aceb74728899cd8bba0f075edc2a58cedefb508` |
+| Phase 7 P7.15C deployed source checkpoint | `7c933dd2cfd76e418d57ce1e25d9f6ffe3c69d3f` on `main` |
+| P7.15C production-disabled release | `9c4deca1813e5d1e8cc3f6747681b2194265f9c0b51b64fd9cf6b8afeb823c46` |
+| P7.15C production-disabled archive | `43721a48802bd3bbc946671aff938b6df030b495975c8bc59839db18986da88f` |
 | Phase 6 runtime source | `15a4f2a657e4cf5809de7066d267455d65c8c835` |
 | Phase 6 Provider component | `748e5c4a1e46c500215118685d1f70231b7f28b8bfe8e67cc804da1c33e7c347` |
 | Phase 6 decision | `PHASE 6 COMPLETE AND SEALED` for the functional demo scope |
@@ -47,13 +47,13 @@ role, route, state machine, agent, or browser control.
 | Safe Etsy result link, immutable report, in-app notification, and retention models | Complete and tested offline |
 | Owner-scoped query and publication-request adapters | Complete but unregistered and exact-disabled |
 | Real request and worker dependency graphs | Complete but unregistered and exact-disabled |
-| Read-only approval guard runtime, bundle builder, SAM template, and verifier | Implemented; current live release not proven |
+| Read-only approval guard runtime, bundle builder, SAM template, and verifier | Implemented source-only; no separate live guard release claimed |
 | Isolated concurrency-one direct-invoke canary and gated request preparation | Implemented source-only; never deployed or invoked |
-| Provider-free dispatcher, same-ARN recovery, deadline settlement, and terminal-retention control plane | Complete and tested source-only; unregistered and undeployed |
+| Provider-free dispatcher, same-ARN recovery, deadline settlement, and terminal-retention control plane | Implemented and instantiated inertly; triggers disabled and concurrency zero |
 | Lost-event recovery index/sweep and failed-start readback | Complete locally; bounded at 25, same-ARN-only, no scan or provider construction |
-| Six release-first production-disabled entrypoints and deterministic ARM64 artifact | Complete and sealed locally; every handler verifies then refuses without reading its event |
-| Production-disabled SAM topology, target retry/DLQ, alarm KMS, and restricted redrive authority | Complete locally; 48 resources may instantiate only in inert `PRODUCTION_DISABLED` mode |
-| Due/recovery preflight, one-message DLQ triage, and operations runbook | Complete as injected source boundaries; no default AWS adapter and no live evidence yet |
+| Six release-first production-disabled entrypoints and deterministic ARM64 artifact | Deployed and read back exactly; every handler verifies then refuses without reading its event |
+| Production-disabled SAM topology, target retry/DLQ, alarm KMS, and restricted redrive authority | 49 resources deployed only in inert `PRODUCTION_DISABLED` mode |
+| Due/recovery preflight, one-message DLQ triage, and operations runbook | Complete as injected source boundaries; no default AWS adapter or live operations-drill evidence yet |
 
 The existing source is not a publication scaffold in the ordinary sense. The safety-sensitive
 domain, persistence, provider, reconciliation, and recovery behavior is already present. The
@@ -133,25 +133,30 @@ existing marker-last TTL transaction. At that checkpoint the handlers and depend
 source-only, with no production entrypoint, runtime artifact, or activation path. P7.15C now
 supersedes that packaging state while retaining its provider-free and disabled guarantees.
 
-**P7.15C local/source closure is complete at
-`d76e3fa464752d6b1f3923ef4f559a916e7dc515`.** The candidate contains six release-first refusal
+**P7.15C source and production-disabled deployment closure is complete at
+`7c933dd2cfd76e418d57ce1e25d9f6ffe3c69d3f`.** The release contains six release-first refusal
 entrypoints, a deterministic 74-module Python 3.12 ARM64 closure, the reviewed 14-wheel dependency
 authority, exact contract/profile/topology/workflow binding, an activation-ready but inert
-48-resource template, EventBridge target retry/DLQ policy, customer-managed alarm encryption,
-restricted queue redrive, durable active-work recovery indexing, a bounded recovery sweep, exact
-one-message DLQ triage, read-only preflight, and an operations runbook. All functions retain zero
-reserved concurrency, all mappings/rules are disabled, no API or Function URL exists, the worker
-role has no provider-secret authority, and every packaged handler verifies the release before
-refusing without observing its event.
+48-resource source SAM template and 49-resource processed topology, EventBridge target retry/DLQ
+policy, customer-managed alarm encryption, restricted queue redrive, durable active-work recovery
+indexing, a bounded recovery sweep, exact one-message DLQ triage, read-only preflight, and an
+operations runbook. All functions retain zero reserved concurrency, all mappings/rules are
+disabled, no API or Function URL exists, the worker role has no provider-secret authority, and
+every packaged handler verifies the release before refusing without observing its event.
 
-**P7.15C production/live closure remains open.** Upload and bind the exact versioned archive,
-review a change set, deploy/read back the disabled stack, prove an idle interval, validate live IAM
-and negative capability, exercise same-ARN redrive and SQS timing, deliver EventBridge exhaustion
-through the DLQ and alarm receiver, validate retention/backfill ordering, and capture a tested
-rollback tuple. A saturated 25-row recovery page is an explicit alarm/operator stop; provably fair
-automatic traversal beyond that page requires new durable continuation authority and is not
-claimed. The preflight and DLQ tools remain injected libraries until a narrow AWS operator adapter
-is reviewed. Until the live items close, the overall infrastructure-and-alarm gate remains open.
+The exact versioned archive was uploaded, the processed 49-add change set was reviewed, and stack
+`mr-lister-phase7-dev` reached `CREATE_COMPLETE`. Exact artifact, Lambda, IAM, mapping, schedule,
+queue, workflow, log, alarm, and negative-capability readback passed. Two temporally separated idle
+samples from `2026-09-02T02:06:27Z` through `02:16:59Z` found no Lambda invocation datapoints,
+workflow executions, queued work, or indexed work, while Phase 6 remained unchanged.
+
+**P7.15C non-provider operations closure remains open.** Exercise same-ARN redrive and SQS timing,
+deliver EventBridge exhaustion through the DLQ and alarm receiver, validate retention/backfill
+ordering, and capture a tested rollback tuple for the successful stack. A saturated 25-row
+recovery page is an explicit alarm/operator stop; provably fair automatic traversal beyond that
+page requires new durable continuation authority and is not claimed. The preflight and DLQ tools
+remain injected libraries until a narrow AWS operator adapter is reviewed. Until these drills
+close, the overall infrastructure-and-alarm gate remains open.
 
 ### P7.16 — Deployed read-only validation
 
@@ -184,48 +189,45 @@ Only after a successful canary:
 5. capture source, artifact, deployment, CI, canary, rollback, and operational evidence; and
 6. declare either `PHASE 7 COMPLETE AND SEALED` or the smallest exact blocker list.
 
-## Live-state inventory at map creation
+## Authoritative live-state and deployment record
 
-On 2026-09-01, the authenticated `mr-lister-bootstrap` profile reported no CloudFormation stack
-whose name contains `phase7`; `mr-lister-phase7-dev` does not exist in that account. The exact
-`mr-lister-dev` IAM user now authenticates in account `384627057108`, but its current policy denies
-`cloudformation:ListStacks`, `s3:ListAllMyBuckets`, and `dynamodb:DescribeTable`, so deployment
-inventory and readback cannot proceed under that identity. The repository contains no
-authoritative Phase 7 deployment release record. Therefore no Phase 7 deployment or rollback
-tuple is currently claimed.
+On 2026-09-02, the authenticated `mr-lister-dev` profile deployed and read back the following
+production-disabled release in account `384627057108`, region `us-west-2`:
 
-A replacement zero-publication guard candidate was then rebuilt from `main` and verified locally:
-
-| Candidate authority | Value |
+| Deployment authority | Value |
 | --- | --- |
-| Guard release | `625eeb88fff6f9f801d7e2320efa08a1d2567f077145b394229b9a2c33717fe3` |
-| Archive SHA-256 | `f77b3bb41b86ae4afcdd17428de140c8def78551ef92bfd5cefa9dc1fafeac84` |
-| Archive size | `30,870,582` bytes |
-| Deployment-manifest SHA-256 | `26fc7e187fd66670c367d23a78c7c5cba160a89be72ce8f9547ce9f449664a64` |
-| Product-profile fingerprint | `5de1257141cfdacb1731f68bb9113712957483b33d5b0f7115afdba86eb7476c` |
-
-The checked dependency artifact, deterministic archive, release-first verifier, and focused
-read-only infrastructure tests passed. This candidate is retained only in the ignored private
-release area. It has not been uploaded or deployed and is not yet a rollback point.
-
-The P7.15C production-disabled candidate was then built twice from source checkpoint
-`d76e3fa464752d6b1f3923ef4f559a916e7dc515`; byte comparison proved both builds identical:
-
-| Candidate authority | Value |
-| --- | --- |
-| Release manifest | `267b291ad3649ab047ec00eb3367e9e248b0e1196d99450de1dfc6d621119b2c` |
-| Archive SHA-256 | `ca71db0b3204ad6f454e57128aceb74728899cd8bba0f075edc2a58cedefb508` |
+| Source commit | `7c933dd2cfd76e418d57ce1e25d9f6ffe3c69d3f` |
+| Release manifest | `9c4deca1813e5d1e8cc3f6747681b2194265f9c0b51b64fd9cf6b8afeb823c46` |
+| Archive SHA-256 | `43721a48802bd3bbc946671aff938b6df030b495975c8bc59839db18986da88f` |
 | Archive size | `62,982,212` bytes |
-| Deployment manifest | `e3167d5377f60f04d048d4f52bc97c96e4a3ca409399199e76a29acfba2dfd42` |
-| Source manifest | `9b40735033c833317e039174f98fa417441b4ed50d49799a75e66c4c32d8c6c2` |
+| Versioned archive | `phase7/candidates/9c4deca1813e5d1e8cc3f6747681b2194265f9c0b51b64fd9cf6b8afeb823c46/production-disabled.zip`, version `6ix.miylQqgEZyV392IenODAlQvbAp4F` |
+| Deployment manifest | `068a9956609c70ab01059e0a7c08b8499dbf1edc67dedcb4032bd0a6dd3459ab` |
+| Source manifest | `58fb8526f8767549347a1a90452cd144867a593fbd3a7e78218ebe84b6ebc4f9` |
 | Dependency manifest | `4945e5c68931676783932eb33b933f40e107765296fcfdd9f2ea6363ef6ce04f` |
-| Topology binding | `0c9e1c22c2e9b1ff28ff925381d6ade979a2edea0692e04f5455a29ca33a0768` |
-| Deployment descriptor | `4f2b5628f0411d8fe808e758a60a0912329710105600f9be3eef135b6430fa21` |
-| Disabled template | `2e920d09c7838a48471278d98b823ef6d914db5c8b5d9915cda465b8748dbe32` |
+| Topology binding | `f26d28b96664415facbb153c74364b9b0e4b2478af1a20431918b96e498de3b8` |
+| Deployment descriptor | `fdfc0797b3fc7b3b750108a76ae38f854c65cf0dfd6ac9abdb653b2456ea2708` |
+| Disabled template | `2a98ab2a7cf3fb04590f9f8cd3a30cc6c2e373421e70c70220be419b80ca7df2` |
 | Publication workflow | `9a6112c85b35e775d1e60681a0ca14e6740cd0aea82b2ac33b5aa74b86fc3098` |
+| Packaged template | `phase7/sam/templates/2a6f45a790e554e3680e23c4d35abf4d8a2a99611a20e301c66d2a61a284b9db.yaml`, version `fvTXvRtq9r.JtdyorhIzV.PZGLei9w4D` |
+| Stack | `mr-lister-phase7-dev`, `CREATE_COMPLETE` |
+| Change set | `mr-lister-phase7-dev-production-disabled-create-9c4deca1813e` |
+| CI | GitHub Actions run `33580123287`, green |
 
-The candidate remains in the ignored private release area. It has not been uploaded or deployed,
-so it is not a live release or rollback point.
+The processed change set contained 49 additions and no modifications or removals. Readback proved
+all six functions use the exact archive and reserved concurrency zero; all mappings and rules are
+disabled; no Function URL, API, provider secret, or provider permission exists; queues and live
+work partitions are empty; the state machine has no execution; and all seven log groups contain
+zero stored bytes. Two idle samples from `2026-09-02T02:06:27Z` through `02:16:59Z` also found no
+Lambda invocation datapoints. Stack outputs report `PRODUCTION_DISABLED`, seller publication
+false, provider mutation false, and worker triggering false. The Phase 6 stack ID, status, update
+timestamp, and `WEB_EDGE_ACTIVE_DRAFT_ONLY` readiness remained unchanged.
+
+An earlier release `267b291ad3649ab047ec00eb3367e9e248b0e1196d99450de1dfc6d621119b2c`
+failed during create because the workflow log destination appended a second `:*` to the log-group
+ARN. The stack rolled back; all other created resources were removed, while its retained KMS key
+is pending scheduled deletion. The corrected direct-ARN behavior is regression-tested in the
+deployed source. That failed candidate is historical evidence, not a live release or rollback
+point. A tested rollback tuple for the current successful stack is still open.
 
 The intentional recovery-index and strong aggregate-rebind changes also resealed the historical
 P7.9 triggerless worker source checkpoint. Its manifest changed from

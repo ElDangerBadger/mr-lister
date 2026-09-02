@@ -2,7 +2,7 @@
 
 ## Current authority
 
-This runbook governs the Phase 7.15C production-disabled candidate. It does not authorize a
+This runbook governs the deployed Phase 7.15C production-disabled release. It does not authorize a
 seller publication route, a publication request, a provider credential read, a Printify
 publication POST, or an Etsy listing. Contract `7.0.1` remains frozen at
 `offline_implementation` with `publication_enabled=false`.
@@ -17,7 +17,7 @@ reading the invocation. General availability is not an allowed template mode.
 
 ## Deterministic local build
 
-From source checkpoint `d76e3fa464752d6b1f3923ef4f559a916e7dc515`, with the reviewed private
+From source checkpoint `7c933dd2cfd76e418d57ce1e25d9f6ffe3c69d3f`, with the reviewed private
 14-wheel Lambda wheelhouse present:
 
 ```bash
@@ -43,16 +43,45 @@ temporary directory and both archive and descriptor compared byte-for-byte.
 
 | Authority | SHA-256 / value |
 | --- | --- |
-| Release manifest | `267b291ad3649ab047ec00eb3367e9e248b0e1196d99450de1dfc6d621119b2c` |
-| Archive | `ca71db0b3204ad6f454e57128aceb74728899cd8bba0f075edc2a58cedefb508` |
+| Release manifest | `9c4deca1813e5d1e8cc3f6747681b2194265f9c0b51b64fd9cf6b8afeb823c46` |
+| Archive | `43721a48802bd3bbc946671aff938b6df030b495975c8bc59839db18986da88f` |
 | Archive size | `62,982,212` bytes |
-| Deployment manifest | `e3167d5377f60f04d048d4f52bc97c96e4a3ca409399199e76a29acfba2dfd42` |
-| Source manifest | `9b40735033c833317e039174f98fa417441b4ed50d49799a75e66c4c32d8c6c2` |
+| Deployment manifest | `068a9956609c70ab01059e0a7c08b8499dbf1edc67dedcb4032bd0a6dd3459ab` |
+| Source manifest | `58fb8526f8767549347a1a90452cd144867a593fbd3a7e78218ebe84b6ebc4f9` |
 | Dependency manifest | `4945e5c68931676783932eb33b933f40e107765296fcfdd9f2ea6363ef6ce04f` |
-| Topology binding | `0c9e1c22c2e9b1ff28ff925381d6ade979a2edea0692e04f5455a29ca33a0768` |
-| Deployment descriptor | `4f2b5628f0411d8fe808e758a60a0912329710105600f9be3eef135b6430fa21` |
-| Disabled template | `2e920d09c7838a48471278d98b823ef6d914db5c8b5d9915cda465b8748dbe32` |
+| Topology binding | `f26d28b96664415facbb153c74364b9b0e4b2478af1a20431918b96e498de3b8` |
+| Deployment descriptor | `fdfc0797b3fc7b3b750108a76ae38f854c65cf0dfd6ac9abdb653b2456ea2708` |
+| Disabled template | `2a98ab2a7cf3fb04590f9f8cd3a30cc6c2e373421e70c70220be419b80ca7df2` |
 | Publication workflow | `9a6112c85b35e775d1e60681a0ca14e6740cd0aea82b2ac33b5aa74b86fc3098` |
+
+## Live deployment record
+
+This exact release is deployed in account `384627057108`, region `us-west-2`, through profile
+`mr-lister-dev`:
+
+| Authority | Value |
+| --- | --- |
+| Versioned archive | `phase7/candidates/9c4deca1813e5d1e8cc3f6747681b2194265f9c0b51b64fd9cf6b8afeb823c46/production-disabled.zip`, version `6ix.miylQqgEZyV392IenODAlQvbAp4F` |
+| Packaged template SHA-256 | `2a6f45a790e554e3680e23c4d35abf4d8a2a99611a20e301c66d2a61a284b9db` |
+| Versioned packaged template | `phase7/sam/templates/2a6f45a790e554e3680e23c4d35abf4d8a2a99611a20e301c66d2a61a284b9db.yaml`, version `fvTXvRtq9r.JtdyorhIzV.PZGLei9w4D` |
+| Stack | `mr-lister-phase7-dev`, `CREATE_COMPLETE` |
+| Stack ID | `arn:aws:cloudformation:us-west-2:384627057108:stack/mr-lister-phase7-dev/e3ee3330-a671-11f1-8e50-02219a1c6639` |
+| Change set | `mr-lister-phase7-dev-production-disabled-create-9c4deca1813e` |
+| CI | GitHub Actions run `33580123287`, green |
+
+The processed change set contained 49 additions, no modifications or removals, and no Phase 6
+resource. Exact artifact, Lambda, IAM, mapping, rule, queue, workflow, log, metric-filter, alarm,
+SNS, KMS, and stack-output readback passed. All six functions have reserved concurrency zero, all
+six Function URL lookups return not found, every event source and schedule is disabled, the worker
+has no provider credential or mutation authority, and publication-related stack outputs remain
+false. SNS subscription counters are zero; direct subscription enumeration was denied and is not
+claimed. The Phase 6 stack remained unchanged.
+
+Two idle samples from `2026-09-02T02:06:27Z` through `02:16:59Z` proved empty due/recovery
+partitions, empty queues, no Step Functions execution, no Lambda invocation datapoints, no stored
+log data, and no change to Phase 6. These close the production-disabled deployment/readback/idle
+checkpoint; they do not authorize invocation or close the separate non-provider operations drills
+below.
 
 ## Required order
 
@@ -156,17 +185,15 @@ request intake is considered. If any terminal Phase 7 authority already exists, 
 verify a bounded terminal-link/TTL backfill first. Never enable a request route while retention is
 disabled, lagging, or partially backfilled.
 
-## Live evidence still required
+## Remaining live evidence
 
-The local source checkpoint cannot claim the following observations:
+The deployed production-disabled checkpoint does not yet claim the following observations:
 
-- exact deployment/change-set/readback and a tested rollback tuple;
-- live IAM success and negative-capability proof;
+- a tested rollback tuple for the current successful stack;
 - same-ARN Step Functions redrive and SQS visibility/redrive timing;
 - EventBridge target exhaustion reaching the encrypted DLQ and alarm notification delivery;
 - recovery-index loss simulation, batch saturation, and poison-row diagnosis;
-- retention duration, marker-last completion, and any required backfill; and
-- a clean idle interval with no provider or publication activity;
+- retention duration, marker-last completion, and any required backfill;
 - a narrow deployed adapter for the injected preflight and DLQ libraries; and
 - durable continuation authority before automatic recovery fairness beyond a saturated first page
   is claimed.

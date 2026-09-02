@@ -436,17 +436,17 @@ EventBridge retry/DLQ/alarm path is observable. A saturated first page is an ope
 claim of fair traversal beyond 25; a provable continuation requires new durable cursor/shard
 authority.
 
-The local P7.15C candidate seals six release-first entrypoints, the complete production
+The deployed P7.15C production-disabled release seals six release-first entrypoints, the production
 composition closure, exact disabled topology/workflow inputs, and the checked dependency tree.
 Each deployed entrypoint authenticates the release and exact disabled environment, then refuses
 without observing its event or importing an application/provider graph. All Lambda concurrency is
 zero, every mapping/rule is disabled, no API/Function URL or provider-secret IAM exists, and
 contract `7.0.1` remains at `offline_implementation` with `publication_enabled=false`.
 
-This local seal does not close the infrastructure gate. Versioned upload, change-set review,
-disabled deployment/readback, idle proof, live IAM negatives, alarm delivery, recovery/SQS timing,
-retention/backfill, a narrow operator adapter, and rollback evidence remain required before
-deployed read-only validation begins.
+The exact versioned upload, reviewed change set, disabled deployment/readback, idle interval, and
+live negative-capability proof are complete. The infrastructure gate remains open for non-provider
+alarm delivery, recovery/SQS timing, retention/backfill, a narrow operator adapter, and tested
+rollback evidence before deployed read-only validation begins.
 
 ## Acceptance and three activation scopes
 
