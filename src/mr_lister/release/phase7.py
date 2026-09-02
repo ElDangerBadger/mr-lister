@@ -23,7 +23,7 @@ from typing import Any, cast
 
 GUARD_ENTRYPOINT = "mr_lister.cloud.phase7_guard_entrypoint.publication_guard_verification_handler"
 GUARD_RELEASE_FINGERPRINT_ENV = "MR_LISTER_PHASE7_GUARD_RELEASE_FINGERPRINT"
-SHARED_RELEASE_FINGERPRINT_ENV = "MR_LISTER_RELEASE_FINGERPRINT"
+APPLICATION_RELEASE_FINGERPRINT_ENV = "MR_LISTER_RELEASE_FINGERPRINT"
 
 SOURCE_MANIFEST_FILENAME = "source-manifest.json"
 DEPENDENCY_BUILD_REQUEST_FILENAME = "dependency-build-request.json"
@@ -216,6 +216,7 @@ class Phase7GuardReleaseBinding:
     component: str
     entrypoint: str
     release_fingerprint: str
+    application_release_fingerprint: str
     deployment_manifest_fingerprint: str
     source_manifest_fingerprint: str
     dependency_manifest_fingerprint: str
@@ -244,8 +245,10 @@ def verify_phase7_guard_release(
             environment,
             GUARD_RELEASE_FINGERPRINT_ENV,
         )
-        if _required_fingerprint(environment, SHARED_RELEASE_FINGERPRINT_ENV) != expected_release:
-            raise ValueError
+        application_release_fingerprint = _required_fingerprint(
+            environment,
+            APPLICATION_RELEASE_FINGERPRINT_ENV,
+        )
         root = _exact_directory(bundle_root or Path(__file__).resolve().parents[2])
         release_bytes, release = _read_canonical_manifest(root / RELEASE_MANIFEST_FILENAME)
         release_fingerprint = sha256(release_bytes).hexdigest()
@@ -306,6 +309,7 @@ def verify_phase7_guard_release(
             component=_COMPONENT,
             entrypoint=GUARD_ENTRYPOINT,
             release_fingerprint=release_fingerprint,
+            application_release_fingerprint=application_release_fingerprint,
             deployment_manifest_fingerprint=deployment_fingerprint,
             source_manifest_fingerprint=source_fingerprint,
             dependency_manifest_fingerprint=dependency_fingerprint,
@@ -912,6 +916,7 @@ __all__ = [
     "DEPENDENCY_ARTIFACT_FILENAME",
     "DEPENDENCY_BUILD_REQUEST_FILENAME",
     "DEPLOYMENT_MANIFEST_FILENAME",
+    "APPLICATION_RELEASE_FINGERPRINT_ENV",
     "GUARD_ENTRYPOINT",
     "GUARD_PROFILE_FINGERPRINT",
     "GUARD_RELEASE_FINGERPRINT_ENV",
@@ -923,7 +928,6 @@ __all__ = [
     "PINNED_GUARD_WHEELS",
     "RELEASE_MANIFEST_FILENAME",
     "SOURCE_MANIFEST_FILENAME",
-    "SHARED_RELEASE_FINGERPRINT_ENV",
     "Phase7GuardReleaseAuthorityError",
     "Phase7GuardReleaseBinding",
     "inspect_linux_arm64_dependency_artifact",

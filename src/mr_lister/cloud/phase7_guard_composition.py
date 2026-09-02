@@ -129,6 +129,7 @@ class Phase7GuardConfiguration:
     environment_name: str
     state_table: str
     guard_release_fingerprint: str
+    application_release_fingerprint: str
     profile: PinnedGuardProfileConfiguration
     eligibility: PublicationProfileEligibility
     activation: PublicationGuardRuntimeActivation
@@ -976,14 +977,15 @@ def load_phase7_guard_configuration(
             environment,
             "MR_LISTER_PHASE7_GUARD_RELEASE_FINGERPRINT",
         )
-        shared_release_fingerprint = _required(
+        application_release_fingerprint = _required(
             environment,
             "MR_LISTER_RELEASE_FINGERPRINT",
         )
         if (
             _FINGERPRINT.fullmatch(release_fingerprint) is None
             or release_fingerprint == "0" * 64
-            or shared_release_fingerprint != release_fingerprint
+            or _FINGERPRINT.fullmatch(application_release_fingerprint) is None
+            or application_release_fingerprint == "0" * 64
         ):
             raise ValueError
         if (
@@ -1002,7 +1004,7 @@ def load_phase7_guard_configuration(
             profile_id=profile.exact.profile.profile_id,
             profile_version=profile.exact.profile.profile_version,
             profile_fingerprint=profile.exact.fingerprint,
-            release_manifest_fingerprint=release_fingerprint,
+            release_manifest_fingerprint=application_release_fingerprint,
             phase6_profile_publish_enabled=profile.exact.profile.publish_enabled,
         )
         configuration = Phase7GuardConfiguration(
@@ -1010,6 +1012,7 @@ def load_phase7_guard_configuration(
             environment_name=table_match.group("environment"),
             state_table=state_table,
             guard_release_fingerprint=release_fingerprint,
+            application_release_fingerprint=application_release_fingerprint,
             profile=profile,
             eligibility=eligibility,
             activation=PublicationGuardRuntimeActivation(
@@ -1043,7 +1046,7 @@ def compose_publication_guard_service(
         store=store,
         profiles=_PinnedGuardProfileAuthority(configuration.profile.exact),
         eligibility=PinnedPublicationProfileEligibilityAuthority(configuration.eligibility),
-        release_manifest_fingerprint=configuration.guard_release_fingerprint,
+        release_manifest_fingerprint=configuration.application_release_fingerprint,
     )
     return PublicationGuardVerificationService(
         guard=guard,
@@ -1147,6 +1150,8 @@ def _validate_phase7_guard_configuration(
             or table_match.group("environment") != configuration.environment_name
             or _FINGERPRINT.fullmatch(configuration.guard_release_fingerprint) is None
             or configuration.guard_release_fingerprint == "0" * 64
+            or _FINGERPRINT.fullmatch(configuration.application_release_fingerprint) is None
+            or configuration.application_release_fingerprint == "0" * 64
         ):
             raise ValueError
         profile = configuration.profile
@@ -1171,7 +1176,7 @@ def _validate_phase7_guard_configuration(
             profile_version=reloaded.profile.profile_version,
             profile_fingerprint=reloaded.fingerprint,
             expected_sales_channel="etsy",
-            release_manifest_fingerprint=configuration.guard_release_fingerprint,
+            release_manifest_fingerprint=configuration.application_release_fingerprint,
             phase6_profile_publish_enabled=reloaded.profile.publish_enabled,
         )
         activation = PublicationGuardRuntimeActivation.model_validate(
@@ -1182,6 +1187,7 @@ def _validate_phase7_guard_configuration(
             environment_name=configuration.environment_name,
             state_table=configuration.state_table,
             guard_release_fingerprint=configuration.guard_release_fingerprint,
+            application_release_fingerprint=configuration.application_release_fingerprint,
             profile=PinnedGuardProfileConfiguration(path=profile.path, exact=reloaded),
             eligibility=eligibility,
             activation=activation,

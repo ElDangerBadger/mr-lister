@@ -59,8 +59,10 @@ def verify_stack_observation(
         if not isinstance(stack, Mapping):
             raise ValueError
         release = descriptor["release_fingerprint"]
+        application_release = descriptor["application_release_fingerprint"]
         function_name = _function_name(environment_name)
         expected_parameters = {
+            "ApplicationReleaseFingerprint": application_release,
             "EnvironmentName": environment_name,
             "GuardCodeS3Bucket": bucket,
             "GuardCodeS3Key": key,
@@ -88,7 +90,11 @@ def verify_stack_observation(
         stack_id = stack.get("StackId")
         if (
             not isinstance(release, str)
+            or not isinstance(application_release, str)
+            or _FINGERPRINT.fullmatch(application_release) is None
+            or application_release == "0" * 64
             or key != f"phase7/releases/{release}/guard.zip"
+            or stack_name != _guard_stack_name(environment_name)
             or stack.get("StackName") != stack_name
             or stack.get("StackStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}
             or not isinstance(stack_id, str)
@@ -185,6 +191,55 @@ def verify_stack_resources_observation(
         raise ValueError("Phase 7 guard stack resource observation is invalid") from None
 
 
+def verify_phase6_application_release_observation(
+    descriptor: Mapping[str, object],
+    observation: Mapping[str, object],
+    *,
+    environment_name: str,
+    region: str,
+    account_id: str,
+) -> None:
+    """Bind the guard's application fingerprint to the exact deployed Phase 6 stack."""
+
+    try:
+        if (
+            _ENVIRONMENT.fullmatch(environment_name) is None
+            or _REGION.fullmatch(region) is None
+            or _ACCOUNT.fullmatch(account_id) is None
+        ):
+            raise ValueError
+        stacks = observation.get("Stacks")
+        if set(observation) != {"Stacks"} or not isinstance(stacks, list) or len(stacks) != 1:
+            raise ValueError
+        stack = stacks[0]
+        if not isinstance(stack, Mapping):
+            raise ValueError
+        stack_name = f"mr-lister-phase6-{environment_name}"
+        stack_id = stack.get("StackId")
+        parameters = _key_value_records(
+            stack.get("Parameters"),
+            "ParameterKey",
+            "ParameterValue",
+        )
+        application_release = descriptor.get("application_release_fingerprint")
+        if (
+            not isinstance(application_release, str)
+            or _FINGERPRINT.fullmatch(application_release) is None
+            or application_release == "0" * 64
+            or parameters.get("EnvironmentName") != environment_name
+            or parameters.get("ReleaseFingerprint") != application_release
+            or stack.get("StackName") != stack_name
+            or stack.get("StackStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}
+            or not isinstance(stack_id, str)
+            or not stack_id.startswith(
+                f"arn:{_partition(region)}:cloudformation:{region}:{account_id}:stack/{stack_name}/"
+            )
+        ):
+            raise ValueError
+    except Exception:
+        raise ValueError("Phase 6 application release observation is invalid") from None
+
+
 def verify_legacy_query_absence_observations(
     absence_observation: Mapping[str, object],
     alarm_observation: Mapping[str, object],
@@ -258,6 +313,7 @@ def verify_lambda_configuration_observation(
         partition = _partition(region)
         raw_archive = archive_path.read_bytes()
         release = descriptor["release_fingerprint"]
+        application_release = descriptor["application_release_fingerprint"]
         profile = descriptor["profile_fingerprint"]
         expected_environment = {
             "MR_LISTER_AWS_ACCOUNT_ID": account_id,
@@ -275,7 +331,7 @@ def verify_lambda_configuration_observation(
                 "/var/task/config/product_profiles/gildan_64000_swiftpod.json"
             ),
             "MR_LISTER_PRODUCT_PROFILE_VERSION": "2",
-            "MR_LISTER_RELEASE_FINGERPRINT": release,
+            "MR_LISTER_RELEASE_FINGERPRINT": application_release,
             "MR_LISTER_STATE_TABLE": f"mr-lister-phase6-{environment_name}",
         }
         environment = configuration.get("Environment")
@@ -301,6 +357,9 @@ def verify_lambda_configuration_observation(
             or configuration.get("PackageType") != "Zip"
             or configuration.get("Architectures") != ["arm64"]
             or profile != GUARD_PROFILE_FINGERPRINT
+            or not isinstance(application_release, str)
+            or _FINGERPRINT.fullmatch(application_release) is None
+            or application_release == "0" * 64
             or not isinstance(environment, Mapping)
             or set(environment) != {"Variables"}
             or environment.get("Variables") != expected_environment
@@ -629,6 +688,10 @@ def _function_name(environment_name: str) -> str:
     return f"mr-lister-phase7-{environment_name}-guard-verification"
 
 
+def _guard_stack_name(environment_name: str) -> str:
+    return f"mr-lister-phase7-guard-{environment_name}"
+
+
 def _partition(region: str) -> str:
     if region.startswith("us-gov-"):
         return "aws-us-gov"
@@ -707,6 +770,7 @@ def main() -> None:
     parser.add_argument("--key")
     parser.add_argument("--version-id")
     parser.add_argument("--stack-json", type=Path)
+    parser.add_argument("--phase6-stack-json", type=Path)
     parser.add_argument("--stack-resources-json", type=Path)
     parser.add_argument("--lambda-configuration-json", type=Path)
     parser.add_argument("--lambda-concurrency-json", type=Path)
@@ -763,6 +827,7 @@ def main() -> None:
 
     deployment_values = (
         arguments.stack_json,
+        arguments.phase6_stack_json,
         arguments.stack_resources_json,
         arguments.lambda_configuration_json,
         arguments.lambda_concurrency_json,
@@ -805,6 +870,13 @@ def main() -> None:
             bucket=arguments.bucket,
             key=arguments.key,
             version_id=arguments.version_id,
+            region=arguments.region,
+            account_id=arguments.account_id,
+        )
+        verify_phase6_application_release_observation(
+            descriptor,
+            _read_json_mapping(arguments.phase6_stack_json),
+            environment_name=arguments.environment_name,
             region=arguments.region,
             account_id=arguments.account_id,
         )

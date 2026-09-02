@@ -24,6 +24,7 @@ from tempfile import TemporaryDirectory
 from typing import cast
 
 from mr_lister.release.phase7 import (
+    APPLICATION_RELEASE_FINGERPRINT_ENV,
     CAPABILITY_FREE_CLOUD_INIT_BYTES,
     CAPABILITY_FREE_PACKAGE_INIT_PATHS,
     DEPENDENCY_ARTIFACT_FILENAME,
@@ -36,7 +37,6 @@ from mr_lister.release.phase7 import (
     PINNED_GUARD_REQUIREMENTS,
     PINNED_GUARD_WHEELS,
     RELEASE_MANIFEST_FILENAME,
-    SHARED_RELEASE_FINGERPRINT_ENV,
     SOURCE_MANIFEST_FILENAME,
     Phase7GuardReleaseAuthorityError,
     inspect_linux_arm64_dependency_artifact,
@@ -116,6 +116,7 @@ class Phase76GuardArtifact:
     archive_path: Path
     descriptor_path: Path
     release_fingerprint: str
+    application_release_fingerprint: str
     archive_fingerprint: str
     profile_fingerprint: str
 
@@ -284,6 +285,7 @@ def build_linux_arm64_dependencies_from_wheelhouse(
 def seal_guard_release(
     source_root: Path,
     *,
+    application_release_fingerprint: str,
     dependencies: Path,
     deployment_destination: Path,
     artifact_destination: Path,
@@ -341,7 +343,7 @@ def seal_guard_release(
         binding = verify_phase7_guard_release(
             {
                 GUARD_RELEASE_FINGERPRINT_ENV: release_fingerprint,
-                SHARED_RELEASE_FINGERPRINT_ENV: release_fingerprint,
+                APPLICATION_RELEASE_FINGERPRINT_ENV: application_release_fingerprint,
             },
             bundle_root=deployment,
         )
@@ -357,6 +359,7 @@ def seal_guard_release(
         archive_fingerprint = sha256(archive_bytes).hexdigest()
         descriptor = {
             "algorithm": "sha256",
+            "application_release_fingerprint": binding.application_release_fingerprint,
             "archive": {
                 "path": GUARD_ARCHIVE_FILENAME,
                 "sha256": archive_fingerprint,
@@ -372,6 +375,7 @@ def seal_guard_release(
             "runtime": "python3.12",
             "s3_binding": {
                 "archive_sha256_metadata_key": "mr-lister-archive-sha256",
+                "application_release_fingerprint_parameter": "ApplicationReleaseFingerprint",
                 "bucket_parameter": "GuardCodeS3Bucket",
                 "head_object_version_must_match": True,
                 "key_parameter": "GuardCodeS3Key",
@@ -396,6 +400,7 @@ def seal_guard_release(
             archive_path=archive_path,
             descriptor_path=descriptor_path,
             release_fingerprint=release_fingerprint,
+            application_release_fingerprint=binding.application_release_fingerprint,
             archive_fingerprint=archive_fingerprint,
             profile_fingerprint=binding.profile_fingerprint,
         )
@@ -440,6 +445,7 @@ def verify_guard_deployment_artifact(
             raise ValueError
         if set(descriptor) != {
             "algorithm",
+            "application_release_fingerprint",
             "archive",
             "architecture",
             "component",
@@ -458,7 +464,7 @@ def verify_guard_deployment_artifact(
         binding = verify_phase7_guard_release(
             {
                 GUARD_RELEASE_FINGERPRINT_ENV: release,
-                SHARED_RELEASE_FINGERPRINT_ENV: release,
+                APPLICATION_RELEASE_FINGERPRINT_ENV: descriptor["application_release_fingerprint"],
             },
             bundle_root=deployment,
         )
@@ -470,6 +476,8 @@ def verify_guard_deployment_artifact(
         expected_archive = render_deterministic_zip(deployment)
         if (
             descriptor["algorithm"] != "sha256"
+            or descriptor["application_release_fingerprint"]
+            != binding.application_release_fingerprint
             or descriptor["architecture"] != "arm64"
             or descriptor["component"] != _COMPONENT
             or descriptor["deployment_manifest_sha256"] != binding.deployment_manifest_fingerprint
@@ -485,6 +493,7 @@ def verify_guard_deployment_artifact(
             raise ValueError
         if descriptor["s3_binding"] != {
             "archive_sha256_metadata_key": "mr-lister-archive-sha256",
+            "application_release_fingerprint_parameter": "ApplicationReleaseFingerprint",
             "bucket_parameter": "GuardCodeS3Bucket",
             "head_object_version_must_match": True,
             "key_parameter": "GuardCodeS3Key",
@@ -753,6 +762,7 @@ def main() -> None:
         default=DEFAULT_ARTIFACT_DESTINATION,
     )
     parser.add_argument("--archive", type=Path)
+    parser.add_argument("--application-release-fingerprint")
     parser.add_argument("--descriptor", type=Path)
     arguments = parser.parse_args()
 
@@ -793,8 +803,11 @@ def main() -> None:
     if arguments.seal_source_release is not None:
         if arguments.dependencies is None:
             parser.error("--seal-source-release requires --dependencies")
+        if arguments.application_release_fingerprint is None:
+            parser.error("--seal-source-release requires --application-release-fingerprint")
         result = seal_guard_release(
             arguments.seal_source_release,
+            application_release_fingerprint=arguments.application_release_fingerprint,
             dependencies=arguments.dependencies,
             deployment_destination=arguments.deployment_destination,
             artifact_destination=arguments.artifact_destination,
@@ -820,6 +833,7 @@ def main() -> None:
             arguments.build_request,
             arguments.dependencies,
             arguments.archive,
+            arguments.application_release_fingerprint,
             arguments.descriptor,
         )
     ):

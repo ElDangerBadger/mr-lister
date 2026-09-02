@@ -28,6 +28,7 @@ def test_phase76_guard_code_parameters_bind_one_immutable_versioned_release() ->
     parameters = template["Parameters"]
 
     assert set(parameters) == {
+        "ApplicationReleaseFingerprint",
         "EnvironmentName",
         "GuardCodeS3Bucket",
         "GuardCodeS3Key",
@@ -47,12 +48,15 @@ def test_phase76_guard_code_parameters_bind_one_immutable_versioned_release() ->
     )
     assert re.fullmatch(parameters["GuardReleaseFingerprint"]["AllowedPattern"], fingerprint)
     assert not re.fullmatch(parameters["GuardReleaseFingerprint"]["AllowedPattern"], "0" * 64)
+    assert re.fullmatch(parameters["ApplicationReleaseFingerprint"]["AllowedPattern"], fingerprint)
+    assert not re.fullmatch(parameters["ApplicationReleaseFingerprint"]["AllowedPattern"], "0" * 64)
     assert re.fullmatch(parameters["GuardCodeS3ObjectVersion"]["AllowedPattern"], "v1.token-2")
     assert not re.fullmatch(parameters["GuardCodeS3ObjectVersion"]["AllowedPattern"], "null")
     assert "Default" not in parameters["GuardCodeS3Bucket"]
     assert "Default" not in parameters["GuardCodeS3Key"]
     assert "Default" not in parameters["GuardCodeS3ObjectVersion"]
     assert "Default" not in parameters["GuardReleaseFingerprint"]
+    assert "Default" not in parameters["ApplicationReleaseFingerprint"]
 
 
 def test_private_guard_function_is_direct_invoke_only_and_exact_disabled_for_publication() -> None:
@@ -94,7 +98,7 @@ def test_private_guard_function_is_direct_invoke_only_and_exact_disabled_for_pub
         "MR_LISTER_PHASE7_GUARD_ENABLED": "true",
         "MR_LISTER_PHASE7_GUARD_MODE": "approval_version_read_only",
         "MR_LISTER_PHASE7_GUARD_RELEASE_FINGERPRINT": {"Ref": "GuardReleaseFingerprint"},
-        "MR_LISTER_RELEASE_FINGERPRINT": {"Ref": "GuardReleaseFingerprint"},
+        "MR_LISTER_RELEASE_FINGERPRINT": {"Ref": "ApplicationReleaseFingerprint"},
         "MR_LISTER_PRODUCT_PROFILE_ID": "gildan_64000_swiftpod",
         "MR_LISTER_PRODUCT_PROFILE_VERSION": "2",
         "MR_LISTER_PRODUCT_PROFILE_FINGERPRINT": (

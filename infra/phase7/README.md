@@ -53,11 +53,18 @@ and verifies the release fingerprint and every packaged byte before it loads con
 constructs a DynamoDB client.
 
 The template fixes the checked product profile ID/version/fingerprint and absolute packaged path.
-The deployment supplies only the nonzero release fingerprint and immutable S3 code coordinates;
-the guard-specific startup fingerprint and application release fingerprint are the same exact
-template value, and none has a default. The Lambda has reserved concurrency one, a thirty-second timeout, structured
-error-level logs, and dedicated error, throttle, and duration alarms on the retained encrypted
-Phase 7 operational topic.
+The deployment supplies two independent, nonzero fingerprints, neither with a default. The
+`GuardReleaseFingerprint` authenticates the immutable guard archive. The
+`ApplicationReleaseFingerprint` is the exact deployed Phase 6 stack `ReleaseFingerprint`; it is
+the authority used by snapshot eligibility and `DurablePublicationPreCallGuard`. Changing the
+application binding does not change the guard release manifest or archive fingerprint. The Lambda
+has reserved concurrency one, a thirty-second timeout, structured error-level logs, and dedicated
+error, throttle, and duration alarms on the retained encrypted Phase 7 operational topic.
+
+The guard must be deployed as the separate stack
+`mr-lister-phase7-guard-${EnvironmentName}`. In particular, it must not update the existing
+`mr-lister-phase7-${EnvironmentName}` production-disabled P7.15C stack. The offline verifier
+rejects any other guard stack name.
 
 ## Deployment and verification stop line
 
@@ -102,6 +109,7 @@ export PHASE76_WHEELHOUSE="$PHASE76_WORK_ROOT/linux-arm64-wheelhouse"
 export PHASE76_DEPENDENCIES="$PHASE76_WORK_ROOT/linux-arm64-dependencies"
 export PHASE76_DEPLOYMENT="$PHASE76_WORK_ROOT/phase7-guard-deployment"
 export PHASE76_ARTIFACT="$PHASE76_WORK_ROOT/phase7-guard-artifact"
+export PHASE76_APPLICATION_RELEASE_FINGERPRINT="REPLACE_WITH_EXACT_PHASE6_STACK_RELEASE_FINGERPRINT"
 
 .venv/bin/python tools/build_phase76_guard_bundle.py \
   --source-destination "$PHASE76_SOURCE"
@@ -122,6 +130,7 @@ mkdir -p "$PHASE76_WHEELHOUSE"
   --build-request "$PHASE76_SOURCE/dependency-build-request.json"
 .venv/bin/python tools/build_phase76_guard_bundle.py \
   --seal-source-release "$PHASE76_SOURCE" \
+  --application-release-fingerprint "$PHASE76_APPLICATION_RELEASE_FINGERPRINT" \
   --dependencies "$PHASE76_DEPENDENCIES" \
   --deployment-destination "$PHASE76_DEPLOYMENT" \
   --artifact-destination "$PHASE76_ARTIFACT"
@@ -147,7 +156,8 @@ set.
 export PHASE76_AWS_PROFILE="mr-lister-dev"
 export PHASE76_REGION="us-west-2"
 export PHASE76_ENVIRONMENT="dev"
-export PHASE76_STACK="mr-lister-phase7-dev"
+export PHASE76_STACK="mr-lister-phase7-guard-dev"
+export PHASE76_PHASE6_STACK="mr-lister-phase6-dev"
 export PHASE76_FUNCTION="mr-lister-phase7-dev-guard-verification"
 export PHASE76_ROLE="mr-lister-phase7-dev-guard-verification-role"
 export PHASE76_LEGACY_QUERY_FUNCTION="mr-lister-phase7-dev-publication-status-query"
@@ -162,6 +172,17 @@ aws sts get-caller-identity \
   --profile "$PHASE76_AWS_PROFILE" \
   --region "$PHASE76_REGION" > "$PHASE76_CAPTURE/caller-identity.json"
 export PHASE76_ACCOUNT_ID="$(jq -er .Account "$PHASE76_CAPTURE/caller-identity.json")"
+aws cloudformation describe-stacks \
+  --stack-name "$PHASE76_PHASE6_STACK" \
+  --profile "$PHASE76_AWS_PROFILE" \
+  --region "$PHASE76_REGION" > "$PHASE76_CAPTURE/phase6-stack.json"
+export PHASE76_LIVE_APPLICATION_RELEASE_FINGERPRINT="$(
+  jq -er \
+    '.Stacks | select(length == 1) | .[0].Parameters[] | select(.ParameterKey == "ReleaseFingerprint") | .ParameterValue' \
+    "$PHASE76_CAPTURE/phase6-stack.json"
+)"
+test "$PHASE76_APPLICATION_RELEASE_FINGERPRINT" = \
+  "$PHASE76_LIVE_APPLICATION_RELEASE_FINGERPRINT"
 aws s3api get-bucket-versioning \
   --bucket "$PHASE76_BUCKET" \
   --profile "$PHASE76_AWS_PROFILE" \
@@ -207,6 +228,7 @@ sam deploy \
     "GuardCodeS3Key=$PHASE76_KEY" \
     "GuardCodeS3ObjectVersion=$PHASE76_VERSION_ID" \
     "GuardReleaseFingerprint=$PHASE76_RELEASE_FINGERPRINT" \
+    "ApplicationReleaseFingerprint=$PHASE76_APPLICATION_RELEASE_FINGERPRINT" \
   --confirm-changeset \
   --profile "$PHASE76_AWS_PROFILE" \
   --region "$PHASE76_REGION"
@@ -441,6 +463,7 @@ aws lambda invoke \
   --key "$PHASE76_KEY" \
   --version-id "$PHASE76_VERSION_ID" \
   --stack-json "$PHASE76_CAPTURE/stack.json" \
+  --phase6-stack-json "$PHASE76_CAPTURE/phase6-stack.json" \
   --stack-resources-json "$PHASE76_CAPTURE/stack-resources.json" \
   --lambda-configuration-json "$PHASE76_CAPTURE/lambda-configuration.json" \
   --lambda-concurrency-json "$PHASE76_CAPTURE/lambda-concurrency.json" \

@@ -17,13 +17,13 @@ import pytest
 
 import mr_lister.release.phase7 as phase7_release
 from mr_lister.release.phase7 import (
+    APPLICATION_RELEASE_FINGERPRINT_ENV,
     CAPABILITY_FREE_PACKAGE_INIT_PATHS,
     DEPENDENCY_BUILD_REQUEST_FILENAME,
     GUARD_ENTRYPOINT,
     GUARD_RELEASE_FINGERPRINT_ENV,
     PINNED_GUARD_DISTRIBUTIONS,
     PINNED_GUARD_WHEELS,
-    SHARED_RELEASE_FINGERPRINT_ENV,
     SOURCE_MANIFEST_FILENAME,
     Phase7GuardReleaseAuthorityError,
     inventory,
@@ -49,12 +49,14 @@ from tools.verify_phase76_guard_deployment import (
     verify_lambda_invocation_observation,
     verify_lambda_surface_absence_observations,
     verify_legacy_query_absence_observations,
+    verify_phase6_application_release_observation,
     verify_s3_head_observation,
     verify_stack_observation,
     verify_stack_resources_observation,
 )
 
 _TREE_AUTHORITY_PATCH: pytest.MonkeyPatch | None = None
+APPLICATION_RELEASE_FINGERPRINT = "a" * 64
 
 
 @pytest.fixture(autouse=True)
@@ -162,11 +164,17 @@ def _dependencies(tmp_path: Path, source: Path, name: str) -> Path:
     return root
 
 
-def _sealed(tmp_path: Path, name: str):  # type: ignore[no-untyped-def]
+def _sealed(
+    tmp_path: Path,
+    name: str,
+    *,
+    application_release_fingerprint: str = APPLICATION_RELEASE_FINGERPRINT,
+):  # type: ignore[no-untyped-def]
     source = _source(tmp_path, f"{name}-source")
     dependencies = _dependencies(tmp_path, source, f"{name}-dependencies")
     result = seal_guard_release(
         source,
+        application_release_fingerprint=application_release_fingerprint,
         dependencies=dependencies,
         deployment_destination=tmp_path / name / "phase7-guard-deployment",
         artifact_destination=tmp_path / name / "phase7-guard-artifact",
@@ -412,6 +420,7 @@ def test_release_zip_and_descriptor_are_deterministic_and_fully_bound(tmp_path: 
     _source_two, _dependencies_two, second = _sealed(tmp_path, "second")
 
     assert first.release_fingerprint == second.release_fingerprint
+    assert first.application_release_fingerprint == APPLICATION_RELEASE_FINGERPRINT
     assert first.archive_fingerprint == second.archive_fingerprint
     assert first.archive_path.read_bytes() == second.archive_path.read_bytes()
     assert first.descriptor_path.read_bytes() == second.descriptor_path.read_bytes()
@@ -421,18 +430,39 @@ def test_release_zip_and_descriptor_are_deterministic_and_fully_bound(tmp_path: 
         descriptor_path=first.descriptor_path,
     )
     assert descriptor["release_fingerprint"] == first.release_fingerprint
+    assert descriptor["application_release_fingerprint"] == APPLICATION_RELEASE_FINGERPRINT
     assert descriptor["s3_binding"]["object_version_required"] is True
     assert descriptor["entrypoint"] == GUARD_ENTRYPOINT
 
     binding = verify_phase7_guard_release(
         {
             GUARD_RELEASE_FINGERPRINT_ENV: first.release_fingerprint,
-            SHARED_RELEASE_FINGERPRINT_ENV: first.release_fingerprint,
+            APPLICATION_RELEASE_FINGERPRINT_ENV: APPLICATION_RELEASE_FINGERPRINT,
         },
         bundle_root=first.deployment_root,
     )
     assert binding.release_fingerprint == first.release_fingerprint
+    assert binding.application_release_fingerprint == APPLICATION_RELEASE_FINGERPRINT
     assert binding.profile_fingerprint == first.profile_fingerprint
+
+
+def test_application_binding_does_not_redefine_the_guard_release_or_archive(
+    tmp_path: Path,
+) -> None:
+    _source_one, _dependencies_one, first = _sealed(tmp_path, "application-one")
+    other_application_release = "d" * 64
+    _source_two, _dependencies_two, second = _sealed(
+        tmp_path,
+        "application-two",
+        application_release_fingerprint=other_application_release,
+    )
+
+    assert first.application_release_fingerprint == APPLICATION_RELEASE_FINGERPRINT
+    assert second.application_release_fingerprint == other_application_release
+    assert first.release_fingerprint == second.release_fingerprint
+    assert first.archive_fingerprint == second.archive_fingerprint
+    assert first.archive_path.read_bytes() == second.archive_path.read_bytes()
+    assert first.descriptor_path.read_bytes() != second.descriptor_path.read_bytes()
 
 
 def test_stale_self_manifested_source_cannot_be_sealed(tmp_path: Path) -> None:
@@ -452,6 +482,7 @@ def test_stale_self_manifested_source_cannot_be_sealed(tmp_path: Path) -> None:
     with pytest.raises(Phase76GuardBundleError):
         seal_guard_release(
             source,
+            application_release_fingerprint=APPLICATION_RELEASE_FINGERPRINT,
             dependencies=dependencies,
             deployment_destination=tmp_path / "stale-seal" / "phase7-guard-deployment",
             artifact_destination=tmp_path / "stale-seal" / "phase7-guard-artifact",
@@ -483,6 +514,7 @@ def test_stale_self_consistent_artifact_fails_standalone_verification(
         )
         result = seal_guard_release(
             source,
+            application_release_fingerprint=APPLICATION_RELEASE_FINGERPRINT,
             dependencies=dependencies,
             deployment_destination=tmp_path / "stale-verify" / "phase7-guard-deployment",
             artifact_destination=tmp_path / "stale-verify" / "phase7-guard-artifact",
@@ -519,7 +551,7 @@ def test_final_artifact_executes_its_embedded_release_verifier(tmp_path: Path) -
         binding = embedded.verify_phase7_guard_release(
             {
                 embedded.GUARD_RELEASE_FINGERPRINT_ENV: result.release_fingerprint,
-                embedded.SHARED_RELEASE_FINGERPRINT_ENV: result.release_fingerprint,
+                embedded.APPLICATION_RELEASE_FINGERPRINT_ENV: (APPLICATION_RELEASE_FINGERPRINT),
             },
             bundle_root=result.deployment_root,
         )
@@ -528,17 +560,30 @@ def test_final_artifact_executes_its_embedded_release_verifier(tmp_path: Path) -
         sys.modules.pop(module_name, None)
 
     assert binding.release_fingerprint == result.release_fingerprint
+    assert binding.application_release_fingerprint == APPLICATION_RELEASE_FINGERPRINT
     assert binding.profile_fingerprint == result.profile_fingerprint
 
 
-def test_release_requires_equal_specific_and_shared_fingerprints(tmp_path: Path) -> None:
+def test_release_requires_independently_valid_specific_and_application_fingerprints(
+    tmp_path: Path,
+) -> None:
     _source_root, _dependencies_root, result = _sealed(tmp_path, "environment")
+
+    binding = verify_phase7_guard_release(
+        {
+            GUARD_RELEASE_FINGERPRINT_ENV: result.release_fingerprint,
+            APPLICATION_RELEASE_FINGERPRINT_ENV: APPLICATION_RELEASE_FINGERPRINT,
+        },
+        bundle_root=result.deployment_root,
+    )
+    assert binding.release_fingerprint == result.release_fingerprint
+    assert binding.application_release_fingerprint == APPLICATION_RELEASE_FINGERPRINT
 
     for environment in (
         {GUARD_RELEASE_FINGERPRINT_ENV: result.release_fingerprint},
         {
             GUARD_RELEASE_FINGERPRINT_ENV: result.release_fingerprint,
-            SHARED_RELEASE_FINGERPRINT_ENV: "f" * 64,
+            APPLICATION_RELEASE_FINGERPRINT_ENV: "0" * 64,
         },
     ):
         with pytest.raises(Phase7GuardReleaseAuthorityError) as captured:
@@ -556,7 +601,7 @@ def test_any_deployment_or_archive_byte_drift_fails_closed(tmp_path: Path) -> No
         verify_phase7_guard_release(
             {
                 GUARD_RELEASE_FINGERPRINT_ENV: result.release_fingerprint,
-                SHARED_RELEASE_FINGERPRINT_ENV: result.release_fingerprint,
+                APPLICATION_RELEASE_FINGERPRINT_ENV: APPLICATION_RELEASE_FINGERPRINT,
             },
             bundle_root=result.deployment_root,
         )
@@ -599,7 +644,7 @@ def test_read_only_aws_captures_bind_the_deployed_guard_and_sanitized_invocation
     environment = "dev"
     region = "us-west-2"
     account = "123456789012"
-    stack_name = "mr-lister-phase7-dev"
+    stack_name = "mr-lister-phase7-guard-dev"
     function_name = "mr-lister-phase7-dev-guard-verification"
     bucket = "mr-lister-phase7-artifacts-dev"
     key = f"phase7/releases/{result.release_fingerprint}/guard.zip"
@@ -627,6 +672,7 @@ def test_read_only_aws_captures_bind_the_deployed_guard_and_sanitized_invocation
     )
 
     parameters = {
+        "ApplicationReleaseFingerprint": APPLICATION_RELEASE_FINGERPRINT,
         "EnvironmentName": environment,
         "GuardCodeS3Bucket": bucket,
         "GuardCodeS3Key": key,
@@ -676,6 +722,54 @@ def test_read_only_aws_captures_bind_the_deployed_guard_and_sanitized_invocation
         region=region,
         account_id=account,
     )
+    phase6_stack_name = f"mr-lister-phase6-{environment}"
+    phase6_stack = {
+        "Stacks": [
+            {
+                "Parameters": [
+                    {"ParameterKey": "EnvironmentName", "ParameterValue": environment},
+                    {
+                        "ParameterKey": "ReleaseFingerprint",
+                        "ParameterValue": APPLICATION_RELEASE_FINGERPRINT,
+                    },
+                ],
+                "StackId": (
+                    f"arn:aws:cloudformation:{region}:{account}:stack/{phase6_stack_name}/stack-id"
+                ),
+                "StackName": phase6_stack_name,
+                "StackStatus": "UPDATE_COMPLETE",
+            }
+        ]
+    }
+    verify_phase6_application_release_observation(
+        descriptor,
+        phase6_stack,
+        environment_name=environment,
+        region=region,
+        account_id=account,
+    )
+    drifted_phase6_stack = json.loads(json.dumps(phase6_stack))
+    drifted_phase6_stack["Stacks"][0]["Parameters"][1]["ParameterValue"] = "d" * 64
+    with pytest.raises(ValueError, match="Phase 6 application release observation"):
+        verify_phase6_application_release_observation(
+            descriptor,
+            drifted_phase6_stack,
+            environment_name=environment,
+            region=region,
+            account_id=account,
+        )
+    with pytest.raises(ValueError, match="CloudFormation observation"):
+        verify_stack_observation(
+            descriptor,
+            stack,
+            stack_name="mr-lister-phase7-dev",
+            environment_name=environment,
+            bucket=bucket,
+            key=key,
+            version_id=version,
+            region=region,
+            account_id=account,
+        )
     stack_resources = {
         "StackResourceSummaries": [
             {
@@ -814,7 +908,7 @@ def test_read_only_aws_captures_bind_the_deployed_guard_and_sanitized_invocation
             "/var/task/config/product_profiles/gildan_64000_swiftpod.json"
         ),
         "MR_LISTER_PRODUCT_PROFILE_VERSION": "2",
-        "MR_LISTER_RELEASE_FINGERPRINT": result.release_fingerprint,
+        "MR_LISTER_RELEASE_FINGERPRINT": APPLICATION_RELEASE_FINGERPRINT,
         "MR_LISTER_STATE_TABLE": "mr-lister-phase6-dev",
     }
     configuration = {

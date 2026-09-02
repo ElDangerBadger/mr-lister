@@ -27,6 +27,11 @@
       "Type": "String",
       "AllowedPattern": "^(?!0{64}$)[a-f0-9]{64}$",
       "ConstraintDescription": "Supply the SHA-256 fingerprint of the sealed Phase 7 guard release manifest."
+    },
+    "ApplicationReleaseFingerprint": {
+      "Type": "String",
+      "AllowedPattern": "^(?!0{64}$)[a-f0-9]{64}$",
+      "ConstraintDescription": "Supply the exact Phase 6 application release fingerprint bound to publication snapshots."
     }
   },
   "Conditions": {
@@ -250,7 +255,7 @@
             "MR_LISTER_PHASE7_GUARD_ENABLED": "true",
             "MR_LISTER_PHASE7_GUARD_MODE": "approval_version_read_only",
             "MR_LISTER_PHASE7_GUARD_RELEASE_FINGERPRINT": {"Ref": "GuardReleaseFingerprint"},
-            "MR_LISTER_RELEASE_FINGERPRINT": {"Ref": "GuardReleaseFingerprint"},
+            "MR_LISTER_RELEASE_FINGERPRINT": {"Ref": "ApplicationReleaseFingerprint"},
             "MR_LISTER_PRODUCT_PROFILE_ID": "gildan_64000_swiftpod",
             "MR_LISTER_PRODUCT_PROFILE_VERSION": "2",
             "MR_LISTER_PRODUCT_PROFILE_FINGERPRINT": "5de1257141cfdacb1731f68bb9113712957483b33d5b0f7115afdba86eb7476c",

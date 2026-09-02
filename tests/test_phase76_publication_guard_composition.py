@@ -28,7 +28,8 @@ from mr_lister.publication.execution_commands import (
 )
 from mr_lister.publication.execution_models import PublicationCallPurpose
 
-RELEASE_FINGERPRINT = "b" * 64
+APPLICATION_RELEASE_FINGERPRINT = "b" * 64
+GUARD_RELEASE_FINGERPRINT = "c" * 64
 STATE_TABLE = "mr-lister-phase6-test"
 
 
@@ -50,8 +51,8 @@ def _environment(tmp_path: Path) -> dict[str, str]:
     return {
         "AWS_REGION": "us-west-2",
         "MR_LISTER_STATE_TABLE": STATE_TABLE,
-        "MR_LISTER_PHASE7_GUARD_RELEASE_FINGERPRINT": RELEASE_FINGERPRINT,
-        "MR_LISTER_RELEASE_FINGERPRINT": RELEASE_FINGERPRINT,
+        "MR_LISTER_PHASE7_GUARD_RELEASE_FINGERPRINT": GUARD_RELEASE_FINGERPRINT,
+        "MR_LISTER_RELEASE_FINGERPRINT": APPLICATION_RELEASE_FINGERPRINT,
         "MR_LISTER_PHASE7_SCAFFOLD_ONLY": "false",
         "MR_LISTER_PHASE7_GUARD_ENABLED": "true",
         "MR_LISTER_PHASE7_GUARD_MODE": "approval_version_read_only",
@@ -125,6 +126,11 @@ def test_phase71_committed_graph_attests_current_and_status_constructs_no_client
     harness, _store, client = _dynamo_harness()
     factory = _Factory(client)
     handler = build_publication_guard_handler(_environment(tmp_path), client_factory=factory)
+    configuration = load_phase7_guard_configuration(_environment(tmp_path))
+
+    assert configuration.guard_release_fingerprint == GUARD_RELEASE_FINGERPRINT
+    assert configuration.application_release_fingerprint == APPLICATION_RELEASE_FINGERPRINT
+    assert configuration.eligibility.release_manifest_fingerprint == APPLICATION_RELEASE_FINGERPRINT
 
     status = handler({"operation": "status"})
     assert status["outcome"] == "sealed_configuration"
@@ -271,7 +277,7 @@ def test_944th_partition_row_exceeds_the_frozen_943_item_bound(tmp_path: Path) -
         ("MR_LISTER_PHASE7_QUERY_ENABLED", "true"),
         ("MR_LISTER_PHASE7_REQUEST_ENABLED", "true"),
         ("MR_LISTER_PHASE7_PUBLICATION_ENABLED", "true"),
-        ("MR_LISTER_RELEASE_FINGERPRINT", "c" * 64),
+        ("MR_LISTER_RELEASE_FINGERPRINT", "0" * 64),
     ],
 )
 def test_configuration_accepts_only_the_exact_active_read_tuple(

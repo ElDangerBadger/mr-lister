@@ -64,11 +64,14 @@ acceptance.
 
 ### P7.13 — Recover zero-publication deployment authority
 
-1. Inventory every account that may contain `mr-lister-phase7-dev` before creating or updating it.
+1. Preserve the existing P7.15C `mr-lister-phase7-dev` stack and use the separate exact guard
+   stack name `mr-lister-phase7-guard-${EnvironmentName}`.
 2. Rebuild the read-only guard from current `main`; do not reuse the stale ignored private bundle.
 3. Verify the exact nine-resource topology and exact-disabled query/request/publication tuple.
-4. Deploy only the separate guard stack, with no secret, provider transport, application write,
-   route, trigger, Function URL, or resource policy.
+4. Deploy only that separate guard stack, with no secret, provider transport, application write,
+   route, trigger, Function URL, or resource policy; bind `ApplicationReleaseFingerprint` to the
+   exact `ReleaseFingerprint` read from `mr-lister-phase6-${EnvironmentName}` while retaining the
+   guard archive's own independent `GuardReleaseFingerprint`.
 5. Capture the immutable artifact coordinates, stack state, Lambda code/configuration, IAM,
    alarms, absence proofs, status invocation, rejected-authority invocation, and rollback tuple.
 
@@ -163,7 +166,9 @@ close, the overall infrastructure-and-alarm gate remains open.
 After the two offline matrices pass, reconcile the sealed Phase 6 component-bound deployment
 authority, invoke the zero-call guard, and run the separately approved GET-only Printify/Etsy
 preflight. Publication must be structurally impossible. Record immutable evidence before changing
-the contract activation phase.
+the contract activation phase. The deployed guard must retain its own immutable
+`GuardReleaseFingerprint`, while its independent `ApplicationReleaseFingerprint` must match the
+exact deployed Phase 6 stack `ReleaseFingerprint` used by the stored publication snapshots.
 
 ### P7.17 — One-listing MassSkutiny canary
 
