@@ -58,9 +58,11 @@ approval, cancellation, idempotency, and irreversible marketplace actions.
 Phase 6 is deployed and sealed for the functional hackathon-demo scope. Its durable `PREPARE`
 bridge runs the genuine single-tool Strands path, and the owner-scoped seller review joins that
 same job's artwork, listing, product, mockups, validation, economics, and sanitized Strands
-provenance. The final MassSkutiny walkthrough completed the authenticated production flow through
-seller approval while the Printify draft remained editable and unpublished. The frozen Phase 6.6
-manifest's broader deployed-canary and moderated-research evidence remains explicit post-demo
+provenance. The accepted MassSkutiny walkthrough completed the authenticated production flow
+through seller approval while the Printify draft remained editable and unpublished. A later
+fresh-artwork run revalidated the deployed path through an unpublished, economics-complete seller
+review after the provider-reconciliation hotfix. The frozen Phase 6.6 manifest's broader
+deployed-canary and moderated-research evidence remains explicit post-demo
 hardening and is not claimed as completed. That distinction is tracked in the
 [phase checklist](docs/phase-checklist.md),
 [authoritative Phase 6 release-state record](docs/phase6-release-state.md),

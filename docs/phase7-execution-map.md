@@ -17,13 +17,13 @@ enabled.
 
 | Authority | Current value |
 | --- | --- |
-| Phase 6 protected source baseline | `5509457faf8242d75ea1e47ff60a429cf38bd0a3` |
+| Original Phase 6 protected source baseline | `5509457faf8242d75ea1e47ff60a429cf38bd0a3` |
 | Phase 7 P7.15B source checkpoint | `0e3c150cb9cfa11c8047db3a4670f8ec5aa6d864` on `main` |
 | Phase 7 P7.15C deployed source checkpoint | `7c933dd2cfd76e418d57ce1e25d9f6ffe3c69d3f` on `main` |
 | P7.15C production-disabled release | `9c4deca1813e5d1e8cc3f6747681b2194265f9c0b51b64fd9cf6b8afeb823c46` |
 | P7.15C production-disabled archive | `43721a48802bd3bbc946671aff938b6df030b495975c8bc59839db18986da88f` |
-| Phase 6 runtime source | `15a4f2a657e4cf5809de7066d267455d65c8c835` |
-| Phase 6 Provider component | `748e5c4a1e46c500215118685d1f70231b7f28b8bfe8e67cc804da1c33e7c347` |
+| Phase 6 runtime source | `bd9f3686ef812621f59a5bf031902d8ef5a88208` |
+| Phase 6 Provider component | `166ed09faef339c6841d3bf8b7dfe2c0e9c8fd1aeb91b5762fe5999593e85534` |
 | Phase 6 decision | `PHASE 6 COMPLETE AND SEALED` for the functional demo scope |
 | Publication contract | `7.0.1`, fingerprint `548b710230618e73c20a509f2121799c415b50070e1e2ae7e1b82fe3c37e2981` |
 | Contract activation phase | `offline_implementation` |
