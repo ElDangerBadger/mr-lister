@@ -1112,7 +1112,7 @@ def test_upload_reconciliation_uses_bounded_list_then_exact_id_get() -> None:
         transport=transport,
     )
 
-    listed = client.list_uploads()
+    listed = client.list_uploads(file_name=file_name)
     exact = client.get_upload(image_id=listed[0].image_id)
 
     assert listed == (exact,)
@@ -1120,8 +1120,126 @@ def test_upload_reconciliation_uses_bounded_list_then_exact_id_get() -> None:
     assert [call["method"] for call in transport.calls] == ["GET", "GET"]
 
 
-def test_upload_reconciliation_paginates_at_printify_maximum_page_size() -> None:
+def test_upload_reconciliation_ignores_unrelated_mixed_and_malformed_media() -> None:
+    file_name = f"mr-lister-{'a' * 24}-{'b' * 16}.png"
+    exact_upload = {
+        "id": "image_exact",
+        "file_name": file_name,
+        "width": 100,
+        "height": 100,
+        "size": 12,
+        "mime_type": "image/png",
+    }
+    transport = ScriptedTransport(
+        [
+            ExpectedRequest(
+                "GET",
+                "/v1/uploads.json",
+                payload={
+                    "data": [
+                        {
+                            "id": "seller_photo",
+                            "file_name": "seller-photo.jpg",
+                            "width": 1200,
+                            "height": 800,
+                            "size": 2048,
+                            "mime_type": "image/jpeg",
+                        },
+                        {"file_name": "legacy-broken.png"},
+                        exact_upload,
+                    ],
+                    "last_page": 1,
+                },
+            )
+        ]
+    )
+    client = PrintifyDraftOnlyClient(
+        token_provider=lambda: "private-token",
+        transport=transport,
+    )
+
+    listed = client.list_uploads(file_name=file_name)
+
+    assert tuple(upload.image_id for upload in listed) == ("image_exact",)
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        {
+            "file_name": f"mr-lister-{'a' * 24}-{'b' * 16}.png",
+            "width": 100,
+            "height": 100,
+            "size": 12,
+            "mime_type": "image/png",
+        },
+        {
+            "id": "image_exact",
+            "file_name": f"mr-lister-{'a' * 24}-{'b' * 16}.png",
+            "width": 100,
+            "height": 100,
+            "size": 12,
+            "mime_type": "image/jpeg",
+        },
+    ],
+)
+def test_upload_reconciliation_rejects_malformed_exact_name_candidate(
+    malformed: dict[str, object],
+) -> None:
+    file_name = f"mr-lister-{'a' * 24}-{'b' * 16}.png"
+    transport = ScriptedTransport(
+        [
+            ExpectedRequest(
+                "GET",
+                "/v1/uploads.json",
+                payload={"data": [malformed], "last_page": 1},
+            )
+        ]
+    )
+    client = PrintifyDraftOnlyClient(
+        token_provider=lambda: "private-token",
+        transport=transport,
+    )
+
+    with pytest.raises(PrintifyCatalogMismatchError, match="invalid upload record"):
+        client.list_uploads(file_name=file_name)
+
+
+def test_upload_reconciliation_preserves_duplicate_exact_name_candidates() -> None:
+    file_name = f"mr-lister-{'a' * 24}-{'b' * 16}.png"
     uploads = [
+        {
+            "id": f"image_{index}",
+            "file_name": file_name,
+            "width": 100,
+            "height": 100,
+            "size": 12,
+            "mime_type": "image/png",
+        }
+        for index in range(2)
+    ]
+    transport = ScriptedTransport(
+        [
+            ExpectedRequest(
+                "GET",
+                "/v1/uploads.json",
+                payload={"data": uploads, "last_page": 1},
+            )
+        ]
+    )
+    client = PrintifyDraftOnlyClient(
+        token_provider=lambda: "private-token",
+        transport=transport,
+    )
+
+    listed = client.list_uploads(file_name=file_name)
+
+    assert tuple(upload.image_id for upload in listed) == ("image_0", "image_1")
+
+
+def test_upload_reconciliation_paginates_at_printify_maximum_page_size() -> None:
+    file_name = f"mr-lister-{'a' * 24}-{'b' * 16}.png"
+    unrelated_uploads = [
         {
             "id": f"image_{index}",
             "file_name": f"upload-{index}.png",
@@ -1130,12 +1248,20 @@ def test_upload_reconciliation_paginates_at_printify_maximum_page_size() -> None
             "size": 12,
             "mime_type": "image/png",
         }
-        for index in range(51)
+        for index in range(50)
     ]
+    exact_upload = {
+        "id": "image_exact",
+        "file_name": file_name,
+        "width": 100,
+        "height": 100,
+        "size": 12,
+        "mime_type": "image/png",
+    }
     transport = ScriptedTransport(
         [
-            ExpectedRequest("GET", "/v1/uploads.json", payload={"data": uploads[:50]}),
-            ExpectedRequest("GET", "/v1/uploads.json", payload={"data": uploads[50:]}),
+            ExpectedRequest("GET", "/v1/uploads.json", payload={"data": unrelated_uploads}),
+            ExpectedRequest("GET", "/v1/uploads.json", payload={"data": [exact_upload]}),
         ]
     )
     client = PrintifyDraftOnlyClient(
@@ -1143,9 +1269,9 @@ def test_upload_reconciliation_paginates_at_printify_maximum_page_size() -> None
         transport=transport,
     )
 
-    listed = client.list_uploads()
+    listed = client.list_uploads(file_name=file_name)
 
-    assert tuple(upload.image_id for upload in listed) == tuple(upload["id"] for upload in uploads)
+    assert tuple(upload.image_id for upload in listed) == ("image_exact",)
     assert [call["query"] for call in transport.calls] == [
         "page=1&limit=50",
         "page=2&limit=50",

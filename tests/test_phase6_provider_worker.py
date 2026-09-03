@@ -367,6 +367,7 @@ class FakeResources:
         self.uploads: dict[str, PrintifyUploadedImage] = {}
         self.upload_error: Exception | None = None
         self.upload_readback_override: PrintifyUploadedImage | None = None
+        self.listed_upload_file_names: list[str] = []
         self.product_costs_override: ProductCostEvidence | None = None
         self.shipping_override: StandardUsShippingEvidence | None = None
         self.product_cost_reads: list[tuple[int, str, tuple[int, ...]]] = []
@@ -404,9 +405,10 @@ class FakeResources:
             upload=upload,
         )
 
-    def list_uploads(self, *, owner_id: str) -> tuple[PrintifyUploadedImage, ...]:
+    def list_uploads(self, *, owner_id: str, file_name: str) -> tuple[PrintifyUploadedImage, ...]:
         assert owner_id == OWNER
-        return tuple(self.uploads.values())
+        self.listed_upload_file_names.append(file_name)
+        return tuple(upload for upload in self.uploads.values() if upload.file_name == file_name)
 
     def get_upload(self, *, owner_id: str, image_id: str) -> PrintifyUploadedImage:
         assert owner_id == OWNER
@@ -1092,7 +1094,56 @@ def test_upload_reconciliation_lists_then_reads_exact_candidate_without_mutation
     assert control.upload_observations[0].upload is not None
     assert control.upload_observations[0].upload.image_id == "image_new"
     assert control.upload_observations[0].upload.size_bytes == store.source.size_bytes - 1
+    assert resources.listed_upload_file_names == [file_name]
     assert resources.geometry_checks == [(store.source.fingerprint, "image_new")]
+
+
+def test_upload_reconciliation_classifies_duplicate_exact_name_candidates() -> None:
+    file_name = f"mr-lister-{'a' * 24}-{'8' * 16}.png"
+    job = _job(
+        state=ControlJobState.RECONCILIATION_REQUIRED,
+        work_id=RECON_WORK_ID,
+    ).model_copy(
+        update={
+            "provider_upload_attempt_id": "upload_attempt",
+            "upload_outcome_unconfirmed": True,
+        }
+    )
+    work = _work(
+        work_type=WorkType.RECONCILE_PRODUCT,
+        work_id=RECON_WORK_ID,
+        review_version=1,
+    )
+    worker, store, control, resources = _worker(
+        job=job,
+        work=work,
+        synchronizer=FakeSynchronizer(),
+    )
+    store.upload_attempts["upload_attempt"] = ProviderUploadAttempt(
+        attempt_id="upload_attempt",
+        job_id=JOB_ID,
+        work_request_id=SYNC_WORK_ID,
+        source_artifact_fingerprint=SOURCE_FP,
+        file_name=file_name,
+        reconciliation_deadline=NOW + timedelta(minutes=15),
+        started_at=NOW,
+    )
+    for image_id in ("image_first", "image_second"):
+        resources.uploads[image_id] = PrintifyUploadedImage(
+            image_id=image_id,
+            file_name=file_name,
+            width=3021,
+            height=3927,
+            size_bytes=2048,
+            mime_type="image/png",
+        )
+
+    worker.run_product_reconciliation(job_id=JOB_ID, work_request_id=RECON_WORK_ID)
+
+    assert resources.listed_upload_file_names == [file_name]
+    assert control.upload_observations[0].outcome is ReconciliationOutcome.MULTIPLE_MATCHES
+    assert control.upload_observations[0].upload is None
+    assert resources.geometry_checks == []
 
 
 def test_upload_reconciliation_rejects_candidate_with_changed_source_geometry() -> None:

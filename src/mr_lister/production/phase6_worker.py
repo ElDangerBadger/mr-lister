@@ -98,7 +98,9 @@ class ProviderDraftResources(Protocol):
         self, *, owner_id: str, source: SourceArtifactRecord, file_name: str
     ) -> PrintifyUploadedImage: ...
 
-    def list_uploads(self, *, owner_id: str) -> tuple[PrintifyUploadedImage, ...]: ...
+    def list_uploads(
+        self, *, owner_id: str, file_name: str
+    ) -> tuple[PrintifyUploadedImage, ...]: ...
 
     def get_upload(self, *, owner_id: str, image_id: str) -> PrintifyUploadedImage: ...
 
@@ -635,7 +637,10 @@ class Phase6ProductMachineWorker:
         try:
             matches = tuple(
                 item
-                for item in self._resources.list_uploads(owner_id=job.owner_id)
+                for item in self._resources.list_uploads(
+                    owner_id=job.owner_id,
+                    file_name=attempt.file_name,
+                )
                 if item.file_name == attempt.file_name
             )
             if not matches:

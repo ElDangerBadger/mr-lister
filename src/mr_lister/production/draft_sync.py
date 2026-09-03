@@ -436,9 +436,10 @@ class PrintifyDraftOnlyClient(PrintifyCatalogClient):
             raise PrintifyCatalogMismatchError("Printify upload response changed image identity")
         return upload
 
-    def list_uploads(self) -> tuple[PrintifyUploadedImage, ...]:
-        """Read a bounded exact upload listing for deterministic-name reconciliation."""
+    def list_uploads(self, *, file_name: str) -> tuple[PrintifyUploadedImage, ...]:
+        """Read bounded upload candidates for one deterministic reconciliation name."""
 
+        self._require_upload_file_name(file_name)
         uploads: list[PrintifyUploadedImage] = []
         image_ids: set[str] = set()
         for page in range(1, _MAX_RECONCILIATION_PAGES + 1):
@@ -450,6 +451,11 @@ class PrintifyDraftOnlyClient(PrintifyCatalogClient):
             if not isinstance(payload, list):
                 raise PrintifyCatalogMismatchError("Printify upload list was not a collection")
             for item in payload:
+                # A seller's Media Library may contain other provider-supported formats or
+                # legacy rows outside the Phase 6 artwork contract.  Select the one durable
+                # reconciliation name before applying the strict canonical upload model.
+                if not isinstance(item, dict) or item.get("file_name") != file_name:
+                    continue
                 upload = self._parse_upload(item)
                 if upload.image_id in image_ids:
                     raise PrintifyCatalogMismatchError(

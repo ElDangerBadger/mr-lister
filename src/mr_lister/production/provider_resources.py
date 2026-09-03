@@ -307,9 +307,9 @@ class OwnerBoundProviderDraftResources:
             )
         return upload
 
-    def list_uploads(self, *, owner_id: str) -> tuple[PrintifyUploadedImage, ...]:
+    def list_uploads(self, *, owner_id: str, file_name: str) -> tuple[PrintifyUploadedImage, ...]:
         connection = self._resolve(owner_id)
-        return self._v1_client(connection).list_uploads()
+        return self._v1_client(connection).list_uploads(file_name=file_name)
 
     def get_upload(self, *, owner_id: str, image_id: str) -> PrintifyUploadedImage:
         connection = self._resolve(owner_id)

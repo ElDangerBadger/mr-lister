@@ -305,7 +305,7 @@ def test_resolver_cannot_return_another_owners_connection() -> None:
     resources = _resources(resolver=resolver, transport=transport, audit=audit)
 
     with pytest.raises(PrintifyAuthenticationError, match="unavailable"):
-        resources.list_uploads(owner_id=OWNER)
+        resources.list_uploads(owner_id=OWNER, file_name=FILE_NAME)
 
     assert resolver.calls == [OWNER]
     assert transport.calls == []
