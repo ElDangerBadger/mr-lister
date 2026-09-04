@@ -1341,6 +1341,73 @@ def test_update_uses_only_the_application_owned_product_identity() -> None:
     assert control.successes[0].observation.printify_shop_id == 42
 
 
+def test_update_ignores_completed_create_attempt_from_prior_review() -> None:
+    prior_sync, prior_fingerprint = _prior_sync()
+    prior_work_id = "work_original_create"
+    prior_attempt_id = "attempt_original_create"
+    sync = FakeSynchronizer()
+    job = _job(
+        review_version=2,
+        product_id="product_1",
+        prior_payload_fingerprint=prior_fingerprint,
+        product_sync_id=prior_sync.sync_id,
+        product_sync_fingerprint=prior_sync.fingerprint,
+        synchronized_review_version=1,
+    ).model_copy(
+        update={
+            "provider_write_attempt_id": prior_attempt_id,
+            "product_create_attempt_id": prior_attempt_id,
+        }
+    )
+    worker, store, control, _resources = _worker(
+        job=job,
+        work=_work(
+            work_type=WorkType.SYNCHRONIZE_PRODUCT,
+            work_id=SYNC_WORK_ID,
+            review_version=2,
+        ),
+        synchronizer=sync,
+    )
+    store.syncs[prior_sync.sync_id] = prior_sync
+    store.works[prior_work_id] = _work(
+        work_type=WorkType.SYNCHRONIZE_PRODUCT,
+        work_id=prior_work_id,
+        review_version=1,
+    ).model_copy(
+        update={
+            "status": WorkRequestStatus.COMPLETED,
+            "execution_arn": None,
+        }
+    )
+    store.attempts[prior_attempt_id] = ProviderWriteAttempt(
+        attempt_id=prior_attempt_id,
+        job_id=JOB_ID,
+        work_request_id=prior_work_id,
+        review_version=1,
+        operation=ProviderWriteOperation.CREATE,
+        image_id="image_old",
+        target_payload_fingerprint=prior_fingerprint,
+        correlation_token=job_correlation_token(JOB_ID),
+        reconciliation_deadline=NOW + timedelta(minutes=15),
+        started_at=NOW,
+    )
+    store.permits[prior_attempt_id] = ProviderCallPermit(
+        attempt_id=prior_attempt_id,
+        job_id=JOB_ID,
+        work_request_id=prior_work_id,
+        status=ProviderCallPermitStatus.CONSUMED,
+        created_at=NOW,
+        consumed_at=NOW,
+        consumed_work_request_id=prior_work_id,
+    )
+
+    worker.run_product_sync(job_id=JOB_ID, work_request_id=SYNC_WORK_ID)
+
+    assert sync.mutations == ["product_1"]
+    assert store.job.provider_write_attempt_id == f"attempt_{SYNC_WORK_ID}"
+    assert control.successes[0].observation.product_id == "product_1"
+
+
 @pytest.mark.parametrize(
     ("mode", "expected"),
     [

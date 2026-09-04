@@ -937,7 +937,9 @@ class Phase6ProductMachineWorker:
             return None
         attempt = self._store.get_provider_write_attempt(job.job_id, job.provider_write_attempt_id)
         if attempt.review_version != job.review_version:
-            raise InvalidControlStateError("Provider attempt changed review authority")
+            if job.provider_outcome_unconfirmed:
+                raise InvalidControlStateError("Provider attempt changed review authority")
+            return None
         if attempt.work_request_id != work.work_request_id:
             permit = self._store.get_provider_call_permit(job.job_id, attempt.attempt_id)
             origin = self._store.get_work_request(job.job_id, attempt.work_request_id)
