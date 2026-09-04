@@ -789,6 +789,95 @@ def test_product_preflight_reconstructs_complete_canonical_authority() -> None:
     assert observation.external_evidence is ExternalEvidenceState.ABSENT
 
 
+def test_product_preflight_accepts_only_inert_printify_catalog_expansion() -> None:
+    canonical = _canonical_payload()
+    canonical["variants"].append(
+        {
+            "id": 102,
+            "price": 2599,
+            "is_enabled": True,
+            "sku": "ml-abcdef0123456789abcdef01-102",
+        }
+    )
+    canonical["print_areas"][0]["variant_ids"].append(102)
+    payload = _product(external=[])
+    payload["variants"].extend(
+        [
+            {
+                **canonical["variants"][1],
+                "cost": 1250,
+                "title": "Black / L",
+            },
+            {
+                "id": 9000,
+                "price": 2499,
+                "cost": 1300,
+                "is_enabled": False,
+                "sku": "",
+            },
+        ]
+    )
+    payload["variants"] = [
+        payload["variants"][2],
+        payload["variants"][1],
+        payload["variants"][0],
+    ]
+    payload["print_areas"][0]["variant_ids"] = [9000, 102, 101]
+    payload["print_areas"][0]["placeholders"].append({"position": "back", "images": []})
+    authority = _authority(
+        product_payload_fingerprint=canonical_fingerprint(canonical),
+        expected_variant_economics=(
+            ExpectedVariantEconomics(
+                variant_id=101,
+                retail_price_cents=2499,
+                production_cost_cents=1200,
+            ),
+            ExpectedVariantEconomics(
+                variant_id=102,
+                retail_price_cents=2599,
+                production_cost_cents=1250,
+            ),
+        ),
+    )
+    claim = _claim(
+        authority,
+        kind=PublicationCallKind.PRODUCT_GET,
+        purpose=PublicationCallPurpose.PRODUCT_PREFLIGHT,
+        suffix="normalized-product",
+    )
+    boundary, _transport, _audit = _boundary(
+        [_json_response(200, payload)],
+        authority=authority,
+    )
+
+    observation = boundary.preflight_exact_product(
+        call_claim=claim,
+        fresh_grant=_fresh(claim),
+    )
+
+    assert observation.preflight_satisfied
+    assert observation.canonical_content_match
+    assert observation.exact_variant_economics
+    assert observation.exact_placement_image
+
+
+def test_product_preflight_rejects_enabled_catalog_expansion() -> None:
+    payload = _product(external=[])
+    payload["variants"].append(
+        {
+            "id": 9000,
+            "price": 2499,
+            "cost": 1300,
+            "is_enabled": True,
+            "sku": "ml-unapproved-9000",
+        }
+    )
+    payload["print_areas"][0]["variant_ids"].append(9000)
+
+    with pytest.raises(PublicationProviderResponseError, match="invalid"):
+        _preflight_product(payload)
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

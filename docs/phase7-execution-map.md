@@ -243,6 +243,15 @@ P7.9 triggerless worker source checkpoint. Its manifest changed from
 This is a reviewed consequence of the active-work recovery attributes and strong rebind, not a
 suppressed drift check.
 
+The later, narrowly scoped Printify readback normalization fix deliberately resealed that same
+triggerless closure. The manifest/archive advanced from
+`7dd3d5b7c2e2cf691aa9a2d7234cd211d7fb5d8419710724a7bbb5a4788d361c` /
+`747cb0719a9242cb85531f2152746b60fefcca9e79e145cd415f9e03ab064c96` to
+`eb506fee3a0deb9d2cc9077af51094f4754fe8e83ca54e737762152566e7746f` /
+`a8b54e21e287d3a1fb4236b37612f56e0edfa5e8df736f898fe96904b6ebb5ad` after two independent
+builds and artifact verification. The source change only normalizes provider ordering and inert,
+disabled catalog expansion against the Phase 6 authority; it adds no publication capability.
+
 ## Stop lines
 
 - A guard deployment is not publication authorization.

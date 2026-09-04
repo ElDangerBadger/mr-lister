@@ -35,8 +35,8 @@ from tools.build_phase79_worker_source_release import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE_PATH = (ROOT / "config/product_profiles/gildan_64000_swiftpod.json").resolve()
-EXPECTED_MANIFEST_FINGERPRINT = "7dd3d5b7c2e2cf691aa9a2d7234cd211d7fb5d8419710724a7bbb5a4788d361c"
-EXPECTED_ARCHIVE_FINGERPRINT = "747cb0719a9242cb85531f2152746b60fefcca9e79e145cd415f9e03ab064c96"
+EXPECTED_MANIFEST_FINGERPRINT = "eb506fee3a0deb9d2cc9077af51094f4754fe8e83ca54e737762152566e7746f"
+EXPECTED_ARCHIVE_FINGERPRINT = "a8b54e21e287d3a1fb4236b37612f56e0edfa5e8df736f898fe96904b6ebb5ad"
 CAPABILITY_FREE_INITIALIZERS = {
     "mr_lister/__init__.py",
     "mr_lister/cloud/__init__.py",

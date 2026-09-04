@@ -1042,8 +1042,17 @@ class PrintifyPublicationBoundary:
                 raise ValueError
             if type(locked) is not bool or type(visible) is not bool:
                 raise ValueError
-            canonical = _canonical_product_readback(payload)
-            economics = _variant_economics(payload)
+            expected_variant_ids = tuple(
+                item.variant_id for item in self._authority.expected_variant_economics
+            )
+            canonical = _canonical_product_readback(
+                payload,
+                expected_variant_ids=expected_variant_ids,
+            )
+            economics = _variant_economics(
+                payload,
+                expected_variant_ids=expected_variant_ids,
+            )
             placement_ids = _placement_image_ids(canonical)
             mockup_fingerprints = _mockup_fingerprints(payload)
         except Exception:
@@ -1591,14 +1600,17 @@ def _definitive_product_preflight_failure(
     return None
 
 
-def _canonical_product_readback(payload: Mapping[str, Any]) -> CanonicalProductReadback:
+def _canonical_product_readback(
+    payload: Mapping[str, Any],
+    *,
+    expected_variant_ids: tuple[int, ...],
+) -> CanonicalProductReadback:
+    variant_rows, disabled_extra_ids = _inert_catalog_variant_rows(
+        payload,
+        expected_variant_ids=expected_variant_ids,
+    )
     variants = []
-    raw_variants = payload.get("variants")
-    if not isinstance(raw_variants, list):
-        raise ValueError
-    for item in raw_variants:
-        if not isinstance(item, Mapping):
-            raise ValueError
+    for item in variant_rows:
         variants.append(
             CanonicalReadVariant(
                 id=item.get("id"),
@@ -1611,6 +1623,9 @@ def _canonical_product_readback(payload: Mapping[str, Any]) -> CanonicalProductR
     raw_areas = payload.get("print_areas")
     if not isinstance(raw_areas, list):
         raise ValueError
+    expected_variant_id_set = frozenset(expected_variant_ids)
+    variant_order = {variant_id: index for index, variant_id in enumerate(expected_variant_ids)}
+    seen_area_variant_ids: set[int] = set()
     for raw_area in raw_areas:
         if not isinstance(raw_area, Mapping):
             raise ValueError
@@ -1618,12 +1633,24 @@ def _canonical_product_readback(payload: Mapping[str, Any]) -> CanonicalProductR
         if not isinstance(raw_placeholders, list):
             raise ValueError
         placeholders = []
+        seen_positions: set[str] = set()
         for raw_placeholder in raw_placeholders:
             if not isinstance(raw_placeholder, Mapping):
                 raise ValueError
             raw_images = raw_placeholder.get("images")
             if not isinstance(raw_images, list):
                 raise ValueError
+            position = raw_placeholder.get("position")
+            if (
+                not isinstance(position, str)
+                or not 1 <= len(position) <= 64
+                or re.fullmatch(r"^[a-z][a-z0-9_-]*$", position) is None
+                or position in seen_positions
+            ):
+                raise ValueError
+            seen_positions.add(position)
+            if not raw_images:
+                continue
             images = []
             for raw_image in raw_images:
                 if not isinstance(raw_image, Mapping):
@@ -1639,16 +1666,30 @@ def _canonical_product_readback(payload: Mapping[str, Any]) -> CanonicalProductR
                 )
             placeholders.append(
                 CanonicalReadPlaceholder(
-                    position=raw_placeholder.get("position"),
+                    position=position,
                     images=tuple(images),
                 )
             )
         variant_ids = raw_area.get("variant_ids")
         if not isinstance(variant_ids, list):
             raise ValueError
+        filtered_variant_ids: list[int] = []
+        for variant_id in variant_ids:
+            if (
+                isinstance(variant_id, bool)
+                or not isinstance(variant_id, int)
+                or variant_id <= 0
+                or variant_id in seen_area_variant_ids
+                or variant_id not in expected_variant_id_set | disabled_extra_ids
+            ):
+                raise ValueError
+            seen_area_variant_ids.add(variant_id)
+            if variant_id in expected_variant_id_set:
+                filtered_variant_ids.append(variant_id)
+        filtered_variant_ids.sort(key=variant_order.__getitem__)
         print_areas.append(
             CanonicalReadPrintArea(
-                variant_ids=tuple(variant_ids),
+                variant_ids=tuple(filtered_variant_ids),
                 placeholders=tuple(placeholders),
             )
         )
@@ -1666,18 +1707,66 @@ def _canonical_product_readback(payload: Mapping[str, Any]) -> CanonicalProductR
     )
 
 
-def _variant_economics(payload: Mapping[str, Any]) -> tuple[ExpectedVariantEconomics, ...]:
-    raw_variants = payload.get("variants")
-    if not isinstance(raw_variants, list):
-        raise ValueError
+def _variant_economics(
+    payload: Mapping[str, Any],
+    *,
+    expected_variant_ids: tuple[int, ...],
+) -> tuple[ExpectedVariantEconomics, ...]:
+    variant_rows, _disabled_extra_ids = _inert_catalog_variant_rows(
+        payload,
+        expected_variant_ids=expected_variant_ids,
+    )
     return tuple(
         ExpectedVariantEconomics(
             variant_id=item.get("id"),
             retail_price_cents=item.get("price"),
             production_cost_cents=item.get("cost"),
         )
-        for item in raw_variants
-        if isinstance(item, Mapping)
+        for item in variant_rows
+    )
+
+
+def _inert_catalog_variant_rows(
+    payload: Mapping[str, Any],
+    *,
+    expected_variant_ids: tuple[int, ...],
+) -> tuple[tuple[Mapping[str, Any], ...], frozenset[int]]:
+    """Discard only Printify's disabled catalog expansion around the Phase 6 draft."""
+
+    raw_variants = payload.get("variants")
+    expected_variant_id_set = frozenset(expected_variant_ids)
+    if (
+        not isinstance(raw_variants, list)
+        or not expected_variant_ids
+        or len(expected_variant_id_set) != len(expected_variant_ids)
+    ):
+        raise ValueError
+    expected_rows_by_id: dict[int, Mapping[str, Any]] = {}
+    disabled_extra_ids: set[int] = set()
+    seen_ids: set[int] = set()
+    for item in raw_variants:
+        if not isinstance(item, Mapping):
+            raise ValueError
+        variant_id = item.get("id")
+        if (
+            isinstance(variant_id, bool)
+            or not isinstance(variant_id, int)
+            or variant_id <= 0
+            or variant_id in seen_ids
+        ):
+            raise ValueError
+        seen_ids.add(variant_id)
+        if variant_id in expected_variant_id_set:
+            expected_rows_by_id[variant_id] = item
+        elif item.get("is_enabled") is False:
+            disabled_extra_ids.add(variant_id)
+        else:
+            raise ValueError
+    if not expected_variant_id_set.issubset(seen_ids):
+        raise ValueError
+    return (
+        tuple(expected_rows_by_id[variant_id] for variant_id in expected_variant_ids),
+        frozenset(disabled_extra_ids),
     )
 
 
