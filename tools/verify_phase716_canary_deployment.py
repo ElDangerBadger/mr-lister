@@ -469,6 +469,7 @@ def verify_iam_role_observations(
                 "Arn",
                 "AssumeRolePolicyDocument",
                 "CreateDate",
+                "Description",
                 "MaxSessionDuration",
                 "Path",
                 "RoleId",
@@ -477,6 +478,7 @@ def verify_iam_role_observations(
                 "Tags",
             }
             or role.get("Path") != "/"
+            or role.get("Description") != ""
             or role.get("RoleName") != role_name
             or not isinstance(role_id, str)
             or re.fullmatch(r"[A-Z0-9]{16,128}", role_id) is None

@@ -428,6 +428,7 @@ def _deployment_observations(artifact, binding: PublicationCanaryBinding) -> dic
                     "Version": "2012-10-17",
                 },
                 "CreateDate": "2026-09-02T12:00:00+00:00",
+                "Description": "",
                 "MaxSessionDuration": 3600,
                 "Path": "/",
                 "RoleId": "A" * 20,
@@ -717,6 +718,7 @@ def test_read_only_canary_deployment_readback_rejects_every_authority_expansion(
         "expected_mode",
         "concurrency",
         "cross_account_secret",
+        "role_description",
         "role_boundary",
         "iam_action",
         "attached_policy",
@@ -798,6 +800,8 @@ def test_read_only_canary_deployment_readback_rejects_every_authority_expansion(
             observations["inline_policy_observation"]["PolicyDocument"]["Statement"][4][
                 "Resource"
             ] = foreign_secret
+        elif drift == "role_description":
+            observations["role_observation"]["Role"]["Description"] = "unexpected"
         elif drift == "role_boundary":
             observations["role_observation"]["Role"]["PermissionsBoundary"] = {
                 "PermissionsBoundaryArn": "arn:aws:iam::123456789012:policy/unreviewed",
