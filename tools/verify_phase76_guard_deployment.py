@@ -270,8 +270,10 @@ def verify_legacy_query_absence_observations(
         if (
             alarm_observation.get("CompositeAlarms") != []
             or alarm_observation.get("MetricAlarms") != []
+            or alarm_observation.get("LogAlarms") not in (None, [])
             or alarm_observation.get("NextToken") is not None
-            or set(alarm_observation) - {"CompositeAlarms", "MetricAlarms", "NextToken"}
+            or set(alarm_observation)
+            - {"CompositeAlarms", "LogAlarms", "MetricAlarms", "NextToken"}
             or log_group_observation.get("logGroups") != []
             or log_group_observation.get("nextToken") is not None
             or set(log_group_observation) - {"logGroups", "nextToken"}
@@ -413,6 +415,7 @@ def verify_iam_role_observations(
             "Arn",
             "AssumeRolePolicyDocument",
             "CreateDate",
+            "Description",
             "MaxSessionDuration",
             "Path",
             "RoleId",
@@ -425,6 +428,7 @@ def verify_iam_role_observations(
         if (
             set(role) - allowed_role_keys
             or role.get("Path") != "/"
+            or role.get("Description") != ""
             or role.get("RoleName") != role_name
             or not isinstance(role_id, str)
             or re.fullmatch(r"[A-Z0-9]{16,128}", role_id) is None
@@ -458,7 +462,7 @@ def verify_iam_role_observations(
                     "Effect": "Allow",
                     "Resource": (
                         f"arn:{_partition(region)}:logs:{region}:{account_id}:log-group:"
-                        f"/aws/lambda/{function_name}:*"
+                        f"/aws/lambda/{function_name}:*:*"
                     ),
                     "Sid": "WritePublicationGuardLogs",
                 },

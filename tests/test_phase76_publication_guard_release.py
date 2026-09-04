@@ -864,7 +864,7 @@ def test_read_only_aws_captures_bind_the_deployed_guard_and_sanitized_invocation
     }
     verify_legacy_query_absence_observations(
         legacy_absence,
-        {"CompositeAlarms": [], "MetricAlarms": []},
+        {"CompositeAlarms": [], "LogAlarms": [], "MetricAlarms": []},
         {"logGroups": []},
         environment_name=environment,
     )
@@ -881,6 +881,13 @@ def test_read_only_aws_captures_bind_the_deployed_guard_and_sanitized_invocation
         verify_legacy_query_absence_observations(
             legacy_absence,
             {"CompositeAlarms": [], "MetricAlarms": [{"AlarmName": "legacy"}]},
+            {"logGroups": []},
+            environment_name=environment,
+        )
+    with pytest.raises(ValueError, match="legacy query absence observation"):
+        verify_legacy_query_absence_observations(
+            legacy_absence,
+            {"CompositeAlarms": [], "LogAlarms": [{"AlarmName": "legacy"}], "MetricAlarms": []},
             {"logGroups": []},
             environment_name=environment,
         )
@@ -961,6 +968,7 @@ def test_read_only_aws_captures_bind_the_deployed_guard_and_sanitized_invocation
                 "Version": "2012-10-17",
             },
             "CreateDate": "2026-08-24T05:00:00+00:00",
+            "Description": "",
             "MaxSessionDuration": 3600,
             "Path": "/",
             "RoleId": "A" * 20,
@@ -979,7 +987,7 @@ def test_read_only_aws_captures_bind_the_deployed_guard_and_sanitized_invocation
                     "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
                     "Effect": "Allow",
                     "Resource": (
-                        f"arn:aws:logs:{region}:{account}:log-group:/aws/lambda/{function_name}:*"
+                        f"arn:aws:logs:{region}:{account}:log-group:/aws/lambda/{function_name}:*:*"
                     ),
                     "Sid": "WritePublicationGuardLogs",
                 },
@@ -1034,6 +1042,18 @@ def test_read_only_aws_captures_bind_the_deployed_guard_and_sanitized_invocation
     with pytest.raises(ValueError, match="IAM role observation"):
         verify_iam_role_observations(
             drifted_role,
+            inline_policy,
+            {"IsTruncated": False, "PolicyNames": ["ReadOnlyApprovalPublicationGuard"]},
+            {"AttachedPolicies": [], "IsTruncated": False},
+            environment_name=environment,
+            region=region,
+            account_id=account,
+        )
+    described_role = json.loads(json.dumps(role))
+    described_role["Role"]["Description"] = "unexpected"
+    with pytest.raises(ValueError, match="IAM role observation"):
+        verify_iam_role_observations(
+            described_role,
             inline_policy,
             {"IsTruncated": False, "PolicyNames": ["ReadOnlyApprovalPublicationGuard"]},
             {"AttachedPolicies": [], "IsTruncated": False},
