@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -13,6 +14,14 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "contracts/publication/phase7.0.1.browser.fixtures.json"
 OFFLINE_BROWSER = ROOT / "web/offline/phase7"
 ACTIVE_BROWSER = ROOT / "web/src"
+ACTIVE_PUBLICATION_BROWSER = ACTIVE_BROWSER / "publication"
+
+FROZEN_OFFLINE_BROWSER_SHA256 = {
+    "PublicationWorkspace.tsx": "ff2e1844ce5823be25abc7d4f49a63f7263de960b09f8900008de2ab9e2f4862",
+    "activation.ts": "78b911943023d6bd4b03833f766620ceb4ef93e3a83fe948bcbe90f668f700b9",
+    "api-client.ts": "f5196e9337d4c11d79ad2e0b17407aaa4d0ca275fa4168711f3172fe320a3d9b",
+    "contracts.ts": "931152123a0ea5c7c23b22be9a66fb6eedf7fb5a2062251c97df1bcc37b28b30",
+}
 
 
 def _fixtures() -> dict[str, object]:
@@ -67,7 +76,7 @@ def test_golden_browser_values_are_exact_phase7_api_models() -> None:
     assert all(projection.request_enabled is False for projection in projections.values())
 
 
-def test_offline_browser_is_outside_active_source_and_has_no_durable_client_state() -> None:
+def test_frozen_offline_browser_stays_byte_exact_and_outside_the_active_successor() -> None:
     offline_files = sorted(OFFLINE_BROWSER.glob("*.ts*"))
     assert {path.name for path in offline_files} == {
         "PublicationWorkspace.tsx",
@@ -83,10 +92,32 @@ def test_offline_browser_is_outside_active_source_and_has_no_durable_client_stat
     )
 
     assert OFFLINE_BROWSER.parent.parent == ROOT / "web"
+    assert {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in offline_files
+    } == FROZEN_OFFLINE_BROWSER_SHA256
     assert "offline/phase7" not in active_source
     assert "../offline" not in active_source
-    assert "/publish" not in active_source
-    assert "publish_exact_approved_listing" not in active_source
+    active_publication_files = sorted(ACTIVE_PUBLICATION_BROWSER.glob("*.ts*"))
+    assert {path.name for path in active_publication_files} == {
+        "PublicationWorkspace.tsx",
+        "api-client.ts",
+        "contracts.ts",
+    }
+    active_publication_source = "\n".join(
+        path.read_text(encoding="utf-8") for path in active_publication_files
+    )
+    assert 'z.literal("7.1.0")' in active_publication_source
+    assert "/publish" in active_publication_source
+    assert "publish_exact_approved_listing" in active_publication_source
+    for forbidden_capability in (
+        "@aws-sdk",
+        "api.printify.com",
+        "phase7_worker",
+        "provider_runtime",
+        "publish.json",
+        "secretsmanager",
+    ):
+        assert forbidden_capability not in active_publication_source.casefold()
     assert "localStorage" not in offline_source
     assert "sessionStorage" not in offline_source
     assert "indexedDB" not in offline_source

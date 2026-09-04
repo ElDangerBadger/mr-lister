@@ -55,6 +55,9 @@ jobs:
           python -m tools.render_phase715c_operations_update \
             --output /tmp/phase715c-operations-update.json
           sam validate --lint --template-file /tmp/phase715c-operations-update.json
+          python -m tools.render_phase718_enabled_template \
+            --output /tmp/phase718-enabled.json
+          sam validate --lint --template-file /tmp/phase718-enabled.json
       - name: Test
         run: python -m pytest
       - name: Build

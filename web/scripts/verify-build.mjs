@@ -13,20 +13,22 @@ if (forbidden.length > 0) {
   throw new Error(`Production build contains forbidden public artifacts: ${forbidden.join(", ")}`);
 }
 
-const disabledPhase7Markers = [
+const requiredPhase7Markers = [
   "/publication",
   "/publish",
   "data-phase7-publication-workspace",
   "publish_exact_approved_listing",
 ];
 const compiledFiles = files.filter((file) => file.endsWith(".html") || file.endsWith(".js"));
-const phase7Leaks = [];
+const compiledSource = [];
 for (const file of compiledFiles) {
-  const source = await readFile(new URL(file, root), "utf8");
-  if (disabledPhase7Markers.some((marker) => source.includes(marker))) phase7Leaks.push(file);
+  compiledSource.push(await readFile(new URL(file, root), "utf8"));
 }
-if (phase7Leaks.length > 0) {
-  throw new Error(`Production build contains disabled Phase 7 capability: ${phase7Leaks.join(", ")}`);
+const missingPhase7Markers = requiredPhase7Markers.filter((marker) => (
+  !compiledSource.some((source) => source.includes(marker))
+));
+if (missingPhase7Markers.length > 0) {
+  throw new Error(`Production build is missing the enabled Phase 7 seller surface: ${missingPhase7Markers.join(", ")}`);
 }
 
 async function walk(directory) {

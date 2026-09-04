@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import ast
 import json
-import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -259,10 +258,34 @@ def test_phase6_deployment_bundles_and_seller_browser_do_not_acquire_the_worker(
         for path in (ROOT / "web" / "src").rglob("*")
         if path.suffix in {".js", ".jsx", ".ts", ".tsx"}
     )
-    assert re.search(r"/[A-Za-z0-9_{}./-]*publish", browser_source, re.IGNORECASE) is None
-    assert "publish_exact_approved_listing" not in browser_source
-    assert "requestPublication" not in browser_source
+    phase6_browser_client = (ROOT / "web/src/api/client.ts").read_text(encoding="utf-8")
+    publication_browser_source = "\n".join(
+        path.read_text(encoding="utf-8") for path in (ROOT / "web/src/publication").glob("*.ts*")
+    )
+
+    # The GA browser may issue the reviewed owner-scoped request, but the Phase 6 API
+    # client and deployment bundles remain publication-free.
+    assert "/publish" not in phase6_browser_client
+    assert "publish_exact_approved_listing" not in phase6_browser_client
+    assert "requestPublication" not in phase6_browser_client
+    assert "/publish" in publication_browser_source
+    assert "publish_exact_approved_listing" in publication_browser_source
+    assert "requestPublication" in publication_browser_source
+    assert "offline/phase7" not in browser_source
+    assert "../offline" not in browser_source
+
+    # A browser request is not worker/provider authority. Those capabilities remain in
+    # the separately deployed runtime and never enter the seller bundle.
     assert "publicationWorker" not in browser_source
+    for forbidden_capability in (
+        "@aws-sdk",
+        "api.printify.com",
+        "phase7_worker_composition",
+        "provider_runtime",
+        "publish.json",
+        "secretsmanager",
+    ):
+        assert forbidden_capability not in publication_browser_source.casefold()
 
 
 def test_optional_worker_sources_have_no_default_or_import_time_capability() -> None:

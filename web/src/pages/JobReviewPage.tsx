@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { ApiError, ContractError, newIdempotencyKey, type ListingDraft } from "../api/client";
 import { useAppDependencies } from "../app-context";
 import { sellerActions, type SellerAction, type SellerReview } from "../contracts";
+import { PublicationWorkspace } from "../publication/PublicationWorkspace";
 
 const POLLING_STATES = new Set([
   "preparing", "synchronizing", "refreshing_estimate", "reconciling", "cancelling",
@@ -13,7 +14,7 @@ interface ReviewMinimum { recordVersion: number; reviewVersion: number }
 
 export function JobReviewPage() {
   const { jobId = "" } = useParams();
-  const { api } = useAppDependencies();
+  const { api, publicationApi } = useAppDependencies();
   const [loadedReview, setReview] = useState<SellerReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<{ message: string; requestId: string | null } | null>(null);
@@ -224,6 +225,7 @@ export function JobReviewPage() {
         <div className={`stage-badge stage-badge--${review.display_state}`}>{humanLabel(review.display_state)}</div>
       </div>
       <p className="visually-hidden" aria-live="polite" aria-atomic="true">{stageAnnouncement}</p>
+      {publicationApi === undefined && <p className="boundary-note">{review.authority_notice}</p>}
       {error !== null && <ErrorNotice {...error} />}
       {review.provider_outcome_unconfirmed && (
         <div className="alert alert--warning" role="alert">The Printify outcome is not confirmed. Actions are limited until reconciliation finishes.</div>
@@ -303,7 +305,7 @@ export function JobReviewPage() {
             </dl>
           ))}
         </details>
-        <p className="boundary-note">This product remains unpublished. Its current Printify editability is shown above. Approval does not send it to Etsy.</p>
+        <p className="boundary-note">Its current Printify editability is shown above. Approval alone does not send it to Etsy; publication requires a separate explicit confirmation.</p>
       </section>
 
       <MockupGallery
@@ -320,6 +322,11 @@ export function JobReviewPage() {
           && loadedPreviewKey === previewEvidenceKey(review)
           && loadedMockupSetKey === mockupSetKey(review)}
       />
+      {publicationApi !== undefined
+        && review.display_state === "approved"
+        && review.stage === "complete" && (
+          <PublicationWorkspace jobId={jobId} approvedReview={review} api={publicationApi} />
+      )}
       <p className="updated-note">Authoritative record {review.record_version} · Updated {formatDate(review.updated_at)}</p>
     </div>
   );

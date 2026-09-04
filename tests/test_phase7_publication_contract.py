@@ -326,6 +326,9 @@ def test_publication_persistence_and_service_cannot_acquire_runtime_capability()
             # Its focused containment gate proves the adapter remains unregistered and has no
             # provider, workflow, secret, IAM, or AWS-client capability.
             "request_api.py",
+            # Phase 7.18's enabled edge adapter reuses only the established authenticated
+            # query/request adapters. Release-first cloud composition owns all runtime clients.
+            "enabled_api.py",
             # Phase 7.15's source-only control plane intentionally owns injected Step Functions
             # Start/Describe/Redrive seams. Focused tests prove one fixed machine, same-ARN
             # recovery, no client construction, no provider/secret, and no runtime registration.

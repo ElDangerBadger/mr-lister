@@ -1,0 +1,46 @@
+{
+  "activation_evidence": [
+    "explicit_one_listing_live_canary",
+    "explicit_general_availability_enablement"
+  ],
+  "confirmation_literal": "publish_exact_approved_listing",
+  "contract_version": "7.1.0",
+  "current_activation_phase": "general_availability",
+  "dispatcher_enabled": true,
+  "forbidden_capabilities_preserved": [
+    "unpublish",
+    "order",
+    "fulfillment",
+    "delete_product",
+    "custom_channel_status"
+  ],
+  "maximum_publish_posts_per_job": 1,
+  "maximum_root_attempts_per_job": 1,
+  "phase": "7",
+  "phase6_runtime_unchanged": true,
+  "predecessor_contract_fingerprint": "548b710230618e73c20a509f2121799c415b50070e1e2ae7e1b82fe3c37e2981",
+  "predecessor_contract_version": "7.0.1",
+  "publication_enabled": true,
+  "publication_scope": "one_shot_per_approved_job",
+  "query_enabled": true,
+  "recovery_enabled": true,
+  "request_enabled": true,
+  "retention_enabled": true,
+  "scaffold_only": false,
+  "seller_routes": [
+    {
+      "authenticated": true,
+      "method": "GET",
+      "owner_scoped": true,
+      "route": "/v1/jobs/{job_id}/publication"
+    },
+    {
+      "authenticated": true,
+      "method": "POST",
+      "owner_scoped": true,
+      "route": "/v1/jobs/{job_id}/publish"
+    }
+  ],
+  "status": "frozen",
+  "worker_enabled": true
+}

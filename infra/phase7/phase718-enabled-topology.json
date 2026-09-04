@@ -1,0 +1,60 @@
+{
+  "format": "mr-lister-phase7.18-enabled-topology-v1",
+  "activation_mode": "GENERAL_AVAILABILITY",
+  "contract": {
+    "version": "7.1.0",
+    "fingerprint": "5172926cb89f8c046247922d8311c3f8b6361a9d67a719aa3a19a1c0ef1ed678"
+  },
+  "predecessor": {
+    "template": "infra/phase7/production-disabled-template.json",
+    "sha256": "2a98ab2a7cf3fb04590f9f8cd3a30cc6c2e373421e70c70220be419b80ca7df2"
+  },
+  "functions": {
+    "PublicationQueryFunction": {
+      "handler": "mr_lister.cloud.phase718_entrypoints.publication_query_handler",
+      "timeout": 10
+    },
+    "PublicationRequestFunction": {
+      "handler": "mr_lister.cloud.phase718_entrypoints.publication_request_handler",
+      "timeout": 15
+    },
+    "PublicationDispatcherFunction": {
+      "handler": "mr_lister.cloud.phase718_entrypoints.publication_dispatcher_handler",
+      "timeout": 30
+    },
+    "PublicationWorkerFunction": {
+      "handler": "mr_lister.cloud.phase718_entrypoints.publication_worker_handler",
+      "timeout": 60
+    },
+    "PublicationRecoveryFunction": {
+      "handler": "mr_lister.cloud.phase718_entrypoints.publication_recovery_handler",
+      "timeout": 60
+    },
+    "PublicationRetentionFunction": {
+      "handler": "mr_lister.cloud.phase718_entrypoints.publication_retention_handler",
+      "timeout": 60
+    }
+  },
+  "seller_routes": [
+    {
+      "method": "GET",
+      "path": "/v1/jobs/{job_id}/publication",
+      "function": "PublicationQueryFunction"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/jobs/{job_id}/publish",
+      "function": "PublicationRequestFunction"
+    }
+  ],
+  "enabled_event_source_mappings": [
+    "PublicationDispatcherStreamMapping",
+    "PublicationRecoveryFunctionRecoveryQueue",
+    "PublicationRetentionStreamMapping"
+  ],
+  "enabled_eventbridge_rules": [
+    "PublicationDueWorkSweepRule",
+    "PublicationRecoverySweepRule",
+    "PublicationWorkflowFailureRule"
+  ]
+}

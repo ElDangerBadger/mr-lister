@@ -143,6 +143,19 @@ PHASE715C_OPERATIONS_CLOUD_FILES = {
     ROOT / "src/mr_lister/cloud/phase715c_operations_handlers.py",
 }
 
+PHASE718_ENABLED_PUBLICATION_FILES = {
+    "enabled_api.py",
+    "enabled_contract.py",
+    "enabled_projection.py",
+}
+
+PHASE718_ENABLED_CLOUD_FILES = {
+    ROOT / "src/mr_lister/cloud/phase718_composition.py",
+    ROOT / "src/mr_lister/cloud/phase718_configuration.py",
+    ROOT / "src/mr_lister/cloud/phase718_entrypoints.py",
+}
+PHASE718_ENABLED_ENTRYPOINT = ROOT / "src/mr_lister/cloud/phase718_entrypoints.py"
+
 PHASE7_CLOUD_FILES = (
     PHASE74_CLOUD_FILES
     | PHASE75_OFFLINE_CLOUD_FILES
@@ -153,6 +166,7 @@ PHASE7_CLOUD_FILES = (
     | PHASE710_CANARY_CLOUD_FILES
     | PHASE715_CONTROL_PLANE_CLOUD_FILES
     | PHASE715C_OPERATIONS_CLOUD_FILES
+    | PHASE718_ENABLED_CLOUD_FILES
 )
 
 EXPECTED_OFFLINE_PUBLICATION_FILES = {
@@ -319,20 +333,43 @@ def test_phase6_infrastructure_has_no_publication_iam_or_state_machine() -> None
     )
 
 
-def test_seller_web_has_no_publish_route_or_control() -> None:
-    source_paths = [
-        path
-        for path in (ROOT / "web" / "src").rglob("*")
-        if path.suffix in {".js", ".jsx", ".ts", ".tsx"}
-    ]
-    combined = "\n".join(path.read_text(encoding="utf-8") for path in source_paths)
+def test_active_seller_publication_browser_does_not_expand_the_phase6_boundary() -> None:
+    phase6_client = (ROOT / "web/src/api/client.ts").read_text(encoding="utf-8")
+    active_paths = sorted((ROOT / "web/src/publication").glob("*.ts*"))
+    assert {path.name for path in active_paths} == {
+        "PublicationWorkspace.tsx",
+        "api-client.ts",
+        "contracts.ts",
+    }
+    active_source = "\n".join(path.read_text(encoding="utf-8") for path in active_paths)
+    main_source = (ROOT / "web/src/main.tsx").read_text(encoding="utf-8")
 
-    assert re.search(r"/[A-Za-z0-9_{}./-]*publish", combined, re.IGNORECASE) is None
-    assert "publish_exact_approved_listing" not in combined
-    assert "requestPublication" not in combined
-    assert "publishListing" not in combined
-    for button in re.findall(r"<button\b.*?</button>", combined, re.IGNORECASE | re.DOTALL):
-        assert re.search(r"(?<!un)\bpublish(?:ing)?\b", button, re.IGNORECASE) is None
+    # The Phase 6 API port remains draft-only; Phase 7 is a separate versioned client.
+    assert "/publish" not in phase6_client
+    assert "publish_exact_approved_listing" not in phase6_client
+    assert "requestPublication" not in phase6_client
+    assert 'z.literal("7.1.0")' in active_source
+    assert "`/v1/jobs/${safeId(review.job_id)}/publish`" in active_source
+    assert "`/v1/jobs/${safeId(jobId)}/publication`" in active_source
+    assert "publish_exact_approved_listing" in active_source
+    assert "BrowserPublicationApiClient" in main_source
+    assert "offline/phase7" not in active_source
+    assert "../offline" not in active_source
+
+    # Browser authority ends at the two owner-scoped HTTP routes. It gains no direct
+    # worker, secret, AWS, or provider transport capability.
+    for forbidden_capability in (
+        "@aws-sdk",
+        "api.printify.com",
+        "boto3",
+        "phase7_worker",
+        "provider_runtime",
+        "publish.json",
+        "secretsmanager",
+    ):
+        assert forbidden_capability not in active_source.casefold()
+    buttons = re.findall(r"<button\b.*?</button>", active_source, re.IGNORECASE | re.DOTALL)
+    assert any("Publish exact approved listing" in button for button in buttons)
 
 
 def test_phase6_dispatcher_cannot_select_publication_work() -> None:
@@ -419,7 +456,9 @@ def test_phase6_source_bundles_exclude_phase7_runtime(tmp_path: Path) -> None:
 
 def test_phase7_offline_runtime_is_only_in_exact_inventory() -> None:
     publication_files = {path.name for path in PUBLICATION_ROOT.glob("*.py")}
-    assert publication_files == EXPECTED_OFFLINE_PUBLICATION_FILES
+    assert publication_files == (
+        EXPECTED_OFFLINE_PUBLICATION_FILES | PHASE718_ENABLED_PUBLICATION_FILES
+    )
     assert set(publication_exports) == {
         "PHASE7_PUBLICATION_CONTRACT_VERSION",
         "PublicationState",
@@ -476,7 +515,7 @@ def test_phase7_offline_runtime_is_only_in_exact_inventory() -> None:
         ), path.relative_to(ROOT)
 
 
-def test_phase75_credential_modules_are_capability_narrow_and_uncomposed() -> None:
+def test_phase75_credential_modules_are_capability_narrow_and_only_enabled_after_release() -> None:
     core_module = "mr_lister.publication.provider_credentials"
     adapter_module = "mr_lister.cloud.phase7_provider_credentials"
     core_imports = _imports(PUBLICATION_ROOT / "provider_credentials.py")
@@ -520,8 +559,15 @@ def test_phase75_credential_modules_are_capability_narrow_and_uncomposed() -> No
         if path == adapter_path:
             continue
         imports = _imports(path)
+        if path == PHASE718_ENABLED_ENTRYPOINT:
+            assert adapter_module in imports
+            continue
         assert adapter_module not in imports, path.relative_to(ROOT)
-        if path in PHASE78_WORKER_CLOUD_FILES or path == PHASE710_CANARY_COMPOSITION:
+        if (
+            path in PHASE78_WORKER_CLOUD_FILES
+            or path == PHASE710_CANARY_COMPOSITION
+            or path == ROOT / "src/mr_lister/cloud/phase718_composition.py"
+        ):
             assert core_module in imports, path.relative_to(ROOT)
             continue
         assert core_module not in imports, path.relative_to(ROOT)

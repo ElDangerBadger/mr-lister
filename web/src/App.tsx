@@ -35,7 +35,7 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
           </header>
           <div className="authority-banner" role="note">
             <span aria-hidden="true">●</span>
-            <strong>Unpublished — not on Etsy</strong>
+            <strong>Nothing publishes without explicit seller confirmation</strong>
           </div>
           <main id="main-content" tabIndex={-1}>
             <Routes>
@@ -47,7 +47,7 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
             </Routes>
           </main>
           <footer>
-            This workspace prepares private Printify drafts for human review. It cannot publish, order, or fulfill products.
+            Drafts remain private until a seller explicitly approves and confirms publication. Mr. Lister cannot order or fulfill products.
           </footer>
         </div>
       </UploadProvider>
