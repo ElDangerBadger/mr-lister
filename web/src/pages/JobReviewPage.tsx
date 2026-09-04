@@ -909,7 +909,6 @@ function previewEvidenceKey(review: SellerReview): string {
     jobId: review.job_id,
     reviewVersion: review.review_version,
     url: review.preview.url,
-    expiresAt: review.preview.expires_at,
   });
 }
 

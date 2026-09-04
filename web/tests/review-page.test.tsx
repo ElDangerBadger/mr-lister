@@ -482,6 +482,36 @@ describe("authoritative seller review", () => {
     expect(screen.getByRole("button", { name: "Approve draft" })).toBeEnabled();
   });
 
+  it("preserves loaded approval evidence when only the preview grant expiration refreshes", async () => {
+    const original = completeReadyReview();
+    const refreshed = sellerReviewSchema.parse({
+      ...original,
+      record_version: original.record_version + 1,
+      updated_at: "2026-08-22T12:15:00Z",
+      preview: {
+        ...original.preview,
+        expires_at: "2026-08-22T12:35:00Z",
+      },
+    });
+    const getReview = vi.fn()
+      .mockResolvedValueOnce(reviewResponse(original, "request-original"))
+      .mockResolvedValueOnce(reviewResponse(refreshed, "request-refreshed"));
+    const getJob = vi.fn().mockResolvedValue(progressResponse(refreshed));
+    const fetchArtwork = vi.fn().mockResolvedValue(new Blob(["png"], { type: "image/png" }));
+    render(<MemoryRouter initialEntries={[`/jobs/${original.job_id}`]}><AppRoutes dependencies={dependencies(original, { getReview, getJob, fetchArtwork })} /></MemoryRouter>);
+
+    fireEvent.load(await screen.findByRole("img", { name: "Original uploaded artwork for this seller review" }));
+    for (const mockup of screen.getAllByRole("img", { name: /representative mockup/u })) fireEvent.load(mockup);
+    expect(screen.getByRole("button", { name: "Approve draft" })).toBeEnabled();
+
+    window.dispatchEvent(new Event("focus"));
+    await screen.findByText(`Authoritative record ${refreshed.record_version}`, { exact: false });
+
+    expect(fetchArtwork).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("img", { name: "Original uploaded artwork for this seller review" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve draft" })).toBeEnabled();
+  });
+
   it("never carries a late job A preview grant into job B approval", async () => {
     const base = readyReview();
     const makeReview = (jobId: string, title: string) => sellerReviewSchema.parse({
