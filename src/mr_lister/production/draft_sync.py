@@ -111,6 +111,15 @@ class CanonicalPrintifyDraft(_DraftModel):
 
         return self.model_dump(mode="json", exclude={"correlation_token"})
 
+    def provider_update_payload(self) -> dict[str, Any]:
+        """Return the seller-editable listing fields for a partial product update."""
+
+        return {
+            "title": self.title,
+            "description": self.description,
+            "tags": list(self.tags),
+        }
+
     @property
     def payload_fingerprint(self) -> str:
         return canonical_fingerprint(self.provider_payload())
@@ -490,7 +499,11 @@ class PrintifyDraftOnlyClient(PrintifyCatalogClient):
     ) -> dict[str, Any]:
         path = self._product_path(shop_id, product_id)
         try:
-            payload = self._request_json(method="PUT", path=path, payload=draft.provider_payload())
+            payload = self._request_json(
+                method="PUT",
+                path=path,
+                payload=draft.provider_update_payload(),
+            )
         except (PrintifyCatalogMismatchError, PrintifyUnavailableError) as error:
             raise PrintifyUpdateOutcomeUnknown(
                 "Product update outcome is unknown; reconcile the same product without creating"

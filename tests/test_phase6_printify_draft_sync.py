@@ -196,6 +196,16 @@ def test_canonical_payload_reuses_phase5_contracts_and_embeds_job_token(listing)
     assert len(draft.payload_fingerprint) == 64
 
 
+def test_partial_update_payload_contains_only_seller_editable_listing_fields(listing) -> None:
+    draft = canonical_draft(listing)
+
+    assert draft.provider_update_payload() == {
+        "title": draft.title,
+        "description": draft.description,
+        "tags": list(draft.tags),
+    }
+
+
 def test_width_first_placement_preserves_scale_and_source_aspect_ratio(listing) -> None:
     draft = build_canonical_draft(
         job_id="job_phase6_rectangular",
@@ -358,7 +368,7 @@ def test_later_revision_gets_then_puts_same_immutable_product_id(listing) -> Non
     assert evidence.product_id == "product_1"
     assert [call["method"] for call in transport.calls] == ["GET", "PUT", "GET"]
     assert all(call["path"].endswith("/product_1.json") for call in transport.calls)
-    assert json.loads(transport.calls[1]["body"])["title"] == changed.title
+    assert json.loads(transport.calls[1]["body"]) == changed.provider_update_payload()
     assert not transport.expected
 
 
