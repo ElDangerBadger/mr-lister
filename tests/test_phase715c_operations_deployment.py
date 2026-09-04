@@ -483,6 +483,15 @@ def test_change_set_s3_stack_lambda_and_safety_readbacks_are_exact(tmp_path: Pat
         object_version=OBJECT_VERSION,
         change_set_name=CHANGE_SET_NAME,
     )
+    raw_aws_change_set = _change_set()
+    raw_aws_change_set.pop("ChangeSetType")
+    verify_change_set_observation(
+        raw_aws_change_set,
+        descriptor,
+        bucket=BUCKET,
+        object_version=OBJECT_VERSION,
+        change_set_name=CHANGE_SET_NAME,
+    )
     head = {
         "ChecksumSHA256": base64.b64encode(sha256(archive).digest()).decode("ascii"),
         "ContentLength": len(archive),
@@ -600,6 +609,17 @@ def test_change_set_rejects_a_third_resource_or_replacement() -> None:
     with pytest.raises(Phase715cOperationsDeploymentError):
         verify_change_set_observation(
             replacement,
+            descriptor,
+            bucket=BUCKET,
+            object_version=OBJECT_VERSION,
+            change_set_name=CHANGE_SET_NAME,
+        )
+
+    wrong_type = _change_set()
+    wrong_type["ChangeSetType"] = "CREATE"
+    with pytest.raises(Phase715cOperationsDeploymentError):
+        verify_change_set_observation(
+            wrong_type,
             descriptor,
             bucket=BUCKET,
             object_version=OBJECT_VERSION,

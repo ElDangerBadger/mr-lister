@@ -259,7 +259,7 @@ def verify_change_set_observation(
             found != {_RECOVERY_LOGICAL_ID, _RETENTION_LOGICAL_ID}
             or observation.get("StackName") != STACK_NAME
             or observation.get("ChangeSetName") != change_set_name
-            or observation.get("ChangeSetType") != "UPDATE"
+            or observation.get("ChangeSetType") not in {None, "UPDATE"}
             or observation.get("Status") != "CREATE_COMPLETE"
             or observation.get("ExecutionStatus") != "AVAILABLE"
             or observation.get("IncludeNestedStacks") not in {None, False}
