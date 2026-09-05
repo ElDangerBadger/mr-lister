@@ -381,10 +381,12 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - Current authority: [`phase6-release-state.md`](phase6-release-state.md). It records the sealed
       source/deployment tuple, input contract, real walkthrough, green verification, acceptance
       classification, exact rollback point, and explicit Phase 7 publication boundary.
-- [ ] Phase 7 — Etsy publication through Printify
+- [x] Phase 7 — Etsy publication through Printify
   - Phase 6 remains sealed. The separately authorized Phase 7.18 backend is now enabled and has
     passed exact readback. The versioned seller web and public activation also passed; one
-    authenticated post-GA status read has passed; final CI remains before seal.
+    authenticated post-GA status read has passed. Release candidate
+    `022bdb62b6d7e4e8ac3c129e943f48e4256a6c5c` passed `main` CI run `33985664447`; Phase 7 is
+    **COMPLETE AND SEALED — FUNCTIONAL HACKATHON-DEMO SCOPE**, with no demo blockers remaining.
   - [x] Freeze publication-disabled contract 7.0.1: separate aggregate authority, complete
     one-shot permit semantics, positive-proof-only GET reconciliation, verified safe link,
     notification, terminal-settlement retention, and three-scope activation
@@ -568,7 +570,7 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     verifier remains unsatisfied and is explicitly deferred for the functional demo. The
     sanitized checkpoint is
     [`phase717-live-publication-milestone.json`](evidence/phase717-live-publication-milestone.json)
-  - [ ] Phase 7.18 general availability and seal
+  - [x] Phase 7.18 general availability and seal
     - [x] Freeze contract `7.1.0` and bind the external canary result plus explicit general-
       availability approval into the enabled release
     - [x] Deploy release `b167db6f3dc5b8fef73c89959e0eff5ffdaee50b0739845232718456684cb130`;
@@ -582,10 +584,11 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     - [x] Complete one authenticated post-GA read of the owner-scoped publication-status route:
       the signed-in seller UI received `200` for the exact owner job under contract `7.1.0`,
       reported the durable verifying state, disabled a repeat request, and issued no POST
-    - [ ] Commit/fast-forward the authoritative release state to `main` and pass final GitHub CI
+    - [x] Commit/fast-forward the authoritative release state to `main` and pass final GitHub CI:
+      release candidate `022bdb62b6d7e4e8ac3c129e943f48e4256a6c5c`, run `33985664447`
   - Current execution order, source/deployment distinctions, and irreversible stop lines are
     authoritative in [`phase7-execution-map.md`](phase7-execution-map.md); current release identity
-    and remaining seal gates are in [`phase7-release-state.md`](phase7-release-state.md)
+    and sealed release authority are in [`phase7-release-state.md`](phase7-release-state.md)
   - [ ] Post-demo hardening: live fault-injection/restart matrices and strict terminal-notification
     evidence. Their implementation and automated coverage are green; they are not claimed as live
     acceptance evidence for this functional MVP.

@@ -2,7 +2,7 @@
 
 ## Current decision
 
-**PHASE 7 RELEASE CANDIDATE ACCEPTED — FINAL MAIN CI PENDING**
+**PHASE 7 COMPLETE AND SEALED — FUNCTIONAL HACKATHON-DEMO SCOPE**
 
 Phase 6 remains sealed at seller approval. The P7.15C production-disabled operations and rollback
 checkpoint is closed, the P7.16 deployed GET-only validation passed, and one exact P7.17
@@ -10,8 +10,9 @@ concurrency-one canary completed a real Printify-to-Etsy publication on 2026-09-
 contract is frozen and the generally available seller routes, production worker, and control plane
 are now deployed and have passed exact readback. The versioned seller-web release also passed
 canonical readback, CloudFront activation, and public GET checks. The authenticated owner-scoped
-status route then returned `200` through the live seller UI without a publication POST. Only final
-`main` CI remains before the Phase 7 seal is effective.
+status route then returned `200` through the live seller UI without a publication POST. Release
+candidate `022bdb62b6d7e4e8ac3c129e943f48e4256a6c5c` passed `main` CI run `33985664447`. The
+functional hackathon-demo seal is effective, with no demo blockers remaining.
 
 The canary's external outcome is positive, but its durable aggregate did not reach the strict
 `PUBLISHED` terminal evidence state before the immutable verification deadline. The positive Etsy
@@ -74,10 +75,9 @@ Phase 7 capability or activation state.
 | Due/recovery preflight, one-message DLQ triage, and operations runbook | Complete as injected source boundaries; no default AWS adapter or live operations-drill evidence yet |
 
 The safety-sensitive domain, persistence, provider, reconciliation, recovery, enabled backend, and
-versioned web release are present. The remaining seal work is the final release record and green
-CI on `main`.
+versioned web release are present. The final release record is committed and `main` CI is green.
 
-## Remaining gates and ordered build path
+## Completed gates and execution record
 
 ### P7.13 — Recover zero-publication deployment authority
 
@@ -231,7 +231,8 @@ identity was first observed at approximately `15:58:25Z`. Consequently, the dura
 remained `publication_verifying` and the strict P7.17 terminal verifier is **not satisfied** for
 this run. This does not erase the successful real-world vertical slice, but it prevents claiming
 formal terminal-evidence acceptance. The checkpoint is the optimization baseline; it is not a
-Phase 7 seal or a general-availability deployment.
+Phase 7 seal or a general-availability deployment at that checkpoint; the subsequent P7.18
+activation and seal are recorded below.
 
 ### P7.18 — General availability and seal
 
@@ -245,12 +246,13 @@ Only after a successful canary:
 5. capture source, artifact, deployment, CI, canary, rollback, and operational evidence; and
 6. declare either `PHASE 7 COMPLETE AND SEALED` or the smallest exact blocker list.
 
-**Release candidate accepted; final CI pending.** Contract `7.1.0` and enabled release
-`b167db6f3dc5b8fef73c89959e0eff5ffdaee50b0739845232718456684cb130` are deployed on
+**PHASE 7 COMPLETE AND SEALED — FUNCTIONAL HACKATHON-DEMO SCOPE.** Contract `7.1.0` and enabled
+release `b167db6f3dc5b8fef73c89959e0eff5ffdaee50b0739845232718456684cb130` are deployed on
 `mr-lister-phase7-dev`. Exact archive, Lambda, IAM, trigger, workflow, JWT route, and Phase 6
 non-delta readback passed. The versioned web release, public activation, and authenticated
-owner-scoped status read also passed without another publication POST. Final `main` CI remains.
-See
+owner-scoped status read also passed without another publication POST. Release candidate
+`022bdb62b6d7e4e8ac3c129e943f48e4256a6c5c` passed `main` CI run `33985664447`; no functional
+demo blocker remains. See
 [`phase7-release-state.md`](phase7-release-state.md).
 
 ## Production-disabled predecessor record

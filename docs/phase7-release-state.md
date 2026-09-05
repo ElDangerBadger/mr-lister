@@ -2,13 +2,14 @@
 
 ## Decision
 
-**PHASE 7 RELEASE CANDIDATE ACCEPTED — FINAL MAIN CI OPEN**
+**PHASE 7 COMPLETE AND SEALED — FUNCTIONAL HACKATHON-DEMO SCOPE**
 
 The Phase 7.18 backend is deployed in general-availability mode and its exact readback passed on
 2026-09-05. The seller-web bundle's immutable S3 versions also passed canonical readback,
 CloudFront invalidation completed, and public object GETs returned `200`. The authenticated
-owner-scoped status route also returned `200` through the live seller UI. Only final green CI on
-the release record committed to `main` remains before the seal is effective.
+owner-scoped status route also returned `200` through the live seller UI. Release candidate
+`022bdb62b6d7e4e8ac3c129e943f48e4256a6c5c` passed final `main` CI run `33985664447`; the
+functional hackathon-demo seal is effective and no demo blocker remains.
 
 The intended demo boundary is now implemented: an authenticated seller may explicitly confirm
 publication of one exact approved job. Each job has one root attempt and at most one Printify
@@ -22,6 +23,8 @@ not changed by the Phase 7 deployment.
 | --- | --- |
 | Runtime source baseline | `6e910934cf37ad4aab075dc08477916627bec334` |
 | Deployment-evidence verifier checkpoint | `6d3ad48122c4858ed0ca2636f4a7bb30c3bccc5e` |
+| Final release candidate commit | `022bdb62b6d7e4e8ac3c129e943f48e4256a6c5c` |
+| Final green `main` CI | Run `33985664447` |
 | Contract | `7.1.0`, SHA-256 `5172926cb89f8c046247922d8311c3f8b6361a9d67a719aa3a19a1c0ef1ed678` |
 | Activation | `GENERAL_AVAILABILITY`; query, request, dispatcher, worker, recovery, and retention enabled |
 | Phase 6 application binding | `0c6211a5b0244e9c86d635e6c02e7bc49e5e948d68895b4aaa982c0b0b2e187b` (unchanged) |
@@ -80,10 +83,10 @@ available authenticated read and polling path without creating a second external
 | P7.18 web immutable-version readback and public activation | Passed |
 | Isolated publish-once canary cleanup | Stack, function, and role deleted; 14-day log group retained |
 | Authenticated post-GA publication-status read | Passed: owner job returned `200` under contract `7.1.0`; no POST |
-| Final source/seal commit on `main` and GitHub CI | **Open** |
+| Final source/seal commit on `main` and GitHub CI | Passed: candidate `022bdb62b6d7e4e8ac3c129e943f48e4256a6c5c`; run `33985664447` green |
 
-The prior baseline CI run `33977352912` is green at `6e910934`. A new green run from the final
-`main` seal commit is still required.
+The prior baseline CI run `33977352912` is green at `6e910934`. Final `main` CI run `33985664447`
+is green for release candidate `022bdb62b6d7e4e8ac3c129e943f48e4256a6c5c`.
 
 ## Rollback authority
 
@@ -97,9 +100,9 @@ The versioned web bucket preserves the prior Phase 6 objects. The canonical web 
 the four candidate VersionIds above as the exact rollback set; only those candidate versions may
 be removed to expose the preserved predecessors. `runtime-config.json` was not replaced.
 
-## Remaining seal gates
+## Seal result
 
-1. Commit this release record, fast-forward it to `main`, push, and require green GitHub CI.
+No blockers remain for the functional hackathon-demo scope.
 
 Same-ARN redrive timing, DLQ/alarm fault injection, recovery saturation, exhaustive live failure
 matrices, strict late-terminal recovery evidence, manual screen-reader studies, and cosmetic polish

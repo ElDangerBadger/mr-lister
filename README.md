@@ -23,8 +23,9 @@ Etsy publication belongs to the separately controlled Phase 7 boundary, not Phas
 P7.18 backend is now deployed in general-availability mode with authenticated owner-scoped status
 and one-shot publication routes; Phase 6 remains unchanged and draft-only. One explicit live
 canary produced a real Etsy listing. The versioned seller-web release and authenticated
-owner-scoped status read are live and verified; final seal now awaits green CI on the final `main`
-commit.
+owner-scoped status read are live and verified. **PHASE 7 COMPLETE AND SEALED — FUNCTIONAL
+HACKATHON-DEMO SCOPE.** Release candidate `022bdb62b6d7e4e8ac3c129e943f48e4256a6c5c`
+passed `main` CI run `33985664447`; no demo blocker remains.
 Current authority is tracked in the
 [`Phase 7 release state`](docs/phase7-release-state.md), with the ordered history in the
 [`Phase 7 execution map`](docs/phase7-execution-map.md).
