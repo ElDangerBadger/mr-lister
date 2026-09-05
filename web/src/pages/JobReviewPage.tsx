@@ -10,6 +10,7 @@ const POLLING_STATES = new Set([
 ]);
 
 type SaveState = "pristine" | "dirty" | "saving" | "saved" | "conflict" | "error";
+type ListingEditBarrier = "none" | "unsaved" | "saving" | "reconciling";
 interface ReviewMinimum { recordVersion: number; reviewVersion: number }
 
 export function JobReviewPage() {
@@ -21,6 +22,7 @@ export function JobReviewPage() {
   const [stageAnnouncement, setStageAnnouncement] = useState("");
   const [loadedPreviewKey, setLoadedPreviewKey] = useState<string | null>(null);
   const [loadedMockupSetKey, setLoadedMockupSetKey] = useState<string | null>(null);
+  const [listingEditBarrier, setListingEditBarrier] = useState<ListingEditBarrier>("none");
   const lastStage = useRef<string | null>(null);
   const requestSequence = useRef(0);
   const nextPollDelay = useRef(3_000);
@@ -150,6 +152,7 @@ export function JobReviewPage() {
     lastStage.current = null;
     setLoadedPreviewKey(null);
     setLoadedMockupSetKey(null);
+    setListingEditBarrier("none");
     void load();
   }, [load]);
 
@@ -274,7 +277,7 @@ export function JobReviewPage() {
           )}
         </section>
 
-        <ListingEditor review={review} reload={load} />
+        <ListingEditor review={review} reload={load} onEditBarrierChange={setListingEditBarrier} />
       </div>
 
       <section className="panel" aria-labelledby="product-heading">
@@ -318,13 +321,15 @@ export function JobReviewPage() {
       <ActionPanel
         review={review}
         reload={load}
+        listingEditBarrier={listingEditBarrier}
         approvalEvidenceAvailable={review.preview.url !== null
           && loadedPreviewKey === previewEvidenceKey(review)
           && loadedMockupSetKey === mockupSetKey(review)}
       />
       {publicationApi !== undefined
         && review.display_state === "approved"
-        && review.stage === "complete" && (
+        && review.stage === "complete"
+        && listingEditBarrier === "none" && (
           <PublicationWorkspace jobId={jobId} approvedReview={review} api={publicationApi} />
       )}
       <p className="updated-note">Authoritative record {review.record_version} · Updated {formatDate(review.updated_at)}</p>
@@ -394,7 +399,11 @@ function ArtworkPreview({ review, onAvailable, onUnavailable }: {
   />;
 }
 
-function ListingEditor({ review, reload }: { review: SellerReview; reload: (minimum?: ReviewMinimum) => Promise<boolean> }) {
+function ListingEditor({ review, reload, onEditBarrierChange }: {
+  review: SellerReview;
+  reload: (minimum?: ReviewMinimum) => Promise<boolean>;
+  onEditBarrierChange: (barrier: ListingEditBarrier) => void;
+}) {
   const { api } = useAppDependencies();
   const [draft, setDraft] = useState<ListingDraft | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("pristine");
@@ -451,6 +460,10 @@ function ListingEditor({ review, reload }: { review: SellerReview; reload: (mini
     }
   }, [errors]);
 
+  useEffect(() => {
+    onEditBarrierChange(listingEditBarrierFor(saveState));
+  }, [onEditBarrierChange, saveState]);
+
   const capability = capabilityFor(review, "edit_listing");
   if (draft === null) {
     return (
@@ -467,6 +480,20 @@ function ListingEditor({ review, reload }: { review: SellerReview; reload: (mini
     setDraft(next);
     setSaveState("dirty");
     setMessage(null);
+  };
+  const discard = () => {
+    setDraft({
+      title: review.listing.title ?? "",
+      description: review.listing.description ?? "",
+      tags: [...review.listing.tags],
+    });
+    editAuthority.current = null;
+    saveKey.current = null;
+    acceptedMinimum.current = null;
+    focusValidationSummary.current = false;
+    setErrors({});
+    setSaveState("pristine");
+    setMessage("Unsaved listing edits discarded.");
   };
   const reconcileAcceptedRevision = async (minimum: ReviewMinimum) => {
     const current = await reload(minimum);
@@ -531,10 +558,21 @@ function ListingEditor({ review, reload }: { review: SellerReview; reload: (mini
     mergedIssues.filter((issue) => issue.severity === "error").map((issue) => [normalizeApiPath(issue.path), issue.message]),
   );
   const fieldErrors = { ...projectedFieldErrors, ...errors };
+  const hasDiscardableEdits = displayedSaveState === "dirty"
+    || displayedSaveState === "error"
+    || displayedSaveState === "conflict";
   return (
     <section className="panel listing-panel" aria-labelledby="listing-heading">
-      <SectionHeader eyebrow="Listing" heading="Draft content" id="listing-heading" readiness={review.listing.readiness} />
+      <SectionHeader
+        eyebrow="Listing"
+        heading={capability.enabled ? "Review and edit listing" : "Listing details"}
+        id="listing-heading"
+        readiness={review.listing.readiness}
+      />
       <p className="validation-result">Validation: {validationResultLabel(review)}</p>
+      {capability.enabled && (
+        <p className="listing-guidance">Edit the generated title, description, or tags below. Save or discard any changes before approving this exact listing version.</p>
+      )}
       {(Object.keys(errors).length > 0 || mergedIssues.length > 0) && (
         <div id="listing-errors" ref={validationSummary} className="validation-summary" role="alert" tabIndex={-1}>
           <h3>Review these listing details</h3>
@@ -576,6 +614,9 @@ function ListingEditor({ review, reload }: { review: SellerReview; reload: (mini
           <button className="button button--primary" type="submit" disabled={!capability.enabled || displayedSaveState === "saving" || displayedSaveState === "pristine" || displayedSaveState === "saved" || displayedSaveState === "conflict"}>
             {saveState === "saving" ? "Saving…" : "Save listing revision"}
           </button>
+          {hasDiscardableEdits && (
+            <button className="button" type="button" onClick={discard}>Discard edits</button>
+          )}
           <span className={`save-state save-state--${displayedSaveState}`} role="status" aria-live="polite">{displayedMessage}</span>
           {displayedSaveState === "conflict" && (
             <button className="button" type="button" onClick={() => { editAuthority.current = review; setSaveState("dirty"); setMessage("Revision reapplied to the latest review. Review it, then save deliberately."); }}>Reapply revision to latest review</button>
@@ -591,13 +632,18 @@ function ListingEditor({ review, reload }: { review: SellerReview; reload: (mini
   );
 }
 
-function ActionPanel({ review, reload, approvalEvidenceAvailable }: { review: SellerReview; reload: (minimum?: ReviewMinimum) => Promise<boolean>; approvalEvidenceAvailable: boolean }) {
+function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvailable }: {
+  review: SellerReview;
+  reload: (minimum?: ReviewMinimum) => Promise<boolean>;
+  listingEditBarrier: ListingEditBarrier;
+  approvalEvidenceAvailable: boolean;
+}) {
   const { api } = useAppDependencies();
   const [running, setRunning] = useState<SellerAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [requestId, setRequestId] = useState<string | null>(null);
   const [pendingMinimum, setPendingMinimum] = useState<ReviewMinimum | null>(null);
-  const [confirmApproval, setConfirmApproval] = useState(false);
+  const [confirmationAuthority, setConfirmationAuthority] = useState<string | null>(null);
   const dialogHeading = useRef<HTMLHeadingElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const approvalTrigger = useRef<HTMLButtonElement>(null);
@@ -606,6 +652,21 @@ function ActionPanel({ review, reload, approvalEvidenceAvailable }: { review: Se
   const [triggerFocusRequest, setTriggerFocusRequest] = useState(0);
   const [statusFocusRequest, setStatusFocusRequest] = useState(0);
   const operationKeys = useRef(new Map<string, string>());
+  const approvalAuthority = [
+    review.job_id,
+    review.record_version,
+    review.review_version,
+    review.review_fingerprint ?? "missing",
+    review.review_authority_etag ?? "missing",
+  ].join(":");
+  const confirmApproval = confirmationAuthority === approvalAuthority;
+
+  useEffect(() => {
+    if (confirmationAuthority === null || confirmationAuthority === approvalAuthority) return;
+    setConfirmationAuthority(null);
+    setMessage("The review changed. Review the latest listing before confirming approval again.");
+    setTriggerFocusRequest((current) => current + 1);
+  }, [approvalAuthority, confirmationAuthority]);
 
   useEffect(() => {
     const dialogElement = dialog.current;
@@ -647,7 +708,24 @@ function ActionPanel({ review, reload, approvalEvidenceAvailable }: { review: Se
     }
   };
 
+  const dismissApproval = () => {
+    if (running !== null) return;
+    setTriggerFocusRequest((current) => current + 1);
+    setConfirmationAuthority(null);
+  };
+
   const execute = async (action: Exclude<SellerAction, "edit_listing">) => {
+    const capability = capabilityFor(review, action);
+    if (!capability.enabled) {
+      setMessage(capability.message);
+      if (action === "approve_review") dismissApproval();
+      return;
+    }
+    if ((action === "approve_review" || action === "refresh_economics") && listingEditBarrier !== "none") {
+      setMessage(listingEditBarrierMessage(listingEditBarrier));
+      if (action === "approve_review") dismissApproval();
+      return;
+    }
     const keyId = `${action}:${review.record_version}:${review.review_version}`;
     const idempotencyKey = operationKeys.current.get(keyId) ?? newIdempotencyKey(action);
     operationKeys.current.set(keyId, idempotencyKey);
@@ -671,14 +749,8 @@ function ActionPanel({ review, reload, approvalEvidenceAvailable }: { review: Se
       if (action === "approve_review") setStatusFocusRequest((current) => current + 1);
     } finally {
       setRunning(null);
-      setConfirmApproval(false);
+      setConfirmationAuthority(null);
     }
-  };
-
-  const dismissApproval = () => {
-    if (running !== null) return;
-    setTriggerFocusRequest((current) => current + 1);
-    setConfirmApproval(false);
   };
 
   return (
@@ -689,23 +761,29 @@ function ActionPanel({ review, reload, approvalEvidenceAvailable }: { review: Se
       <div className="action-grid">
         {(["refresh_economics", "retry_job", "cancel_job", "approve_review"] as const).map((action) => {
           const capability = capabilityFor(review, action);
+          const blockedByListingEdits = listingEditBarrier !== "none"
+            && (action === "approve_review" || action === "refresh_economics");
           return (
             <div className="action-item" key={action}>
               <button
                 ref={action === "approve_review" ? approvalTrigger : undefined}
                 className={`button ${action === "approve_review" ? "button--primary" : action === "cancel_job" ? "button--danger" : ""}`}
                 type="button"
-                disabled={!capability.enabled || running !== null || pendingMinimum !== null || (action === "approve_review" && !approvalEvidenceAvailable)}
+                disabled={!capability.enabled || blockedByListingEdits || running !== null || pendingMinimum !== null || (action === "approve_review" && !approvalEvidenceAvailable)}
                 onClick={() => {
                   if (action === "approve_review") {
-                    setConfirmApproval(true);
+                    setConfirmationAuthority(approvalAuthority);
                   }
                   else void execute(action);
                 }}
               >
                 {running === action ? "Working…" : actionLabel(action)}
               </button>
-              <small>{action === "approve_review" && capability.enabled && !approvalEvidenceAvailable ? "Load the original artwork and all representative mockups before approval." : capability.message}</small>
+              <small>{blockedByListingEdits
+                ? listingEditBarrierMessage(listingEditBarrier)
+                : action === "approve_review" && capability.enabled && !approvalEvidenceAvailable
+                  ? "Load the original artwork and all representative mockups before approval."
+                  : capability.message}</small>
             </div>
           );
         })}
@@ -720,7 +798,7 @@ function ActionPanel({ review, reload, approvalEvidenceAvailable }: { review: Se
             <h3 id="approval-title" ref={dialogHeading} tabIndex={-1}>Approve this draft?</h3>
             <p id="approval-description"><strong>Approval does not publish to Etsy.</strong> It records your decision on this exact review version.</p>
             <div className="form-actions">
-              <button className="button button--primary" type="button" disabled={!approvalEvidenceAvailable || running !== null} onClick={() => { void execute("approve_review"); }}>{running === "approve_review" ? "Approving…" : "Approve draft — keep unpublished"}</button>
+              <button className="button button--primary" type="button" disabled={!capabilityFor(review, "approve_review").enabled || !approvalEvidenceAvailable || listingEditBarrier !== "none" || running !== null} onClick={() => { void execute("approve_review"); }}>{running === "approve_review" ? "Approving…" : "Approve draft — keep unpublished"}</button>
               <button className="button" type="button" disabled={running !== null} onClick={dismissApproval}>Go back</button>
             </div>
           </dialog>
@@ -827,6 +905,20 @@ function capabilityFor(review: SellerReview, action: SellerAction) {
   const capability = review.actions[index];
   if (capability === undefined || capability.action !== action) throw new Error("Closed action projection is invalid");
   return capability;
+}
+
+function listingEditBarrierFor(saveState: SaveState): ListingEditBarrier {
+  if (saveState === "pristine") return "none";
+  if (saveState === "saving") return "saving";
+  if (saveState === "saved") return "reconciling";
+  return "unsaved";
+}
+
+function listingEditBarrierMessage(barrier: ListingEditBarrier): string {
+  if (barrier === "none") return "Listing edits are current.";
+  if (barrier === "saving") return "Wait for listing edits to finish saving before approval or refreshing the estimate.";
+  if (barrier === "reconciling") return "Wait for the saved listing revision to become authoritative before approval or refreshing the estimate.";
+  return "Save or discard listing edits before approval or refreshing the estimate.";
 }
 
 function validateDraft(draft: ListingDraft): Record<string, string> {

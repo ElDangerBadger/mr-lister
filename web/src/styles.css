@@ -195,6 +195,7 @@ label, legend { display: flex; justify-content: space-between; gap: 1rem; margin
 label span, legend span { color: var(--muted); font-size: 0.75rem; font-weight: 500; }
 input, textarea { width: 100%; padding: 0.7rem 0.8rem; border: 1px solid #8a8983; border-radius: 0.45rem; background: #fff; color: var(--ink); }
 textarea { resize: vertical; }
+input[readonly], textarea[readonly] { background: #f1efe8; color: var(--muted); cursor: not-allowed; }
 input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
 fieldset { min-width: 0; margin: 1.5rem 0 0; padding: 0; border: 0; }
 .tag-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 0.8rem; }

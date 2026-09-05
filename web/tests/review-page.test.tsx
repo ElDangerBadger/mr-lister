@@ -4,10 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import browserFixtures from "../../contracts/browser/phase6.5.fixtures.json";
+import phase7Fixtures from "../../contracts/publication/phase7.0.1.browser.fixtures.json";
 import type { ApiPort } from "../src/api/client";
 import { AppRoutes } from "../src/App";
 import { MemoryAuthSession, type AuthCoordinator } from "../src/auth/session";
 import { sellerReviewSchema, type SellerReview } from "../src/contracts";
+import type { PublicationApiPort } from "../src/publication/api-client";
+import { sellerPublicationProjectionSchema } from "../src/publication/contracts";
 
 describe("authoritative seller review", () => {
   it("makes the unpublished and Strands boundaries prominent and exposes exactly 13 labeled tags", async () => {
@@ -57,6 +60,237 @@ describe("authoritative seller review", () => {
     expect(screen.getByText("Fresh until").parentElement).toHaveTextContent("2026");
     expect(screen.getByText("Provider prices can change before a later order.")).toBeInTheDocument();
     expect(screen.getAllByRole("img", { name: /representative mockup/u })).toHaveLength(2);
+  });
+
+  it("keeps every generated listing field editable while the review is ready for approval", async () => {
+    const review = completeReadyReview();
+    render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review)} /></MemoryRouter>);
+    const user = userEvent.setup();
+    const title = await screen.findByRole("textbox", { name: /^Title/u });
+    const description = screen.getByRole("textbox", { name: /^Description/u });
+    const tags = screen.getAllByRole("textbox", { name: /^Tag \d+$/u });
+
+    expect(title).not.toHaveAttribute("readonly");
+    expect(description).not.toHaveAttribute("readonly");
+    expect(tags).toHaveLength(13);
+    for (const tag of tags) expect(tag).not.toHaveAttribute("readonly");
+    const firstTag = tags[0];
+    if (firstTag === undefined) throw new Error("Ready review did not render tag 1");
+
+    await user.clear(title);
+    await user.type(title, "Seller edited title");
+    await user.clear(description);
+    await user.type(description, "Seller edited description.");
+    await user.clear(firstTag);
+    await user.type(firstTag, "seller edit");
+    expect(title).toHaveValue("Seller edited title");
+    expect(description).toHaveValue("Seller edited description.");
+    expect(firstTag).toHaveValue("seller edit");
+  });
+
+  it("blocks approval for dirty listing edits until the seller saves or discards them", async () => {
+    const review = completeReadyReview();
+    const fetchArtwork = vi.fn().mockResolvedValue(new Blob(["png"], { type: "image/png" }));
+    render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { fetchArtwork })} /></MemoryRouter>);
+    const user = userEvent.setup();
+    const title = await screen.findByRole("textbox", { name: /^Title/u });
+    const description = screen.getByRole("textbox", { name: /^Description/u });
+    const firstTag = screen.getByRole("textbox", { name: "Tag 1" });
+    const approve = screen.getByRole("button", { name: "Approve draft" });
+
+    fireEvent.load(await screen.findByRole("img", { name: "Original uploaded artwork for this seller review" }));
+    for (const mockup of screen.getAllByRole("img", { name: /representative mockup/u })) fireEvent.load(mockup);
+    await waitFor(() => expect(approve).toBeEnabled());
+
+    await user.clear(title);
+    await user.type(title, "Unsaved seller title");
+    await user.clear(description);
+    await user.type(description, "Unsaved seller description.");
+    await user.clear(firstTag);
+    await user.type(firstTag, "unsaved tag");
+
+    expect(approve).toBeDisabled();
+    expect(screen.getAllByText(/save or discard.*before approval/iu).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "Discard edits" }));
+
+    expect(title).toHaveValue(review.listing.title);
+    expect(description).toHaveValue(review.listing.description);
+    expect(firstTag).toHaveValue(review.listing.tags[0]);
+    expect(approve).toBeEnabled();
+  });
+
+  it("keeps approval blocked after an accepted save until authoritative readback is current", async () => {
+    const review = completeReadyReview();
+    const acceptedTitle = "Accepted seller title";
+    const fingerprint = "f".repeat(64);
+    const current = sellerReviewSchema.parse({
+      ...review,
+      record_version: 9,
+      review_version: 3,
+      review_fingerprint: fingerprint,
+      review_authority_etag: fingerprint,
+      updated_at: "2026-08-22T12:20:00Z",
+      listing: { ...review.listing, title: acceptedTitle },
+      synchronization: { ...review.synchronization, review_version: 3 },
+    });
+    let resolveReadback: ((value: ReturnType<typeof reviewResponse>) => void) | undefined;
+    const readback = new Promise<ReturnType<typeof reviewResponse>>((resolve) => { resolveReadback = resolve; });
+    const getReview = vi.fn()
+      .mockResolvedValueOnce(reviewResponse(review, "request-original"))
+      .mockReturnValueOnce(readback);
+    const reviseListing = vi.fn().mockResolvedValue({
+      value: { job_id: review.job_id, state: "product_draft_syncing", record_version: 8, review_version: 3 },
+      requestId: "request-save",
+      etag: null,
+    });
+    const fetchArtwork = vi.fn().mockResolvedValue(new Blob(["png"], { type: "image/png" }));
+    render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview, reviseListing, fetchArtwork })} /></MemoryRouter>);
+    const user = userEvent.setup();
+    const title = await screen.findByRole("textbox", { name: /^Title/u });
+    const approve = screen.getByRole("button", { name: "Approve draft" });
+
+    fireEvent.load(await screen.findByRole("img", { name: "Original uploaded artwork for this seller review" }));
+    for (const mockup of screen.getAllByRole("img", { name: /representative mockup/u })) fireEvent.load(mockup);
+    await waitFor(() => expect(approve).toBeEnabled());
+    await user.clear(title);
+    await user.type(title, acceptedTitle);
+    await user.click(screen.getByRole("button", { name: "Save listing revision" }));
+
+    await waitFor(() => expect(getReview).toHaveBeenCalledTimes(2));
+    expect(reviseListing).toHaveBeenCalledTimes(1);
+    expect(approve).toBeDisabled();
+
+    await act(async () => {
+      resolveReadback?.(reviewResponse(current, "request-current"));
+      await readback;
+    });
+    await screen.findByRole("heading", { name: acceptedTitle });
+    await waitFor(() => expect(fetchArtwork).toHaveBeenCalledTimes(2));
+    fireEvent.load(screen.getByRole("img", { name: "Original uploaded artwork for this seller review" }));
+    for (const mockup of screen.getAllByRole("img", { name: /representative mockup/u })) fireEvent.load(mockup);
+    await waitFor(() => expect(approve).toBeEnabled());
+  });
+
+  it("invalidates an open approval dialog when review authority changes and requires fresh confirmation", async () => {
+    const original = completeReadyReview();
+    const fingerprint = "d".repeat(64);
+    const latest = sellerReviewSchema.parse({
+      ...original,
+      record_version: 8,
+      review_version: 3,
+      review_fingerprint: fingerprint,
+      review_authority_etag: fingerprint,
+      updated_at: "2026-08-22T12:20:00Z",
+      listing: { ...original.listing, title: "Latest authoritative seller title" },
+      synchronization: { ...original.synchronization, review_version: 3 },
+      strands: { ...original.strands, prepared_review_version: 3 },
+    });
+    const getReview = vi.fn()
+      .mockResolvedValueOnce(reviewResponse(original, "request-original"))
+      .mockResolvedValue(reviewResponse(latest, "request-latest"));
+    const getJob = vi.fn().mockResolvedValue(progressResponse(latest));
+    const runAction = vi.fn<ApiPort["runAction"]>()
+      .mockRejectedValue(new TypeError("approval response interrupted"));
+    const fetchArtwork = vi.fn().mockResolvedValue(new Blob(["png"], { type: "image/png" }));
+    render(<MemoryRouter initialEntries={[`/jobs/${original.job_id}`]}><AppRoutes dependencies={dependencies(original, { getReview, getJob, runAction, fetchArtwork })} /></MemoryRouter>);
+    const user = userEvent.setup();
+
+    fireEvent.load(await screen.findByRole("img", { name: "Original uploaded artwork for this seller review" }));
+    for (const mockup of screen.getAllByRole("img", { name: /representative mockup/u })) fireEvent.load(mockup);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Approve draft" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Approve draft" }));
+    expect(screen.getByRole("button", { name: "Approve draft — keep unpublished" })).toBeEnabled();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole("heading", { name: "Latest authoritative seller title" })).toBeInTheDocument();
+    expect(await screen.findByText(/review changed.*confirming approval again/iu)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve draft — keep unpublished" })).not.toBeInTheDocument();
+    expect(runAction).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(fetchArtwork).toHaveBeenCalledTimes(2));
+    fireEvent.load(screen.getByRole("img", { name: "Original uploaded artwork for this seller review" }));
+    for (const mockup of screen.getAllByRole("img", { name: /representative mockup/u })) fireEvent.load(mockup);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Approve draft" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Approve draft" }));
+    await user.click(screen.getByRole("button", { name: "Approve draft — keep unpublished" }));
+    await waitFor(() => expect(runAction).toHaveBeenCalledTimes(1));
+    expect(runAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        record_version: latest.record_version,
+        review_version: latest.review_version,
+        review_authority_etag: fingerprint,
+      }),
+      "approve_review",
+      expect.any(String),
+    );
+  });
+
+  it("withholds publication while a visible local draft conflicts with an approved readback", async () => {
+    const original = completeReadyReview();
+    const approved = sellerReviewSchema.parse({
+      ...original,
+      record_version: 8,
+      display_state: "approved",
+      stage: "complete",
+      updated_at: "2026-08-22T12:20:00Z",
+      actions: original.actions.map((item) => ({
+        ...item,
+        enabled: false,
+        reason: "NOT_IN_CURRENT_STATE",
+        message: "No seller review actions are available after approval.",
+      })),
+    });
+    const publicationProjection = sellerPublicationProjectionSchema.parse({
+      ...phase7Fixtures.projections.not_requested,
+      contract_version: "7.1.0",
+      job_id: original.job_id,
+      publication_enabled: true,
+      request_enabled: true,
+      request_disabled_reason: null,
+    });
+    const getPublication = vi.fn<PublicationApiPort["getPublication"]>().mockResolvedValue({
+      value: publicationProjection,
+      requestId: "request-publication",
+      etag: `"${publicationProjection.etag}"`,
+    });
+    const publicationApi: PublicationApiPort = {
+      getPublication,
+      requestPublication: vi.fn<PublicationApiPort["requestPublication"]>(),
+    };
+    const getReview = vi.fn()
+      .mockResolvedValueOnce(reviewResponse(original, "request-original"))
+      .mockResolvedValue(reviewResponse(approved, "request-approved"));
+    const getJob = vi.fn().mockResolvedValue(progressResponse(approved));
+    render(
+      <MemoryRouter initialEntries={[`/jobs/${original.job_id}`]}>
+        <AppRoutes dependencies={{ ...dependencies(original, { getReview, getJob }), publicationApi }} />
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+    const title = await screen.findByRole("textbox", { name: /^Title/u });
+    await user.clear(title);
+    await user.type(title, "Visible unsaved local title");
+    expect(screen.getByRole("button", { name: "Discard edits" })).toBeEnabled();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    expect(await screen.findByText(/newer authoritative review is available/iu)).toBeInTheDocument();
+    expect(title).toHaveValue("Visible unsaved local title");
+    expect(title).toHaveAttribute("readonly");
+    expect(screen.queryByRole("heading", { name: "Publication status" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Publish this approved listing" })).not.toBeInTheDocument();
+    expect(getPublication).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Discard edits" }));
+    expect(title).toHaveValue(original.listing.title);
+    expect(await screen.findByRole("heading", { name: "Publication status" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Publish this approved listing" })).toBeEnabled();
+    expect(getPublication).toHaveBeenCalledTimes(1);
   });
 
   it("puts the skip link first in the keyboard focus order", async () => {
@@ -663,6 +897,7 @@ function completeReadyReview(): SellerReview {
     display_state: "ready_for_review",
     stage: "human_review",
     actions: base.actions.map((item) => {
+      if (item.action === "edit_listing") return { ...item, enabled: true, reason: "AVAILABLE", message: "Edit this listing." };
       if (item.action === "approve_review") return { ...item, enabled: true, reason: "AVAILABLE", message: "Approve this exact review." };
       return { ...item, enabled: false, reason: "NOT_IN_CURRENT_STATE", message: "This action is not available during human review." };
     }),
