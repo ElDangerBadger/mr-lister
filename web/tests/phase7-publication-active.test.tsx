@@ -1,5 +1,5 @@
 import axe from "axe-core";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -137,6 +137,62 @@ describe("active Phase 7 publication browser", () => {
     ));
     expect(getPublication).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("button", { name: "Publish this approved listing" })).not.toBeInTheDocument();
+  });
+
+  it("shows progress and confirmation when a manual status refresh returns no change", async () => {
+    const user = userEvent.setup();
+    const current = projection("queued");
+    let finishRefresh!: (value: PublicationDecodedResponse<SellerPublicationProjection>) => void;
+    const pendingRefresh = new Promise<PublicationDecodedResponse<SellerPublicationProjection>>((resolve) => {
+      finishRefresh = resolve;
+    });
+    const getPublication = vi.fn<PublicationApiPort["getPublication"]>()
+      .mockResolvedValueOnce(decoded(current))
+      .mockReturnValueOnce(pendingRefresh);
+    const requestPublication = vi.fn<PublicationApiPort["requestPublication"]>();
+
+    render(<PublicationWorkspace
+      jobId={JOB_ID}
+      approvedReview={approvedReview()}
+      api={{ getPublication, requestPublication }}
+    />);
+
+    const refresh = await screen.findByRole("button", { name: "Refresh publication status" });
+    await user.click(refresh);
+
+    expect(screen.getByRole("button", { name: "Refreshing publication status…" })).toBeDisabled();
+    expect(screen.getByText("Checking the latest recorded publication status…")).toBeVisible();
+    expect(getPublication).toHaveBeenCalledTimes(2);
+    expect(requestPublication).not.toHaveBeenCalled();
+
+    act(() => { finishRefresh(decoded(current)); });
+
+    expect(await screen.findByText(
+      "Publication status refreshed. This is Mr. Lister’s latest recorded status.",
+    )).toBeVisible();
+    expect(screen.getByRole("button", { name: "Refresh publication status" })).toBeEnabled();
+    expect(requestPublication).not.toHaveBeenCalled();
+  });
+
+  it("restores manual status refresh after a read failure without publishing", async () => {
+    const user = userEvent.setup();
+    const current = projection("queued");
+    const getPublication = vi.fn<PublicationApiPort["getPublication"]>()
+      .mockResolvedValueOnce(decoded(current))
+      .mockRejectedValueOnce(new Error("Publication status could not be refreshed."));
+    const requestPublication = vi.fn<PublicationApiPort["requestPublication"]>();
+
+    render(<PublicationWorkspace
+      jobId={JOB_ID}
+      approvedReview={approvedReview()}
+      api={{ getPublication, requestPublication }}
+    />);
+
+    await user.click(await screen.findByRole("button", { name: "Refresh publication status" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Publication status could not be refreshed.");
+    expect(screen.getByRole("button", { name: "Refresh publication status" })).toBeEnabled();
+    expect(requestPublication).not.toHaveBeenCalled();
   });
 
   it.each([

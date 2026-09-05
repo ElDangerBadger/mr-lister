@@ -110,6 +110,38 @@ describe("upload route authority", () => {
     await waitFor(() => expect(createUpload).toHaveBeenCalledTimes(1));
   });
 
+  it("clears and restores the recent list without deleting authoritative work", async () => {
+    const user = userEvent.setup();
+    const jobs = [
+      recentJob("job_recent_one", "2026-09-04T12:00:00Z"),
+      recentJob("job_recent_two", "2026-09-03T12:00:00Z"),
+    ];
+    const listJobs = vi.fn().mockResolvedValue({
+      value: { jobs, next_cursor: null },
+      requestId: "request-jobs",
+      etag: null,
+    });
+    const { api, auth } = dependencies({ listJobs });
+    const first = render(
+      <MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>,
+    );
+
+    expect(await screen.findAllByRole("link", { name: /Open preparation/u })).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Clear list from this browser" }));
+
+    expect(screen.getByText("Recent list cleared.")).toBeVisible();
+    expect(screen.queryByRole("link", { name: /Open preparation/u })).not.toBeInTheDocument();
+    expect(screen.getByText(/publication records, and audit history are preserved/u)).toBeVisible();
+
+    first.unmount();
+    render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
+    expect(await screen.findByText("Recent list cleared.")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Show recent list" }));
+    expect(await screen.findAllByRole("link", { name: /Open preparation/u })).toHaveLength(2);
+    expect(listJobs).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps a selected batch in an explicit seller-controlled order", async () => {
     const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
     const { api, auth } = dependencies({ listJobs });
@@ -350,6 +382,17 @@ function makePng(name = "art.png", tail = 1): File {
   const file = new File([bytes], name, { type: "image/png" });
   Object.defineProperty(file, "arrayBuffer", { value: () => Promise.resolve(bytes.buffer.slice(0)) });
   return file;
+}
+
+function recentJob(jobId: string, updatedAt: string) {
+  return {
+    job_id: jobId,
+    state: "approved" as const,
+    record_version: 8,
+    review_version: 3,
+    created_at: updatedAt,
+    updated_at: updatedAt,
+  };
 }
 
 function selectedNames(container: HTMLElement): string[] {

@@ -28,6 +28,8 @@ export function PublicationWorkspace({ jobId, approvedReview, api }: Publication
   const [confirming, setConfirming] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [requesting, setRequesting] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const dialogHeading = useRef<HTMLHeadingElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -61,6 +63,8 @@ export function PublicationWorkspace({ jobId, approvedReview, api }: Publication
     setConfirming(false);
     setAcknowledged(false);
     setRequesting(false);
+    setCheckingStatus(false);
+    setStatusMessage(null);
   }, [approvalAuthority]);
 
   const loadStatus = useCallback(async (): Promise<SellerPublicationProjection | null> => {
@@ -156,6 +160,21 @@ export function PublicationWorkspace({ jobId, approvedReview, api }: Publication
     window.setTimeout(() => trigger.current?.focus(), 0);
   };
 
+  const refreshStatus = async () => {
+    if (checkingStatus || requesting) return;
+    setCheckingStatus(true);
+    setStatusMessage(null);
+    setError(null);
+    try {
+      const refreshed = await loadStatus();
+      if (mounted.current && refreshed !== null) {
+        setStatusMessage("Publication status refreshed. This is Mr. Lister’s latest recorded status.");
+      }
+    } finally {
+      if (mounted.current) setCheckingStatus(false);
+    }
+  };
+
   const requestPublication = async () => {
     if (!acknowledged || requesting) return;
     const requestEpoch = authorityEpoch.current;
@@ -212,14 +231,27 @@ export function PublicationWorkspace({ jobId, approvedReview, api }: Publication
       {error !== null && <p className="alert alert--warning" role="alert">{error}</p>}
       {projection !== null && <PublicationStatus projection={projection} />}
       {message !== null && <p className="alert alert--info" role="status">{message}</p>}
+      <p className="boundary-note">
+        Refresh reads Mr. Lister’s latest recorded status. Provider verification continues automatically.
+      </p>
+      {(checkingStatus || statusMessage !== null) && (
+        <p className="save-state" role="status" aria-live="polite">
+          {checkingStatus ? "Checking the latest recorded publication status…" : statusMessage}
+        </p>
+      )}
       <div className="form-actions">
         {mayRequest && (
           <button ref={trigger} className="button button--primary" type="button" onClick={() => setConfirming(true)}>
             Publish this approved listing
           </button>
         )}
-        <button className="button" type="button" disabled={requesting} onClick={() => { void loadStatus(); }}>
-          Check publication status
+        <button
+          className="button"
+          type="button"
+          disabled={requesting || checkingStatus}
+          onClick={() => { void refreshStatus(); }}
+        >
+          {checkingStatus ? "Refreshing publication status…" : "Refresh publication status"}
         </button>
       </div>
       {projection?.state === "not_requested" && !projection.request_enabled && (

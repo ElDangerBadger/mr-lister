@@ -1,5 +1,6 @@
 import axe from "axe-core";
 import { render, screen, waitFor, type RenderResult } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import browserFixtures from "../../contracts/browser/phase6.5.fixtures.json";
@@ -20,6 +21,32 @@ describe("accessible application states", () => {
     const result = renderApp("/", true, { listJobs });
     await screen.findByRole("heading", { name: "Prepare a batch of artwork." });
     await waitFor(() => expect(listJobs).toHaveBeenCalledTimes(1));
+    await expectNoViolations(result);
+  });
+
+  it("covers populated and browser-hidden recent preparations", async () => {
+    const user = userEvent.setup();
+    const listJobs = vi.fn().mockResolvedValue({
+      value: {
+        jobs: [{
+          job_id: "job_accessible_recent",
+          state: "approved",
+          record_version: 8,
+          review_version: 3,
+          created_at: "2026-09-04T12:00:00Z",
+          updated_at: "2026-09-04T12:00:00Z",
+        }],
+        next_cursor: null,
+      },
+      requestId: "request-jobs",
+      etag: null,
+    });
+    const result = renderApp("/", true, { listJobs });
+    await screen.findByRole("link", { name: /Open preparation/u });
+    await expectNoViolations(result);
+
+    await user.click(screen.getByRole("button", { name: "Clear list from this browser" }));
+    await screen.findByText("Recent list cleared.");
     await expectNoViolations(result);
   });
 

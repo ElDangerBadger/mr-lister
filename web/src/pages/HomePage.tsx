@@ -13,6 +13,8 @@ import {
   artworkSourceFormatForFile,
 } from "../upload/direct-upload";
 
+const HIDE_RECENT_JOBS_KEY = "mr-lister.hide-recent-jobs.v1";
+
 export function HomePage() {
   const { api, auth } = useAppDependencies();
   const status = useSessionStatus(auth.session);
@@ -32,6 +34,7 @@ export function HomePage() {
   const uploadLocked = preIntentBusy || batchBusy || batchFinished;
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [jobsError, setJobsError] = useState<string | null>(null);
+  const [hideRecentJobs, setHideRecentJobs] = useState(readHideRecentJobs);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -69,6 +72,17 @@ export function HomePage() {
   };
 
   const fileDrag = (event: DragEvent<HTMLElement>) => event.dataTransfer.types.includes("Files");
+  const visibleJobs = hideRecentJobs ? [] : jobs;
+
+  const clearRecentJobs = () => {
+    setHideRecentJobs(true);
+    writeHideRecentJobs(true);
+  };
+
+  const restoreRecentJobs = () => {
+    setHideRecentJobs(false);
+    writeHideRecentJobs(false);
+  };
 
   if (status === "anonymous") {
     return (
@@ -191,14 +205,33 @@ export function HomePage() {
             <p className="eyebrow">Your workspace</p>
             <h2 id="recent-heading">Recent preparations</h2>
           </div>
-          <span className="count-chip">{jobs.length}</span>
+          <div className="section-heading-actions">
+            <span className="count-chip">{visibleJobs.length}</span>
+            {visibleJobs.length > 0 && (
+              <button className="button button--quiet" type="button" onClick={clearRecentJobs}>
+                Clear list from this browser
+              </button>
+            )}
+            {hideRecentJobs && (
+              <button className="button button--quiet" type="button" onClick={restoreRecentJobs}>
+                Show recent list
+              </button>
+            )}
+          </div>
         </div>
         {jobsError !== null && <p className="alert alert--error" role="alert">{jobsError}</p>}
-        {jobs.length === 0 && jobsError === null ? (
-          <div className="empty-state"><p>No preparations yet.</p><small>Your first upload will appear here.</small></div>
+        {visibleJobs.length === 0 && jobsError === null ? (
+          <div className="empty-state">
+            <p>{hideRecentJobs ? "Recent list cleared." : "No preparations yet."}</p>
+            <small>
+              {hideRecentJobs
+                ? "Jobs, provider products, publication records, and audit history are preserved."
+                : "Your first upload will appear here."}
+            </small>
+          </div>
         ) : (
           <ul className="job-list">
-            {jobs.map((job) => (
+            {visibleJobs.map((job) => (
               <li key={job.job_id}>
                 <Link to={`/jobs/${job.job_id}`}>
                   <span><strong>Open preparation</strong><small>{job.job_id} · Updated {formatDate(job.updated_at)}</small></span>
@@ -211,6 +244,23 @@ export function HomePage() {
       </section>
     </div>
   );
+}
+
+function readHideRecentJobs(): boolean {
+  try {
+    return window.localStorage.getItem(HIDE_RECENT_JOBS_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeHideRecentJobs(hidden: boolean): void {
+  try {
+    if (hidden) window.localStorage.setItem(HIDE_RECENT_JOBS_KEY, "true");
+    else window.localStorage.removeItem(HIDE_RECENT_JOBS_KEY);
+  } catch {
+    // Clearing remains useful for the current view when storage is unavailable.
+  }
 }
 
 function SelectedArtworkList({ files, onChange }: { files: File[]; onChange: (files: File[]) => void }) {
