@@ -6,7 +6,9 @@
 
 Phase 6 was functionally accepted for the hackathon demo on 2026-09-01, resealed on 2026-09-03
 after a narrowly scoped provider-reconciliation correction, and resealed again on 2026-09-04
-after the real seller revision path exposed two narrow provider-synchronization defects. The
+after the real seller revision path exposed two narrow provider-synchronization defects. A
+browser-only artwork-ingestion correction was deployed on 2026-09-04 after a real Illustrator SVG
+exposed false rejections of safe static styles and bounded detailed paths. The
 accepted product boundary is an authenticated seller preparing one or more artworks, receiving
 one independent unpublished Printify draft per accepted file, reviewing and revising the
 generated work and live economics, and recording an approval. The flow stops at approval. It
@@ -27,6 +29,8 @@ assurance program.
 | Item | Sealed authority |
 | --- | --- |
 | Runtime source commit | `06484524ed8ff8b9211c5f5bd1f0bcc4d4f540bc` |
+| Seller-web SVG correction | source `c25cfa1c55a313bf32181d985268af1d5ff6685a`; release seal `08dfdd3b6d21dccb2c368010daa7778c99e7eed3` |
+| Seller-web release | bundle `b4763554cc8c99b25ba92662b3db04075d401d3ca8b0e7daa6cd86e1089530c0`; JavaScript S3 VersionId `MNJWRBcwKf7RG98Bg7677BVgvI7C0x0b`; index S3 VersionId `j1HgTZniq4luWrXpoZ9XgGicJS0vNFJW` |
 | Deployment render authority | `mr-lister-phase6-printify-partial-update-hotfix-v1`, reviewed private component renderer |
 | Package version | `mr-lister 0.1.0` |
 | Application stack | `mr-lister-phase6-dev`, `us-west-2`, `UPDATE_COMPLETE` at `2026-09-05T00:02:47Z` |
@@ -70,6 +74,12 @@ Downstream storage, workers, Strands orchestration, Printify draft creation, and
 consume the canonical representation and do not branch on the original file type. PDF remains a
 nonblocking future ingestion format. The smallest future PDF contract is one page normalized to
 canonical PNG; multi-page document processing is outside Phase 6.
+
+The deployed SVG normalizer accepts bounded static presentation styles produced by common vector
+editors while continuing to reject scripts, event handlers, imports, non-fragment resource URLs,
+active/unsupported elements, and excessive element, attribute, path-command, file-size, or render
+work. The reported 4096-by-4096 Illustrator SVG passed the corrected production sanitizer before
+deployment and still normalizes to canonical PNG before any upload intent or backend call.
 
 ## Functional acceptance
 
@@ -154,7 +164,7 @@ not reopen this sealed runtime.
 ## Verification and CI
 
 - full Python suite: **4,008 passed**, 11 explicitly gated live-Bedrock skips;
-- web suite: ESLint, strict TypeScript, **143 tests**, production build, and artifact verification
+- web suite: ESLint, strict TypeScript, **148 tests**, production build, and artifact verification
   passed;
 - Ruff lint and formatting, three contract drift checks, six Phase 6 SAM lint validations,
   Python sdist/wheel builds, compile checks, and diff hygiene passed;
