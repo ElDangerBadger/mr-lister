@@ -554,6 +554,16 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       authority for event-source failures; exact terminal rebind for retention replay; and durable
       cursor/shard authority before claiming fair automatic traversal beyond a saturated 25-row
       recovery page
+  - [x] Phase 7.16 deployed read-only validation: the exact fresh-job canary passed shop, product,
+    durable-record, and completion stages through GET-only provider access, with the application,
+    canary release, binding, versioned artifact, and deployed runtime read back exactly
+  - [x] Phase 7.17 functional live-publication milestone: one explicitly authorized
+    concurrency-one canary for job `job_126b45d46bb560e8641a6e43f2a925d6` issued exactly one
+    publication POST and produced Etsy listing `4569583958`. Positive provider readback arrived
+    approximately two minutes after the immutable deadline, so the strict durable terminal
+    verifier remains unsatisfied and Phase 7 general availability/sealing remains open. The
+    sanitized checkpoint is
+    [`phase717-live-publication-milestone.json`](evidence/phase717-live-publication-milestone.json)
   - Current execution order, source/deployment distinctions, and irreversible stop lines are
     authoritative in [`phase7-execution-map.md`](phase7-execution-map.md)
   - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime

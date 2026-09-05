@@ -1,0 +1,45 @@
+{
+  "application_release_fingerprint": "0c6211a5b0244e9c86d635e6c02e7bc49e5e948d68895b4aaa982c0b0b2e187b",
+  "canary": {
+    "archive_sha256": "7e06ce88fd1869601234ab562d3a9ceecd358c3f0cc04cc04be4d686ea63b273",
+    "binding_fingerprint": "e03471ca44f89fba19e57f77f22901e3f6b25f25e04b9fe00b9be47a0cd9255c",
+    "binding_sha256": "91bc776b6a0b7d7a9be8f3c4e3980f464a22117fe36470b64bc3748d8b3db58a",
+    "mode": "publish_once",
+    "release_fingerprint": "92ee88dc46ff8499b2f98ae27e216eab31b86da648b24549b0f1dbb6938b20e9"
+  },
+  "external_observation": {
+    "etsy_listing_id": "4569583958",
+    "observed_at_approximate": "2026-09-05T15:58:25Z",
+    "printify_errors": null,
+    "printify_visible": true,
+    "safe_listing_url": "https://www.etsy.com/listing/4569583958/polygonal-llama-t-shirt-geometric-animal",
+    "seller_confirmed_success": true
+  },
+  "format": "mr-lister-phase717-live-publication-milestone-v1",
+  "outbound_mutation": {
+    "authorized_exact_product": true,
+    "publication_post_count": 1,
+    "subsequent_provider_observations": "GET_only"
+  },
+  "repository_source_baseline": "2c5928c6ee36537c6b736f33f07ecef0e5ad8a6f",
+  "scope": "functional_vertical_slice_baseline",
+  "status": "external_publication_verified_durable_terminal_incomplete",
+  "target": {
+    "job_id": "job_126b45d46bb560e8641a6e43f2a925d6",
+    "printify_product_id": "6a9c3253a93f54bb45068670",
+    "shop_name": "Apartment H Collective"
+  },
+  "terminal_evidence": {
+    "durable_aggregate_state": "publication_verifying",
+    "formal_terminal_acceptance": false,
+    "reason": "The positive external Etsy identity was first observed after the immutable verification deadline.",
+    "strict_verifier": "not_satisfied",
+    "verification_deadline": "2026-09-05T15:56:23.127389Z"
+  },
+  "unclaimed": {
+    "general_availability_deployed": false,
+    "phase7_complete": false,
+    "phase7_sealed": false,
+    "strict_verified_published": false
+  }
+}

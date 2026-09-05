@@ -2,12 +2,20 @@
 
 ## Current decision
 
-**PHASE 7 IN PROGRESS — ACTIVATION ZERO**
+**PHASE 7 IN PROGRESS — LIVE PUBLICATION BASELINE PROVED**
 
-Phase 6 remains sealed at seller approval. Phase 7 contains a substantial, tested one-shot
-publication safety core and a deployed but inert provider-free control plane, but no reachable
-seller publication route, browser control, enabled production publication worker, or generally
-enabled publication contract exists. Etsy publication has not been authorized by deployment.
+Phase 6 remains sealed at seller approval. The P7.15C production-disabled operations and rollback
+checkpoint is closed, the P7.16 deployed GET-only validation passed, and one exact P7.17
+concurrency-one canary completed a real Printify-to-Etsy publication on 2026-09-05. This is a
+functional vertical-slice milestone, not Phase 7 completion: the generally available seller
+routes, browser control, production publication worker, and web release are not yet deployed and
+enabled through P7.18.
+
+The canary's external outcome is positive, but its durable aggregate did not reach the strict
+`PUBLISHED` terminal evidence state before the immutable verification deadline. The positive Etsy
+identity appeared in provider readback roughly two minutes after that deadline. The run is
+therefore recorded as externally verified functional evidence, not as a passing
+`verified_published` terminal-verifier result. No runtime or contract exception is implied.
 
 This document is the authoritative map from the sealed Phase 6 release to a sealable Phase 7
 release. It distinguishes code that is complete from capability that is actually deployed and
@@ -55,8 +63,8 @@ Phase 7 capability or activation state.
 | Safe Etsy result link, immutable report, in-app notification, and retention models | Complete and tested offline |
 | Owner-scoped query and publication-request adapters | Complete but unregistered and exact-disabled |
 | Real request and worker dependency graphs | Complete but unregistered and exact-disabled |
-| Read-only approval guard runtime, bundle builder, SAM template, and verifier | Implemented source-only; no separate live guard release claimed |
-| Isolated concurrency-one direct-invoke canary and gated request preparation | Implemented source-only; never deployed or invoked |
+| Read-only approval guard runtime, bundle builder, SAM template, and verifier | Deployed and invoked for the exact P7.16 target; all four GET-only stages passed with no provider mutation |
+| Isolated concurrency-one direct-invoke canary and gated request preparation | Deployed and invoked once for the exact approved P7.17 product; one publication POST produced a live Etsy listing, with the terminal-evidence timing exception recorded below |
 | Provider-free dispatcher, same-ARN recovery, deadline settlement, and terminal-retention control plane | Implemented and instantiated inertly; triggers disabled and concurrency zero |
 | Lost-event recovery index/sweep and failed-start readback | Complete locally; bounded at 25, same-ARN-only, no scan or provider construction |
 | Six release-first production-disabled entrypoints and deterministic ARM64 artifact | Deployed and read back exactly; every handler verifies then refuses without reading its event |
@@ -186,6 +194,14 @@ the contract activation phase. The deployed guard must retain its own immutable
 `GuardReleaseFingerprint`, while its independent `ApplicationReleaseFingerprint` must match the
 exact deployed Phase 6 stack `ReleaseFingerprint` used by the stored publication snapshots.
 
+**Functional checkpoint complete on 2026-09-05.** The exact fresh-job validation passed
+`staged_shop_preflight`, `staged_product_preflight`, `recorded_preflight`, and
+`read_only_preflight_complete`. It was bound to Phase 6 application release
+`0c6211a5b0244e9c86d635e6c02e7bc49e5e948d68895b4aaa982c0b0b2e187b`, canary release
+`b3c8c00d0fd5021dc25f13c6320498f173b67d7962bfe55d7024944e9677850c`, and canary binding
+`c72624f7226c6bddbcc616d5c4ef93a10bfbe8fba17cf44e93319c3457209bf3`. The deployment readback
+verifier passed; no publication POST was authorized during this checkpoint.
+
 ### P7.17 — One-listing MassSkutiny canary
 
 First close two operator-tooling gaps: mint a `publish_once` binding only from a completed durable
@@ -197,6 +213,24 @@ permit, at most one publication POST, exact-product polling, and no retry POST. 
 positively verified Etsy identity, safe result link, immutable report, and in-app notification.
 Infrastructure rollback cannot unpublish the external Etsy listing, so this step is intentionally
 irreversible.
+
+**Functional live-publication milestone completed on 2026-09-05.** The authenticated seller run
+used job `job_126b45d46bb560e8641a6e43f2a925d6`, Printify product
+`6a9c3253a93f54bb45068670`, and the connected Etsy shop **Apartment H Collective**. The owner
+explicitly approved that exact product. The publish-once runtime used release
+`92ee88dc46ff8499b2f98ae27e216eab31b86da648b24549b0f1dbb6938b20e9` and binding
+`e03471ca44f89fba19e57f77f22901e3f6b25f25e04b9fe00b9be47a0cd9255c`. It issued exactly one
+publication POST; subsequent observations were GET-only. Provider readback and seller
+confirmation showed the product visible with no provider error and Etsy listing
+`4569583958` at
+`https://www.etsy.com/listing/4569583958/polygonal-llama-t-shirt-geometric-animal`.
+
+The immutable verification deadline was `2026-09-05T15:56:23.127389Z`; the positive external
+identity was first observed at approximately `15:58:25Z`. Consequently, the durable aggregate
+remained `publication_verifying` and the strict P7.17 terminal verifier is **not satisfied** for
+this run. This does not erase the successful real-world vertical slice, but it prevents claiming
+formal terminal-evidence acceptance. The checkpoint is the optimization baseline; it is not a
+Phase 7 seal or a general-availability deployment.
 
 ### P7.18 — General availability and seal
 
