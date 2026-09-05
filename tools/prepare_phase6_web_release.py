@@ -17,14 +17,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE_ROOT = Path(".mr_lister_private")
 MANIFEST_FORMAT = "mr-lister-phase6-web-release-v1"
-BROWSER_GATE_BUNDLE_SHA256 = "977f82ebdb4b0acd35f7db7081cea3a34dc71beeb2d40cd7bec79bb27aeadc21"
+BROWSER_GATE_BUNDLE_SHA256 = "b4763554cc8c99b25ba92662b3db04075d401d3ca8b0e7daa6cd86e1089530c0"
 
 EXPECTED_WEB_RELEASE_FILES: Mapping[str, tuple[str, str]] = {
     "assets/index-BiMmzyh5.css": (
         "text/css; charset=utf-8",
         "public, max-age=31536000, immutable",
     ),
-    "assets/index-DIJgeTwi.js": (
+    "assets/index-BUBtkush.js": (
         "text/javascript; charset=utf-8",
         "public, max-age=31536000, immutable",
     ),
