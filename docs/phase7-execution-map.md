@@ -161,13 +161,21 @@ queue, workflow, log, alarm, and negative-capability readback passed. Two tempor
 samples from `2026-09-02T02:06:27Z` through `02:16:59Z` found no Lambda invocation datapoints,
 workflow executions, queued work, or indexed work, while Phase 6 remained unchanged.
 
-**P7.15C non-provider operations closure remains open.** Exercise same-ARN redrive and SQS timing,
-deliver EventBridge exhaustion through the DLQ and alarm receiver, validate retention/backfill
-ordering, and capture a tested rollback tuple for the successful stack. A saturated 25-row
-recovery page is an explicit alarm/operator stop; provably fair automatic traversal beyond that
-page requires new durable continuation authority and is not claimed. The preflight and DLQ tools
-remain injected libraries until a narrow AWS operator adapter is reviewed. Until these drills
-close, the overall infrastructure-and-alarm gate remains open.
+**P7.15C deployment and rollback closure passed on 2026-09-04 for the functional demo scope.** The
+existing production-disabled predecessor was captured, the exact provider-free operations release
+`4bab97bc3d35e55ad872b6049b332d9e7710d08e840798f4402f54e3acc2da00` was deployed and read back,
+and an independently reviewed rollback change set restored the predecessor. The canonical
+preflight, deployment, and rollback proofs all report `passed`; the rollback proof binds the
+predecessor and restored processed template, stack authority, and both affected Lambda
+configurations. The live stack is therefore left on the production-disabled predecessor rather
+than on the temporary operations runtime.
+
+Same-ARN redrive timing, EventBridge exhaustion through the DLQ and alarm receiver,
+recovery-index-loss/saturation fault injection, and retention/backfill-duration drills remain
+unclaimed post-demo hardening. They are not represented as successful acceptance evidence and do
+not require changes to the sealed runtime for the hackathon demo. A saturated 25-row recovery page
+remains an explicit alarm/operator stop; provably fair automatic traversal beyond that page is not
+claimed.
 
 ### P7.16 — Deployed read-only validation
 
@@ -240,7 +248,8 @@ failed during create because the workflow log destination appended a second `:*`
 ARN. The stack rolled back; all other created resources were removed, while its retained KMS key
 is pending scheduled deletion. The corrected direct-ARN behavior is regression-tested in the
 deployed source. That failed candidate is historical evidence, not a live release or rollback
-point. A tested rollback tuple for the current successful stack is still open.
+point. The tested September 4 operations deployment and rollback described above closes the
+production-disabled predecessor rollback tuple for the functional demo scope.
 
 The intentional recovery-index and strong aggregate-rebind changes also resealed the historical
 P7.9 triggerless worker source checkpoint. Its manifest changed from

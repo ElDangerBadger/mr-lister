@@ -185,11 +185,30 @@ request intake is considered. If any terminal Phase 7 authority already exists, 
 verify a bounded terminal-link/TTL backfill first. Never enable a request route while retention is
 disabled, lagging, or partially backfilled.
 
-## Remaining live evidence
+## September 4 operations deployment and rollback
 
-The deployed production-disabled checkpoint does not yet claim the following observations:
+The provider-free operations candidate was deployed through a reviewed update and then rolled
+back through a separately reviewed change set to the exact production-disabled predecessor. The
+sanitized evidence is retained privately under
+`.mr_lister_private/phase715c-live-20260904.gT78mA`:
 
-- a tested rollback tuple for the current successful stack;
+- preflight proof `a72011213bef7502e79c19edb6ab791c8cb333abce52fda0ea446c2fc8838df9`
+  passed with four empty index reads and all six disabled-trigger readbacks;
+- deployment proof `ca4b67a12afbb9cd5557f44e1ae09965e98e9b3fe1cf10d9e4db7119d0cf8309`
+  passed for operations release
+  `4bab97bc3d35e55ad872b6049b332d9e7710d08e840798f4402f54e3acc2da00`; and
+- rollback proof `2d1af5cfa70ed0e73ae12898ed5aa51f81fe7bdff255f14afa8e8719d34f3bc4`
+  passed against the exact predecessor artifact, processed template, stack authority, and both
+  restored Lambda configurations.
+
+This closes the tested deployment/rollback tuple for the functional demo. It does not claim the
+fault-injection drills below.
+
+## Deferred post-demo operations evidence
+
+The functional demo does not require, and the current evidence does not claim, the following
+post-demo hardening observations:
+
 - same-ARN Step Functions redrive and SQS visibility/redrive timing;
 - EventBridge target exhaustion reaching the encrypted DLQ and alarm notification delivery;
 - recovery-index loss simulation, batch saturation, and poison-row diagnosis;
