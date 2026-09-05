@@ -13,8 +13,6 @@ import {
   artworkSourceFormatForFile,
 } from "../upload/direct-upload";
 
-const HIDE_RECENT_JOBS_KEY = "mr-lister.hide-recent-jobs.v1";
-
 export function HomePage() {
   const { api, auth } = useAppDependencies();
   const status = useSessionStatus(auth.session);
@@ -34,7 +32,7 @@ export function HomePage() {
   const uploadLocked = preIntentBusy || batchBusy || batchFinished;
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [jobsError, setJobsError] = useState<string | null>(null);
-  const [hideRecentJobs, setHideRecentJobs] = useState(readHideRecentJobs);
+  const [hideRecentJobs, setHideRecentJobs] = useState(false);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -76,12 +74,10 @@ export function HomePage() {
 
   const clearRecentJobs = () => {
     setHideRecentJobs(true);
-    writeHideRecentJobs(true);
   };
 
   const restoreRecentJobs = () => {
     setHideRecentJobs(false);
-    writeHideRecentJobs(false);
   };
 
   if (status === "anonymous") {
@@ -209,7 +205,7 @@ export function HomePage() {
             <span className="count-chip">{visibleJobs.length}</span>
             {visibleJobs.length > 0 && (
               <button className="button button--quiet" type="button" onClick={clearRecentJobs}>
-                Clear list from this browser
+                Clear recent list
               </button>
             )}
             {hideRecentJobs && (
@@ -222,10 +218,10 @@ export function HomePage() {
         {jobsError !== null && <p className="alert alert--error" role="alert">{jobsError}</p>}
         {visibleJobs.length === 0 && jobsError === null ? (
           <div className="empty-state">
-            <p>{hideRecentJobs ? "Recent list cleared." : "No preparations yet."}</p>
+            <p>{hideRecentJobs ? "Recent list cleared for now." : "No preparations yet."}</p>
             <small>
               {hideRecentJobs
-                ? "Jobs, provider products, publication records, and audit history are preserved."
+                ? "This only hides the current view. Jobs, provider products, publication records, and audit history are preserved."
                 : "Your first upload will appear here."}
             </small>
           </div>
@@ -244,23 +240,6 @@ export function HomePage() {
       </section>
     </div>
   );
-}
-
-function readHideRecentJobs(): boolean {
-  try {
-    return window.localStorage.getItem(HIDE_RECENT_JOBS_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function writeHideRecentJobs(hidden: boolean): void {
-  try {
-    if (hidden) window.localStorage.setItem(HIDE_RECENT_JOBS_KEY, "true");
-    else window.localStorage.removeItem(HIDE_RECENT_JOBS_KEY);
-  } catch {
-    // Clearing remains useful for the current view when storage is unavailable.
-  }
 }
 
 function SelectedArtworkList({ files, onChange }: { files: File[]; onChange: (files: File[]) => void }) {

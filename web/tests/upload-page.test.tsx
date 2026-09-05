@@ -110,7 +110,7 @@ describe("upload route authority", () => {
     await waitFor(() => expect(createUpload).toHaveBeenCalledTimes(1));
   });
 
-  it("clears and restores the recent list without deleting authoritative work", async () => {
+  it("clears and restores the current recent list without deleting authoritative work", async () => {
     const user = userEvent.setup();
     const jobs = [
       recentJob("job_recent_one", "2026-09-04T12:00:00Z"),
@@ -122,24 +122,20 @@ describe("upload route authority", () => {
       etag: null,
     });
     const { api, auth } = dependencies({ listJobs });
-    const first = render(
+    render(
       <MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>,
     );
 
     expect(await screen.findAllByRole("link", { name: /Open preparation/u })).toHaveLength(2);
-    await user.click(screen.getByRole("button", { name: "Clear list from this browser" }));
+    await user.click(screen.getByRole("button", { name: "Clear recent list" }));
 
-    expect(screen.getByText("Recent list cleared.")).toBeVisible();
+    expect(screen.getByText("Recent list cleared for now.")).toBeVisible();
     expect(screen.queryByRole("link", { name: /Open preparation/u })).not.toBeInTheDocument();
     expect(screen.getByText(/publication records, and audit history are preserved/u)).toBeVisible();
 
-    first.unmount();
-    render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
-    expect(await screen.findByText("Recent list cleared.")).toBeVisible();
-
     await user.click(screen.getByRole("button", { name: "Show recent list" }));
     expect(await screen.findAllByRole("link", { name: /Open preparation/u })).toHaveLength(2);
-    expect(listJobs).toHaveBeenCalledTimes(2);
+    expect(listJobs).toHaveBeenCalledTimes(1);
   });
 
   it("keeps a selected batch in an explicit seller-controlled order", async () => {

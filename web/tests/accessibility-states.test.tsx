@@ -24,7 +24,7 @@ describe("accessible application states", () => {
     await expectNoViolations(result);
   });
 
-  it("covers populated and browser-hidden recent preparations", async () => {
+  it("covers populated and cleared-for-now recent preparations", async () => {
     const user = userEvent.setup();
     const listJobs = vi.fn().mockResolvedValue({
       value: {
@@ -45,8 +45,8 @@ describe("accessible application states", () => {
     await screen.findByRole("link", { name: /Open preparation/u });
     await expectNoViolations(result);
 
-    await user.click(screen.getByRole("button", { name: "Clear list from this browser" }));
-    await screen.findByText("Recent list cleared.");
+    await user.click(screen.getByRole("button", { name: "Clear recent list" }));
+    await screen.findByText("Recent list cleared for now.");
     await expectNoViolations(result);
   });
 
