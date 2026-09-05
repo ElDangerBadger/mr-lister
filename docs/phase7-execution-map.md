@@ -22,8 +22,8 @@ enabled.
 | Phase 7 P7.15C deployed source checkpoint | `7c933dd2cfd76e418d57ce1e25d9f6ffe3c69d3f` on `main` |
 | P7.15C production-disabled release | `9c4deca1813e5d1e8cc3f6747681b2194265f9c0b51b64fd9cf6b8afeb823c46` |
 | P7.15C production-disabled archive | `43721a48802bd3bbc946671aff938b6df030b495975c8bc59839db18986da88f` |
-| Phase 6 runtime source | `bd9f3686ef812621f59a5bf031902d8ef5a88208` |
-| Phase 6 Provider component | `166ed09faef339c6841d3bf8b7dfe2c0e9c8fd1aeb91b5762fe5999593e85534` |
+| Phase 6 runtime source | `06484524ed8ff8b9211c5f5bd1f0bcc4d4f540bc` |
+| Phase 6 Provider component | `a4f00b79d7b6f4ef676981b05a4cc369645d09f53921d8939e06a851e7e9b8f5` |
 | Phase 6 decision | `PHASE 6 COMPLETE AND SEALED` for the functional demo scope |
 | Publication contract | `7.0.1`, fingerprint `548b710230618e73c20a509f2121799c415b50070e1e2ae7e1b82fe3c37e2981` |
 | Contract activation phase | `offline_implementation` |
@@ -31,6 +31,13 @@ enabled.
 
 Phase 7 must not modify the sealed Phase 6 bundle or grant publication capability to any Phase 6
 role, route, state machine, agent, or browser control.
+
+The Phase 6 provider component was resealed on 2026-09-04 after the live seller-revision path
+exposed two narrow synchronization defects. The final authenticated MassSkutiny canary created an
+editable unpublished draft at review 1, synchronized a controlled title-only review 2 to the same
+product through Printify's partial-update boundary, retained five mockups and all 30 configured
+variants, refreshed live economics, and reached explicit unpublished approval. This changed no
+Phase 7 capability or activation state.
 
 ## What is already built
 

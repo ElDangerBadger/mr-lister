@@ -4,16 +4,18 @@
 
 **PHASE 6 COMPLETE AND SEALED**
 
-Phase 6 was functionally accepted for the hackathon demo on 2026-09-01 and was resealed on
-2026-09-03 after a narrowly scoped provider-reconciliation correction. The accepted product
-boundary is an authenticated seller preparing one or more artworks, receiving one independent
-unpublished Printify draft per accepted file, reviewing the generated work and live economics,
-and recording an approval. The flow stops at approval. It cannot publish to Etsy.
+Phase 6 was functionally accepted for the hackathon demo on 2026-09-01, resealed on 2026-09-03
+after a narrowly scoped provider-reconciliation correction, and resealed again on 2026-09-04
+after the real seller revision path exposed two narrow provider-synchronization defects. The
+accepted product boundary is an authenticated seller preparing one or more artworks, receiving
+one independent unpublished Printify draft per accepted file, reviewing and revising the
+generated work and live economics, and recording an approval. The flow stops at approval. It
+cannot publish to Etsy.
 
 This decision preserves the 2026-09-01 stabilization instruction to use the minimum honest demo
 acceptance criteria and avoid changing the runtime only to collect more evidence. The 2026-09-03
-provider-boundary repair fixed a real seller failure without expanding the Phase 6 product
-boundary. The frozen
+and 2026-09-04 provider-boundary repairs fixed real seller failures without expanding the Phase 6
+product boundary. The frozen
 [`phase6.6.manifest.json`](../contracts/acceptance/phase6.6.manifest.json) is unchanged. Its
 exhaustive deployed-canary and moderated-research artifact set remains a strict post-demo
 hardening program; it is not represented here as completed. The seal therefore means
@@ -24,15 +26,15 @@ assurance program.
 
 | Item | Sealed authority |
 | --- | --- |
-| Runtime source commit | `bd9f3686ef812621f59a5bf031902d8ef5a88208` |
-| Deployment renderer commit | `4025058d07128742a5c1f7d440d61272b74f615c` |
+| Runtime source commit | `06484524ed8ff8b9211c5f5bd1f0bcc4d4f540bc` |
 | Package version | `mr-lister 0.1.0` |
-| Application stack | `mr-lister-phase6-dev`, `us-west-2`, `UPDATE_COMPLETE` at `2026-09-03T23:27:18.941Z` |
+| Application stack | `mr-lister-phase6-dev`, `us-west-2`, `UPDATE_COMPLETE` at `2026-09-05T00:02:47Z` |
 | Application release binding | `0c6211a5b0244e9c86d635e6c02e7bc49e5e948d68895b4aaa982c0b0b2e187b` (unchanged) |
 | Deployment readiness | `WEB_EDGE_ACTIVE_DRAFT_ONLY` |
-| Application template | SHA-256 `b4954d8938cf05c4ee06a6e2be98bcb032320fc7ef4a9a6dc1e3eb32ff497828`, S3 VersionId `3aYWFKVeoL4GK3snOguDZSZY6PvepCno` |
-| Provider component release | `166ed09faef339c6841d3bf8b7dfe2c0e9c8fd1aeb91b5762fe5999593e85534` |
-| Provider archive | SHA-256 `4e8f668b5f259f296f65873cc020da6ac385714c110349e298f669e20b465f55`, S3 VersionId `d0r5MqNPrWkiUVGS4qf_x4v3IMxfIqFg` |
+| Application template | SHA-256 `f5ec8379ff0db54ae05be5f202e8e24850610b8edd66200d2a69e73be09d1012`, S3 VersionId `Zx5tLGxyXNrzi7KkvzjlNGJuEauU2_q_` |
+| Provider component release | `a4f00b79d7b6f4ef676981b05a4cc369645d09f53921d8939e06a851e7e9b8f5` |
+| Provider archive | SHA-256 `bb1fe74de98793de8650fb7f62da7f0bb76332ead7897819da537a6efe55d5e6`, S3 VersionId `nt5jDNEp.AMytDDRDalZWrjwuQhYPo9a` |
+| Provider Lambda readback | code SHA-256 (base64) `ux/nTemHk96GUPt/Ytp/C7djMurXiXgZ2lN6bv5V1eY=`, `62,711,296` bytes |
 | Preparation component | release `9bc5e1727cfcf68b40847d1a2e416300640779898c9bf884f6f9e442b0225d9e`, code SHA-256 (base64) `2xedxftXVGGUgrE1BfeJlGnpPoILvhhRSVOEmsG5Wcc=` |
 | Strands runtime | AgentCore runtime `mr_lister_phase6-4HoPmq2hCI`, endpoint/qualifier `phase6_v4_dev`, version `4`, binding `e1403259a1a1a67ce47b725f0bec2d9a5aa38673fad338924f12b9360880b922` |
 | Seller publication | Disabled; Etsy publication remains Phase 7 |
@@ -113,13 +115,31 @@ narrow uncertain-upload reconciliation branch remains hermetically regression-te
 deliberately fault-injected against the live provider. The unchanged approval control remains
 established by the 2026-09-01 walkthrough above.
 
+The 2026-09-04 walkthrough then exercised the full revision path. It first showed that a completed
+provider-write attempt from review 1 must not become the attempt authority for a new review 2;
+only an unconfirmed outcome may retain that reconciliation authority. After that correction, the
+same run exposed that a listing-text update must use Printify's partial-update boundary instead of
+resending the product-creation payload. The provider can expand its stored variant representation,
+and resending only the 30 selected variants together with placement fields produced an ambiguous
+update whose readback remained at the exact prior review. The final correction sends only the
+seller-editable `title`, `description`, and `tags` fields on PUT while retaining the full canonical
+desired fingerprint and exact before/after readback.
+
+The final fresh MassSkutiny canary started from an authenticated exact-byte PNG upload. Review 1
+created one editable, unpublished Printify product with five mockups, all 30 configured variants,
+and `$8.53–$11.45` estimated proceeds. A controlled title-only revision synchronized that same
+product to review 2, retained the five mockups and 30 variants, and refreshed the economics. The
+seller then confirmed **Approve draft — keep unpublished**; the job reached `Complete / Approved`
+while **Unpublished — not on Etsy** remained visible. Exact job and product identifiers and the
+full-page approval capture are retained only in the ignored, access-controlled release evidence.
+
 ## Acceptance-gate classification
 
 | Gate or concern | Classification at seal | Demo decision |
 | --- | --- | --- |
 | Offline replay, concurrency, cross-owner, and three-browser matrices | Provable now | Passed; source-bound automated evidence is green |
 | Artwork type/shape/background parity, single/multiple handling, per-file errors, retry, and accessibility basics | Provable now | Passed through contract, unit, component, and browser coverage; the real flow additionally proved a transparent PNG |
-| Authenticated full flow, same-job Strands, unpublished Printify draft, live economics, seller review, and approval stop | Manually provable | Passed in the September 1 MassSkutiny walkthrough above; the September 3 fresh job independently revalidated the production path through an unpublished, validated, economics-complete `awaiting_approval` review |
+| Authenticated full flow, same-job Strands, unpublished Printify draft, live economics, seller review, live revision, and approval stop | Manually provable | Passed again in the September 4 fresh MassSkutiny canary: review 1 created the draft, review 2 updated the same product, and explicit unpublished approval reached `Complete` |
 | Exact deployed edge/upload/outbox manifest artifact bundle | Manually provable with existing canary tooling | Deferred; nonessential for the demo after the real authenticated flow and green offline coverage |
 | Exact five-MiB provider ledger canary | Manually provable with a separately authorized provider mutation | Deferred; the functional same-job provider outcome passed, but the frozen five-MiB/ledger artifact gate is not claimed |
 | Live revise/approve/cancel concurrency and separate cancellation canaries | Manually provable with deliberately competing/provider-mutating runs | Deferred; nonessential demo stress evidence, with the behavior already proved offline |
@@ -132,16 +152,16 @@ not reopen this sealed runtime.
 
 ## Verification and CI
 
-- full Python suite: **3,928 passed**, 11 explicitly gated live-Bedrock skips;
-- web suite: ESLint, strict TypeScript, **131 tests**, production build, and artifact verification
+- full Python suite: **4,008 passed**, 11 explicitly gated live-Bedrock skips;
+- web suite: ESLint, strict TypeScript, **143 tests**, production build, and artifact verification
   passed;
 - Ruff lint and formatting, three contract drift checks, six Phase 6 SAM lint validations,
   Python sdist/wheel builds, compile checks, and diff hygiene passed;
 - locked dependency audit reported zero high-severity vulnerabilities; and
 - GitHub Actions run
-  [`33816793573`](https://github.com/ElDangerBadger/mr-lister/actions/runs/33816793573)
-  passed both `verify` and `web` from a fresh checkout of `main` at deployment renderer commit
-  `4025058`.
+  [`33930965365`](https://github.com/ElDangerBadger/mr-lister/actions/runs/33930965365)
+  passed both `verify` and `web` from a fresh checkout of `main` at runtime source commit
+  `06484524`.
 
 Authenticated browser evidence is retained outside Git under the ignored private release root
 with restrictive permissions. Normal and clean-checkout verification do not depend on that
@@ -151,13 +171,14 @@ private evidence.
 
 The immediate predecessor remains available as an exact-version rollback:
 
-- Provider release `748e5c4a1e46c500215118685d1f70231b7f28b8bfe8e67cc804da1c33e7c347`;
+- source commit `a7c83657a997d4391cf51c8ec2ff78c151314425`;
+- Provider release `2fb6392d836735058d28c7a5ce6b37bed5d407039fa37817a92799419cc540fb`;
 - Provider archive SHA-256
-  `0a12ede1b86c47069fda57938d1b0d50aeab6acca5d04ab536446d2f414de405`;
-- Provider archive S3 VersionId `w60dzk3jW5BZVxy0_SfoKWYVy_3.oL8g`;
-- application template SHA-256
-  `ee2941498cadbaf365c703b1694ec791c93ed9fdb9c2631a8d3117a6b11bd4a3`;
-- application template S3 VersionId `0Ct1y8MH62B6XSA_sMVUSEjnITvkT7uY`; and
+  `bd5620e323c6a4381810b452e08384674e46b45b3f4ae46e03a932008bed396d`;
+- Provider archive S3 VersionId `2qh0.z5.dlhGxbBvtW2mpLwIDxEZW.F4`;
+- exact predecessor application template SHA-256
+  `ff1168485a2fdd94b4f8b7a2f31b462cf3a166294285a0c067411d00f6b9758b`, retained in the
+  access-controlled deployment evidence; and
 - AgentCore v4 remains unchanged during rollback.
 
 ## Phase boundary

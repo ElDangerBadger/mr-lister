@@ -69,6 +69,11 @@ hardening and is not claimed as completed. That distinction is tracked in the
 [Phase 6.2](docs/phase6-provider-integration.md), and
 [Phase 6.3](docs/phase6-review-projection.md) evidence.
 
+The final September 4 sealing canary also exercised a real seller revision against the same
+unpublished Printify product. Review 1 created the editable draft; a title-only review 2 used the
+provider's partial listing-update boundary, retained five mockups and all 30 configured variants,
+refreshed live economics, and reached explicit `Complete / Approved` while remaining unpublished.
+
 ### Verify Strands locally in 60 seconds
 
 ```bash
