@@ -222,6 +222,13 @@ resealed from that manifest/archive to
 `a8b54e21e287d3a1fb4236b37612f56e0edfa5e8df736f898fe96904b6ebb5ad`.
 It changes provider response normalization only; it does not enable publication or add a trigger.
 
+The subsequent Etsy-safe SKU normalization was reviewed and deterministically resealed from that
+manifest/archive to
+`6ef0ad14098598337a739608e5a55f70ca8622077d30098c7b736655f5fa0789` /
+`50ef471e9f20e90ccfbe08e2393c35bace29da0b4d8707a3c83e8cbc682aca4e`.
+It changes only the provider SKU wire/readback representation and adds no publication authority,
+route, trigger, or credential capability.
+
 ## Irreversible boundary
 
 The production-disabled archive must never be relabeled or reused as an enabled release. A

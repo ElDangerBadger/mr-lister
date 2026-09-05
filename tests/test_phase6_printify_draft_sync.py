@@ -28,6 +28,7 @@ from mr_lister.production.draft_sync import (
     assert_printify_api_url,
     build_canonical_draft,
     job_correlation_token,
+    printify_etsy_variant_sku,
 )
 from mr_lister.production.printify import (
     PrintifyCatalogMismatchError,
@@ -159,6 +160,16 @@ def provider_product(draft, *, product_id: str = "product_1", **updates: object)
     return product
 
 
+def provider_created_product(draft, *, product_id: str = "product_1", **updates: object):
+    product = provider_product(draft, product_id=product_id, **updates)
+    for variant in product["variants"]:
+        variant["sku"] = printify_etsy_variant_sku(
+            correlation_token=draft.correlation_token,
+            variant_id=variant["id"],
+        )
+    return product
+
+
 def provider_normalized_product(draft, *, product_id: str = "product_1"):
     """Model Printify's inert expansion to the complete provider catalog."""
 
@@ -193,6 +204,20 @@ def test_canonical_payload_reuses_phase5_contracts_and_embeds_job_token(listing)
     assert draft.variants[0].sku == f"{draft.correlation_token}-1000"
     assert draft.correlation_token not in draft.provider_payload()
     assert draft.provider_payload()["print_areas"][0]["variant_ids"] == [1000]
+    create_payload = draft.provider_create_payload()
+    assert create_payload["variants"][0]["sku"] == printify_etsy_variant_sku(
+        correlation_token=draft.correlation_token,
+        variant_id=1000,
+    )
+    assert len(create_payload["variants"][0]["sku"]) == 20
+    assert create_payload["variants"][0]["sku"].startswith("ml-")
+    assert create_payload["variants"][0]["sku"] == "ml-f79975a1d74680665"
+    assert create_payload["variants"][0]["sku"] != printify_etsy_variant_sku(
+        correlation_token=draft.correlation_token,
+        variant_id=1001,
+    )
+    assert draft.provider_payload()["variants"][0]["sku"] == draft.variants[0].sku
+    assert set(create_payload) == set(draft.provider_payload())
     assert len(draft.payload_fingerprint) == 64
 
 
@@ -275,17 +300,18 @@ def test_tall_placement_scales_down_and_preserves_aspect_ratio(listing) -> None:
 
 def test_first_authorized_sync_posts_exactly_once_and_returns_evidence(listing) -> None:
     draft = canonical_draft(listing)
+    created_product = provider_created_product(draft)
     sync, transport, _client = synchronizer(
         [
             ExpectedRequest(
                 "POST",
                 "/v1/shops/42/products.json",
-                payload=provider_product(draft),
+                payload=created_product,
             ),
             ExpectedRequest(
                 "GET",
                 "/v1/shops/42/products/product_1.json",
-                payload=provider_product(draft),
+                payload=created_product,
             ),
         ]
     )
@@ -309,8 +335,28 @@ def test_first_authorized_sync_posts_exactly_once_and_returns_evidence(listing) 
     assert evidence.mockups[0].position == "front"
     assert evidence.mockups[0].variant_ids == (1000,)
     assert [call["method"] for call in transport.calls] == ["POST", "GET"]
-    assert json.loads(transport.calls[0]["body"]) == draft.provider_payload()
+    assert json.loads(transport.calls[0]["body"]) == draft.provider_create_payload()
     assert not transport.expected
+
+
+def test_legacy_full_correlation_sku_remains_valid_readback(listing) -> None:
+    draft = canonical_draft(listing)
+    legacy_product = provider_product(draft)
+    sync, transport, _client = synchronizer(
+        [
+            ExpectedRequest("POST", "/v1/shops/42/products.json", payload=legacy_product),
+            ExpectedRequest(
+                "GET",
+                "/v1/shops/42/products/product_1.json",
+                payload=legacy_product,
+            ),
+        ]
+    )
+
+    evidence = sync.synchronize(job_id="job_phase6_sync", draft=draft, product_id=None)
+
+    assert evidence.operation is DraftSyncOperation.CREATED
+    assert [call["method"] for call in transport.calls] == ["POST", "GET"]
 
 
 def test_initial_create_accepts_disabled_provider_catalog_expansion(listing) -> None:
@@ -342,17 +388,17 @@ def test_later_revision_gets_then_puts_same_immutable_product_id(listing) -> Non
             ExpectedRequest(
                 "GET",
                 "/v1/shops/42/products/product_1.json",
-                payload=provider_product(draft),
+                payload=provider_created_product(draft),
             ),
             ExpectedRequest(
                 "PUT",
                 "/v1/shops/42/products/product_1.json",
-                payload=provider_product(changed),
+                payload=provider_created_product(changed),
             ),
             ExpectedRequest(
                 "GET",
                 "/v1/shops/42/products/product_1.json",
-                payload=provider_product(changed),
+                payload=provider_created_product(changed),
             ),
         ]
     )
@@ -486,6 +532,7 @@ def test_malformed_provider_state_fails_closed_before_put(listing, provider_upda
         {"cost": -1},
         {"is_enabled": 1},
         {"is_enabled": False},
+        {"sku": "ml-00000000000000000"},
     ],
 )
 def test_provider_variant_economics_are_strict_before_confirmation(listing, variant_update) -> None:
@@ -755,17 +802,18 @@ def test_create_reconciliation_classifies_zero_with_one_get_and_no_post(listing)
 
 def test_create_reconciliation_classifies_one_exact_canonical_match(listing) -> None:
     draft = canonical_draft(listing)
+    created_product = provider_created_product(draft)
     sync, transport, _client = synchronizer(
         [
             ExpectedRequest(
                 "GET",
                 "/v1/shops/42/products.json",
-                payload={"data": [provider_product(draft)]},
+                payload={"data": [created_product]},
             ),
             ExpectedRequest(
                 "GET",
                 "/v1/shops/42/products/product_1.json",
-                payload=provider_product(draft),
+                payload=created_product,
             ),
         ]
     )

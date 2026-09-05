@@ -11,6 +11,7 @@ from urllib.request import Request
 
 import pytest
 
+from mr_lister.production.draft_sync import job_correlation_token, printify_etsy_variant_sku
 from mr_lister.publication.execution_fingerprints import execution_record_fingerprint
 from mr_lister.publication.execution_models import (
     PublicationCallClaim,
@@ -64,6 +65,7 @@ DEADLINE = NOW + timedelta(minutes=30)
 SNAPSHOT_FINGERPRINT = "2" * 64
 CONSUMED_PERMIT_FINGERPRINT = "3" * 64
 TOKEN = "owner-bound-printify-token-never-log"
+JOB_ID = "job_1"
 
 MOCKUP_URL = "https://images.printify.com/mockup/product_1/101/front.png"
 
@@ -124,6 +126,7 @@ def _json_response(status: int, payload: Any) -> PublicationHttpResponse:
 
 
 def _canonical_payload() -> dict[str, Any]:
+    correlation_token = job_correlation_token(JOB_ID)
     return {
         "title": "Exact approved title",
         "description": "Exact approved description",
@@ -135,7 +138,7 @@ def _canonical_payload() -> dict[str, Any]:
                 "id": 101,
                 "price": 2499,
                 "is_enabled": True,
-                "sku": "ml-abcdef0123456789abcdef01-101",
+                "sku": f"{correlation_token}-101",
             }
         ],
         "print_areas": [
@@ -168,6 +171,10 @@ def _product(*, external: Any = None) -> dict[str, Any]:
         "variants": [
             {
                 **_canonical_payload()["variants"][0],
+                "sku": printify_etsy_variant_sku(
+                    correlation_token=job_correlation_token(JOB_ID),
+                    variant_id=101,
+                ),
                 "cost": 1200,
                 "title": "Black / M",
             }
@@ -192,7 +199,7 @@ def _authority(**changes: Any) -> PublicationProviderAuthority:
     values = {
         "provider_authority_id": "provider_authority_1",
         "owner_id": OWNER,
-        "job_id": "job_1",
+        "job_id": JOB_ID,
         "aggregate_id": "aggregate_1",
         "attempt_id": "attempt_1",
         "snapshot_id": "snapshot_1",
@@ -789,6 +796,35 @@ def test_product_preflight_reconstructs_complete_canonical_authority() -> None:
     assert observation.external_evidence is ExternalEvidenceState.ABSENT
 
 
+def test_product_preflight_normalizes_exact_twenty_character_provider_sku() -> None:
+    payload = _product(external=[])
+    payload["variants"][0]["sku"] = printify_etsy_variant_sku(
+        correlation_token=job_correlation_token(JOB_ID),
+        variant_id=101,
+    )
+
+    observation = _preflight_product(payload)
+
+    assert observation.preflight_satisfied
+    assert observation.canonical_content_match
+
+
+def test_product_preflight_rejects_legacy_full_correlation_sku() -> None:
+    payload = _product(external=[])
+    payload["variants"][0]["sku"] = _canonical_payload()["variants"][0]["sku"]
+
+    with pytest.raises(PublicationProviderPreflightError, match="failed"):
+        _preflight_product(payload)
+
+
+def test_product_preflight_rejects_wrong_twenty_character_provider_sku() -> None:
+    payload = _product(external=[])
+    payload["variants"][0]["sku"] = "ml-00000000000000000"
+
+    with pytest.raises(PublicationProviderPreflightError, match="failed"):
+        _preflight_product(payload)
+
+
 def test_product_preflight_accepts_only_inert_printify_catalog_expansion() -> None:
     canonical = _canonical_payload()
     canonical["variants"].append(
@@ -796,7 +832,7 @@ def test_product_preflight_accepts_only_inert_printify_catalog_expansion() -> No
             "id": 102,
             "price": 2599,
             "is_enabled": True,
-            "sku": "ml-abcdef0123456789abcdef01-102",
+            "sku": f"{job_correlation_token(JOB_ID)}-102",
         }
     )
     canonical["print_areas"][0]["variant_ids"].append(102)
@@ -805,6 +841,10 @@ def test_product_preflight_accepts_only_inert_printify_catalog_expansion() -> No
         [
             {
                 **canonical["variants"][1],
+                "sku": printify_etsy_variant_sku(
+                    correlation_token=job_correlation_token(JOB_ID),
+                    variant_id=102,
+                ),
                 "cost": 1250,
                 "title": "Black / L",
             },

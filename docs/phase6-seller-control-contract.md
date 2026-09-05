@@ -288,13 +288,14 @@ Product existence, not review number, selects the operation:
 4. A successful operation persists the synchronized review version, request/response fingerprints,
    selected mockups, costs, provider state, and timestamp.
 
-The canonical initial payload places a deterministic, non-secret job correlation token in each
-variant SKU. If the POST result is ambiguous, no automatic POST retry is allowed. Reconciliation
-lists recent shop products, matches the correlation token, and verifies the complete canonical
-payload. Exactly one match completes the write; multiple or conflicting matches fail terminally.
-No match remains `RECONCILIATION_REQUIRED` only until a persisted deadline, then ends as the
-explicit unresolved result defined above. The one POST may therefore produce zero or one product,
-but never authorizes a second POST for that job.
+The canonical payload retains a deterministic, non-secret job correlation token in each logical
+variant SKU. The initial Printify create request maps each one to an exact 20-character alias
+derived from that token and variant ID for Etsy compatibility. If the POST result is ambiguous, no
+automatic POST retry is allowed. Reconciliation matches the exact logical or aliased SKU and
+verifies the complete canonical payload. Exactly one match completes the write; multiple or
+conflicting matches fail terminally. No match remains `RECONCILIATION_REQUIRED` only until a
+persisted deadline, then ends as the explicit unresolved result defined above. The one POST may
+therefore produce zero or one product, but never authorizes a second POST for that job.
 
 An ambiguous PUT is reconciled by GET and canonical-field comparison before retry. Only the exact
 prior canonical payload may authorize one exact same-product PUT retry. That attempt inherits the

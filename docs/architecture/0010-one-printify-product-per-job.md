@@ -24,12 +24,14 @@ One Mr Lister job owns at most one Printify product:
 2. Every valid review with an existing product ID retrieves and PUTs a complete canonical payload
    to that exact product ID.
 3. Update failure never falls back to product creation.
-4. The initial canonical payload carries a deterministic non-secret correlation token in variant
-   SKUs. An ambiguous POST is never blindly retried; list/read reconciliation must find exactly one
-   matching token and canonical payload or leave the write unresolved only through a persisted
-   deadline. Zero matches at that deadline produce an explicit terminal unknown outcome (or a
-   cancelled result flagged as provider-outcome-unconfirmed when cancellation intent exists).
-   The job is never allowed a second POST.
+4. The initial canonical payload carries a deterministic non-secret correlation token in logical
+   variant SKUs. The Printify create boundary maps each one to an exact 20-character alias derived
+   from the token and variant ID for Etsy compatibility. An ambiguous POST is never blindly
+   retried; list/read reconciliation must find exactly one matching logical or aliased SKU and
+   canonical payload or leave the write unresolved only through a persisted deadline. Zero matches
+   at that deadline produce an explicit terminal unknown outcome (or a cancelled result flagged as
+   provider-outcome-unconfirmed when cancellation intent exists). The job is never allowed a
+   second POST.
 5. An ambiguous PUT enters reconciliation; a GET and canonical comparison determine whether the
    update completed before any retry. Only the same product at the exact prior canonical payload
    may retry the same idempotent PUT once. The retry inherits the root attempt's persisted deadline;

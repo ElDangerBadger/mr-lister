@@ -260,6 +260,15 @@ triggerless closure. The manifest/archive advanced from
 builds and artifact verification. The source change only normalizes provider ordering and inert,
 disabled catalog expansion against the Phase 6 authority; it adds no publication capability.
 
+The Etsy-safe SKU boundary then deliberately resealed the same triggerless closure from
+`eb506fee3a0deb9d2cc9077af51094f4754fe8e83ca54e737762152566e7746f` /
+`a8b54e21e287d3a1fb4236b37612f56e0edfa5e8df736f898fe96904b6ebb5ad` to
+`6ef0ad14098598337a739608e5a55f70ca8622077d30098c7b736655f5fa0789` /
+`50ef471e9f20e90ccfbe08e2393c35bace29da0b4d8707a3c83e8cbc682aca4e` after two
+deterministic builds and explicit artifact verification. It recognizes the exact 20-character
+provider SKU representation without changing stored Phase 6 correlation or publication
+capabilities.
+
 ## Stop lines
 
 - A guard deployment is not publication authorization.

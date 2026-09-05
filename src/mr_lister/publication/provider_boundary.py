@@ -15,6 +15,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from threading import Lock
 from typing import Annotated, Any, Literal, Protocol
 from urllib.error import HTTPError
@@ -99,6 +100,8 @@ _PUBLISH_PATH = re.compile(
 )
 _SAFE_USER_AGENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ /-]{0,127}$")
 _NUMERIC_ETSY_LISTING_ID = re.compile(r"^[1-9][0-9]{0,12}$")
+_CORRELATION_TOKEN = re.compile(r"^ml-[a-f0-9]{24}$")
+_PRINTIFY_ETSY_SKU_LENGTH = 20
 
 _PUBLICATION_BODY = {
     field: True
@@ -1045,9 +1048,10 @@ class PrintifyPublicationBoundary:
             expected_variant_ids = tuple(
                 item.variant_id for item in self._authority.expected_variant_economics
             )
-            canonical = _canonical_product_readback(
+            canonical, provider_skus_match = _canonical_product_readback(
                 payload,
                 expected_variant_ids=expected_variant_ids,
+                job_id=self._authority.job_id,
             )
             economics = _variant_economics(
                 payload,
@@ -1063,6 +1067,7 @@ class PrintifyPublicationBoundary:
         canonical_payload_fingerprint = canonical_fingerprint(canonical.model_dump(mode="json"))
         canonical_match = (
             canonical_payload_fingerprint == self._authority.product_payload_fingerprint
+            and provider_skus_match
         )
         economics_match = economics == self._authority.expected_variant_economics
         placement_match = placement_ids == {self._authority.printify_image_id}
@@ -1101,6 +1106,7 @@ class PrintifyPublicationBoundary:
             "sanitized_response_fingerprint": canonical_fingerprint(
                 {
                     "canonical_payload_fingerprint": canonical_payload_fingerprint,
+                    "provider_skus_match": provider_skus_match,
                     "variant_economics": economics,
                     "placement_image_ids": tuple(sorted(placement_ids)),
                     "mockup_fingerprints": tuple(sorted(mockup_fingerprints)),
@@ -1604,19 +1610,31 @@ def _canonical_product_readback(
     payload: Mapping[str, Any],
     *,
     expected_variant_ids: tuple[int, ...],
-) -> CanonicalProductReadback:
+    job_id: str,
+) -> tuple[CanonicalProductReadback, bool]:
     variant_rows, disabled_extra_ids = _inert_catalog_variant_rows(
         payload,
         expected_variant_ids=expected_variant_ids,
     )
     variants = []
+    correlation_token = _job_correlation_token(job_id)
+    provider_skus_match = True
     for item in variant_rows:
+        variant_id = item.get("id")
+        sku = item.get("sku")
+        if sku == _printify_etsy_variant_sku(
+            correlation_token=correlation_token,
+            variant_id=variant_id,
+        ):
+            sku = f"{correlation_token}-{variant_id}"
+        else:
+            provider_skus_match = False
         variants.append(
             CanonicalReadVariant(
-                id=item.get("id"),
+                id=variant_id,
                 price=item.get("price"),
                 is_enabled=item.get("is_enabled"),
-                sku=item.get("sku"),
+                sku=sku,
             )
         )
     print_areas = []
@@ -1696,15 +1714,39 @@ def _canonical_product_readback(
     tags = payload.get("tags")
     if not isinstance(tags, list):
         raise ValueError
-    return CanonicalProductReadback(
-        title=payload.get("title"),
-        description=payload.get("description"),
-        tags=tuple(tags),
-        blueprint_id=payload.get("blueprint_id"),
-        print_provider_id=payload.get("print_provider_id"),
-        variants=tuple(variants),
-        print_areas=tuple(print_areas),
+    return (
+        CanonicalProductReadback(
+            title=payload.get("title"),
+            description=payload.get("description"),
+            tags=tuple(tags),
+            blueprint_id=payload.get("blueprint_id"),
+            print_provider_id=payload.get("print_provider_id"),
+            variants=tuple(variants),
+            print_areas=tuple(print_areas),
+        ),
+        provider_skus_match,
     )
+
+
+def _job_correlation_token(job_id: str) -> str:
+    if not isinstance(job_id, str) or not job_id.strip():
+        raise ValueError
+    digest = sha256(f"mr-lister:provider-draft:{job_id}".encode()).hexdigest()[:24]
+    return f"ml-{digest}"
+
+
+def _printify_etsy_variant_sku(*, correlation_token: str, variant_id: int) -> str:
+    if (
+        _CORRELATION_TOKEN.fullmatch(correlation_token) is None
+        or isinstance(variant_id, bool)
+        or not isinstance(variant_id, int)
+        or variant_id <= 0
+    ):
+        raise ValueError
+    digest = sha256(
+        f"mr-lister:printify-etsy-sku:{correlation_token}:{variant_id}".encode()
+    ).hexdigest()
+    return f"ml-{digest[: _PRINTIFY_ETSY_SKU_LENGTH - len('ml-')]}"
 
 
 def _variant_economics(

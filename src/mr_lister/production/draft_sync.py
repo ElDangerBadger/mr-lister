@@ -44,6 +44,7 @@ from mr_lister.production.printify import (
 
 PRINTIFY_API_ORIGIN = "https://api.printify.com"
 PRINTIFY_API_BASE_URL = f"{PRINTIFY_API_ORIGIN}/v1/"
+PRINTIFY_ETSY_SKU_LENGTH = 20
 
 SafeProviderId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")]
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -107,9 +108,20 @@ class CanonicalPrintifyDraft(_DraftModel):
         return self
 
     def provider_payload(self) -> dict[str, Any]:
-        """Return only fields supported by Printify's product create/update endpoints."""
+        """Return the canonical product fields used for readback and evidence."""
 
         return self.model_dump(mode="json", exclude={"correlation_token"})
+
+    def provider_create_payload(self) -> dict[str, Any]:
+        """Return the create payload with Etsy-safe provider SKU aliases."""
+
+        payload = self.provider_payload()
+        for variant, canonical_variant in zip(payload["variants"], self.variants, strict=True):
+            variant["sku"] = printify_etsy_variant_sku(
+                correlation_token=self.correlation_token,
+                variant_id=canonical_variant.id,
+            )
+        return payload
 
     def provider_update_payload(self) -> dict[str, Any]:
         """Return the seller-editable listing fields for a partial product update."""
@@ -394,7 +406,11 @@ class PrintifyDraftOnlyClient(PrintifyCatalogClient):
     def create_draft(self, *, shop_id: int, draft: CanonicalPrintifyDraft) -> dict[str, Any]:
         path = self._collection_path(shop_id)
         try:
-            payload = self._request_json(method="POST", path=path, payload=draft.provider_payload())
+            payload = self._request_json(
+                method="POST",
+                path=path,
+                payload=draft.provider_create_payload(),
+            )
         except (PrintifyCatalogMismatchError, PrintifyUnavailableError) as error:
             # Even a provider 4xx or malformed response is reconciled after a POST.  The stricter
             # classification costs a read but guarantees an unexpected provider response can
@@ -804,11 +820,20 @@ class PrintifyDraftSynchronizer:
         variants = product.get("variants")
         if not isinstance(variants, list):
             return False
-        prefix = f"{token}-"
         return any(
             isinstance(variant, dict)
+            and isinstance((variant_id := variant.get("id")), int)
+            and not isinstance(variant_id, bool)
+            and variant_id > 0
             and isinstance((sku := variant.get("sku")), str)
-            and sku.startswith(prefix)
+            and sku
+            in {
+                f"{token}-{variant_id}",
+                printify_etsy_variant_sku(
+                    correlation_token=token,
+                    variant_id=variant_id,
+                ),
+            }
             for variant in variants
         )
 
@@ -887,7 +912,11 @@ class PrintifyDraftSynchronizer:
                 or cost < 0
                 or not isinstance(enabled, bool)
                 or not enabled
-                or actual.get("sku") != expected.sku
+                or not cls._variant_sku_matches(
+                    actual_sku=actual.get("sku"),
+                    expected=expected,
+                    correlation_token=draft.correlation_token,
+                )
             ):
                 raise PrintifyCatalogMismatchError(
                     "Printify enabled variant economics were malformed"
@@ -1022,8 +1051,15 @@ class PrintifyDraftSynchronizer:
             return False
         for expected in draft.variants:
             actual = variants_by_id[expected.id]
-            if actual.get("is_enabled") is not True or not cls._contains_canonical(
-                actual, expected.model_dump(mode="json")
+            expected_without_sku = expected.model_dump(mode="json", exclude={"sku"})
+            if (
+                actual.get("is_enabled") is not True
+                or not cls._contains_canonical(actual, expected_without_sku)
+                or not cls._variant_sku_matches(
+                    actual_sku=actual.get("sku"),
+                    expected=expected,
+                    correlation_token=draft.correlation_token,
+                )
             ):
                 return False
         disabled_extra_ids = set(variants_by_id) - expected_variant_ids
@@ -1037,6 +1073,18 @@ class PrintifyDraftSynchronizer:
             product=product,
             draft=draft,
             disabled_extra_ids=disabled_extra_ids,
+        )
+
+    @staticmethod
+    def _variant_sku_matches(
+        *,
+        actual_sku: object,
+        expected: DraftVariant,
+        correlation_token: str,
+    ) -> bool:
+        return actual_sku == expected.sku or actual_sku == printify_etsy_variant_sku(
+            correlation_token=correlation_token,
+            variant_id=expected.id,
         )
 
     @classmethod
@@ -1140,6 +1188,22 @@ def job_correlation_token(job_id: str) -> str:
         raise PrintifyInputError("A job ID is required for product correlation")
     digest = sha256(f"mr-lister:provider-draft:{job_id}".encode()).hexdigest()[:24]
     return f"ml-{digest}"
+
+
+def printify_etsy_variant_sku(*, correlation_token: str, variant_id: int) -> str:
+    """Return a deterministic 20-character alias for one canonical provider SKU."""
+
+    if re.fullmatch(r"ml-[a-f0-9]{24}", correlation_token) is None:
+        raise PrintifyInputError("A valid job correlation token is required for the provider SKU")
+    if isinstance(variant_id, bool) or not isinstance(variant_id, int) or variant_id <= 0:
+        raise PrintifyInputError("A positive variant ID is required for the provider SKU")
+    digest = sha256(
+        f"mr-lister:printify-etsy-sku:{correlation_token}:{variant_id}".encode()
+    ).hexdigest()
+    sku = f"ml-{digest[: PRINTIFY_ETSY_SKU_LENGTH - len('ml-')]}"
+    if len(sku) != PRINTIFY_ETSY_SKU_LENGTH:
+        raise AssertionError("Provider SKU length invariant failed")
+    return sku
 
 
 def width_first_placement_y(
