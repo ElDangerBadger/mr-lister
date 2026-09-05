@@ -43,7 +43,19 @@ _ASSET = re.compile(r"^assets/index-[A-Za-z0-9_-]{8}\.(css|js)$")
 _FINGERPRINT = re.compile(r"^(?!0{64}$)[a-f0-9]{64}$")
 _ETAG = re.compile(r'^"[a-f0-9]{32}"$')
 _METADATA_KEY = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
+_PHASE7_STACK_ID = re.compile(
+    r"^arn:aws:cloudformation:us-west-2:384627057108:stack/"
+    r"mr-lister-phase7-dev/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 _MAX_FILE_BYTES = 4 * 1024 * 1024
+_PRODUCTION_DISABLED_RELEASE = "9c4deca1813e5d1e8cc3f6747681b2194265f9c0b51b64fd9cf6b8afeb823c46"
+_ACTIVE_SURFACE_MARKERS = (
+    PHASE718_CONTRACT_VERSION.encode(),
+    b"/publication",
+    b"/publish",
+    b"data-phase7-publication-workspace",
+    b"publish_exact_approved_listing",
+)
 
 
 class Phase718WebDeploymentEvidenceError(RuntimeError):
@@ -71,7 +83,12 @@ def render_phase718_web_rollback_manifest(
         if observation["put_results"] != []:
             raise ValueError
         records = _records_by_key(cast(list[object], observation["objects"]))
-        _validate_predecessor(records, repository=repository)
+        publication_backend = _validate_predecessor(
+            records,
+            candidate=_release_records(release),
+            publication_backend=observation.get("publication_backend"),
+            repository=repository,
+        )
         runtime = _mapping(release["runtime_config"])
         runtime_record = records["runtime-config.json"]
         if not _matches_runtime(runtime_record, runtime):
@@ -85,6 +102,7 @@ def render_phase718_web_rollback_manifest(
             "captured_at": observation["captured_at"],
             "format": ROLLBACK_MANIFEST_FORMAT,
             "predecessor_objects": predecessor_objects,
+            "predecessor_publication_backend": publication_backend,
             "rollback_action": {
                 "delete_order": "reverse_candidate_upload_order",
                 "method": "delete_exact_candidate_object_versions",
@@ -119,7 +137,11 @@ def render_phase718_web_live_verification(
             release_manifest_path,
             repository_root=repository,
         )
-        rollback_raw, rollback = _load_rollback(rollback_manifest_path, repository=repository)
+        rollback_raw, rollback = _load_rollback(
+            rollback_manifest_path,
+            release=release,
+            repository=repository,
+        )
         candidate_binding = _candidate_binding(release_raw, release)
         if rollback["candidate_release"] != candidate_binding:
             raise ValueError
@@ -211,7 +233,11 @@ def render_phase718_web_rollback_verification(
             release_manifest_path,
             repository_root=repository,
         )
-        rollback_raw, rollback = _load_rollback(rollback_manifest_path, repository=repository)
+        rollback_raw, rollback = _load_rollback(
+            rollback_manifest_path,
+            release=release,
+            repository=repository,
+        )
         live_raw, live = _load_evidence(
             live_verification_path,
             expected_format=LIVE_VERIFICATION_FORMAT,
@@ -332,9 +358,16 @@ def _load_observation(
     repository: Path,
 ) -> tuple[bytes, Mapping[str, object]]:
     raw, value = _load_json(path, repository=repository)
+    required_keys = {
+        "bucket",
+        "bucket_versioning",
+        "captured_at",
+        "format",
+        "objects",
+        "put_results",
+    }
     if (
-        set(value)
-        != {"bucket", "bucket_versioning", "captured_at", "format", "objects", "put_results"}
+        set(value) not in (required_keys, required_keys | {"publication_backend"})
         or value.get("bucket") != WEB_BUCKET
         or value.get("bucket_versioning") != "Enabled"
         or value.get("format") != READBACK_OBSERVATION_FORMAT
@@ -360,6 +393,7 @@ def _load_observation(
 def _load_rollback(
     path: Path,
     *,
+    release: Mapping[str, object],
     repository: Path,
 ) -> tuple[bytes, Mapping[str, object]]:
     raw, value = _load_evidence(
@@ -375,6 +409,7 @@ def _load_rollback(
         "captured_at",
         "format",
         "predecessor_objects",
+        "predecessor_publication_backend",
         "rollback_action",
         "runtime_config",
         "versioning_required",
@@ -404,7 +439,14 @@ def _load_rollback(
             raise ValueError
         prior_key = key
     records = _records_by_key(objects)
-    _validate_predecessor(records, repository=repository)
+    publication_backend = _validate_predecessor(
+        records,
+        candidate=_release_records(release),
+        publication_backend=value.get("predecessor_publication_backend"),
+        repository=repository,
+    )
+    if publication_backend != value.get("predecessor_publication_backend"):
+        raise ValueError
     runtime = _mapping(value.get("runtime_config"))
     release_runtime = {
         key: item
@@ -529,8 +571,10 @@ def _validate_readback_record(
 def _validate_predecessor(
     records: Mapping[str, Mapping[str, object]],
     *,
+    candidate: Mapping[str, Mapping[str, object]],
+    publication_backend: object,
     repository: Path,
-) -> None:
+) -> Mapping[str, object] | None:
     assets = [key for key in records if _ASSET.fullmatch(key)]
     css = [key for key in assets if key.endswith(".css")]
     javascript = [key for key in assets if key.endswith(".js")]
@@ -546,10 +590,55 @@ def _validate_predecessor(
         index.count(f"/{css[0]}".encode()) != 1
         or index.count(f"/{javascript[0]}".encode()) != 1
         or index.count(b"/favicon.svg") != 1
-        or PHASE718_CONTRACT_VERSION.encode() in script
-        or b"data-phase7-publication-workspace" in script
     ):
         raise ValueError
+    active_markers = tuple(marker in script for marker in _ACTIVE_SURFACE_MARKERS)
+    if not any(active_markers):
+        if publication_backend is not None:
+            raise ValueError
+        return None
+    if not all(active_markers) or not isinstance(publication_backend, Mapping):
+        raise ValueError
+    if set(candidate) != set(records) - {"runtime-config.json"}:
+        raise ValueError
+    exact_fields = {
+        "cache_control",
+        "checksum_sha256_base64",
+        "content_type",
+        "key",
+        "sha256",
+        "size_bytes",
+    }
+    if any(
+        any(records[key].get(field) != expected.get(field) for field in exact_fields)
+        for key, expected in candidate.items()
+    ):
+        raise ValueError
+    return _validate_production_disabled_backend(publication_backend)
+
+
+def _validate_production_disabled_backend(value: Mapping[str, object]) -> Mapping[str, object]:
+    expected = {
+        "activation_mode": "PRODUCTION_DISABLED",
+        "candidate_release_fingerprint": _PRODUCTION_DISABLED_RELEASE,
+        "capture_source": "cloudformation:DescribeStacks",
+        "deployment_readiness": "PRODUCTION_DISABLED",
+        "provider_mutation_enabled": False,
+        "publication_query_registered": False,
+        "publication_request_registered": False,
+        "publication_worker_triggered": False,
+        "seller_publication_enabled": False,
+        "stack_name": "mr-lister-phase7-dev",
+        "stack_status": "UPDATE_COMPLETE",
+    }
+    if (
+        set(value) != {*expected, "stack_id"}
+        or any(value.get(key) != item for key, item in expected.items())
+        or not isinstance(value.get("stack_id"), str)
+        or _PHASE7_STACK_ID.fullmatch(cast(str, value["stack_id"])) is None
+    ):
+        raise ValueError
+    return dict(value)
 
 
 def _candidate_binding(

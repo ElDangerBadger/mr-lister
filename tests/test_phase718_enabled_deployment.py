@@ -619,34 +619,66 @@ def test_change_set_is_exact_source_bound_and_non_destructive(
         "PublicationRequestRoute",
     }
     for name in sorted(required):
+        action = (
+            "Add"
+            if name
+            in {
+                "PublicationQueryIntegration",
+                "PublicationQueryInvokePermission",
+                "PublicationQueryRoute",
+                "PublicationRequestIntegration",
+                "PublicationRequestInvokePermission",
+                "PublicationRequestRoute",
+            }
+            else "Modify"
+        )
+        resource_change = {
+            "Action": action,
+            "LogicalResourceId": name,
+            "ResourceType": processed["Resources"][name]["Type"],
+        }
+        if action == "Add":
+            resource_change.update({"Details": [], "Scope": []})
+        else:
+            resource_change["Replacement"] = "False"
+        changes.append(
+            {
+                "ResourceChange": resource_change,
+            }
+        )
+    next(change for change in changes if change["ResourceChange"]["Action"] == "Add")[
+        "ResourceChange"
+    ]["Replacement"] = None
+    dynamic_rule_permissions = {
+        "PublicationDueWorkSweepPermission": "PublicationDueWorkSweepRule",
+        "PublicationRecoverySweepPermission": "PublicationRecoverySweepRule",
+    }
+    for permission, rule in dynamic_rule_permissions.items():
         changes.append(
             {
                 "ResourceChange": {
-                    "Action": "Add"
-                    if name.startswith(
-                        (
-                            "PublicationQueryI",
-                            "PublicationQueryR",
-                            "PublicationRequestI",
-                            "PublicationRequestR",
-                        )
-                    )
-                    and name
-                    in {
-                        "PublicationQueryIntegration",
-                        "PublicationQueryInvokePermission",
-                        "PublicationQueryRoute",
-                        "PublicationRequestIntegration",
-                        "PublicationRequestInvokePermission",
-                        "PublicationRequestRoute",
-                    }
-                    else "Modify",
-                    "LogicalResourceId": name,
-                    "Replacement": "False",
-                    "ResourceType": processed["Resources"][name]["Type"],
+                    "Action": "Modify",
+                    "Details": [
+                        {
+                            "Target": {
+                                "Attribute": "Properties",
+                                "Name": "SourceArn",
+                                "RequiresRecreation": "Always",
+                            },
+                            "Evaluation": "Dynamic",
+                            "ChangeSource": "ResourceAttribute",
+                            "CausingEntity": f"{rule}.Arn",
+                        }
+                    ],
+                    "LogicalResourceId": permission,
+                    "PhysicalResourceId": f"mr-lister-phase7-dev-{permission}",
+                    "Replacement": "Conditional",
+                    "ResourceType": "AWS::Lambda::Permission",
+                    "Scope": ["Properties"],
                 }
             }
         )
+    observed = {*required, *dynamic_rule_permissions}
     observation = {
         "ChangeSetName": "phase718-enabled",
         "Changes": changes,
@@ -667,7 +699,7 @@ def test_change_set_is_exact_source_bound_and_non_destructive(
         original_template=original,
         processed_template=processed,
         change_set_name="phase718-enabled",
-    ) == tuple(sorted(required))
+    ) == tuple(sorted(observed))
 
     for parameter_name, drifted_value in {
         "ApplicationReleaseFingerprint": "f" * 64,
@@ -764,23 +796,53 @@ def test_change_set_is_exact_source_bound_and_non_destructive(
         == 0
     )
     assert json.loads(capsys.readouterr().out) == {
-        "change_count": len(required),
+        "change_count": len(observed),
         "stack_name": STACK_NAME,
         "status": "passed",
     }
 
-    conditional_replacement = deepcopy(observation)
-    conditional_replacement["Changes"][0]["ResourceChange"]["Replacement"] = "Conditional"
+    due_permission_index = next(
+        index
+        for index, change in enumerate(observation["Changes"])
+        if change["ResourceChange"]["LogicalResourceId"] == "PublicationDueWorkSweepPermission"
+    )
+    for mutate in (
+        lambda resource: resource.update({"Replacement": "True"}),
+        lambda resource: resource.update({"PhysicalResourceId": ""}),
+        lambda resource: resource.update({"Scope": []}),
+        lambda resource: resource["Details"][0].update({"Evaluation": "Static"}),
+        lambda resource: resource["Details"][0].update({"ChangeSource": "DirectModification"}),
+        lambda resource: resource["Details"][0].update(
+            {"CausingEntity": "PublicationWorkflowFailureRule.Arn"}
+        ),
+    ):
+        unsafe_replacement = deepcopy(observation)
+        mutate(unsafe_replacement["Changes"][due_permission_index]["ResourceChange"])
+        with pytest.raises(Phase718EnabledDeploymentError):
+            verify_change_set_observation(
+                unsafe_replacement,
+                descriptor=descriptor,
+                expected_parameters=parameters,
+                phase6_before=phase6_before,
+                s3_head=s3_head,
+                archive_path=artifact.archive_path,
+                original_template=original,
+                processed_template=processed,
+                change_set_name="phase718-enabled",
+            )
+
+    unnamed_rule = deepcopy(processed)
+    unnamed_rule["Resources"]["PublicationDueWorkSweepRule"]["Properties"].pop("Name")
     with pytest.raises(Phase718EnabledDeploymentError):
         verify_change_set_observation(
-            conditional_replacement,
+            observation,
             descriptor=descriptor,
             expected_parameters=parameters,
             phase6_before=phase6_before,
             s3_head=s3_head,
             archive_path=artifact.archive_path,
             original_template=original,
-            processed_template=processed,
+            processed_template=unnamed_rule,
             change_set_name="phase718-enabled",
         )
 

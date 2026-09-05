@@ -77,6 +77,16 @@ _REQUIRED_ENABLED_CHANGES: Final = {
     *_RULES,
     *_API_RESOURCES,
 }
+_DYNAMIC_RULE_PERMISSION_REPLACEMENTS: Final = {
+    "PublicationDueWorkSweepPermission": (
+        "PublicationDueWorkSweepRule",
+        "mr-lister-phase7-${EnvironmentName}-publication-due-sweep",
+    ),
+    "PublicationRecoverySweepPermission": (
+        "PublicationRecoverySweepRule",
+        "mr-lister-phase7-${EnvironmentName}-publication-recovery-sweep",
+    ),
+}
 
 
 class Phase718EnabledDeploymentError(RuntimeError):
@@ -141,13 +151,15 @@ def verify_change_set_observation(
             resource = _mapping(change.get("ResourceChange"))
             logical_id = resource.get("LogicalResourceId")
             action = resource.get("Action")
-            replacement = resource.get("Replacement", "False")
             if (
                 not isinstance(logical_id, str)
                 or logical_id not in target_resources
                 or logical_id in observed
                 or action not in {"Add", "Modify"}
-                or replacement != "False"
+                or not _change_is_non_destructive(
+                    resource,
+                    target_resources=target_resources,
+                )
                 or (logical_id in _API_RESOURCES and action != "Add")
                 or resource.get("ResourceType")
                 != _mapping(target_resources[logical_id]).get("Type")
@@ -159,6 +171,62 @@ def verify_change_set_observation(
         return tuple(sorted(observed))
     except Exception:
         raise Phase718EnabledDeploymentError(_GENERIC_ERROR) from None
+
+
+def _change_is_non_destructive(
+    resource: Mapping[str, object],
+    *,
+    target_resources: Mapping[str, object],
+) -> bool:
+    action = resource.get("Action")
+    replacement = resource.get("Replacement")
+    if action == "Add":
+        return replacement in {None, "False"}
+    if action != "Modify":
+        return False
+    if replacement == "False":
+        return True
+    if replacement != "Conditional":
+        return False
+
+    logical_id = resource.get("LogicalResourceId")
+    if not isinstance(logical_id, str):
+        return False
+    authority = _DYNAMIC_RULE_PERMISSION_REPLACEMENTS.get(logical_id)
+    if authority is None:
+        return False
+    rule_logical_id, rule_name = authority
+    if (
+        not isinstance(resource.get("PhysicalResourceId"), str)
+        or not resource["PhysicalResourceId"]
+        or resource.get("ResourceType") != "AWS::Lambda::Permission"
+        or resource.get("Scope") != ["Properties"]
+        or resource.get("Details")
+        != [
+            {
+                "Target": {
+                    "Attribute": "Properties",
+                    "Name": "SourceArn",
+                    "RequiresRecreation": "Always",
+                },
+                "Evaluation": "Dynamic",
+                "ChangeSource": "ResourceAttribute",
+                "CausingEntity": f"{rule_logical_id}.Arn",
+            }
+        ]
+    ):
+        return False
+
+    permission = _mapping(target_resources.get(logical_id))
+    permission_properties = _mapping(permission.get("Properties"))
+    rule = _mapping(target_resources.get(rule_logical_id))
+    rule_properties = _mapping(rule.get("Properties"))
+    return (
+        permission.get("Type") == "AWS::Lambda::Permission"
+        and permission_properties.get("SourceArn") == {"Fn::GetAtt": [rule_logical_id, "Arn"]}
+        and rule.get("Type") == "AWS::Events::Rule"
+        and rule_properties.get("Name") == {"Fn::Sub": rule_name}
+    )
 
 
 def verify_enabled_deployment_readback(

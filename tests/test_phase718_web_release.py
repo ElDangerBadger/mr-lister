@@ -62,6 +62,7 @@ PREDECESSOR_FILES = {
     ).encode(),
     "runtime-config.json": RUNTIME,
 }
+ACTIVE_PREDECESSOR_FILES = {**DIST_FILES, "runtime-config.json": RUNTIME}
 
 
 def test_prepare_manifest_binds_exact_bundle_runtime_and_enabled_release(tmp_path: Path) -> None:
@@ -222,6 +223,113 @@ def test_live_readback_and_rollback_bind_exact_object_versions(tmp_path: Path) -
         {"key": key, "version_id": predecessor_versions[key]}
         for key in sorted(predecessor_versions)
     ]
+
+
+def test_exact_already_live_active_ui_requires_disabled_backend_capture(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    release_path, release = _release(fixture)
+    versions = {
+        key: f"active-predecessor-{index}" for index, key in enumerate(ACTIVE_PREDECESSOR_FILES)
+    }
+    missing_backend = _observation(
+        fixture,
+        "active-predecessor-missing-backend",
+        ACTIVE_PREDECESSOR_FILES,
+        versions=versions,
+        captured_at="2026-09-05T16:39:13Z",
+    )
+    with pytest.raises(Phase718WebDeploymentEvidenceError):
+        render_phase718_web_rollback_manifest(
+            release_path,
+            missing_backend,
+            repository_root=fixture["repository"],
+        )
+
+    wrong_backend = _disabled_publication_backend()
+    wrong_backend["seller_publication_enabled"] = True
+    enabled_backend = _observation(
+        fixture,
+        "active-predecessor-enabled-backend",
+        ACTIVE_PREDECESSOR_FILES,
+        versions=versions,
+        captured_at="2026-09-05T16:39:13Z",
+        publication_backend=wrong_backend,
+    )
+    with pytest.raises(Phase718WebDeploymentEvidenceError):
+        render_phase718_web_rollback_manifest(
+            release_path,
+            enabled_backend,
+            repository_root=fixture["repository"],
+        )
+
+    accepted = _observation(
+        fixture,
+        "active-predecessor-disabled-backend",
+        ACTIVE_PREDECESSOR_FILES,
+        versions=versions,
+        captured_at="2026-09-05T16:39:13Z",
+        publication_backend=_disabled_publication_backend(),
+    )
+    rollback_raw = render_phase718_web_rollback_manifest(
+        release_path,
+        accepted,
+        repository_root=fixture["repository"],
+    )
+    rollback_path = _private_json(fixture, "active-rollback.json", rollback_raw)
+    rollback = json.loads(rollback_raw)
+
+    assert rollback["predecessor_publication_backend"] == _disabled_publication_backend()
+    assert {item["version_id"] for item in rollback["predecessor_objects"]} == set(
+        versions.values()
+    )
+
+    candidate_versions = {
+        key: f"active-candidate-{index}" for index, key in enumerate(release["upload_order"])
+    }
+    live = _observation(
+        fixture,
+        "active-candidate-live",
+        ACTIVE_PREDECESSOR_FILES,
+        versions={**versions, **candidate_versions},
+        captured_at="2026-09-05T16:44:13Z",
+        metadata={item["key"]: item["metadata"] for item in release["objects"]},
+        put_results=[
+            {"key": key, "version_id": candidate_versions[key]} for key in release["upload_order"]
+        ],
+    )
+    verified = json.loads(
+        render_phase718_web_live_verification(
+            release_path,
+            rollback_path,
+            live,
+            repository_root=fixture["repository"],
+        )
+    )
+    assert verified["verification"] == "candidate_live_readback_verified"
+
+
+def test_active_ui_predecessor_must_be_byte_identical_to_candidate(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    release_path, _release_manifest = _release(fixture)
+    drifted = {
+        **ACTIVE_PREDECESSOR_FILES,
+        JS_KEY: DIST_FILES[JS_KEY] + b"// drift\n",
+    }
+    observation = _observation(
+        fixture,
+        "active-predecessor-drifted",
+        drifted,
+        versions={key: f"drift-{index}" for index, key in enumerate(drifted)},
+        captured_at="2026-09-05T16:39:13Z",
+        publication_backend=_disabled_publication_backend(),
+    )
+
+    with pytest.raises(Phase718WebDeploymentEvidenceError):
+        render_phase718_web_rollback_manifest(
+            release_path,
+            observation,
+            repository_root=fixture["repository"],
+        )
 
 
 def test_live_verifier_rejects_out_of_order_upload_and_runtime_drift(tmp_path: Path) -> None:
@@ -457,6 +565,7 @@ def _observation(
     captured_at: str,
     metadata: dict[str, dict[str, str]] | None = None,
     put_results: list[dict[str, str]] | None = None,
+    publication_backend: dict[str, object] | None = None,
 ) -> Path:
     records: list[dict[str, object]] = []
     for key in sorted(files):
@@ -483,18 +592,40 @@ def _observation(
             }
         )
     path = fixture["repository"] / f".mr_lister_private/phase718-web/{name}.json"
-    _write_canonical(
-        path,
-        {
-            "bucket": WEB_BUCKET,
-            "bucket_versioning": "Enabled",
-            "captured_at": captured_at,
-            "format": READBACK_OBSERVATION_FORMAT,
-            "objects": records,
-            "put_results": put_results or [],
-        },
-    )
+    observation: dict[str, object] = {
+        "bucket": WEB_BUCKET,
+        "bucket_versioning": "Enabled",
+        "captured_at": captured_at,
+        "format": READBACK_OBSERVATION_FORMAT,
+        "objects": records,
+        "put_results": put_results or [],
+    }
+    if publication_backend is not None:
+        observation["publication_backend"] = publication_backend
+    _write_canonical(path, observation)
     return path
+
+
+def _disabled_publication_backend() -> dict[str, object]:
+    return {
+        "activation_mode": "PRODUCTION_DISABLED",
+        "candidate_release_fingerprint": (
+            "9c4deca1813e5d1e8cc3f6747681b2194265f9c0b51b64fd9cf6b8afeb823c46"
+        ),
+        "capture_source": "cloudformation:DescribeStacks",
+        "deployment_readiness": "PRODUCTION_DISABLED",
+        "provider_mutation_enabled": False,
+        "publication_query_registered": False,
+        "publication_request_registered": False,
+        "publication_worker_triggered": False,
+        "seller_publication_enabled": False,
+        "stack_id": (
+            "arn:aws:cloudformation:us-west-2:384627057108:stack/"
+            "mr-lister-phase7-dev/e3ee3330-a671-11f1-8e50-02219a1c6639"
+        ),
+        "stack_name": "mr-lister-phase7-dev",
+        "stack_status": "UPDATE_COMPLETE",
+    }
 
 
 def _private_json(fixture: dict[str, Any], name: str, raw: bytes) -> Path:
