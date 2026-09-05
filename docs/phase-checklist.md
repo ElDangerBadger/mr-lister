@@ -382,8 +382,9 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       source/deployment tuple, input contract, real walkthrough, green verification, acceptance
       classification, exact rollback point, and explicit Phase 7 publication boundary.
 - [ ] Phase 7 — Etsy publication through Printify
-  - Phase 6 is sealed. Seller publication remains disabled pending separately authorized Phase 7
-    implementation, deployment, and acceptance work.
+  - Phase 6 remains sealed. The separately authorized Phase 7.18 backend is now enabled and has
+    passed exact readback. The versioned seller web and public activation also passed; one
+    authenticated post-GA status read has passed; final CI remains before seal.
   - [x] Freeze publication-disabled contract 7.0.1: separate aggregate authority, complete
     one-shot permit semantics, positive-proof-only GET reconciliation, verified safe link,
     notification, terminal-settlement retention, and three-scope activation
@@ -528,7 +529,7 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     TTL assignment. The source checkpoint is
     `0e3c150cb9cfa11c8047db3a4670f8ec5aa6d864`; P7.15C supersedes its packaging state while
     retaining the provider-free, unregistered, and disabled guarantees
-  - [ ] Phase 7.15C production closure
+  - [x] Phase 7.15C production closure for the functional hackathon-demo scope
     - [x] Source/deployment closure at `7c933dd2cfd76e418d57ce1e25d9f6ffe3c69d3f`: six release-first
       refusal handlers; deterministic 74-module ARM64 release; exact contract/profile/template/
       workflow binding; 48-resource source SAM template and 49-resource processed
@@ -546,10 +547,13 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
       reviewed 49-add/no-mutation change set; `CREATE_COMPLETE` stack; exact artifact, Lambda, IAM,
       trigger, queue, workflow, log, alarm, and negative-capability readback; temporally separated
       idle proof; unchanged Phase 6 stack; and green CI run `33580123287`
-    - [ ] Non-provider operations/rollback closure: same-ARN redrive; SQS timing;
-      EventBridge-to-DLQ-to-subscriber alarm delivery; recovery-loss and saturation diagnosis;
-      retention/backfill ordering; and a tested rollback tuple for the successful stack
-    - [ ] Operations continuation closure: a narrow AWS adapter for the injected preflight/DLQ
+    - [x] Non-provider operations deployment/rollback closure: the exact operations release was
+      deployed and read back, then the independently reviewed rollback restored the verified
+      production-disabled predecessor with Phase 6 unchanged
+    - [ ] Post-demo operations drills: same-ARN redrive and SQS timing;
+      EventBridge-to-DLQ-to-subscriber alarm delivery; recovery-loss and saturation diagnosis; and
+      retention/backfill duration
+    - [ ] Post-demo operations continuation: a narrow AWS adapter for the injected preflight/DLQ
       libraries; durable settlement readback before any DLQ delete; source-specific replay
       authority for event-source failures; exact terminal rebind for retention replay; and durable
       cursor/shard authority before claiming fair automatic traversal beyond a saturated 25-row
@@ -561,15 +565,30 @@ in [`roadmap.md`](roadmap.md); this file records execution status and evidence.
     concurrency-one canary for job `job_126b45d46bb560e8641a6e43f2a925d6` issued exactly one
     publication POST and produced Etsy listing `4569583958`. Positive provider readback arrived
     approximately two minutes after the immutable deadline, so the strict durable terminal
-    verifier remains unsatisfied and Phase 7 general availability/sealing remains open. The
+    verifier remains unsatisfied and is explicitly deferred for the functional demo. The
     sanitized checkpoint is
     [`phase717-live-publication-milestone.json`](evidence/phase717-live-publication-milestone.json)
+  - [ ] Phase 7.18 general availability and seal
+    - [x] Freeze contract `7.1.0` and bind the external canary result plus explicit general-
+      availability approval into the enabled release
+    - [x] Deploy release `b167db6f3dc5b8fef73c89959e0eff5ffdaee50b0739845232718456684cb130`;
+      verify the archive, six functions, least-capability roles, bounded workflow, enabled
+      triggers, authenticated owner-scoped routes, and unchanged Phase 6 authority
+    - [x] Capture the live seller-web S3 VersionIds and pass canonical web readback while
+      preserving the existing `runtime-config.json`
+    - [x] Complete CloudFront activation and public `200` checks, record exact web rollback
+      authority, and delete the isolated canary stack, function, and role while retaining its
+      14-day log group
+    - [x] Complete one authenticated post-GA read of the owner-scoped publication-status route:
+      the signed-in seller UI received `200` for the exact owner job under contract `7.1.0`,
+      reported the durable verifying state, disabled a repeat request, and issued no POST
+    - [ ] Commit/fast-forward the authoritative release state to `main` and pass final GitHub CI
   - Current execution order, source/deployment distinctions, and irreversible stop lines are
-    authoritative in [`phase7-execution-map.md`](phase7-execution-map.md)
-  - [ ] Compose, seal, deploy, and verify the approval-version and publish guard in a runtime
-  - [ ] Deploy and canary-validate channel publication and status polling
-  - [ ] Live-validate partial-failure recovery, safe result links, and immutable reports
-  - [ ] Live-validate seller notification only after publication is positively verified complete
+    authoritative in [`phase7-execution-map.md`](phase7-execution-map.md); current release identity
+    and remaining seal gates are in [`phase7-release-state.md`](phase7-release-state.md)
+  - [ ] Post-demo hardening: live fault-injection/restart matrices and strict terminal-notification
+    evidence. Their implementation and automated coverage are green; they are not claimed as live
+    acceptance evidence for this functional MVP.
 - [ ] Phase 8 — Hardening, evaluation, and submission
   - [ ] Security, failure-mode, privacy, and cost review
   - [ ] Evaluation evidence and demo rehearsal

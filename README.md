@@ -19,14 +19,15 @@ The Phase 6 product path is deliberately bounded:
 > One submission with one or more artworks -> one independent job and calibrated unpublished
 > Printify product per accepted file -> seller review -> exact-version approval -> STOP.
 
-Etsy publication is Phase 7. It is disabled and is not part of the Phase 6 acceptance path. The
-P7.15C production-disabled release is now deployed but inert: refusal-first entrypoints, zero
-Lambda concurrency, disabled triggers, bounded lost-event recovery, and operator safety
-boundaries. It grants no seller publication route, provider credential access, or provider
-mutation. The remaining path through non-provider operations closure, read-only validation,
-one-listing canary, general availability, and seal is tracked in the
-[`Phase 7 execution map`](docs/phase7-execution-map.md) and
-[`production-disabled operations runbook`](docs/phase7-production-operations.md).
+Etsy publication belongs to the separately controlled Phase 7 boundary, not Phase 6. The exact
+P7.18 backend is now deployed in general-availability mode with authenticated owner-scoped status
+and one-shot publication routes; Phase 6 remains unchanged and draft-only. One explicit live
+canary produced a real Etsy listing. The versioned seller-web release and authenticated
+owner-scoped status read are live and verified; final seal now awaits green CI on the final `main`
+commit.
+Current authority is tracked in the
+[`Phase 7 release state`](docs/phase7-release-state.md), with the ordered history in the
+[`Phase 7 execution map`](docs/phase7-execution-map.md).
 
 ## Why it exists
 
@@ -96,8 +97,9 @@ without cropping, padding, distortion, or square enforcement; and gives every fi
 job and progress/recovery state. It also
 provides consolidated artwork/listing/mockup/economics review, a prominent same-job Strands
 evidence card, and the five server-authorized seller actions. The interface keeps
-**Unpublished — not on Etsy** visible throughout and contains no browser publication, order, or
-fulfillment capability.
+**Unpublished — not on Etsy** visible throughout preparation and approval. The separately enabled
+Phase 7 workspace appears only for an approved job and requires another explicit irreversible
+seller confirmation. No browser order, fulfillment, unpublish, or delete capability exists.
 
 The accompanying SAM application defines a private CloudFront/OAC web origin, same-origin cache-disabled
 `/v1/*`, exact Cognito PKCE runtime configuration, CSP/security headers, and allowlisted SPA
@@ -110,9 +112,11 @@ npm ci
 npm run check
 ```
 
-The seller UI and private hosting topology are deployed as the sealed Phase 6 functional-demo
-release. The production walkthrough proved the authenticated same-job review and approval path;
-the stricter frozen hardening evidence remains separately tracked. See
+The private hosting topology remains the sealed Phase 6 foundation; the active bundle now also
+contains the separately guarded Phase 7 seller workspace. The production walkthrough proved the
+authenticated same-job review and approval path, while Phase 7 publication retains a distinct
+confirmation and backend authority. The stricter frozen hardening evidence remains separately
+tracked. See
 [`docs/phase6-accessible-seller-interface.md`](docs/phase6-accessible-seller-interface.md) and
 [`docs/architecture/0012-phase65-browser-and-hosting-boundary.md`](docs/architecture/0012-phase65-browser-and-hosting-boundary.md).
 

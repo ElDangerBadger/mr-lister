@@ -2,14 +2,16 @@
 
 ## Current decision
 
-**PHASE 7 IN PROGRESS — LIVE PUBLICATION BASELINE PROVED**
+**PHASE 7 RELEASE CANDIDATE ACCEPTED — FINAL MAIN CI PENDING**
 
 Phase 6 remains sealed at seller approval. The P7.15C production-disabled operations and rollback
 checkpoint is closed, the P7.16 deployed GET-only validation passed, and one exact P7.17
-concurrency-one canary completed a real Printify-to-Etsy publication on 2026-09-05. This is a
-functional vertical-slice milestone, not Phase 7 completion: the generally available seller
-routes, browser control, production publication worker, and web release are not yet deployed and
-enabled through P7.18.
+concurrency-one canary completed a real Printify-to-Etsy publication on 2026-09-05. The P7.18
+contract is frozen and the generally available seller routes, production worker, and control plane
+are now deployed and have passed exact readback. The versioned seller-web release also passed
+canonical readback, CloudFront activation, and public GET checks. The authenticated owner-scoped
+status route then returned `200` through the live seller UI without a publication POST. Only final
+`main` CI remains before the Phase 7 seal is effective.
 
 The canary's external outcome is positive, but its durable aggregate did not reach the strict
 `PUBLISHED` terminal evidence state before the immutable verification deadline. The positive Etsy
@@ -34,9 +36,9 @@ enabled.
 | Phase 6 Provider component | `a4f00b79d7b6f4ef676981b05a4cc369645d09f53921d8939e06a851e7e9b8f5` |
 | Phase 6 application binding | `0c6211a5b0244e9c86d635e6c02e7bc49e5e948d68895b4aaa982c0b0b2e187b` (unchanged) |
 | Phase 6 decision | `PHASE 6 COMPLETE AND SEALED` for the functional demo scope |
-| Publication contract | `7.0.1`, fingerprint `548b710230618e73c20a509f2121799c415b50070e1e2ae7e1b82fe3c37e2981` |
-| Contract activation phase | `offline_implementation` |
-| Seller publication enabled | `false` |
+| Publication contract | `7.1.0`, fingerprint `5172926cb89f8c046247922d8311c3f8b6361a9d67a719aa3a19a1c0ef1ed678` |
+| Contract activation phase | `general_availability` |
+| Seller publication enabled | Backend and web release active; authenticated read acceptance passed |
 
 Phase 7 must not modify the sealed Phase 6 bundle or grant publication capability to any Phase 6
 role, route, state machine, agent, or browser control.
@@ -61,20 +63,19 @@ Phase 7 capability or activation state.
 | Positive-proof-only verification and deadline settlement | Complete and tested offline |
 | Replay, conflict, partial-failure, consumed-claim, and unknown-outcome recovery logic | Complete and tested offline |
 | Safe Etsy result link, immutable report, in-app notification, and retention models | Complete and tested offline |
-| Owner-scoped query and publication-request adapters | Complete but unregistered and exact-disabled |
-| Real request and worker dependency graphs | Complete but unregistered and exact-disabled |
+| Owner-scoped query and publication-request adapters | Registered, enabled, and read back under contract `7.1.0` |
+| Real request and worker dependency graphs | Deployed in the exact P7.18 enabled release |
 | Read-only approval guard runtime, bundle builder, SAM template, and verifier | Deployed and invoked for the exact P7.16 target; all four GET-only stages passed with no provider mutation |
-| Isolated concurrency-one direct-invoke canary and gated request preparation | Deployed and invoked once for the exact approved P7.17 product; one publication POST produced a live Etsy listing, with the terminal-evidence timing exception recorded below |
-| Provider-free dispatcher, same-ARN recovery, deadline settlement, and terminal-retention control plane | Implemented and instantiated inertly; triggers disabled and concurrency zero |
+| Isolated concurrency-one direct-invoke canary and gated request preparation | Invoked once for the exact approved P7.17 product, then its stack, function, and role were deleted; the 14-day log group remains |
+| Provider-free dispatcher, same-ARN recovery, deadline settlement, and terminal-retention control plane | Enabled in P7.18 and passed exact deployment readback |
 | Lost-event recovery index/sweep and failed-start readback | Complete locally; bounded at 25, same-ARN-only, no scan or provider construction |
-| Six release-first production-disabled entrypoints and deterministic ARM64 artifact | Deployed and read back exactly; every handler verifies then refuses without reading its event |
-| Production-disabled SAM topology, target retry/DLQ, alarm KMS, and restricted redrive authority | 49 resources deployed only in inert `PRODUCTION_DISABLED` mode |
+| Six release-first production-disabled entrypoints and deterministic ARM64 artifact | Preserved as the verified rollback predecessor |
+| Production-disabled SAM topology, target retry/DLQ, alarm KMS, and restricted redrive authority | Preserved as the verified rollback predecessor |
 | Due/recovery preflight, one-message DLQ triage, and operations runbook | Complete as injected source boundaries; no default AWS adapter or live operations-drill evidence yet |
 
-The existing source is not a publication scaffold in the ordinary sense. The safety-sensitive
-domain, persistence, provider, reconciliation, and recovery behavior is already present. The
-remaining work is controlled composition, deployment evidence, seller interaction, and live
-acceptance.
+The safety-sensitive domain, persistence, provider, reconciliation, recovery, enabled backend, and
+versioned web release are present. The remaining seal work is the final release record and green
+CI on `main`.
 
 ## Remaining gates and ordered build path
 
@@ -244,7 +245,15 @@ Only after a successful canary:
 5. capture source, artifact, deployment, CI, canary, rollback, and operational evidence; and
 6. declare either `PHASE 7 COMPLETE AND SEALED` or the smallest exact blocker list.
 
-## Authoritative live-state and deployment record
+**Release candidate accepted; final CI pending.** Contract `7.1.0` and enabled release
+`b167db6f3dc5b8fef73c89959e0eff5ffdaee50b0739845232718456684cb130` are deployed on
+`mr-lister-phase7-dev`. Exact archive, Lambda, IAM, trigger, workflow, JWT route, and Phase 6
+non-delta readback passed. The versioned web release, public activation, and authenticated
+owner-scoped status read also passed without another publication POST. Final `main` CI remains.
+See
+[`phase7-release-state.md`](phase7-release-state.md).
+
+## Production-disabled predecessor record
 
 On 2026-09-02, the authenticated `mr-lister-dev` profile deployed and read back the following
 production-disabled release in account `384627057108`, region `us-west-2`:
