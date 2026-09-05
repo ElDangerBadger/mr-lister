@@ -21,10 +21,11 @@ const RASTER_LONGEST_SIDE_CANDIDATES = [4096, 3072, 2048, 1024, 512] as const;
 const RASTER_RENDER_TIMEOUT_MS = 10_000;
 const MAX_SVG_ELEMENTS = 5_000;
 const MAX_SVG_ATTRIBUTE_CHARACTERS = 1_000_000;
-const MAX_SVG_PATH_CHARACTERS = 100_000;
+const MAX_SVG_PATH_CHARACTERS = MAX_SVG_ATTRIBUTE_CHARACTERS;
 const MAX_SVG_PATH_COMMANDS = 20_000;
 const MAX_SVG_POINT_CHARACTERS = 100_000;
 const MAX_SVG_POINT_COORDINATES = 40_000;
+const MAX_SVG_STYLE_CHARACTERS = 100_000;
 const MAX_SVG_INTRINSIC_DIMENSION = 4_096;
 const FORBIDDEN_SVG_ELEMENTS = new Set([
   "a",
@@ -49,7 +50,6 @@ const FORBIDDEN_SVG_ELEMENTS = new Set([
   "script",
   "set",
   "source",
-  "style",
   "text",
   "textpath",
   "tspan",
@@ -192,10 +192,21 @@ export function sanitizeSvgForRasterization(source: string): SanitizedSvg {
   let pathCommands = 0;
   let pointCharacters = 0;
   let pointCoordinates = 0;
+  let styleCharacters = 0;
   for (const element of elements) {
     const localName = element.localName.toLocaleLowerCase("en-US");
     if (FORBIDDEN_SVG_ELEMENTS.has(localName) || localName.startsWith("fe")) {
       throw new UploadValidationError(`SVG ${localName} elements are not supported.`);
+    }
+    if (localName === "style") {
+      const styleText = element.textContent ?? "";
+      styleCharacters += styleText.length;
+      if (element.children.length > 0 || styleCharacters > MAX_SVG_STYLE_CHARACTERS) {
+        throw new UploadValidationError("SVG stylesheet content is too complex to prepare safely.");
+      }
+      if (containsUnsafeSvgStyle(styleText)) {
+        throw new UploadValidationError("SVG style imports and external resources are not allowed.");
+      }
     }
     for (const attribute of [...element.attributes]) {
       const name = attribute.localName.toLocaleLowerCase("en-US");
@@ -222,8 +233,11 @@ export function sanitizeSvgForRasterization(source: string): SanitizedSvg {
           throw new UploadValidationError("SVG point data is too complex to prepare safely.");
         }
       }
-      if (name.startsWith("on") || name === "src" || name === "base" || name === "style") {
+      if (name.startsWith("on") || name === "src" || name === "base") {
         throw new UploadValidationError("SVG scripts and external resources are not allowed.");
+      }
+      if (name === "style" && containsUnsafeSvgStyle(value)) {
+        throw new UploadValidationError("SVG style imports and external resources are not allowed.");
       }
       if ((name === "href" && value !== "" && !isInternalSvgReference(value))
         || containsUnsafeSvgUrl(value)) {
@@ -639,6 +653,21 @@ function containsUnsafeSvgUrl(value: string): boolean {
     if (!isInternalSvgReference(target)) return true;
   }
   return false;
+}
+
+function containsUnsafeSvgStyle(value: string): boolean {
+  const normalized = value.toLocaleLowerCase("en-US");
+  if (value.includes("\\")
+    || normalized.includes("/*")
+    || normalized.includes("*/")
+    || normalized.includes("@")
+    || normalized.includes("expression(")
+    || normalized.includes("behavior:")
+    || normalized.includes("-moz-binding")
+    || normalized.includes("image-set(")) {
+    return true;
+  }
+  return containsUnsafeSvgUrl(value);
 }
 
 export function uploadToAuthorizedS3(

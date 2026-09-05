@@ -61,16 +61,43 @@ describe("artwork preparation", () => {
     expect(call?.[2]).toBe(svg.lastModified);
   });
 
+  it("accepts static Illustrator SVG styles while preserving external-resource blocking", () => {
+    const source = `<?xml version="1.0" encoding="utf-8"?>
+      <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+        viewBox="0 0 4096 2048" style="enable-background:new 0 0 4096 2048;" xml:space="preserve">
+        <style type="text/css">
+          .st0{fill:#DED0B4;}
+          .st1{fill:url(#paint);stroke:#472F17;stroke-width:2;}
+        </style>
+        <defs><linearGradient id="paint"/></defs>
+        <path class="st0" d="M0 0H4096V2048H0Z"/>
+      </svg>`;
+
+    const sanitized = sanitizeSvgForRasterization(source);
+
+    expect(sanitized).toMatchObject({ sourceWidth: 4096, sourceHeight: 2048 });
+    expect(sanitized.markup).toContain("enable-background:new 0 0 4096 2048;");
+    expect(sanitized.markup).toContain(".st0{fill:#DED0B4;}");
+  });
+
   it.each([
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><script>alert(1)</script></svg>',
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><image href="https://example.test/a.png"/></svg>',
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect onclick="alert(1)"/></svg>',
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><style>@import "https://example.test/a.css";</style></svg>',
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect style="fill: red"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect style="fill: url(https://example.test/red.svg)"/></svg>',
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect fill="u\\72l(https://example.test/x.svg#p)"/></svg>',
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><?unsafe href="https://example.test"?><rect/></svg>',
     '<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"/>',
   ])("rejects active or externally referenced SVG content", (source) => {
+    expect(() => sanitizeSvgForRasterization(source)).toThrow(UploadValidationError);
+  });
+
+  it.each([
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><style>.x{fill:url(https://example.test/x.svg)}</style></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><style>.x{fill:u\\72l(https://example.test/x.svg)}</style></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><style>.x{behavior:url(#x)}</style></svg>',
+  ])("rejects unsafe SVG stylesheet content", (source) => {
     expect(() => sanitizeSvgForRasterization(source)).toThrow(UploadValidationError);
   });
 
@@ -106,6 +133,14 @@ describe("artwork preparation", () => {
       .toThrow("marker elements are not supported");
     expect(() => sanitizeSvgForRasterization('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><text>unbounded glyph work</text></svg>'))
       .toThrow("text elements are not supported");
+  });
+
+  it("accepts detailed path geometry that remains within the command budget", () => {
+    const path = `M0 0${" L1234.5678 1234.5678".repeat(11_000)}`;
+
+    expect(sanitizeSvgForRasterization(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4096 4096"><path d="${path}"/></svg>`,
+    )).toMatchObject({ sourceWidth: 4096, sourceHeight: 4096 });
   });
 
   it("does not accept mismatched extensions and media types", async () => {
