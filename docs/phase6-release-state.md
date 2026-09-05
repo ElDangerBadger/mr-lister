@@ -27,6 +27,7 @@ assurance program.
 | Item | Sealed authority |
 | --- | --- |
 | Runtime source commit | `06484524ed8ff8b9211c5f5bd1f0bcc4d4f540bc` |
+| Deployment render authority | `mr-lister-phase6-printify-partial-update-hotfix-v1`, reviewed private component renderer |
 | Package version | `mr-lister 0.1.0` |
 | Application stack | `mr-lister-phase6-dev`, `us-west-2`, `UPDATE_COMPLETE` at `2026-09-05T00:02:47Z` |
 | Application release binding | `0c6211a5b0244e9c86d635e6c02e7bc49e5e948d68895b4aaa982c0b0b2e187b` (unchanged) |

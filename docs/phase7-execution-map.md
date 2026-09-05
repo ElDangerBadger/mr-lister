@@ -24,6 +24,7 @@ enabled.
 | P7.15C production-disabled archive | `43721a48802bd3bbc946671aff938b6df030b495975c8bc59839db18986da88f` |
 | Phase 6 runtime source | `06484524ed8ff8b9211c5f5bd1f0bcc4d4f540bc` |
 | Phase 6 Provider component | `a4f00b79d7b6f4ef676981b05a4cc369645d09f53921d8939e06a851e7e9b8f5` |
+| Phase 6 application binding | `0c6211a5b0244e9c86d635e6c02e7bc49e5e948d68895b4aaa982c0b0b2e187b` (unchanged) |
 | Phase 6 decision | `PHASE 6 COMPLETE AND SEALED` for the functional demo scope |
 | Publication contract | `7.0.1`, fingerprint `548b710230618e73c20a509f2121799c415b50070e1e2ae7e1b82fe3c37e2981` |
 | Contract activation phase | `offline_implementation` |
