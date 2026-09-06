@@ -715,6 +715,7 @@ class Phase6StrandsPreparationRunner:
 
     def __call__(self, request: PreparationRequest) -> Phase6PreparationRunResult:
         started = monotonic()
+        agent: Agent | None = None
         try:
             agent, provider = build_phase6_preparation_agent(
                 backend=self._backend,
@@ -722,7 +723,6 @@ class Phase6StrandsPreparationRunner:
                 model=self._model,
             )
             result = agent(preparation_prompt(request), limits=AGENT_INVOCATION_LIMITS)
-            _emit_strands_cycles(agent)
             if result.structured_output is None:
                 raise AgentExecutionError("The preparation agent returned no structured decision")
             decision = PreparationDecision.model_validate(result.structured_output)
@@ -795,6 +795,9 @@ class Phase6StrandsPreparationRunner:
             if isinstance(error, AgentExecutionError):
                 raise
             raise AgentExecutionError("The preparation agent could not complete safely") from error
+        finally:
+            if agent is not None:
+                _emit_strands_cycles(agent)
 
 
 def create_phase6_agentcore_runtime(

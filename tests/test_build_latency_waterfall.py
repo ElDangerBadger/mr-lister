@@ -257,6 +257,22 @@ def test_ambiguous_product_get_requires_explicit_purpose() -> None:
         parse_latency_jsonl(json.dumps(invalid))
 
 
+def test_product_collection_read_is_classified_as_reconciliation() -> None:
+    origin = datetime(2026, 9, 5, 20, 0, tzinfo=UTC)
+    event = _provider(
+        1,
+        1,
+        origin,
+        origin + timedelta(seconds=1),
+        method="GET",
+        route="/v1/shops/{shop_id}/products.json",
+        purpose="product_reconciliation",
+    )
+
+    [parsed] = parse_latency_jsonl(json.dumps(event))
+    assert parsed.canonical_purpose == "product_reconciliation"
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -287,9 +303,22 @@ def test_assembler_fails_closed_on_incomplete_sample_or_duplicate_milestone() ->
     events = list(parse_latency_jsonl(_five_run_jsonl()))
     duplicate = events[0].model_copy(update={"event_id": "f" * 32})
 
+    replayed = assemble_latency_waterfall(
+        [*events, duplicate],
+        source_commit=SOURCE_COMMIT,
+        release_fingerprint=RELEASE_FINGERPRINT,
+    )
+    assert replayed["sample"]["run_count"] == 5
+
+    conflicting = duplicate.model_copy(
+        update={
+            "event_id": "e" * 32,
+            "occurred_at": duplicate.occurred_at + timedelta(milliseconds=1),
+        }
+    )
     with pytest.raises(LatencyWaterfallError, match="repeats milestone upload_accepted"):
         assemble_latency_waterfall(
-            [*events, duplicate],
+            [*events, conflicting],
             source_commit=SOURCE_COMMIT,
             release_fingerprint=RELEASE_FINGERPRINT,
         )

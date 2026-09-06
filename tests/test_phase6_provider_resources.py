@@ -14,6 +14,7 @@ from PIL import Image
 
 from mr_lister.contracts import Placement, PlacementGroup, ProductProfile
 from mr_lister.control.models import SourceArtifactRecord
+from mr_lister.latency import bind_latency_run, parse_latency_trace_line
 from mr_lister.production.draft_sync import PrintifyDraftSynchronizer
 from mr_lister.production.printify import (
     PrintifyAuthenticationError,
@@ -728,6 +729,32 @@ def test_audit_transport_rejects_non_draft_routes_and_records_a_safe_denial() ->
     assert "product_1" not in serialized
     assert "publish" not in serialized
     assert "Authorization" not in serialized
+
+
+def test_audit_transport_times_and_classifies_product_reconciliation(capsys) -> None:
+    transport = ScriptedTransport(
+        [ExpectedRequest("GET", "/v1/shops/42/products.json", {"data": []})]
+    )
+    audit = MemoryAudit()
+    audited = SanitizedProviderAuditTransport(transport=transport, audit_sink=audit)
+
+    with bind_latency_run(JOB_ID):
+        response = audited.request(
+            method="GET",
+            url="https://api.printify.com/v1/shops/42/products.json?page=1&limit=50",
+            headers={"Authorization": "Bearer must-not-be-logged"},
+            body=None,
+            timeout_seconds=15,
+        )
+
+    assert response.status == 200
+    event = parse_latency_trace_line(capsys.readouterr().out)
+    assert event.kind == "provider_request"
+    assert event.route == "/v1/shops/{shop_id}/products.json"
+    assert event.purpose == "product_reconciliation"
+    serialized = event.model_dump_json()
+    assert "/shops/42/" not in serialized
+    assert "must-not-be-logged" not in serialized
 
 
 def test_logging_sink_and_route_reducer_emit_only_allowlisted_method_and_template() -> None:

@@ -117,6 +117,7 @@ _PROVIDER_PURPOSE_BY_REQUEST: dict[tuple[str, ProviderAuditPath], str] = {
         "GET",
         ("/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json"),
     ): "variant_catalog",
+    ("GET", "/v1/shops/{shop_id}/products.json"): "product_reconciliation",
     ("POST", "/v1/shops/{shop_id}/products.json"): "draft_create",
     ("PUT", "/v1/shops/{shop_id}/products/{product_id}.json"): "draft_update",
     ("POST", "/v1/uploads/images.json"): "artwork_upload",

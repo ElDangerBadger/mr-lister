@@ -79,6 +79,7 @@ _ROUTE_PURPOSES: dict[tuple[str, str], frozenset[str]] = {
     ("POST", "/v1/uploads/images.json"): frozenset({"artwork_upload"}),
     ("GET", "/v1/uploads/{image_id}.json"): frozenset({"artwork_upload_readback"}),
     ("GET", "/v1/uploads.json"): frozenset({"artwork_upload_reconciliation"}),
+    ("GET", "/v1/shops/{shop_id}/products.json"): frozenset({"product_reconciliation"}),
     ("POST", "/v1/shops/{shop_id}/products.json"): frozenset({"draft_create"}),
     ("PUT", _PRODUCT_ROUTE): frozenset({"draft_update"}),
     (
@@ -348,6 +349,10 @@ def _assemble_run(run_id: str, events: Sequence[LatencyTraceEvent]) -> dict[str,
         if event.kind == "milestone":
             name = event.canonical_name
             if name in milestones:
+                if milestones[name] == event.occurred_at:
+                    # An idempotent HTTP replay can mirror the same durable milestone again.
+                    # Coalesce only an identical timestamp; conflicting evidence remains invalid.
+                    continue
                 raise LatencyWaterfallError(f"run {run_id} repeats milestone {name}")
             assert event.occurred_at is not None
             milestones[name] = event.occurred_at
