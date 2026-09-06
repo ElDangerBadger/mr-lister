@@ -8,13 +8,15 @@ surface can approve, publish, or call a product provider.
 
 from __future__ import annotations
 
-from time import monotonic
+from datetime import UTC, datetime
+from time import monotonic, perf_counter_ns
 from typing import Any, Literal, Protocol
 
 from bedrock_agentcore import BedrockAgentCoreApp, RequestContext
 from fastapi.responses import JSONResponse
 from pydantic import Field, ValidationError, model_validator
 from strands import Agent, tool
+from strands.hooks import AfterModelCallEvent, BeforeModelCallEvent, HookRegistry
 from strands.models.model import Model
 
 from mr_lister.agent.contracts import (
@@ -64,6 +66,12 @@ from mr_lister.control.worker_commands import (
     BeginPreparationCommand,
     CompletePreparationWithAgentDecisionCommand,
     RecordPreparedReviewCommand,
+)
+from mr_lister.latency import (
+    bind_latency_run,
+    emit_latency_milestone,
+    emit_latency_span,
+    latency_span,
 )
 
 PHASE6_PREPARATION_SYSTEM_PROMPT = """You are Mr Lister's Phase 6 preparation agent.
@@ -590,6 +598,10 @@ class Phase6PreparationTools:
             self.last_checkpoint = checkpoint
             self.work_binding = work_binding
             self.input_fingerprint = input_fingerprint
+            emit_latency_milestone(
+                "prepared_review_recorded",
+                component="phase6_preparation",
+            )
             result: dict[str, Any] = {
                 "ok": True,
                 "state": checkpoint.state.value,
@@ -610,6 +622,50 @@ class Phase6PreparationTools:
         return result
 
 
+class _StrandsLatencyHooks:
+    """Best-effort timing only; hook failures can never affect the agent loop."""
+
+    def __init__(self, model_id: str) -> None:
+        self._model_id = model_id
+        self._attempt = 0
+        self._active: list[tuple[int, int, datetime, int]] = []
+
+    def register_hooks(self, registry: HookRegistry, **_kwargs: Any) -> None:
+        registry.add_callback(BeforeModelCallEvent, self._before_model)
+        registry.add_callback(AfterModelCallEvent, self._after_model)
+
+    def _before_model(self, event: BeforeModelCallEvent) -> None:
+        try:
+            self._attempt += 1
+            self._active.append(
+                (
+                    self._attempt,
+                    max(1, event.agent.event_loop_metrics.cycle_count),
+                    datetime.now(UTC),
+                    perf_counter_ns(),
+                )
+            )
+        except Exception:
+            return
+
+    def _after_model(self, event: AfterModelCallEvent) -> None:
+        try:
+            attempt, cycle, started_at, started_ns = self._active.pop()
+            emit_latency_span(
+                "strands_model_invocation",
+                component="strands_controller",
+                started_at=started_at,
+                completed_at=datetime.now(UTC),
+                duration_ms=(perf_counter_ns() - started_ns) / 1_000_000,
+                outcome="failed" if event.exception is not None else "succeeded",
+                attempt=attempt,
+                cycle=cycle,
+                model_id=self._model_id,
+            )
+        except Exception:
+            return
+
+
 def build_phase6_preparation_agent(
     *,
     backend: Phase6PreparationBackend,
@@ -619,6 +675,7 @@ def build_phase6_preparation_agent(
     if request.mode != "prepare":
         raise AgentExecutionError("The Phase 6 preparation runtime requires prepare mode")
     provider = Phase6PreparationTools(backend, request.job_id)
+    controller_model_id = _controller_model_id(model)
     return (
         Agent(
             model=model,
@@ -636,6 +693,7 @@ def build_phase6_preparation_agent(
                 "mr_lister.mode": "prepare",
                 "mr_lister.correlation_id": correlation_id(request),
             },
+            hooks=[_StrandsLatencyHooks(controller_model_id)],
         ),
         provider,
     )
@@ -664,6 +722,7 @@ class Phase6StrandsPreparationRunner:
                 model=self._model,
             )
             result = agent(preparation_prompt(request), limits=AGENT_INVOCATION_LIMITS)
+            _emit_strands_cycles(agent)
             if result.structured_output is None:
                 raise AgentExecutionError("The preparation agent returned no structured decision")
             decision = PreparationDecision.model_validate(result.structured_output)
@@ -757,25 +816,29 @@ def create_phase6_agentcore_runtime(
             invocation = AgentCoreInvocation.model_validate(payload)
             if context.session_id is None:
                 return _phase6_sanitized_error(422, "INVALID_AGENT_REQUEST")
-            request = PreparationRequest(
-                session_id=context.session_id,
-                job_id=invocation.job_id,
-                mode=invocation.mode,
-                instruction=invocation.instruction,
-            )
-            backend.require_agentcore_session(
-                job_id=request.job_id,
-                session_id=request.session_id,
-            )
-            result = runner(request)
-            return Phase6AgentCoreResponse(
-                framework=AGENT_FRAMEWORK,
-                agent_id=PREPARATION_AGENT_ID,
-                correlation_id=correlation_id(request),
-                work_binding=result.work_binding,
-                evidence_fingerprint=result.completion.evidence_fingerprint,
-                decision=result.decision,
-            ).model_dump(mode="json")
+            with bind_latency_run(invocation.job_id):
+                request = PreparationRequest(
+                    session_id=context.session_id,
+                    job_id=invocation.job_id,
+                    mode=invocation.mode,
+                    instruction=invocation.instruction,
+                )
+                backend.require_agentcore_session(
+                    job_id=request.job_id,
+                    session_id=request.session_id,
+                )
+                emit_latency_milestone("strands_started", component="strands_controller")
+                with latency_span("strands_execution", component="strands_controller"):
+                    result = runner(request)
+                emit_latency_milestone("strands_completed", component="strands_controller")
+                return Phase6AgentCoreResponse(
+                    framework=AGENT_FRAMEWORK,
+                    agent_id=PREPARATION_AGENT_ID,
+                    correlation_id=correlation_id(request),
+                    work_binding=result.work_binding,
+                    evidence_fingerprint=result.completion.evidence_fingerprint,
+                    decision=result.decision,
+                ).model_dump(mode="json")
         except ValidationError:
             return _phase6_sanitized_error(422, "INVALID_AGENT_REQUEST")
         except AgentExecutionError:
@@ -784,6 +847,28 @@ def create_phase6_agentcore_runtime(
             return _phase6_sanitized_error(502, "AGENT_EXECUTION_FAILED")
 
     return application
+
+
+def _emit_strands_cycles(agent: Agent) -> None:
+    """Mirror the SDK's completed cycle traces into the Stage 0 trace format."""
+
+    try:
+        for cycle, trace in enumerate(agent.event_loop_metrics.traces, start=1):
+            if trace.end_time is None:
+                continue
+            started_at = datetime.fromtimestamp(trace.start_time, tz=UTC)
+            completed_at = datetime.fromtimestamp(trace.end_time, tz=UTC)
+            emit_latency_span(
+                "strands_cycle",
+                component="strands_controller",
+                started_at=started_at,
+                completed_at=completed_at,
+                duration_ms=(trace.end_time - trace.start_time) * 1_000,
+                outcome="succeeded",
+                cycle=cycle,
+            )
+    except Exception:
+        return
 
 
 def _controller_model_id(model: Model | str) -> str:

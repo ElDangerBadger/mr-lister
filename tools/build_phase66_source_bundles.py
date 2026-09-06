@@ -76,7 +76,12 @@ _MAX_EXTRACTED_TREE_SIZE = 768 * 1024 * 1024
 _NORMALIZED_DISTRIBUTION = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.!+_-]{0,127}$")
 
-_COMMON_ROOT_FILES = ("__init__.py", "review_profile.py", "review_security.py")
+_COMMON_ROOT_FILES = (
+    "__init__.py",
+    "latency.py",
+    "review_profile.py",
+    "review_security.py",
+)
 _CAPABILITY_FREE_INIT_BYTES = b""
 _LAMBDA_AGENT_FILES = (
     "__init__.py",

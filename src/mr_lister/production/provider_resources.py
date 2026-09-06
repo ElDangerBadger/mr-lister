@@ -26,6 +26,7 @@ from mr_lister.control.source_artwork import (
     Phase6SourceArtworkError,
     verify_phase6_source_artwork,
 )
+from mr_lister.latency import latency_span
 from mr_lister.production.draft_sync import (
     PrintifyDraftOnlyClient,
     PrintifyDraftSynchronizer,
@@ -105,6 +106,24 @@ _V2_STANDARD_SHIPPING_AUDIT_PATH: ProviderAuditPath = (
     "/v2/catalog/blueprints/{blueprint_id}/print_providers/"
     "{print_provider_id}/shipping/standard.json"
 )
+_PROVIDER_PURPOSE_BY_REQUEST: dict[tuple[str, ProviderAuditPath], str] = {
+    ("GET", "/v1/shops.json"): "shop_identity",
+    ("GET", "/v1/catalog/blueprints.json"): "blueprint_catalog",
+    (
+        "GET",
+        "/v1/catalog/blueprints/{blueprint_id}/print_providers.json",
+    ): "print_provider_catalog",
+    (
+        "GET",
+        ("/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json"),
+    ): "variant_catalog",
+    ("POST", "/v1/shops/{shop_id}/products.json"): "draft_create",
+    ("PUT", "/v1/shops/{shop_id}/products/{product_id}.json"): "draft_update",
+    ("POST", "/v1/uploads/images.json"): "artwork_upload",
+    ("GET", "/v1/uploads.json"): "artwork_upload_reconciliation",
+    ("GET", "/v1/uploads/{image_id}.json"): "artwork_upload_readback",
+    ("GET", _V2_STANDARD_SHIPPING_AUDIT_PATH): "standard_shipping",
+}
 
 
 class OwnerPrintifyConnection(PrintifyConnection):
@@ -164,9 +183,11 @@ class SanitizedProviderAuditTransport:
         *,
         transport: PrintifyTransport,
         audit_sink: ProviderRequestAuditSink,
+        request_purpose: str | None = None,
     ) -> None:
         self._transport = transport
         self._audit_sink = audit_sink
+        self._request_purpose = request_purpose
 
     def request(
         self,
@@ -191,13 +212,26 @@ class SanitizedProviderAuditTransport:
                 "Printify request is outside the audited draft-only boundary"
             ) from None
         self._write_audit(record)
-        return self._transport.request(
-            method=method,
-            url=url,
-            headers=headers,
-            body=body,
-            timeout_seconds=timeout_seconds,
+        purpose = _PROVIDER_PURPOSE_BY_REQUEST.get(
+            (record.method, record.path),
+            self._request_purpose,
         )
+        with latency_span(
+            "printify_request",
+            component="printify_draft",
+            kind="provider_request",
+            provider="printify",
+            method=cast(Any, record.method),
+            route=record.path,
+            purpose=purpose,
+        ):
+            return self._transport.request(
+                method=method,
+                url=url,
+                headers=headers,
+                body=body,
+                timeout_seconds=timeout_seconds,
+            )
 
     def _write_audit(self, record: ProviderRequestAuditRecord) -> None:
         try:
@@ -248,11 +282,15 @@ class OwnerBoundProviderDraftResources:
         self._timeout_seconds = timeout_seconds
 
     def preflight(self, *, owner_id: str, profile: ProductProfile) -> PrintifyResolvedProfile:
-        connection = self._resolve(owner_id)
-        return self._v1_client(connection).preflight(
-            shop_id=connection.shop_id,
-            profile=profile,
-        )
+        with latency_span(
+            "catalog_profile_provider_preparation",
+            component="printify_draft",
+        ):
+            connection = self._resolve(owner_id)
+            return self._v1_client(connection).preflight(
+                shop_id=connection.shop_id,
+                profile=profile,
+            )
 
     def upload_source(
         self,
@@ -263,19 +301,23 @@ class OwnerBoundProviderDraftResources:
     ) -> PrintifyUploadedImage:
         if _UPLOAD_FILE_NAME.fullmatch(file_name) is None:
             raise PrintifyInputError("Phase 6 artwork upload requires its deterministic PNG name")
-        content = self._read_source(owner_id=owner_id, source=source)
-        connection = self._resolve(owner_id)
-        uploaded = self._v1_client(connection).upload_artwork_contents(
-            file_name=file_name,
-            content_type=source.media_type,
-            content=content,
-        )
-        return self.verify_upload_source_geometry(
-            owner_id=owner_id,
-            source=source,
-            upload=uploaded,
-            _content=content,
-        )
+        with latency_span(
+            "printify_artwork_upload",
+            component="printify_draft",
+        ):
+            content = self._read_source(owner_id=owner_id, source=source)
+            connection = self._resolve(owner_id)
+            uploaded = self._v1_client(connection).upload_artwork_contents(
+                file_name=file_name,
+                content_type=source.media_type,
+                content=content,
+            )
+            return self.verify_upload_source_geometry(
+                owner_id=owner_id,
+                source=source,
+                upload=uploaded,
+                _content=content,
+            )
 
     def verify_upload_source_geometry(
         self,
@@ -325,7 +367,10 @@ class OwnerBoundProviderDraftResources:
         variant_ids: tuple[int, ...],
     ) -> ProductCostEvidence:
         connection = self._resolve_for_shop(owner_id=owner_id, shop_id=shop_id)
-        product = self._v1_client(connection).get_draft(
+        product = self._v1_client(
+            connection,
+            request_purpose="product_cost_readback",
+        ).get_draft(
             shop_id=shop_id,
             product_id=product_id,
         )
@@ -357,20 +402,24 @@ class OwnerBoundProviderDraftResources:
         # here, rather than lazily in synchronize(), so a missing credential remains a safe retry.
         connection = self._resolve_for_shop(owner_id=owner_id, shop_id=shop_id)
         return PrintifyDraftSynchronizer(
-            client=self._v1_client(connection),
+            client=self._v1_client(connection, request_purpose="draft_readback"),
             shop_id=shop_id,
         )
 
     def _resolve(self, owner_id: str) -> OwnerPrintifyConnection:
         if _OWNER_ID.fullmatch(owner_id) is None:
             raise PrintifyAuthenticationError("Owner-bound Printify credential is unavailable")
-        try:
-            resolved = self._connection_resolver.resolve(owner_id=owner_id)
-            connection = OwnerPrintifyConnection.model_validate(resolved)
-        except Exception:
-            raise PrintifyAuthenticationError(
-                "Owner-bound Printify credential is unavailable"
-            ) from None
+        with latency_span(
+            "printify_credential_resolution",
+            component="printify_credentials",
+        ):
+            try:
+                resolved = self._connection_resolver.resolve(owner_id=owner_id)
+                connection = OwnerPrintifyConnection.model_validate(resolved)
+            except Exception:
+                raise PrintifyAuthenticationError(
+                    "Owner-bound Printify credential is unavailable"
+                ) from None
         if connection.owner_id != owner_id:
             raise PrintifyAuthenticationError("Owner-bound Printify credential is unavailable")
         return connection
@@ -381,11 +430,17 @@ class OwnerBoundProviderDraftResources:
             raise PrintifyAuthenticationError("Owner-bound Printify shop is unavailable")
         return connection
 
-    def _v1_client(self, connection: OwnerPrintifyConnection) -> PrintifyDraftOnlyClient:
+    def _v1_client(
+        self,
+        connection: OwnerPrintifyConnection,
+        *,
+        request_purpose: str | None = None,
+    ) -> PrintifyDraftOnlyClient:
         token = connection.api_token.get_secret_value()
         transport = SanitizedProviderAuditTransport(
             transport=self._v1_transport_factory(),
             audit_sink=self._audit_sink,
+            request_purpose=request_purpose,
         )
         return PrintifyDraftOnlyClient(
             token_provider=lambda: token,

@@ -48,6 +48,7 @@ from mr_lister.control.worker_commands import (
     UploadedArtworkObservation,
 )
 from mr_lister.control.worker_service import WorkerControlService
+from mr_lister.latency import emit_latency_milestone, latency_span
 from mr_lister.production.draft_sync import (
     CanonicalPrintifyDraft,
     CreateAmbiguityReason,
@@ -379,12 +380,16 @@ class Phase6ProductMachineWorker:
             raise WorkNotActiveError("The one-shot provider call permit is no longer available")
 
         try:
-            evidence = synchronizer.synchronize(
-                job_id=job.job_id,
-                draft=draft,
-                product_id=permitted.product_id,
-                prior_draft=prior_draft,
-            )
+            with latency_span(
+                "draft_create_update",
+                component="printify_draft",
+            ):
+                evidence = synchronizer.synchronize(
+                    job_id=job.job_id,
+                    draft=draft,
+                    product_id=permitted.product_id,
+                    prior_draft=prior_draft,
+                )
             observation = self._observation(
                 evidence=evidence,
                 attempt=attempt,
@@ -424,7 +429,7 @@ class Phase6ProductMachineWorker:
             )
 
         latest = self._store.get_job(job.job_id)
-        return self._control.record_product_sync_success(
+        response = self._control.record_product_sync_success(
             RecordProductSyncSuccessCommand(
                 job_id=latest.job_id,
                 work_request_id=work.work_request_id,
@@ -433,6 +438,8 @@ class Phase6ProductMachineWorker:
                 observation=observation,
             )
         )
+        emit_latency_milestone("synchronized_draft", component="phase6_provider")
+        return response
 
     def run_economics_refresh(self, *, job_id: str, work_request_id: str) -> CommandResponse:
         """Join two exact GET-only provider observations and persist estimated proceeds."""
@@ -502,14 +509,18 @@ class Phase6ProductMachineWorker:
             raise InvalidControlStateError(
                 "Standard shipping readback does not match pinned variant authority"
             )
-        estimate = estimate_etsy_us_standard_proceeds(
-            product_costs=product_costs,
-            shipping=shipping,
-            calculated_at=self._now(),
-            buyer_shipping_cents=authority.profile.buyer_shipping_cents,
-        )
+        with latency_span(
+            "economics_calculation",
+            component="phase6_economics",
+        ):
+            estimate = estimate_etsy_us_standard_proceeds(
+                product_costs=product_costs,
+                shipping=shipping,
+                calculated_at=self._now(),
+                buyer_shipping_cents=authority.profile.buyer_shipping_cents,
+            )
         latest = self._store.get_job(job.job_id)
-        return self._control.record_pricing_success(
+        response = self._control.record_pricing_success(
             RecordPricingSuccessCommand(
                 job_id=job.job_id,
                 work_request_id=work.work_request_id,
@@ -517,6 +528,9 @@ class Phase6ProductMachineWorker:
                 estimate=estimate,
             )
         )
+        emit_latency_milestone("economics_completed", component="phase6_economics")
+        emit_latency_milestone("editable_review_available", component="phase6_review")
+        return response
 
     def run_product_reconciliation(self, *, job_id: str, work_request_id: str) -> CommandResponse:
         """Read provider state and submit a closed observation; never mutate it."""

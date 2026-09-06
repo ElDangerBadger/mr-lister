@@ -21,6 +21,7 @@ from mr_lister.control.source_artwork import (
     validate_source_artifact_authority,
     verify_phase6_source_artwork,
 )
+from mr_lister.latency import latency_span
 from mr_lister.workflow.models import ArtworkInput
 from mr_lister.workflow.ports import IntelligencePort
 
@@ -96,7 +97,11 @@ class PinnedSourcePreparedReviewProducer:
         content = self._source_content(source)
         artwork = self._validated_artwork(source, content)
         profile_fingerprint = self._profile_fingerprint(source)
-        analysis, listing = self._run_intelligence(artwork, content)
+        with latency_span(
+            "artwork_listing_intelligence",
+            component="bedrock_intelligence",
+        ):
+            analysis, listing = self._run_intelligence(artwork, content)
         return PreparedReviewObservation(
             source_artifact_fingerprint=source.fingerprint,
             artwork_analysis=analysis,

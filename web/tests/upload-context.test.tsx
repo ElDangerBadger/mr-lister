@@ -4,6 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import browserFixtures from "../../contracts/browser/phase6.5.fixtures.json";
 import type { ApiPort } from "../src/api/client";
 import { uploadRecoverySchema, type UploadRecovery } from "../src/contracts";
+import {
+  bufferedBrowserLatencyEvents,
+  clearBufferedBrowserLatencyEvents,
+  latencyRunIdForJob,
+} from "../src/observability/latency";
 import { MAX_BATCH_FILES, UploadProvider, useUpload } from "../src/upload/upload-context";
 
 const directUpload = vi.hoisted(() => ({
@@ -22,6 +27,7 @@ vi.mock("../src/upload/direct-upload", async (importOriginal) => ({
 const recovery = uploadRecoverySchema.parse(browserFixtures.upload_recovery);
 
 beforeEach(() => {
+  vi.spyOn(console, "info").mockImplementation(() => undefined);
   directUpload.prepareArtworkForUpload.mockImplementation((file: File) => Promise.resolve({
     file,
     sourceFormat: "png" as const,
@@ -222,6 +228,41 @@ describe("durable upload operation identity", () => {
 });
 
 describe("ordered in-memory upload batches", () => {
+  it("records the fresh-upload browser waterfall without exposing upload identity", async () => {
+    clearBufferedBrowserLatencyEvents();
+    const file = makePng("private-artwork.png", 9);
+    const createUpload = vi.fn((createdFile: File, sha256: string) => (
+      Promise.resolve(batchCreateResult(createdFile, sha256))
+    ));
+    const completeUpload = vi.fn((uploadId: string) => (
+      Promise.resolve(completedBatchResult(uploadId))
+    ));
+    render(
+      <UploadProvider api={fakeApi({ createUpload, completeUpload })}>
+        <BatchHarness files={[file]} />
+      </UploadProvider>,
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Begin batch" }));
+    await waitFor(() => expect(screen.getByTestId("batch-phase")).toHaveTextContent("complete"));
+    const runId = await latencyRunIdForJob("job_private-artwork");
+    await waitFor(() => expect(
+      bufferedBrowserLatencyEvents().filter((event) => event.run_id === runId),
+    ).toHaveLength(3));
+
+    const events = bufferedBrowserLatencyEvents().filter((event) => event.run_id === runId);
+    expect(events.map((event) => [event.kind, event.name, event.outcome])).toEqual(expect.arrayContaining([
+      ["span", "artwork_normalization", "succeeded"],
+      ["span", "direct_artwork_upload", "succeeded"],
+      ["milestone", "upload_response_received", "observed"],
+    ]));
+    const serialized = JSON.stringify(events);
+    expect(serialized).not.toContain("job_private-artwork");
+    expect(serialized).not.toContain("upload_private-artwork");
+    expect(serialized).not.toContain("private-artwork.png");
+  });
+
   it("creates one upload and job per file in exact order without overlapping work", async () => {
     let resolveFirstCompletion: ((value: ReturnType<typeof completedBatchResult>) => void) | undefined;
     const firstCompletion = new Promise<ReturnType<typeof completedBatchResult>>((resolve) => {

@@ -2,6 +2,12 @@ import { createContext, useCallback, useContext, useMemo, useReducer, useRef, ty
 import { ApiError, newIdempotencyKey, type ApiPort } from "../api/client";
 import type { UploadRecovery } from "../contracts";
 import {
+  completeBrowserLatencySpan,
+  recordBrowserLatencyMilestone,
+  recordBrowserLatencySpan,
+  startBrowserLatencySpan,
+} from "../observability/latency";
+import {
   type ArtworkSourceFormat,
   prepareArtworkForUpload,
   uploadToAuthorizedS3,
@@ -292,6 +298,7 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
               requestId: null,
             },
           });
+          const normalizationClock = startBrowserLatencySpan();
           const prepared = await prepareArtworkForUpload(sourceFile);
           sourceFormat = prepared.sourceFormat;
           if (abort.signal.aborted || batchEpoch.current !== epoch) return;
@@ -306,6 +313,7 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
             },
           });
           const sha256 = await validateAndHashPng(prepared.file);
+          const normalizationTiming = completeBrowserLatencySpan(normalizationClock);
           if (abort.signal.aborted || batchEpoch.current !== epoch) return;
           dispatchBatch({
             type: "item",
@@ -326,6 +334,12 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
           const jobId = created.value.upload.job_id;
           createdUploadId = uploadId;
           createdJobId = jobId;
+          recordBrowserLatencySpan(
+            jobId,
+            "artwork_normalization",
+            normalizationTiming,
+            "succeeded",
+          );
           dispatchBatch({
             type: "item",
             id: item.id,
@@ -363,11 +377,28 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
             id: item.id,
             changes: { phase: "uploading", message: "Uploading artwork…" },
           });
-          await uploadToAuthorizedS3(prepared.file, authorization, (progress) => {
-            if (batchEpoch.current === epoch && !abort.signal.aborted) {
-              dispatchBatch({ type: "item", id: item.id, changes: { progress } });
-            }
-          }, abort.signal);
+          const directUploadClock = startBrowserLatencySpan();
+          try {
+            await uploadToAuthorizedS3(prepared.file, authorization, (progress) => {
+              if (batchEpoch.current === epoch && !abort.signal.aborted) {
+                dispatchBatch({ type: "item", id: item.id, changes: { progress } });
+              }
+            }, abort.signal);
+            recordBrowserLatencySpan(
+              jobId,
+              "direct_artwork_upload",
+              completeBrowserLatencySpan(directUploadClock),
+              "succeeded",
+            );
+          } catch (error) {
+            recordBrowserLatencySpan(
+              jobId,
+              "direct_artwork_upload",
+              completeBrowserLatencySpan(directUploadClock),
+              "failed",
+            );
+            throw error;
+          }
           if (abort.signal.aborted || batchEpoch.current !== epoch) return;
           dispatchBatch({
             type: "item",
@@ -381,6 +412,7 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
             || completed.value.upload.status !== "completed") {
             throw new Error("The upload did not reach its completed state.");
           }
+          recordBrowserLatencyMilestone(jobId, "upload_response_received");
           recoveryKeys.current.delete(uploadId);
           dispatchBatch({
             type: "item",

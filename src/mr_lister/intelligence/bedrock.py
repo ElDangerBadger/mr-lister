@@ -38,6 +38,7 @@ from mr_lister.intelligence.prompts import (
 )
 from mr_lister.intelligence.schema import bedrock_output_schema
 from mr_lister.intelligence.settings import BedrockSettings
+from mr_lister.latency import latency_span
 from mr_lister.workflow.errors import (
     IntelligenceConfigurationError,
     IntelligenceUnavailableError,
@@ -300,7 +301,13 @@ class BedrockListingIntelligenceAdapter:
                         },
                     }
                 }
-            return self._client.converse(**request)
+            with latency_span(
+                f"{operation}_model_invocation",
+                component="bedrock_intelligence",
+                attempt=attempt,
+                model_id=self._settings.model_id,
+            ):
+                return self._client.converse(**request)
         except ClientError as error:
             code = str(error.response.get("Error", {}).get("Code", "ClientError"))
             request_id = error.response.get("ResponseMetadata", {}).get("RequestId")

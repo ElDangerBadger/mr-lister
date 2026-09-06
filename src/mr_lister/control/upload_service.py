@@ -49,6 +49,7 @@ from mr_lister.control.upload_models import (
     UploadIntentStatus,
     UploadReceipt,
 )
+from mr_lister.latency import bind_latency_run, emit_latency_milestone
 from mr_lister.review_profile import ExactReviewProductProfile
 
 
@@ -295,6 +296,7 @@ class UploadIntakeService:
             request_fingerprint=request_fingerprint,
         )
         if replay is not None:
+            _record_upload_accepted(replay.job_id, replay.created_at)
             return UploadIntakeResult(receipt=replay)
 
         current = self._store.get_upload_intent_for_owner(owner_id, upload_id)
@@ -416,6 +418,7 @@ class UploadIntakeService:
         # durable authority after every return so a differently observed version cannot remain
         # falsely pinned.
         self._release_if_unreferenced(current, observed.version_id)
+        _record_upload_accepted(persisted.job_id, persisted.created_at)
         return UploadIntakeResult(receipt=persisted)
 
     def cancel_upload(
@@ -694,6 +697,20 @@ class UploadIntakeService:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("Upload clock must return a timezone-aware timestamp")
         return now
+
+
+def _record_upload_accepted(job_id: str, occurred_at: datetime) -> None:
+    """Mirror the durable upload-completion time into best-effort Stage 0 logs."""
+
+    try:
+        with bind_latency_run(job_id):
+            emit_latency_milestone(
+                "upload_accepted",
+                component="phase6_upload",
+                occurred_at=occurred_at,
+            )
+    except Exception:
+        return
 
 
 __all__ = [

@@ -36,6 +36,7 @@ from mr_lister.control.settlement import (
     PreparationFailureReconciler,
     PreparationSettlementError,
 )
+from mr_lister.latency import bind_latency_run, latency_span
 from mr_lister.production.phase6_worker import Phase6ProductMachineWorker
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
@@ -116,10 +117,17 @@ class Phase6PreparationHandler:
     ) -> dict[str, Any]:
         job_id, work_request_id = _machine_identity(event, allowed_extra=frozenset())
         try:
-            result = self._preparation.invoke(
-                job_id=job_id,
-                work_request_id=work_request_id,
-            )
+            with (
+                bind_latency_run(job_id),
+                latency_span(
+                    "agentcore_preparation_bridge",
+                    component="phase6_preparation",
+                ),
+            ):
+                result = self._preparation.invoke(
+                    job_id=job_id,
+                    work_request_id=work_request_id,
+                )
             return result.model_dump(mode="json")
         except Exception:
             raise Phase6MachineExecutionError("Phase 6 preparation failed safely") from None
@@ -150,21 +158,28 @@ class Phase6ProviderHandler:
         }:
             raise Phase6MachineInvocationError("Unsupported Phase 6 provider operation")
         try:
-            if operation == "synchronize_product":
-                response = self._provider.run_product_sync(
-                    job_id=job_id,
-                    work_request_id=work_request_id,
-                )
-            elif operation == "reconcile_product":
-                response = self._provider.run_product_reconciliation(
-                    job_id=job_id,
-                    work_request_id=work_request_id,
-                )
-            else:
-                response = self._provider.run_economics_refresh(
-                    job_id=job_id,
-                    work_request_id=work_request_id,
-                )
+            with (
+                bind_latency_run(job_id),
+                latency_span(
+                    operation,
+                    component="phase6_provider",
+                ),
+            ):
+                if operation == "synchronize_product":
+                    response = self._provider.run_product_sync(
+                        job_id=job_id,
+                        work_request_id=work_request_id,
+                    )
+                elif operation == "reconcile_product":
+                    response = self._provider.run_product_reconciliation(
+                        job_id=job_id,
+                        work_request_id=work_request_id,
+                    )
+                else:
+                    response = self._provider.run_economics_refresh(
+                        job_id=job_id,
+                        work_request_id=work_request_id,
+                    )
             return CommandResponse.model_validate(response).model_dump(mode="json")
         except Exception:
             raise Phase6MachineExecutionError("Phase 6 provider work failed safely") from None

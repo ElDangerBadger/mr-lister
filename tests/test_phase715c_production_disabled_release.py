@@ -257,7 +257,9 @@ def test_source_is_deterministic_full_production_closure_and_topology_bound(
     assert (first / SOURCE_MANIFEST_FILENAME).read_bytes() == (
         second / SOURCE_MANIFEST_FILENAME
     ).read_bytes()
-    assert len(closure) == 74
+    # Stage 0 adds the capability-free latency trace contract to the shared provider-resource
+    # closure. It performs no AWS, provider, or state operation during import or disabled use.
+    assert len(closure) == 75
     assert manifest["files"] == inventory(first, excluded=frozenset({SOURCE_MANIFEST_FILENAME}))
     assert manifest["third_party_import_roots"] == list(PRODUCTION_THIRD_PARTY_IMPORT_ROOTS)
     assert manifest["topology"]["production_disabled_template_sha256"] == (
