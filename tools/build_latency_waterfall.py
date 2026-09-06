@@ -56,6 +56,7 @@ _OPTIONAL_MILESTONES = frozenset(
         "etsy_visibility_confirmed",
         "provider_publication_confirmed",
         "provider_publication_submitted",
+        "prepared_review_recorded",
         "publication_requested",
         "strands_completed",
         "strands_started",

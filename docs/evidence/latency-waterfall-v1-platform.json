@@ -1,0 +1,864 @@
+{
+  "format": "mr-lister-stage0-platform-attribution-v1",
+  "method": "Trace union gaps were bounded by exact Step Functions execution starts and Lambda START records. Lazy handler setup is the interval inside the first function invocation before the first application span; it is not AWS-reported Lambda Init Duration.",
+  "release_fingerprint": "3ae13d46db5e11731a5f69f541175d5c540cd93db823629d38cc91a108d790cc",
+  "reported_lambda_init": [
+    {
+      "init_duration_ms": 89.56,
+      "log_group": "/aws/lambda/mr-lister-phase6-dev-preparation-dispatch",
+      "timestamp_ms": 1788710945443
+    },
+    {
+      "init_duration_ms": 90.48,
+      "log_group": "/aws/lambda/mr-lister-phase6-dev-provider-draft",
+      "timestamp_ms": 1788710995269
+    }
+  ],
+  "runs": [
+    {
+      "run_id": "d91f63f345976ef8e556d344",
+      "sequence": 1,
+      "upload_to_editable_content": {
+        "explained_ms": 127133,
+        "explained_percent": 100,
+        "instrumented_span_ms": 53166,
+        "instrumented_union_coverage_percent": 41.82,
+        "lazy_handler_setup_ms": 70387,
+        "segments": [
+          {
+            "completed_at": "2026-09-06T16:08:03.148Z",
+            "duration_ms": 1533,
+            "name": "upload_to_prepare_workflow",
+            "started_at": "2026-09-06T16:08:01.615Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:08:03.808Z",
+            "duration_ms": 660,
+            "name": "prepare_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:08:03.148Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:08:38.819Z",
+            "duration_ms": 35011,
+            "name": "preparation_lazy_handler_setup",
+            "started_at": "2026-09-06T16:08:03.808Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:05.440Z",
+            "duration_ms": 26621,
+            "name": "agentcore_preparation_bridge",
+            "started_at": "2026-09-06T16:08:38.819Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:05.797Z",
+            "duration_ms": 357,
+            "name": "preparation_to_sync_workflow",
+            "started_at": "2026-09-06T16:09:05.440Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:06.378Z",
+            "duration_ms": 581,
+            "name": "sync_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:09:05.797Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:41.754Z",
+            "duration_ms": 35376,
+            "name": "provider_lazy_handler_setup",
+            "started_at": "2026-09-06T16:09:06.378Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:55.248Z",
+            "duration_ms": 13494,
+            "name": "synchronize_product",
+            "started_at": "2026-09-06T16:09:41.754Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:55.580Z",
+            "duration_ms": 332,
+            "name": "sync_to_economics_workflow",
+            "started_at": "2026-09-06T16:09:55.248Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:55.697Z",
+            "duration_ms": 117,
+            "name": "economics_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:09:55.580Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:55.697Z",
+            "duration_ms": 0,
+            "name": "provider_warm_handler_setup",
+            "started_at": "2026-09-06T16:09:55.697Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:10:08.748Z",
+            "duration_ms": 13051,
+            "name": "refresh_economics",
+            "started_at": "2026-09-06T16:09:55.697Z",
+            "type": "instrumented_span"
+          }
+        ],
+        "window_ms": 127133,
+        "workflow_control_plane_ms": 3580
+      },
+      "upload_to_synchronized_draft": {
+        "explained_ms": 113633,
+        "explained_percent": 100,
+        "instrumented_span_ms": 40115,
+        "instrumented_union_coverage_percent": 35.3,
+        "lazy_handler_setup_ms": 70387,
+        "segments": [
+          {
+            "completed_at": "2026-09-06T16:08:03.148Z",
+            "duration_ms": 1533,
+            "name": "upload_to_prepare_workflow",
+            "started_at": "2026-09-06T16:08:01.615Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:08:03.808Z",
+            "duration_ms": 660,
+            "name": "prepare_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:08:03.148Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:08:38.819Z",
+            "duration_ms": 35011,
+            "name": "preparation_lazy_handler_setup",
+            "started_at": "2026-09-06T16:08:03.808Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:05.440Z",
+            "duration_ms": 26621,
+            "name": "agentcore_preparation_bridge",
+            "started_at": "2026-09-06T16:08:38.819Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:05.797Z",
+            "duration_ms": 357,
+            "name": "preparation_to_sync_workflow",
+            "started_at": "2026-09-06T16:09:05.440Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:06.378Z",
+            "duration_ms": 581,
+            "name": "sync_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:09:05.797Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:41.754Z",
+            "duration_ms": 35376,
+            "name": "provider_lazy_handler_setup",
+            "started_at": "2026-09-06T16:09:06.378Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:09:55.248Z",
+            "duration_ms": 13494,
+            "name": "synchronize_product",
+            "started_at": "2026-09-06T16:09:41.754Z",
+            "type": "instrumented_span"
+          }
+        ],
+        "window_ms": 113633,
+        "workflow_control_plane_ms": 3131
+      }
+    },
+    {
+      "run_id": "0a0bfb473af1b49477679b7c",
+      "sequence": 2,
+      "upload_to_editable_content": {
+        "explained_ms": 38942,
+        "explained_percent": 100,
+        "instrumented_span_ms": 37222,
+        "instrumented_union_coverage_percent": 95.58,
+        "lazy_handler_setup_ms": 3,
+        "segments": [
+          {
+            "completed_at": "2026-09-06T16:11:20.493Z",
+            "duration_ms": 912,
+            "name": "upload_to_prepare_workflow",
+            "started_at": "2026-09-06T16:11:19.581Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:20.606Z",
+            "duration_ms": 113,
+            "name": "prepare_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:11:20.493Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:20.607Z",
+            "duration_ms": 1,
+            "name": "preparation_lazy_handler_setup",
+            "started_at": "2026-09-06T16:11:20.606Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:44.298Z",
+            "duration_ms": 23691,
+            "name": "agentcore_preparation_bridge",
+            "started_at": "2026-09-06T16:11:20.607Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:44.375Z",
+            "duration_ms": 77,
+            "name": "preparation_to_sync_workflow",
+            "started_at": "2026-09-06T16:11:44.298Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:44.487Z",
+            "duration_ms": 112,
+            "name": "sync_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:11:44.375Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:44.488Z",
+            "duration_ms": 1,
+            "name": "provider_lazy_handler_setup",
+            "started_at": "2026-09-06T16:11:44.487Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:54.483Z",
+            "duration_ms": 9995,
+            "name": "synchronize_product",
+            "started_at": "2026-09-06T16:11:44.488Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:54.874Z",
+            "duration_ms": 391,
+            "name": "sync_to_economics_workflow",
+            "started_at": "2026-09-06T16:11:54.483Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:54.986Z",
+            "duration_ms": 112,
+            "name": "economics_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:11:54.874Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:54.987Z",
+            "duration_ms": 1,
+            "name": "provider_warm_handler_setup",
+            "started_at": "2026-09-06T16:11:54.986Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:58.523Z",
+            "duration_ms": 3536,
+            "name": "refresh_economics",
+            "started_at": "2026-09-06T16:11:54.987Z",
+            "type": "instrumented_span"
+          }
+        ],
+        "window_ms": 38942,
+        "workflow_control_plane_ms": 1717
+      },
+      "upload_to_synchronized_draft": {
+        "explained_ms": 34902,
+        "explained_percent": 100,
+        "instrumented_span_ms": 33686,
+        "instrumented_union_coverage_percent": 96.51,
+        "lazy_handler_setup_ms": 2,
+        "segments": [
+          {
+            "completed_at": "2026-09-06T16:11:20.493Z",
+            "duration_ms": 912,
+            "name": "upload_to_prepare_workflow",
+            "started_at": "2026-09-06T16:11:19.581Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:20.606Z",
+            "duration_ms": 113,
+            "name": "prepare_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:11:20.493Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:20.607Z",
+            "duration_ms": 1,
+            "name": "preparation_lazy_handler_setup",
+            "started_at": "2026-09-06T16:11:20.606Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:44.298Z",
+            "duration_ms": 23691,
+            "name": "agentcore_preparation_bridge",
+            "started_at": "2026-09-06T16:11:20.607Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:44.375Z",
+            "duration_ms": 77,
+            "name": "preparation_to_sync_workflow",
+            "started_at": "2026-09-06T16:11:44.298Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:44.487Z",
+            "duration_ms": 112,
+            "name": "sync_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:11:44.375Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:44.488Z",
+            "duration_ms": 1,
+            "name": "provider_lazy_handler_setup",
+            "started_at": "2026-09-06T16:11:44.487Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:11:54.483Z",
+            "duration_ms": 9995,
+            "name": "synchronize_product",
+            "started_at": "2026-09-06T16:11:44.488Z",
+            "type": "instrumented_span"
+          }
+        ],
+        "window_ms": 34902,
+        "workflow_control_plane_ms": 1214
+      }
+    },
+    {
+      "run_id": "4c31b9d0659a7d7cac925bbf",
+      "sequence": 3,
+      "upload_to_editable_content": {
+        "explained_ms": 45054,
+        "explained_percent": 100,
+        "instrumented_span_ms": 43226,
+        "instrumented_union_coverage_percent": 95.94,
+        "lazy_handler_setup_ms": 2,
+        "segments": [
+          {
+            "completed_at": "2026-09-06T16:12:58.706Z",
+            "duration_ms": 840,
+            "name": "upload_to_prepare_workflow",
+            "started_at": "2026-09-06T16:12:57.866Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:12:58.824Z",
+            "duration_ms": 118,
+            "name": "prepare_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:12:58.706Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:12:58.824Z",
+            "duration_ms": 0,
+            "name": "preparation_lazy_handler_setup",
+            "started_at": "2026-09-06T16:12:58.824Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:28.837Z",
+            "duration_ms": 30013,
+            "name": "agentcore_preparation_bridge",
+            "started_at": "2026-09-06T16:12:58.824Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:29.233Z",
+            "duration_ms": 396,
+            "name": "preparation_to_sync_workflow",
+            "started_at": "2026-09-06T16:13:28.837Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:29.349Z",
+            "duration_ms": 116,
+            "name": "sync_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:13:29.233Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:29.350Z",
+            "duration_ms": 1,
+            "name": "provider_lazy_handler_setup",
+            "started_at": "2026-09-06T16:13:29.349Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:39.010Z",
+            "duration_ms": 9660,
+            "name": "synchronize_product",
+            "started_at": "2026-09-06T16:13:29.350Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:39.254Z",
+            "duration_ms": 244,
+            "name": "sync_to_economics_workflow",
+            "started_at": "2026-09-06T16:13:39.010Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:39.366Z",
+            "duration_ms": 112,
+            "name": "economics_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:13:39.254Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:39.367Z",
+            "duration_ms": 1,
+            "name": "provider_warm_handler_setup",
+            "started_at": "2026-09-06T16:13:39.366Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:42.920Z",
+            "duration_ms": 3553,
+            "name": "refresh_economics",
+            "started_at": "2026-09-06T16:13:39.367Z",
+            "type": "instrumented_span"
+          }
+        ],
+        "window_ms": 45054,
+        "workflow_control_plane_ms": 1826
+      },
+      "upload_to_synchronized_draft": {
+        "explained_ms": 41144,
+        "explained_percent": 100,
+        "instrumented_span_ms": 39673,
+        "instrumented_union_coverage_percent": 96.42,
+        "lazy_handler_setup_ms": 1,
+        "segments": [
+          {
+            "completed_at": "2026-09-06T16:12:58.706Z",
+            "duration_ms": 840,
+            "name": "upload_to_prepare_workflow",
+            "started_at": "2026-09-06T16:12:57.866Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:12:58.824Z",
+            "duration_ms": 118,
+            "name": "prepare_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:12:58.706Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:12:58.824Z",
+            "duration_ms": 0,
+            "name": "preparation_lazy_handler_setup",
+            "started_at": "2026-09-06T16:12:58.824Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:28.837Z",
+            "duration_ms": 30013,
+            "name": "agentcore_preparation_bridge",
+            "started_at": "2026-09-06T16:12:58.824Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:29.233Z",
+            "duration_ms": 396,
+            "name": "preparation_to_sync_workflow",
+            "started_at": "2026-09-06T16:13:28.837Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:29.349Z",
+            "duration_ms": 116,
+            "name": "sync_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:13:29.233Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:29.350Z",
+            "duration_ms": 1,
+            "name": "provider_lazy_handler_setup",
+            "started_at": "2026-09-06T16:13:29.349Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:13:39.010Z",
+            "duration_ms": 9660,
+            "name": "synchronize_product",
+            "started_at": "2026-09-06T16:13:29.350Z",
+            "type": "instrumented_span"
+          }
+        ],
+        "window_ms": 41144,
+        "workflow_control_plane_ms": 1470
+      }
+    },
+    {
+      "run_id": "8287655fa886105f69ca8454",
+      "sequence": 4,
+      "upload_to_editable_content": {
+        "explained_ms": 45118,
+        "explained_percent": 100,
+        "instrumented_span_ms": 42793,
+        "instrumented_union_coverage_percent": 94.85,
+        "lazy_handler_setup_ms": 3,
+        "segments": [
+          {
+            "completed_at": "2026-09-06T16:15:57.388Z",
+            "duration_ms": 1012,
+            "name": "upload_to_prepare_workflow",
+            "started_at": "2026-09-06T16:15:56.376Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:15:57.498Z",
+            "duration_ms": 110,
+            "name": "prepare_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:15:57.388Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:15:57.499Z",
+            "duration_ms": 1,
+            "name": "preparation_lazy_handler_setup",
+            "started_at": "2026-09-06T16:15:57.498Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:27.395Z",
+            "duration_ms": 29896,
+            "name": "agentcore_preparation_bridge",
+            "started_at": "2026-09-06T16:15:57.499Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:27.812Z",
+            "duration_ms": 417,
+            "name": "preparation_to_sync_workflow",
+            "started_at": "2026-09-06T16:16:27.395Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:27.937Z",
+            "duration_ms": 125,
+            "name": "sync_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:16:27.812Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:27.938Z",
+            "duration_ms": 1,
+            "name": "provider_lazy_handler_setup",
+            "started_at": "2026-09-06T16:16:27.937Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:37.354Z",
+            "duration_ms": 9416,
+            "name": "synchronize_product",
+            "started_at": "2026-09-06T16:16:27.938Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:37.830Z",
+            "duration_ms": 476,
+            "name": "sync_to_economics_workflow",
+            "started_at": "2026-09-06T16:16:37.354Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:38.012Z",
+            "duration_ms": 182,
+            "name": "economics_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:16:37.830Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:38.013Z",
+            "duration_ms": 1,
+            "name": "provider_warm_handler_setup",
+            "started_at": "2026-09-06T16:16:38.012Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:41.494Z",
+            "duration_ms": 3481,
+            "name": "refresh_economics",
+            "started_at": "2026-09-06T16:16:38.013Z",
+            "type": "instrumented_span"
+          }
+        ],
+        "window_ms": 45118,
+        "workflow_control_plane_ms": 2322
+      },
+      "upload_to_synchronized_draft": {
+        "explained_ms": 40978,
+        "explained_percent": 100,
+        "instrumented_span_ms": 39312,
+        "instrumented_union_coverage_percent": 95.93,
+        "lazy_handler_setup_ms": 2,
+        "segments": [
+          {
+            "completed_at": "2026-09-06T16:15:57.388Z",
+            "duration_ms": 1012,
+            "name": "upload_to_prepare_workflow",
+            "started_at": "2026-09-06T16:15:56.376Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:15:57.498Z",
+            "duration_ms": 110,
+            "name": "prepare_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:15:57.388Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:15:57.499Z",
+            "duration_ms": 1,
+            "name": "preparation_lazy_handler_setup",
+            "started_at": "2026-09-06T16:15:57.498Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:27.395Z",
+            "duration_ms": 29896,
+            "name": "agentcore_preparation_bridge",
+            "started_at": "2026-09-06T16:15:57.499Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:27.812Z",
+            "duration_ms": 417,
+            "name": "preparation_to_sync_workflow",
+            "started_at": "2026-09-06T16:16:27.395Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:27.937Z",
+            "duration_ms": 125,
+            "name": "sync_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:16:27.812Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:27.938Z",
+            "duration_ms": 1,
+            "name": "provider_lazy_handler_setup",
+            "started_at": "2026-09-06T16:16:27.937Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:16:37.354Z",
+            "duration_ms": 9416,
+            "name": "synchronize_product",
+            "started_at": "2026-09-06T16:16:27.938Z",
+            "type": "instrumented_span"
+          }
+        ],
+        "window_ms": 40978,
+        "workflow_control_plane_ms": 1664
+      }
+    },
+    {
+      "run_id": "87f2480844d65c8e54dc287d",
+      "sequence": 5,
+      "upload_to_editable_content": {
+        "explained_ms": 44892,
+        "explained_percent": 100,
+        "instrumented_span_ms": 43087,
+        "instrumented_union_coverage_percent": 95.98,
+        "lazy_handler_setup_ms": 4,
+        "segments": [
+          {
+            "completed_at": "2026-09-06T16:17:42.122Z",
+            "duration_ms": 943,
+            "name": "upload_to_prepare_workflow",
+            "started_at": "2026-09-06T16:17:41.179Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:17:42.236Z",
+            "duration_ms": 114,
+            "name": "prepare_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:17:42.122Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:17:42.237Z",
+            "duration_ms": 1,
+            "name": "preparation_lazy_handler_setup",
+            "started_at": "2026-09-06T16:17:42.236Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:10.474Z",
+            "duration_ms": 28237,
+            "name": "agentcore_preparation_bridge",
+            "started_at": "2026-09-06T16:17:42.237Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:10.636Z",
+            "duration_ms": 162,
+            "name": "preparation_to_sync_workflow",
+            "started_at": "2026-09-06T16:18:10.474Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:10.746Z",
+            "duration_ms": 110,
+            "name": "sync_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:18:10.636Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:10.748Z",
+            "duration_ms": 2,
+            "name": "provider_lazy_handler_setup",
+            "started_at": "2026-09-06T16:18:10.746Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:21.291Z",
+            "duration_ms": 10543,
+            "name": "synchronize_product",
+            "started_at": "2026-09-06T16:18:10.748Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:21.639Z",
+            "duration_ms": 348,
+            "name": "sync_to_economics_workflow",
+            "started_at": "2026-09-06T16:18:21.291Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:21.763Z",
+            "duration_ms": 124,
+            "name": "economics_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:18:21.639Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:21.764Z",
+            "duration_ms": 1,
+            "name": "provider_warm_handler_setup",
+            "started_at": "2026-09-06T16:18:21.763Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:26.071Z",
+            "duration_ms": 4307,
+            "name": "refresh_economics",
+            "started_at": "2026-09-06T16:18:21.764Z",
+            "type": "instrumented_span"
+          }
+        ],
+        "window_ms": 44892,
+        "workflow_control_plane_ms": 1801
+      },
+      "upload_to_synchronized_draft": {
+        "explained_ms": 40112,
+        "explained_percent": 100,
+        "instrumented_span_ms": 38780,
+        "instrumented_union_coverage_percent": 96.68,
+        "lazy_handler_setup_ms": 3,
+        "segments": [
+          {
+            "completed_at": "2026-09-06T16:17:42.122Z",
+            "duration_ms": 943,
+            "name": "upload_to_prepare_workflow",
+            "started_at": "2026-09-06T16:17:41.179Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:17:42.236Z",
+            "duration_ms": 114,
+            "name": "prepare_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:17:42.122Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:17:42.237Z",
+            "duration_ms": 1,
+            "name": "preparation_lazy_handler_setup",
+            "started_at": "2026-09-06T16:17:42.236Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:10.474Z",
+            "duration_ms": 28237,
+            "name": "agentcore_preparation_bridge",
+            "started_at": "2026-09-06T16:17:42.237Z",
+            "type": "instrumented_span"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:10.636Z",
+            "duration_ms": 162,
+            "name": "preparation_to_sync_workflow",
+            "started_at": "2026-09-06T16:18:10.474Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:10.746Z",
+            "duration_ms": 110,
+            "name": "sync_workflow_to_lambda_entry",
+            "started_at": "2026-09-06T16:18:10.636Z",
+            "type": "workflow_control_plane"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:10.748Z",
+            "duration_ms": 2,
+            "name": "provider_lazy_handler_setup",
+            "started_at": "2026-09-06T16:18:10.746Z",
+            "type": "lazy_handler_setup"
+          },
+          {
+            "completed_at": "2026-09-06T16:18:21.291Z",
+            "duration_ms": 10543,
+            "name": "synchronize_product",
+            "started_at": "2026-09-06T16:18:10.748Z",
+            "type": "instrumented_span"
+          }
+        ],
+        "window_ms": 40112,
+        "workflow_control_plane_ms": 1329
+      }
+    }
+  ],
+  "source_commit": "cbfcd3a4ee7ef15bc4f43cac2b6503bf7d9efaaf",
+  "summary": {
+    "upload_to_editable_content": {
+      "cold_run_lazy_handler_setup_ms": 70387,
+      "median_explained_percent": 100,
+      "median_ms": 45054,
+      "minimum_explained_percent": 100
+    },
+    "upload_to_synchronized_draft": {
+      "cold_run_lazy_handler_setup_ms": 70387,
+      "median_explained_percent": 100,
+      "median_ms": 40978,
+      "minimum_explained_percent": 100
+    }
+  }
+}

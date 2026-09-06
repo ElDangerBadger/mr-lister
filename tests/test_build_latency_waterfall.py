@@ -100,6 +100,7 @@ def _five_run_jsonl() -> str:
             _milestone(run, 1, "upload_accepted", origin),
             _milestone(run, 2, "strands_start", origin + timedelta(seconds=10)),
             _milestone(run, 3, "strands_end", origin + timedelta(seconds=60)),
+            _milestone(run, 12, "prepared_review_recorded", origin + timedelta(seconds=59)),
             _milestone(run, 4, "editable_review_available", origin + timedelta(seconds=70)),
             _milestone(run, 5, "product_synchronized", origin + timedelta(seconds=100)),
             _milestone(run, 10, "upload_response_received", origin + timedelta(seconds=1)),
@@ -178,6 +179,7 @@ def test_assembles_five_runs_and_uses_interval_union_for_coverage() -> None:
     assert first["stage_durations_ms"]["upload_to_editable_content"] == 70_000
     assert first["stage_durations_ms"]["upload_to_synchronized_draft"] == 100_000
     assert first["milestones"]["artwork_normalization_completed"] == ("2026-09-05T20:09:59.000000Z")
+    assert first["milestones"]["prepared_review_recorded"] == ("2026-09-05T20:10:59.000000Z")
     assert first["coverage"]["upload_to_synchronized_draft"] == {
         "window_ms": 100_000.0,
         "covered_ms": 90_000.0,

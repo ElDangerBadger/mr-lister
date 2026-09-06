@@ -1,0 +1,3196 @@
+{
+  "format": "mr-lister-latency-waterfall-v1",
+  "release_fingerprint": "3ae13d46db5e11731a5f69f541175d5c540cd93db823629d38cc91a108d790cc",
+  "runs": [
+    {
+      "counts": {
+        "model_invocations": 4,
+        "printify_requests": 14,
+        "strands_cycles": 2
+      },
+      "coverage": {
+        "upload_to_editable_content": {
+          "coverage_percent": 95.58,
+          "covered_interval_count": 3,
+          "covered_ms": 37222.152,
+          "unexplained_gaps": [
+            {
+              "completed_at": "2026-09-06T16:11:20.607585Z",
+              "duration_ms": 1026.346,
+              "started_at": "2026-09-06T16:11:19.581239Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:11:44.488787Z",
+              "duration_ms": 190.041,
+              "started_at": "2026-09-06T16:11:44.298746Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:11:54.987316Z",
+              "duration_ms": 503.776,
+              "started_at": "2026-09-06T16:11:54.483540Z"
+            }
+          ],
+          "unexplained_ms": 1720.163,
+          "window_ms": 38942.315
+        },
+        "upload_to_synchronized_draft": {
+          "coverage_percent": 96.51,
+          "covered_interval_count": 2,
+          "covered_ms": 33685.634,
+          "unexplained_gaps": [
+            {
+              "completed_at": "2026-09-06T16:11:20.607585Z",
+              "duration_ms": 1026.346,
+              "started_at": "2026-09-06T16:11:19.581239Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:11:44.488787Z",
+              "duration_ms": 190.041,
+              "started_at": "2026-09-06T16:11:44.298746Z"
+            }
+          ],
+          "unexplained_ms": 1216.387,
+          "window_ms": 34902.021
+        }
+      },
+      "milestones": {
+        "approval_recorded": null,
+        "artwork_normalization_completed": "2026-09-06T16:11:18.569000Z",
+        "economics_completed": "2026-09-06T16:11:58.523399Z",
+        "editable_review_available": "2026-09-06T16:11:58.523554Z",
+        "etsy_visibility_confirmed": null,
+        "prepared_review_recorded": "2026-09-06T16:11:42.818641Z",
+        "provider_publication_confirmed": null,
+        "provider_publication_submitted": null,
+        "publication_requested": null,
+        "strands_completed": "2026-09-06T16:11:44.172579Z",
+        "strands_started": "2026-09-06T16:11:27.205266Z",
+        "synchronized_draft": "2026-09-06T16:11:54.483260Z",
+        "upload_accepted": "2026-09-06T16:11:19.581239Z",
+        "upload_response_received": "2026-09-06T16:11:20.236000Z"
+      },
+      "missing_optional_milestones": [
+        "approval_recorded",
+        "etsy_visibility_confirmed",
+        "provider_publication_confirmed",
+        "provider_publication_submitted",
+        "publication_requested"
+      ],
+      "printify_requests": [
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:45.210401Z",
+          "component": "printify_draft",
+          "duration_ms": 264.581,
+          "event_id": "ae94cd06c308450fbc5b11efe9b8f3f3",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "shop_identity",
+          "reported_ordinal": null,
+          "route": "/v1/shops.json",
+          "sequence": 1,
+          "started_at": "2026-09-06T16:11:44.945820Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:45.284321Z",
+          "component": "printify_draft",
+          "duration_ms": 73.463,
+          "event_id": "05d67ad831ae4c23be99b25404dda8f4",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "blueprint_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints.json",
+          "sequence": 2,
+          "started_at": "2026-09-06T16:11:45.210861Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:45.423962Z",
+          "component": "printify_draft",
+          "duration_ms": 75.219,
+          "event_id": "e2f3c9e8702d46c18d8bae880c134303",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "print_provider_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers.json",
+          "sequence": 3,
+          "started_at": "2026-09-06T16:11:45.348743Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:45.468896Z",
+          "component": "printify_draft",
+          "duration_ms": 44.431,
+          "event_id": "eb88b9b029b0484e83b341b454363cba",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "variant_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json",
+          "sequence": 4,
+          "started_at": "2026-09-06T16:11:45.424469Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:47.475009Z",
+          "component": "printify_draft",
+          "duration_ms": 1189.243,
+          "event_id": "b9699af75abd432e96b34dba49dc5b09",
+          "method": "POST",
+          "outcome": "succeeded",
+          "purpose": "artwork_upload",
+          "reported_ordinal": null,
+          "route": "/v1/uploads/images.json",
+          "sequence": 5,
+          "started_at": "2026-09-06T16:11:46.285766Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:48.756862Z",
+          "component": "printify_draft",
+          "duration_ms": 265.598,
+          "event_id": "96978734130144b59c18deaf35b0d4f6",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "artwork_upload_readback",
+          "reported_ordinal": null,
+          "route": "/v1/uploads/{image_id}.json",
+          "sequence": 6,
+          "started_at": "2026-09-06T16:11:48.491264Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:53.695630Z",
+          "component": "printify_draft",
+          "duration_ms": 4189.337,
+          "event_id": "09385f195dc54c28b12a1408d14cdb9c",
+          "method": "POST",
+          "outcome": "succeeded",
+          "purpose": "draft_create",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products.json",
+          "sequence": 7,
+          "started_at": "2026-09-06T16:11:49.506297Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:54.251752Z",
+          "component": "printify_draft",
+          "duration_ms": 507.181,
+          "event_id": "1d999fde87d540229153246ec86ac62f",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "draft_readback",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products/{product_id}.json",
+          "sequence": 8,
+          "started_at": "2026-09-06T16:11:53.744572Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:55.488170Z",
+          "component": "printify_draft",
+          "duration_ms": 262.045,
+          "event_id": "d30749aa32bc4120a1b36fd330a7dea9",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "shop_identity",
+          "reported_ordinal": null,
+          "route": "/v1/shops.json",
+          "sequence": 9,
+          "started_at": "2026-09-06T16:11:55.226125Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:55.565660Z",
+          "component": "printify_draft",
+          "duration_ms": 77.056,
+          "event_id": "e694e33d556e400e9b3440e3e8b16e69",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "blueprint_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints.json",
+          "sequence": 10,
+          "started_at": "2026-09-06T16:11:55.488607Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:55.714749Z",
+          "component": "printify_draft",
+          "duration_ms": 85.101,
+          "event_id": "50759aefd7764869a9c8599f4896134d",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "print_provider_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers.json",
+          "sequence": 11,
+          "started_at": "2026-09-06T16:11:55.629647Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:55.766546Z",
+          "component": "printify_draft",
+          "duration_ms": 51.326,
+          "event_id": "877ec4380efb4dec890835206078e925",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "variant_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json",
+          "sequence": 12,
+          "started_at": "2026-09-06T16:11:55.715222Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:56.436692Z",
+          "component": "printify_draft",
+          "duration_ms": 491.93,
+          "event_id": "2ede2dda54f644559a3700c677f2d759",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "product_cost_readback",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products/{product_id}.json",
+          "sequence": 13,
+          "started_at": "2026-09-06T16:11:55.944762Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:56.726889Z",
+          "component": "printify_draft",
+          "duration_ms": 195.836,
+          "event_id": "08cbdceccba74f8386dba8f543a35763",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "standard_shipping",
+          "reported_ordinal": null,
+          "route": "/v2/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/shipping/standard.json",
+          "sequence": 14,
+          "started_at": "2026-09-06T16:11:56.531054Z"
+        }
+      ],
+      "run_id": "0a0bfb473af1b49477679b7c",
+      "spans": [
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:18.569000Z",
+          "component": "seller_web",
+          "cycle": null,
+          "duration_ms": 38.4,
+          "event_id": "7ec2eefd999e44aab98d3d169ab99869",
+          "model_id": null,
+          "name": "artwork_normalization",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:18.531000Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:19.373000Z",
+          "component": "seller_web",
+          "cycle": null,
+          "duration_ms": 479.2,
+          "event_id": "6d78a36a5ca54a9cba5b186fa6a0c75d",
+          "model_id": null,
+          "name": "direct_artwork_upload",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:18.894000Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:44.298746Z",
+          "component": "phase6_preparation",
+          "cycle": null,
+          "duration_ms": 23691.161,
+          "event_id": "9a1c799937734adbb4fa31bf46b57d07",
+          "model_id": null,
+          "name": "agentcore_preparation_bridge",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:20.607585Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:44.172508Z",
+          "component": "strands_controller",
+          "cycle": null,
+          "duration_ms": 16967.059,
+          "event_id": "0a142ef858624eee95d9e3170bcad682",
+          "model_id": null,
+          "name": "strands_execution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:27.205448Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:42.819329Z",
+          "component": "strands_controller",
+          "cycle": 1,
+          "duration_ms": 15608.351,
+          "event_id": "b49dfa41c39543058e3a291ce5ae5541",
+          "model_id": null,
+          "name": "strands_cycle",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:27.210978Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:11:27.765366Z",
+          "component": "strands_controller",
+          "cycle": 1,
+          "duration_ms": 554.011,
+          "event_id": "8494ef9c82eb4593a0aa442ea038a142",
+          "model_id": "us.amazon.nova-2-lite-v1:0",
+          "name": "strands_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:27.211358Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:42.758586Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 14649.182,
+          "event_id": "7e35780e9c134388bd093eacd19fb051",
+          "model_id": null,
+          "name": "artwork_listing_intelligence",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:28.109400Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:11:38.370508Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 4584.181,
+          "event_id": "a1af3ceccdcd48488a87097d4eb54139",
+          "model_id": "google.gemma-3-27b-it",
+          "name": "inspect_artwork_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:33.786327Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:11:42.757855Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 4384.87,
+          "event_id": "2d0fe2d965a94e9ebff249ed41987dea",
+          "model_id": "google.gemma-3-27b-it",
+          "name": "draft_listing_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:38.372986Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:44.099542Z",
+          "component": "strands_controller",
+          "cycle": 2,
+          "duration_ms": 1280.169,
+          "event_id": "e50f6629219c414f8a9eb9df5280b88a",
+          "model_id": null,
+          "name": "strands_cycle",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:42.819374Z"
+        },
+        {
+          "attempt": 2,
+          "completed_at": "2026-09-06T16:11:44.098162Z",
+          "component": "strands_controller",
+          "cycle": 2,
+          "duration_ms": 1278.614,
+          "event_id": "7b2576fe5d1d4266a027f2a694819fec",
+          "model_id": "us.amazon.nova-2-lite-v1:0",
+          "name": "strands_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:42.819551Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:54.483540Z",
+          "component": "phase6_provider",
+          "cycle": null,
+          "duration_ms": 9994.75,
+          "event_id": "ebb3c2204e894a7d92de43faca617773",
+          "model_id": null,
+          "name": "synchronize_product",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:44.488787Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:45.472217Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 768.653,
+          "event_id": "c8ad51243c2649039f1639256674e87b",
+          "model_id": null,
+          "name": "catalog_profile_provider_preparation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:44.703565Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:44.847447Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 143.871,
+          "event_id": "3c2233d7e31a4745bdb9e145a2e239e4",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:44.703578Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:48.366249Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 2521.21,
+          "event_id": "b74e38e718054ff1a96d962a9532ff4c",
+          "model_id": null,
+          "name": "printify_artwork_upload",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:45.845041Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:46.069133Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 43.523,
+          "event_id": "16435f15e0cc443e863e1e69d4c5370d",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:46.025608Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:48.403365Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 35.428,
+          "event_id": "b24bff4715674e818d97eb0b8e110f41",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:48.367936Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:49.209035Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 45.528,
+          "event_id": "f9d49698aba1417a97cb365aac133633",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:49.163505Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:54.258472Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 4752.722,
+          "event_id": "07f05a087ddd4d87a78d74f500d6b67b",
+          "model_id": null,
+          "name": "draft_create_update",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:49.505751Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:58.524770Z",
+          "component": "phase6_provider",
+          "cycle": null,
+          "duration_ms": 3537.451,
+          "event_id": "3888409216574c85b9c78bdfc63ca7c2",
+          "model_id": null,
+          "name": "refresh_economics",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:54.987316Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:55.769922Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 681.443,
+          "event_id": "5af99183ab9c46f69c85de3b76b1cc9d",
+          "model_id": null,
+          "name": "catalog_profile_provider_preparation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:55.088481Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:55.107489Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 19.0,
+          "event_id": "9174e79695764a178d680854919432b6",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:55.088491Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:55.826491Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 22.702,
+          "event_id": "18a400c89db0479093c0450e7bbc6773",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:55.803786Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:56.463304Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 23.901,
+          "event_id": "e996d9fcde7b426281cce70dbf2ffba3",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:56.439403Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:11:58.310047Z",
+          "component": "phase6_economics",
+          "cycle": null,
+          "duration_ms": 0.871,
+          "event_id": "c33dc3dee1974d2a8cb3ddd53c9ab0fc",
+          "model_id": null,
+          "name": "economics_calculation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:11:58.309172Z"
+        }
+      ],
+      "stage_durations_ms": {
+        "approval_to_provider_submission": null,
+        "provider_confirmation_to_etsy_visibility": null,
+        "provider_submission_to_confirmation": null,
+        "publication_request_to_provider_submission": null,
+        "strands_execution": 16967.313000000002,
+        "strands_to_editable_review": 14350.975,
+        "strands_to_synchronized_draft": 10310.681,
+        "synchronized_draft_to_economics": 4040.139,
+        "upload_to_editable_content": 38942.315,
+        "upload_to_strands_start": 7624.027,
+        "upload_to_synchronized_draft": 34902.021
+      }
+    },
+    {
+      "counts": {
+        "model_invocations": 4,
+        "printify_requests": 14,
+        "strands_cycles": 2
+      },
+      "coverage": {
+        "upload_to_editable_content": {
+          "coverage_percent": 95.94,
+          "covered_interval_count": 3,
+          "covered_ms": 43225.094,
+          "unexplained_gaps": [
+            {
+              "completed_at": "2026-09-06T16:12:58.824973Z",
+              "duration_ms": 958.053,
+              "started_at": "2026-09-06T16:12:57.866920Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:13:29.350989Z",
+              "duration_ms": 513.416,
+              "started_at": "2026-09-06T16:13:28.837573Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:13:39.367347Z",
+              "duration_ms": 356.878,
+              "started_at": "2026-09-06T16:13:39.010469Z"
+            }
+          ],
+          "unexplained_ms": 1828.347,
+          "window_ms": 45053.441
+        },
+        "upload_to_synchronized_draft": {
+          "coverage_percent": 96.42,
+          "covered_interval_count": 2,
+          "covered_ms": 39671.77,
+          "unexplained_gaps": [
+            {
+              "completed_at": "2026-09-06T16:12:58.824973Z",
+              "duration_ms": 958.053,
+              "started_at": "2026-09-06T16:12:57.866920Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:13:29.350989Z",
+              "duration_ms": 513.416,
+              "started_at": "2026-09-06T16:13:28.837573Z"
+            }
+          ],
+          "unexplained_ms": 1471.469,
+          "window_ms": 41143.239
+        }
+      },
+      "milestones": {
+        "approval_recorded": null,
+        "artwork_normalization_completed": "2026-09-06T16:12:56.434000Z",
+        "economics_completed": "2026-09-06T16:13:42.920188Z",
+        "editable_review_available": "2026-09-06T16:13:42.920361Z",
+        "etsy_visibility_confirmed": null,
+        "prepared_review_recorded": "2026-09-06T16:13:27.281275Z",
+        "provider_publication_confirmed": null,
+        "provider_publication_submitted": null,
+        "publication_requested": null,
+        "strands_completed": "2026-09-06T16:13:28.709371Z",
+        "strands_started": "2026-09-06T16:13:04.811616Z",
+        "synchronized_draft": "2026-09-06T16:13:39.010159Z",
+        "upload_accepted": "2026-09-06T16:12:57.866920Z",
+        "upload_response_received": "2026-09-06T16:12:58.469000Z"
+      },
+      "missing_optional_milestones": [
+        "approval_recorded",
+        "etsy_visibility_confirmed",
+        "provider_publication_confirmed",
+        "provider_publication_submitted",
+        "publication_requested"
+      ],
+      "printify_requests": [
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:29.995218Z",
+          "component": "printify_draft",
+          "duration_ms": 255.88,
+          "event_id": "ba9c5da76566445d8a0a621a5f2eb486",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "shop_identity",
+          "reported_ordinal": null,
+          "route": "/v1/shops.json",
+          "sequence": 1,
+          "started_at": "2026-09-06T16:13:29.739338Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:30.079171Z",
+          "component": "printify_draft",
+          "duration_ms": 83.504,
+          "event_id": "38b5b0e9ce5041aabdfd3c1ea77cf2d1",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "blueprint_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints.json",
+          "sequence": 2,
+          "started_at": "2026-09-06T16:13:29.995674Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:30.210817Z",
+          "component": "printify_draft",
+          "duration_ms": 67.335,
+          "event_id": "2e6022c1d7264995a49c90f816e40837",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "print_provider_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers.json",
+          "sequence": 3,
+          "started_at": "2026-09-06T16:13:30.143482Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:30.265753Z",
+          "component": "printify_draft",
+          "duration_ms": 54.452,
+          "event_id": "545f3418486e4204a19e2aff560bfa94",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "variant_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json",
+          "sequence": 4,
+          "started_at": "2026-09-06T16:13:30.211305Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:31.775621Z",
+          "component": "printify_draft",
+          "duration_ms": 709.087,
+          "event_id": "b40b9a8dac144829b509e0a95aa3981e",
+          "method": "POST",
+          "outcome": "succeeded",
+          "purpose": "artwork_upload",
+          "reported_ordinal": null,
+          "route": "/v1/uploads/images.json",
+          "sequence": 5,
+          "started_at": "2026-09-06T16:13:31.066534Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:33.010244Z",
+          "component": "printify_draft",
+          "duration_ms": 261.834,
+          "event_id": "329ae158f8534514b8eb481ee3bec077",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "artwork_upload_readback",
+          "reported_ordinal": null,
+          "route": "/v1/uploads/{image_id}.json",
+          "sequence": 6,
+          "started_at": "2026-09-06T16:13:32.748409Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:38.122415Z",
+          "component": "printify_draft",
+          "duration_ms": 4342.0,
+          "event_id": "db100b291e0140c3a303352302291b18",
+          "method": "POST",
+          "outcome": "succeeded",
+          "purpose": "draft_create",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products.json",
+          "sequence": 7,
+          "started_at": "2026-09-06T16:13:33.780418Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:38.785311Z",
+          "component": "printify_draft",
+          "duration_ms": 624.201,
+          "event_id": "f96533cc3ef4413aa3ec8c01c7e4731e",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "draft_readback",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products/{product_id}.json",
+          "sequence": 8,
+          "started_at": "2026-09-06T16:13:38.161109Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:39.854206Z",
+          "component": "printify_draft",
+          "duration_ms": 253.021,
+          "event_id": "a067e812208f44fbbfb6f3b55e091e6d",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "shop_identity",
+          "reported_ordinal": null,
+          "route": "/v1/shops.json",
+          "sequence": 9,
+          "started_at": "2026-09-06T16:13:39.601186Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:39.940456Z",
+          "component": "printify_draft",
+          "duration_ms": 85.775,
+          "event_id": "9ea1e3d3053048e5b83a6ef3477b8102",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "blueprint_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints.json",
+          "sequence": 10,
+          "started_at": "2026-09-06T16:13:39.854684Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:40.119973Z",
+          "component": "printify_draft",
+          "duration_ms": 58.872,
+          "event_id": "a51eda3fe2ce4f0ba8110f0756abcf43",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "print_provider_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers.json",
+          "sequence": 11,
+          "started_at": "2026-09-06T16:13:40.061101Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:40.171297Z",
+          "component": "printify_draft",
+          "duration_ms": 50.793,
+          "event_id": "1dcfd2cb0ec84b40b99774c37436cbca",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "variant_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json",
+          "sequence": 12,
+          "started_at": "2026-09-06T16:13:40.120507Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:40.873661Z",
+          "component": "printify_draft",
+          "duration_ms": 528.23,
+          "event_id": "663da69a3c6549d282ed33b10c53da7c",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "product_cost_readback",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products/{product_id}.json",
+          "sequence": 13,
+          "started_at": "2026-09-06T16:13:40.345432Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:41.201043Z",
+          "component": "printify_draft",
+          "duration_ms": 178.351,
+          "event_id": "1cfd91b5998d481abb3c250a3e54cb15",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "standard_shipping",
+          "reported_ordinal": null,
+          "route": "/v2/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/shipping/standard.json",
+          "sequence": 14,
+          "started_at": "2026-09-06T16:13:41.022693Z"
+        }
+      ],
+      "run_id": "4c31b9d0659a7d7cac925bbf",
+      "spans": [
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:12:56.434000Z",
+          "component": "seller_web",
+          "cycle": null,
+          "duration_ms": 38.0,
+          "event_id": "f16d926dd85140349480f190885500bc",
+          "model_id": null,
+          "name": "artwork_normalization",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:12:56.396000Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:12:57.701000Z",
+          "component": "seller_web",
+          "cycle": null,
+          "duration_ms": 807.8,
+          "event_id": "921daadd406144b18b03fb5edea32cd8",
+          "model_id": null,
+          "name": "direct_artwork_upload",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:12:56.893000Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:28.837573Z",
+          "component": "phase6_preparation",
+          "cycle": null,
+          "duration_ms": 30012.6,
+          "event_id": "df0574f0b687474e8007424f2578a1ee",
+          "model_id": null,
+          "name": "agentcore_preparation_bridge",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:12:58.824973Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:28.709305Z",
+          "component": "strands_controller",
+          "cycle": null,
+          "duration_ms": 23897.298,
+          "event_id": "a9d732ab7d0940dd97978176742d3577",
+          "model_id": null,
+          "name": "strands_execution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:04.812005Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:27.281955Z",
+          "component": "strands_controller",
+          "cycle": 1,
+          "duration_ms": 22463.452,
+          "event_id": "6b7daefbce6e4836ab30ad091b3825e5",
+          "model_id": null,
+          "name": "strands_cycle",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:04.818502Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:13:05.445006Z",
+          "component": "strands_controller",
+          "cycle": 1,
+          "duration_ms": 626.087,
+          "event_id": "e11aa170ce7c4bf1a061168d2d4b5e93",
+          "model_id": "us.amazon.nova-2-lite-v1:0",
+          "name": "strands_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:04.818921Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:27.224553Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 21452.635,
+          "event_id": "caf9f800961d4276af90bf9a70819109",
+          "model_id": null,
+          "name": "artwork_listing_intelligence",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:05.771915Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:13:21.411499Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 10017.911,
+          "event_id": "9f3936aa00d54913b1a2e3011afe8b77",
+          "model_id": "google.gemma-3-27b-it",
+          "name": "inspect_artwork_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:11.393588Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:13:27.223760Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 5809.662,
+          "event_id": "750b47ea99fb46aebb1b07868f8ef114",
+          "model_id": "google.gemma-3-27b-it",
+          "name": "draft_listing_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:21.414101Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:28.633414Z",
+          "component": "strands_controller",
+          "cycle": 2,
+          "duration_ms": 1351.415,
+          "event_id": "d128d423f1de46469eb1959b393f48b9",
+          "model_id": null,
+          "name": "strands_cycle",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:27.281999Z"
+        },
+        {
+          "attempt": 2,
+          "completed_at": "2026-09-06T16:13:28.632187Z",
+          "component": "strands_controller",
+          "cycle": 2,
+          "duration_ms": 1350.014,
+          "event_id": "c27e7b7e304c4cd6b3b66008dacc2e5e",
+          "model_id": "us.amazon.nova-2-lite-v1:0",
+          "name": "strands_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:27.282176Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:39.010469Z",
+          "component": "phase6_provider",
+          "cycle": null,
+          "duration_ms": 9659.477,
+          "event_id": "c8cb6e35a45246bfb45dde1513c18ef7",
+          "model_id": null,
+          "name": "synchronize_product",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:29.350989Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:30.279574Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 799.333,
+          "event_id": "2c3c11d154cd4918a8c496fc8f2d0b3b",
+          "model_id": null,
+          "name": "catalog_profile_provider_preparation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:29.480243Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:29.620616Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 140.361,
+          "event_id": "1d3400e0bcbd45ef8700beee911eecbc",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:29.480257Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:32.607230Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 1959.061,
+          "event_id": "133f3f0e4c594ca79403ae14e7953363",
+          "model_id": null,
+          "name": "printify_artwork_upload",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:30.648171Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:30.860675Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 39.026,
+          "event_id": "1b54a8053a2a4375875646617d2159f3",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:30.821647Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:32.680059Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 72.56,
+          "event_id": "2b66e3f186f34ee8ad3b805d6b775486",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:32.607500Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:33.461284Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 21.026,
+          "event_id": "445787a1190345789b21adbac68ef799",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:33.440257Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:38.802186Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 5022.307,
+          "event_id": "deba7d3d097a4904bf3a86273673edfc",
+          "model_id": null,
+          "name": "draft_create_update",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:33.779880Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:42.921603Z",
+          "component": "phase6_provider",
+          "cycle": null,
+          "duration_ms": 3554.267,
+          "event_id": "4f245f37b20e48dfa341cf14d76f06e8",
+          "model_id": null,
+          "name": "refresh_economics",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:39.367347Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:40.175169Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 714.965,
+          "event_id": "a65596957bd94681935261ebce688874",
+          "model_id": null,
+          "name": "catalog_profile_provider_preparation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:39.460206Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:39.482683Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 22.465,
+          "event_id": "d88602921e604ed98eaff1d2b904b1e2",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:39.460220Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:40.266261Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 45.695,
+          "event_id": "2eecf1e0fa6f40ac95342478ec7644d5",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:40.220564Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:40.914104Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 37.597,
+          "event_id": "fad79fba9c374ef882deb8dc41c078fe",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:40.876507Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:13:42.707629Z",
+          "component": "phase6_economics",
+          "cycle": null,
+          "duration_ms": 0.898,
+          "event_id": "594b2d2eb9c746fdad97682c6562234f",
+          "model_id": null,
+          "name": "economics_calculation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:13:42.706726Z"
+        }
+      ],
+      "stage_durations_ms": {
+        "approval_to_provider_submission": null,
+        "provider_confirmation_to_etsy_visibility": null,
+        "provider_submission_to_confirmation": null,
+        "publication_request_to_provider_submission": null,
+        "strands_execution": 23897.755,
+        "strands_to_editable_review": 14210.99,
+        "strands_to_synchronized_draft": 10300.788,
+        "synchronized_draft_to_economics": 3910.029,
+        "upload_to_editable_content": 45053.441,
+        "upload_to_strands_start": 6944.696000000001,
+        "upload_to_synchronized_draft": 41143.239
+      }
+    },
+    {
+      "counts": {
+        "model_invocations": 4,
+        "printify_requests": 14,
+        "strands_cycles": 2
+      },
+      "coverage": {
+        "upload_to_editable_content": {
+          "coverage_percent": 94.85,
+          "covered_interval_count": 3,
+          "covered_ms": 42794.014,
+          "unexplained_gaps": [
+            {
+              "completed_at": "2026-09-06T16:15:57.499037Z",
+              "duration_ms": 1123.019,
+              "started_at": "2026-09-06T16:15:56.376018Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:16:27.938927Z",
+              "duration_ms": 543.222,
+              "started_at": "2026-09-06T16:16:27.395705Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:16:38.013013Z",
+              "duration_ms": 658.326,
+              "started_at": "2026-09-06T16:16:37.354687Z"
+            }
+          ],
+          "unexplained_ms": 2324.567,
+          "window_ms": 45118.581
+        },
+        "upload_to_synchronized_draft": {
+          "coverage_percent": 95.93,
+          "covered_interval_count": 2,
+          "covered_ms": 39312.146,
+          "unexplained_gaps": [
+            {
+              "completed_at": "2026-09-06T16:15:57.499037Z",
+              "duration_ms": 1123.019,
+              "started_at": "2026-09-06T16:15:56.376018Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:16:27.938927Z",
+              "duration_ms": 543.222,
+              "started_at": "2026-09-06T16:16:27.395705Z"
+            }
+          ],
+          "unexplained_ms": 1666.241,
+          "window_ms": 40978.387
+        }
+      },
+      "milestones": {
+        "approval_recorded": null,
+        "artwork_normalization_completed": "2026-09-06T16:15:55.167000Z",
+        "economics_completed": "2026-09-06T16:16:41.494439Z",
+        "editable_review_available": "2026-09-06T16:16:41.494599Z",
+        "etsy_visibility_confirmed": null,
+        "prepared_review_recorded": "2026-09-06T16:16:26.331950Z",
+        "provider_publication_confirmed": null,
+        "provider_publication_submitted": null,
+        "publication_requested": null,
+        "strands_completed": "2026-09-06T16:16:27.269928Z",
+        "strands_started": "2026-09-06T16:16:06.123241Z",
+        "synchronized_draft": "2026-09-06T16:16:37.354405Z",
+        "upload_accepted": "2026-09-06T16:15:56.376018Z",
+        "upload_response_received": "2026-09-06T16:15:57.032000Z"
+      },
+      "missing_optional_milestones": [
+        "approval_recorded",
+        "etsy_visibility_confirmed",
+        "provider_publication_confirmed",
+        "provider_publication_submitted",
+        "publication_requested"
+      ],
+      "printify_requests": [
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:28.716054Z",
+          "component": "printify_draft",
+          "duration_ms": 279.766,
+          "event_id": "f75a7ae6794140e382caf19e96bee48d",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "shop_identity",
+          "reported_ordinal": null,
+          "route": "/v1/shops.json",
+          "sequence": 1,
+          "started_at": "2026-09-06T16:16:28.436290Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:28.815042Z",
+          "component": "printify_draft",
+          "duration_ms": 98.318,
+          "event_id": "bef5cd695a074b25a2c4419ca53a81cd",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "blueprint_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints.json",
+          "sequence": 2,
+          "started_at": "2026-09-06T16:16:28.716727Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:28.966322Z",
+          "component": "printify_draft",
+          "duration_ms": 85.429,
+          "event_id": "d3b62041fd2f4deebe6be4534867b40f",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "print_provider_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers.json",
+          "sequence": 3,
+          "started_at": "2026-09-06T16:16:28.880894Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:29.016708Z",
+          "component": "printify_draft",
+          "duration_ms": 49.901,
+          "event_id": "8f5d27fc38844f0787f872f289c876e9",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "variant_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json",
+          "sequence": 4,
+          "started_at": "2026-09-06T16:16:28.966810Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:30.546055Z",
+          "component": "printify_draft",
+          "duration_ms": 724.33,
+          "event_id": "eabbede2110a4b3e8ad87a2ce2a56f4c",
+          "method": "POST",
+          "outcome": "succeeded",
+          "purpose": "artwork_upload",
+          "reported_ordinal": null,
+          "route": "/v1/uploads/images.json",
+          "sequence": 5,
+          "started_at": "2026-09-06T16:16:29.821724Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:31.809354Z",
+          "component": "printify_draft",
+          "duration_ms": 266.551,
+          "event_id": "8418ab9c510d428ea4acd84c906db222",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "artwork_upload_readback",
+          "reported_ordinal": null,
+          "route": "/v1/uploads/{image_id}.json",
+          "sequence": 6,
+          "started_at": "2026-09-06T16:16:31.542803Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:36.567299Z",
+          "component": "printify_draft",
+          "duration_ms": 4012.481,
+          "event_id": "c3a08aa33e954e6982d4e6b9a57240e8",
+          "method": "POST",
+          "outcome": "succeeded",
+          "purpose": "draft_create",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products.json",
+          "sequence": 7,
+          "started_at": "2026-09-06T16:16:32.554821Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:37.114676Z",
+          "component": "printify_draft",
+          "duration_ms": 498.437,
+          "event_id": "636b99f2357240fba1139c72999a54da",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "draft_readback",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products/{product_id}.json",
+          "sequence": 8,
+          "started_at": "2026-09-06T16:16:36.616239Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:38.513287Z",
+          "component": "printify_draft",
+          "duration_ms": 273.192,
+          "event_id": "b6942e230b9d405f846dad5a6c550970",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "shop_identity",
+          "reported_ordinal": null,
+          "route": "/v1/shops.json",
+          "sequence": 9,
+          "started_at": "2026-09-06T16:16:38.240095Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:38.594519Z",
+          "component": "printify_draft",
+          "duration_ms": 80.762,
+          "event_id": "d36a86fc7be643bdb4daff170473add3",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "blueprint_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints.json",
+          "sequence": 10,
+          "started_at": "2026-09-06T16:16:38.513761Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:38.728118Z",
+          "component": "printify_draft",
+          "duration_ms": 69.571,
+          "event_id": "8a53c51a4e7845618be6de0c083f6b3d",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "print_provider_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers.json",
+          "sequence": 11,
+          "started_at": "2026-09-06T16:16:38.658547Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:38.777109Z",
+          "component": "printify_draft",
+          "duration_ms": 48.515,
+          "event_id": "9ad68854db3c440dbc993651ad350374",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "variant_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json",
+          "sequence": 12,
+          "started_at": "2026-09-06T16:16:38.728598Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:39.530470Z",
+          "component": "printify_draft",
+          "duration_ms": 555.392,
+          "event_id": "b514dab4ba814ad4b0d615dbd2559697",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "product_cost_readback",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products/{product_id}.json",
+          "sequence": 13,
+          "started_at": "2026-09-06T16:16:38.975078Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:39.835743Z",
+          "component": "printify_draft",
+          "duration_ms": 194.239,
+          "event_id": "508e9a48d7b84a8f9001da30cbb49774",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "standard_shipping",
+          "reported_ordinal": null,
+          "route": "/v2/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/shipping/standard.json",
+          "sequence": 14,
+          "started_at": "2026-09-06T16:16:39.641503Z"
+        }
+      ],
+      "run_id": "8287655fa886105f69ca8454",
+      "spans": [
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:15:55.167000Z",
+          "component": "seller_web",
+          "cycle": null,
+          "duration_ms": 37.9,
+          "event_id": "eb4fee62eb874ebf8b8789c4d44dac9d",
+          "model_id": null,
+          "name": "artwork_normalization",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:15:55.129000Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:15:56.234000Z",
+          "component": "seller_web",
+          "cycle": null,
+          "duration_ms": 695.7,
+          "event_id": "f3dc6489948b4ebbbd05f91340c22ff9",
+          "model_id": null,
+          "name": "direct_artwork_upload",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:15:55.539000Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:27.395705Z",
+          "component": "phase6_preparation",
+          "cycle": null,
+          "duration_ms": 29896.667,
+          "event_id": "de694f4e4bee4e6a9b954d5182c3029d",
+          "model_id": null,
+          "name": "agentcore_preparation_bridge",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:15:57.499037Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:27.269847Z",
+          "component": "strands_controller",
+          "cycle": null,
+          "duration_ms": 21146.381,
+          "event_id": "fe54f4e4a55946138860a0aebc8286f5",
+          "model_id": null,
+          "name": "strands_execution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:06.123464Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:26.332754Z",
+          "component": "strands_controller",
+          "cycle": 1,
+          "duration_ms": 20201.147,
+          "event_id": "7730aed833504b88aadca22890161e41",
+          "model_id": null,
+          "name": "strands_cycle",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:06.131607Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:16:06.657776Z",
+          "component": "strands_controller",
+          "cycle": 1,
+          "duration_ms": 525.662,
+          "event_id": "db87ea6779a8439b9d7ac7010d5e0194",
+          "model_id": "us.amazon.nova-2-lite-v1:0",
+          "name": "strands_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:06.132116Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:26.262843Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 19206.038,
+          "event_id": "0f7ac7990d234df68a4a7bfb3d675b64",
+          "model_id": null,
+          "name": "artwork_listing_intelligence",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:07.056801Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:16:20.821573Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 7567.128,
+          "event_id": "6e07536a0c344733b4655938f320a7af",
+          "model_id": "google.gemma-3-27b-it",
+          "name": "inspect_artwork_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:13.254446Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:16:26.261963Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 5437.702,
+          "event_id": "0dcd2beacc30471fbfc918dd25e2dd74",
+          "model_id": "google.gemma-3-27b-it",
+          "name": "draft_listing_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:20.824263Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:27.183516Z",
+          "component": "strands_controller",
+          "cycle": 2,
+          "duration_ms": 850.706,
+          "event_id": "740248a601e24f0ba7f2a3bb99fe5b57",
+          "model_id": null,
+          "name": "strands_cycle",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:26.332810Z"
+        },
+        {
+          "attempt": 2,
+          "completed_at": "2026-09-06T16:16:27.182328Z",
+          "component": "strands_controller",
+          "cycle": 2,
+          "duration_ms": 849.303,
+          "event_id": "3107137a48d849d1b2836f0f524fa8f5",
+          "model_id": "us.amazon.nova-2-lite-v1:0",
+          "name": "strands_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:26.333027Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:37.354687Z",
+          "component": "phase6_provider",
+          "cycle": null,
+          "duration_ms": 9415.757,
+          "event_id": "6af574daf15a4ac286ec6463084b2705",
+          "model_id": null,
+          "name": "synchronize_product",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:27.938927Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:29.020415Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 845.668,
+          "event_id": "97151a5055a343e19465d7ed004b8227",
+          "model_id": null,
+          "name": "catalog_profile_provider_preparation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:28.174749Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:28.315510Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 140.751,
+          "event_id": "8d87e5e75573480db7a72dc0cff21329",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:28.174762Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:31.438066Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 2041.005,
+          "event_id": "df56d1b3fed9446e93f7b4373c560e86",
+          "model_id": null,
+          "name": "printify_artwork_upload",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:29.397063Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:29.614483Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 38.859,
+          "event_id": "ec7eec89478a4cf98105439f3a7f69b6",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:29.575621Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:31.474465Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 36.114,
+          "event_id": "0dcde8994c3e4b37a87cb527da2b7b09",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:31.438353Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:32.256112Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 21.633,
+          "event_id": "db36ce4ea681440c90168effe055f611",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:32.234479Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:37.121216Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 4566.924,
+          "event_id": "82124da7383c405397d7de8476c4ac56",
+          "model_id": null,
+          "name": "draft_create_update",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:32.554293Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:41.495972Z",
+          "component": "phase6_provider",
+          "cycle": null,
+          "duration_ms": 3482.958,
+          "event_id": "9ac90cf076d44e02ac2f3a141005aa06",
+          "model_id": null,
+          "name": "refresh_economics",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:38.013013Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:38.780791Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 661.948,
+          "event_id": "682c1557759841fe87b8898ce115c848",
+          "model_id": null,
+          "name": "catalog_profile_provider_preparation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:38.118845Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:38.141344Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 22.488,
+          "event_id": "df9c2db8d3ac4a1baaffa79323240db2",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:38.118857Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:38.856734Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 21.86,
+          "event_id": "dcebaafb0fdc492ea23ef1e8c7969460",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:38.834872Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:39.573479Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 40.31,
+          "event_id": "0343b5f1e204423a8283aaad2ca3ea3f",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:39.533169Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:16:41.333719Z",
+          "component": "phase6_economics",
+          "cycle": null,
+          "duration_ms": 71.019,
+          "event_id": "9e52e56aec46425a86cfed1e379f0283",
+          "model_id": null,
+          "name": "economics_calculation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:16:41.262699Z"
+        }
+      ],
+      "stage_durations_ms": {
+        "approval_to_provider_submission": null,
+        "provider_confirmation_to_etsy_visibility": null,
+        "provider_submission_to_confirmation": null,
+        "publication_request_to_provider_submission": null,
+        "strands_execution": 21146.687,
+        "strands_to_editable_review": 14224.671,
+        "strands_to_synchronized_draft": 10084.476999999999,
+        "synchronized_draft_to_economics": 4140.034,
+        "upload_to_editable_content": 45118.581,
+        "upload_to_strands_start": 9747.223,
+        "upload_to_synchronized_draft": 40978.386999999995
+      }
+    },
+    {
+      "counts": {
+        "model_invocations": 4,
+        "printify_requests": 14,
+        "strands_cycles": 2
+      },
+      "coverage": {
+        "upload_to_editable_content": {
+          "coverage_percent": 95.98,
+          "covered_interval_count": 3,
+          "covered_ms": 43087.115,
+          "unexplained_gaps": [
+            {
+              "completed_at": "2026-09-06T16:17:42.237806Z",
+              "duration_ms": 1058.337,
+              "started_at": "2026-09-06T16:17:41.179469Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:18:10.748509Z",
+              "duration_ms": 273.68,
+              "started_at": "2026-09-06T16:18:10.474829Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:18:21.764361Z",
+              "duration_ms": 472.928,
+              "started_at": "2026-09-06T16:18:21.291433Z"
+            }
+          ],
+          "unexplained_ms": 1804.945,
+          "window_ms": 44892.06
+        },
+        "upload_to_synchronized_draft": {
+          "coverage_percent": 96.68,
+          "covered_interval_count": 2,
+          "covered_ms": 38779.675,
+          "unexplained_gaps": [
+            {
+              "completed_at": "2026-09-06T16:17:42.237806Z",
+              "duration_ms": 1058.337,
+              "started_at": "2026-09-06T16:17:41.179469Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:18:10.748509Z",
+              "duration_ms": 273.68,
+              "started_at": "2026-09-06T16:18:10.474829Z"
+            }
+          ],
+          "unexplained_ms": 1332.017,
+          "window_ms": 40111.692
+        }
+      },
+      "milestones": {
+        "approval_recorded": null,
+        "artwork_normalization_completed": "2026-09-06T16:17:39.750000Z",
+        "economics_completed": "2026-09-06T16:18:26.071366Z",
+        "editable_review_available": "2026-09-06T16:18:26.071529Z",
+        "etsy_visibility_confirmed": null,
+        "prepared_review_recorded": "2026-09-06T16:18:09.330845Z",
+        "provider_publication_confirmed": null,
+        "provider_publication_submitted": null,
+        "publication_requested": null,
+        "strands_completed": "2026-09-06T16:18:10.335427Z",
+        "strands_started": "2026-09-06T16:17:48.338698Z",
+        "synchronized_draft": "2026-09-06T16:18:21.291161Z",
+        "upload_accepted": "2026-09-06T16:17:41.179469Z",
+        "upload_response_received": "2026-09-06T16:17:41.822000Z"
+      },
+      "missing_optional_milestones": [
+        "approval_recorded",
+        "etsy_visibility_confirmed",
+        "provider_publication_confirmed",
+        "provider_publication_submitted",
+        "publication_requested"
+      ],
+      "printify_requests": [
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:11.513320Z",
+          "component": "printify_draft",
+          "duration_ms": 242.655,
+          "event_id": "a45e8f74fb184ab59a94149972c0402a",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "shop_identity",
+          "reported_ordinal": null,
+          "route": "/v1/shops.json",
+          "sequence": 1,
+          "started_at": "2026-09-06T16:18:11.270664Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:11.597262Z",
+          "component": "printify_draft",
+          "duration_ms": 83.476,
+          "event_id": "287da48d034c4597868cb0bf99b3a564",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "blueprint_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints.json",
+          "sequence": 2,
+          "started_at": "2026-09-06T16:18:11.513788Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:11.749930Z",
+          "component": "printify_draft",
+          "duration_ms": 74.174,
+          "event_id": "3438537d09154dda87cc65a4c556d4e9",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "print_provider_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers.json",
+          "sequence": 3,
+          "started_at": "2026-09-06T16:18:11.675757Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:11.799245Z",
+          "component": "printify_draft",
+          "duration_ms": 48.666,
+          "event_id": "ecb0e3cf03594af8bc63381fc958fcca",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "variant_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json",
+          "sequence": 4,
+          "started_at": "2026-09-06T16:18:11.750581Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:13.915684Z",
+          "component": "printify_draft",
+          "duration_ms": 1243.378,
+          "event_id": "b92dd08663844bf292ddff814d15da00",
+          "method": "POST",
+          "outcome": "succeeded",
+          "purpose": "artwork_upload",
+          "reported_ordinal": null,
+          "route": "/v1/uploads/images.json",
+          "sequence": 5,
+          "started_at": "2026-09-06T16:18:12.672306Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:15.155320Z",
+          "component": "printify_draft",
+          "duration_ms": 235.664,
+          "event_id": "088023abc64d4294b2c76e9b418e1f94",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "artwork_upload_readback",
+          "reported_ordinal": null,
+          "route": "/v1/uploads/{image_id}.json",
+          "sequence": 6,
+          "started_at": "2026-09-06T16:18:14.919655Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:20.535921Z",
+          "component": "printify_draft",
+          "duration_ms": 4602.401,
+          "event_id": "e8255ba9b9ab4a6280b457e6cb5a8888",
+          "method": "POST",
+          "outcome": "succeeded",
+          "purpose": "draft_create",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products.json",
+          "sequence": 7,
+          "started_at": "2026-09-06T16:18:15.933523Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:21.052374Z",
+          "component": "printify_draft",
+          "duration_ms": 498.219,
+          "event_id": "1288d33f3a034c838ed9005f1d6dc6f2",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "draft_readback",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products/{product_id}.json",
+          "sequence": 8,
+          "started_at": "2026-09-06T16:18:20.554156Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:22.271496Z",
+          "component": "printify_draft",
+          "duration_ms": 260.176,
+          "event_id": "49b75b8e6fa6473c9383c1b29a2fc885",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "shop_identity",
+          "reported_ordinal": null,
+          "route": "/v1/shops.json",
+          "sequence": 9,
+          "started_at": "2026-09-06T16:18:22.011320Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:22.352499Z",
+          "component": "printify_draft",
+          "duration_ms": 80.538,
+          "event_id": "f8fe3fe013db4dfd943aaa3d359628b8",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "blueprint_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints.json",
+          "sequence": 10,
+          "started_at": "2026-09-06T16:18:22.271965Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:22.505920Z",
+          "component": "printify_draft",
+          "duration_ms": 89.298,
+          "event_id": "718d0aa0e4b244e5be395431030ccec6",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "print_provider_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers.json",
+          "sequence": 11,
+          "started_at": "2026-09-06T16:18:22.416622Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:22.545876Z",
+          "component": "printify_draft",
+          "duration_ms": 39.457,
+          "event_id": "5e97c17fc1424584b9eeb7bffde097a1",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "variant_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json",
+          "sequence": 12,
+          "started_at": "2026-09-06T16:18:22.506421Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:23.265370Z",
+          "component": "printify_draft",
+          "duration_ms": 493.581,
+          "event_id": "9cbac0ebfe0b447e82ee663f3e66fe44",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "product_cost_readback",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products/{product_id}.json",
+          "sequence": 13,
+          "started_at": "2026-09-06T16:18:22.771789Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:23.560239Z",
+          "component": "printify_draft",
+          "duration_ms": 201.12,
+          "event_id": "ab97ece8b1a64b91bfe96e75940928dd",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "standard_shipping",
+          "reported_ordinal": null,
+          "route": "/v2/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/shipping/standard.json",
+          "sequence": 14,
+          "started_at": "2026-09-06T16:18:23.359120Z"
+        }
+      ],
+      "run_id": "87f2480844d65c8e54dc287d",
+      "spans": [
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:17:39.750000Z",
+          "component": "seller_web",
+          "cycle": null,
+          "duration_ms": 37.9,
+          "event_id": "bd6eb394d68f4b5da55c4b239b7e6048",
+          "model_id": null,
+          "name": "artwork_normalization",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:17:39.712000Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:17:41.097000Z",
+          "component": "seller_web",
+          "cycle": null,
+          "duration_ms": 1019.2,
+          "event_id": "8f2358ce7fe64e00b98017e09305a7c7",
+          "model_id": null,
+          "name": "direct_artwork_upload",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:17:40.077000Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:10.474829Z",
+          "component": "phase6_preparation",
+          "cycle": null,
+          "duration_ms": 28237.023,
+          "event_id": "bf80b464cce04689a4612c1326521af9",
+          "model_id": null,
+          "name": "agentcore_preparation_bridge",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:17:42.237806Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:10.335343Z",
+          "component": "strands_controller",
+          "cycle": null,
+          "duration_ms": 21996.465,
+          "event_id": "99c753994eb442f292b506e1529d20b7",
+          "model_id": null,
+          "name": "strands_execution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:17:48.338878Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:09.331581Z",
+          "component": "strands_controller",
+          "cycle": 1,
+          "duration_ms": 20986.848,
+          "event_id": "a40b94060eab43938ebdd0d5e7c0deb3",
+          "model_id": null,
+          "name": "strands_cycle",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:17:48.344733Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:17:48.787787Z",
+          "component": "strands_controller",
+          "cycle": 1,
+          "duration_ms": 442.656,
+          "event_id": "0b3c2e5673a645a0897b8b803a09ffed",
+          "model_id": "us.amazon.nova-2-lite-v1:0",
+          "name": "strands_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:17:48.345134Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:09.268355Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 20152.388,
+          "event_id": "51de766e931e47ccaa4312b1cd0efb18",
+          "model_id": null,
+          "name": "artwork_listing_intelligence",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:17:49.115963Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:18:03.215229Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 8482.175,
+          "event_id": "7be75ae9ed884258abe1bf83bd87d6f3",
+          "model_id": "google.gemma-3-27b-it",
+          "name": "inspect_artwork_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:17:54.733055Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:18:09.267534Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 6049.801,
+          "event_id": "fa428d7044db46cba606d23b2e2a710c",
+          "model_id": "google.gemma-3-27b-it",
+          "name": "draft_listing_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:03.217736Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:10.258643Z",
+          "component": "strands_controller",
+          "cycle": 2,
+          "duration_ms": 927.019,
+          "event_id": "42d421a161314b97858a4afd9c3c98c3",
+          "model_id": null,
+          "name": "strands_cycle",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:09.331624Z"
+        },
+        {
+          "attempt": 2,
+          "completed_at": "2026-09-06T16:18:10.257578Z",
+          "component": "strands_controller",
+          "cycle": 2,
+          "duration_ms": 925.777,
+          "event_id": "5527e202897e46bc82fef044f42d6422",
+          "model_id": "us.amazon.nova-2-lite-v1:0",
+          "name": "strands_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:09.331804Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:21.291433Z",
+          "component": "phase6_provider",
+          "cycle": null,
+          "duration_ms": 10542.92,
+          "event_id": "f2f578a92977443595201e94e3912d22",
+          "model_id": null,
+          "name": "synchronize_product",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:10.748509Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:11.802892Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 831.449,
+          "event_id": "57fa148cbe874a0098657b55ab1c3a97",
+          "model_id": null,
+          "name": "catalog_profile_provider_preparation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:10.971444Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:11.130920Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 159.467,
+          "event_id": "334f703646c84a9b94308308aa366f47",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:10.971456Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:14.776845Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 2584.677,
+          "event_id": "e56487aa67e74c0687813b347432d984",
+          "model_id": null,
+          "name": "printify_artwork_upload",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:12.192169Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:12.435329Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 41.963,
+          "event_id": "5b74d5f075fb4e8c9419d265349f5b70",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:12.393363Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:14.831411Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 53.061,
+          "event_id": "7091f7e397e7429ca2d0b2ee45170841",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:14.778349Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:15.635704Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 44.236,
+          "event_id": "2cb24c60409d4572994b8b662b0444b5",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:15.591466Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:21.058881Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 5125.902,
+          "event_id": "8b24d0c5065e4565af9d9778092263c7",
+          "model_id": null,
+          "name": "draft_create_update",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:15.932979Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:26.072868Z",
+          "component": "phase6_provider",
+          "cycle": null,
+          "duration_ms": 4308.505,
+          "event_id": "d0f74ca716d64c3fbb12d94f16d095d7",
+          "model_id": null,
+          "name": "refresh_economics",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:21.764361Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:22.549492Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 678.087,
+          "event_id": "a38115c5577540af8aca98f430810f4c",
+          "model_id": null,
+          "name": "catalog_profile_provider_preparation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:21.871404Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:21.892626Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 21.211,
+          "event_id": "630ffbdf24d14b119e9056e05ae5bee8",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:21.871417Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:22.653202Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 41.397,
+          "event_id": "3b2dd7035e744a68938e3483c69e6762",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:22.611803Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:23.291267Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 23.162,
+          "event_id": "8a7dea267c734c5dac70f94b94cd0759",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:23.268104Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:18:25.877119Z",
+          "component": "phase6_economics",
+          "cycle": null,
+          "duration_ms": 0.872,
+          "event_id": "34ad82c6faaf4e1bb62551aed097f062",
+          "model_id": null,
+          "name": "economics_calculation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:18:25.876241Z"
+        }
+      ],
+      "stage_durations_ms": {
+        "approval_to_provider_submission": null,
+        "provider_confirmation_to_etsy_visibility": null,
+        "provider_submission_to_confirmation": null,
+        "publication_request_to_provider_submission": null,
+        "strands_execution": 21996.729,
+        "strands_to_editable_review": 15736.102,
+        "strands_to_synchronized_draft": 10955.734,
+        "synchronized_draft_to_economics": 4780.205,
+        "upload_to_editable_content": 44892.06,
+        "upload_to_strands_start": 7159.229,
+        "upload_to_synchronized_draft": 40111.691999999995
+      }
+    },
+    {
+      "counts": {
+        "model_invocations": 4,
+        "printify_requests": 14,
+        "strands_cycles": 2
+      },
+      "coverage": {
+        "upload_to_editable_content": {
+          "coverage_percent": 41.82,
+          "covered_interval_count": 3,
+          "covered_ms": 53165.223,
+          "unexplained_gaps": [
+            {
+              "completed_at": "2026-09-06T16:08:38.819898Z",
+              "duration_ms": 37204.396,
+              "started_at": "2026-09-06T16:08:01.615502Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:09:41.754882Z",
+              "duration_ms": 36314.056,
+              "started_at": "2026-09-06T16:09:05.440826Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:09:55.697807Z",
+              "duration_ms": 449.344,
+              "started_at": "2026-09-06T16:09:55.248463Z"
+            }
+          ],
+          "unexplained_ms": 73967.796,
+          "window_ms": 127133.019
+        },
+        "upload_to_synchronized_draft": {
+          "coverage_percent": 35.3,
+          "covered_interval_count": 2,
+          "covered_ms": 40114.225,
+          "unexplained_gaps": [
+            {
+              "completed_at": "2026-09-06T16:08:38.819898Z",
+              "duration_ms": 37204.396,
+              "started_at": "2026-09-06T16:08:01.615502Z"
+            },
+            {
+              "completed_at": "2026-09-06T16:09:41.754882Z",
+              "duration_ms": 36314.056,
+              "started_at": "2026-09-06T16:09:05.440826Z"
+            }
+          ],
+          "unexplained_ms": 73518.452,
+          "window_ms": 113632.677
+        }
+      },
+      "milestones": {
+        "approval_recorded": null,
+        "artwork_normalization_completed": "2026-09-06T16:07:41.712000Z",
+        "economics_completed": "2026-09-06T16:10:08.748356Z",
+        "editable_review_available": "2026-09-06T16:10:08.748521Z",
+        "etsy_visibility_confirmed": null,
+        "prepared_review_recorded": "2026-09-06T16:09:03.987401Z",
+        "provider_publication_confirmed": null,
+        "provider_publication_submitted": null,
+        "publication_requested": null,
+        "strands_completed": "2026-09-06T16:09:05.311288Z",
+        "strands_started": "2026-09-06T16:08:47.057785Z",
+        "synchronized_draft": "2026-09-06T16:09:55.248179Z",
+        "upload_accepted": "2026-09-06T16:08:01.615502Z",
+        "upload_response_received": "2026-09-06T16:08:02.813000Z"
+      },
+      "missing_optional_milestones": [
+        "approval_recorded",
+        "etsy_visibility_confirmed",
+        "provider_publication_confirmed",
+        "provider_publication_submitted",
+        "publication_requested"
+      ],
+      "printify_requests": [
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:42.627865Z",
+          "component": "printify_draft",
+          "duration_ms": 354.119,
+          "event_id": "3ab15f3a1c9b4b0286b98f2da1248ca2",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "shop_identity",
+          "reported_ordinal": null,
+          "route": "/v1/shops.json",
+          "sequence": 1,
+          "started_at": "2026-09-06T16:09:42.273746Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:42.752733Z",
+          "component": "printify_draft",
+          "duration_ms": 124.294,
+          "event_id": "e496d9962f764fcda903f6af1afc5ec7",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "blueprint_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints.json",
+          "sequence": 2,
+          "started_at": "2026-09-06T16:09:42.628442Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:42.964338Z",
+          "component": "printify_draft",
+          "duration_ms": 72.358,
+          "event_id": "ca7c195c59c64d7aa318e4f0bd313cd7",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "print_provider_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers.json",
+          "sequence": 3,
+          "started_at": "2026-09-06T16:09:42.891981Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:43.344798Z",
+          "component": "printify_draft",
+          "duration_ms": 379.947,
+          "event_id": "9d2edf40133346898b4e5cb4adddb861",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "variant_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json",
+          "sequence": 4,
+          "started_at": "2026-09-06T16:09:42.964853Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:45.045452Z",
+          "component": "printify_draft",
+          "duration_ms": 754.868,
+          "event_id": "c143b0d926fc4a1e93d30632ca034cd4",
+          "method": "POST",
+          "outcome": "succeeded",
+          "purpose": "artwork_upload",
+          "reported_ordinal": null,
+          "route": "/v1/uploads/images.json",
+          "sequence": 5,
+          "started_at": "2026-09-06T16:09:44.290584Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:46.861726Z",
+          "component": "printify_draft",
+          "duration_ms": 245.081,
+          "event_id": "543b59ef73b042bbad77b758e04a8909",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "artwork_upload_readback",
+          "reported_ordinal": null,
+          "route": "/v1/uploads/{image_id}.json",
+          "sequence": 6,
+          "started_at": "2026-09-06T16:09:46.616646Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:54.503514Z",
+          "component": "printify_draft",
+          "duration_ms": 6912.098,
+          "event_id": "5d7e210a5b604ac28c1f4161f1df12d9",
+          "method": "POST",
+          "outcome": "succeeded",
+          "purpose": "draft_create",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products.json",
+          "sequence": 7,
+          "started_at": "2026-09-06T16:09:47.591419Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:55.007122Z",
+          "component": "printify_draft",
+          "duration_ms": 477.878,
+          "event_id": "2b81a20e156e488a83afd47d2aa2c048",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "draft_readback",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products/{product_id}.json",
+          "sequence": 8,
+          "started_at": "2026-09-06T16:09:54.529245Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:56.201554Z",
+          "component": "printify_draft",
+          "duration_ms": 273.046,
+          "event_id": "02f169af702048509c4981f4733f1b16",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "shop_identity",
+          "reported_ordinal": null,
+          "route": "/v1/shops.json",
+          "sequence": 9,
+          "started_at": "2026-09-06T16:09:55.928508Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:56.271035Z",
+          "component": "printify_draft",
+          "duration_ms": 69.05,
+          "event_id": "f8d35cef5c1e441495dd76fbd1f8f482",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "blueprint_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints.json",
+          "sequence": 10,
+          "started_at": "2026-09-06T16:09:56.201989Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:56.421467Z",
+          "component": "printify_draft",
+          "duration_ms": 85.414,
+          "event_id": "9f7798e705b0416a85f130cf53b69377",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "print_provider_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers.json",
+          "sequence": 11,
+          "started_at": "2026-09-06T16:09:56.336052Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:56.473224Z",
+          "component": "printify_draft",
+          "duration_ms": 51.278,
+          "event_id": "7357f0e563f0492882092c55569a230f",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "variant_catalog",
+          "reported_ordinal": null,
+          "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json",
+          "sequence": 12,
+          "started_at": "2026-09-06T16:09:56.421949Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:57.235763Z",
+          "component": "printify_draft",
+          "duration_ms": 583.652,
+          "event_id": "0d1ed66db789474c8dcf189b10a89f4c",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "product_cost_readback",
+          "reported_ordinal": null,
+          "route": "/v1/shops/{shop_id}/products/{product_id}.json",
+          "sequence": 13,
+          "started_at": "2026-09-06T16:09:56.652111Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:10:06.196008Z",
+          "component": "printify_draft",
+          "duration_ms": 8805.372,
+          "event_id": "5af6a6afce494ca6baea26ccd33d09a4",
+          "method": "GET",
+          "outcome": "succeeded",
+          "purpose": "standard_shipping",
+          "reported_ordinal": null,
+          "route": "/v2/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/shipping/standard.json",
+          "sequence": 14,
+          "started_at": "2026-09-06T16:09:57.390637Z"
+        }
+      ],
+      "run_id": "d91f63f345976ef8e556d344",
+      "spans": [
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:07:41.712000Z",
+          "component": "seller_web",
+          "cycle": null,
+          "duration_ms": 61.7,
+          "event_id": "fce831387a674daca204110af3426826",
+          "model_id": null,
+          "name": "artwork_normalization",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:07:41.650000Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:08:01.439000Z",
+          "component": "seller_web",
+          "cycle": null,
+          "duration_ms": 670.5,
+          "event_id": "45004935921345e0b77e52c242d3eefb",
+          "model_id": null,
+          "name": "direct_artwork_upload",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:08:00.769000Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:05.440826Z",
+          "component": "phase6_preparation",
+          "cycle": null,
+          "duration_ms": 26620.909,
+          "event_id": "b0ae95ef85bc485396f571e5e1ce2133",
+          "model_id": null,
+          "name": "agentcore_preparation_bridge",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:08:38.819898Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:05.311178Z",
+          "component": "strands_controller",
+          "cycle": null,
+          "duration_ms": 18253.179,
+          "event_id": "e4349fecb3d0484aba0b4d368bde37b6",
+          "model_id": null,
+          "name": "strands_execution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:08:47.057999Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:03.988225Z",
+          "component": "strands_controller",
+          "cycle": 1,
+          "duration_ms": 16922.91,
+          "event_id": "99778fae15f8481092e6062842e31a83",
+          "model_id": null,
+          "name": "strands_cycle",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:08:47.065315Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:08:47.598927Z",
+          "component": "strands_controller",
+          "cycle": 1,
+          "duration_ms": 533.345,
+          "event_id": "55f98b479375452f9f3744f9454f7392",
+          "model_id": "us.amazon.nova-2-lite-v1:0",
+          "name": "strands_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:08:47.065585Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:03.917925Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 15921.546,
+          "event_id": "8e5a16f576b94a2a843894a9dc4af785",
+          "model_id": null,
+          "name": "artwork_listing_intelligence",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:08:47.996376Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:08:59.396348Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 5195.087,
+          "event_id": "c55ff226a42a4f4ba65e9846bd3d437f",
+          "model_id": "google.gemma-3-27b-it",
+          "name": "inspect_artwork_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:08:54.201262Z"
+        },
+        {
+          "attempt": 1,
+          "completed_at": "2026-09-06T16:09:03.916354Z",
+          "component": "bedrock_intelligence",
+          "cycle": null,
+          "duration_ms": 4517.214,
+          "event_id": "ce832825fdf648f1ace35724de485cf7",
+          "model_id": "google.gemma-3-27b-it",
+          "name": "draft_listing_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:08:59.399143Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:05.228944Z",
+          "component": "strands_controller",
+          "cycle": 2,
+          "duration_ms": 1240.659,
+          "event_id": "4aa0ec733bda4f2c842c23035f4f3832",
+          "model_id": null,
+          "name": "strands_cycle",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:03.988284Z"
+        },
+        {
+          "attempt": 2,
+          "completed_at": "2026-09-06T16:09:05.227586Z",
+          "component": "strands_controller",
+          "cycle": 2,
+          "duration_ms": 1239.089,
+          "event_id": "2b7f22ebfb154db79e560f4d7cdc30b3",
+          "model_id": "us.amazon.nova-2-lite-v1:0",
+          "name": "strands_model_invocation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:03.988500Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:55.248463Z",
+          "component": "phase6_provider",
+          "cycle": null,
+          "duration_ms": 13493.57,
+          "event_id": "1a92cfbff9254724bef66258c94ac2ce",
+          "model_id": null,
+          "name": "synchronize_product",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:41.754882Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:43.347769Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 1279.144,
+          "event_id": "17095e472a594823833b02e75a37dbf1",
+          "model_id": null,
+          "name": "catalog_profile_provider_preparation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:42.068625Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:42.193754Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 125.076,
+          "event_id": "ef7b86ddb0bf4cf291c56a91e20c6967",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:42.068681Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:46.492590Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 2764.486,
+          "event_id": "c036bed978e644c8878300fc4629916f",
+          "model_id": null,
+          "name": "printify_artwork_upload",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:43.728106Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:44.007111Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 52.66,
+          "event_id": "2efd2cad0ed1477b9be234e1fe940e62",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:43.954449Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:46.538358Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 45.504,
+          "event_id": "ce1acae22d984ee693bfba993198b9cb",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:46.492855Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:47.290136Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 21.689,
+          "event_id": "5d1465a5c80d4a8a95be5623a731bc64",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:47.268446Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:55.013723Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 7422.966,
+          "event_id": "6a3cb83435014922ba49e646c0801923",
+          "model_id": null,
+          "name": "draft_create_update",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:47.590758Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:10:08.750011Z",
+          "component": "phase6_provider",
+          "cycle": null,
+          "duration_ms": 13052.202,
+          "event_id": "b14791c5261d44908573b297986eb32a",
+          "model_id": null,
+          "name": "refresh_economics",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:55.697807Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:56.476273Z",
+          "component": "printify_draft",
+          "cycle": null,
+          "duration_ms": 687.857,
+          "event_id": "37770ea9f21b4c6da7bd3de02a313638",
+          "model_id": null,
+          "name": "catalog_profile_provider_preparation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:55.788415Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:55.810379Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 21.953,
+          "event_id": "19a0146112de49d09b1ae2cb91d14d05",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:55.788428Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:56.533417Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 20.832,
+          "event_id": "f77d519135ab45a0a2f346fe3e755a0f",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:56.512585Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:09:57.292509Z",
+          "component": "printify_credentials",
+          "cycle": null,
+          "duration_ms": 43.769,
+          "event_id": "412b2eb289274d73bf5afddfb34e4977",
+          "model_id": null,
+          "name": "printify_credential_resolution",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:09:57.248739Z"
+        },
+        {
+          "attempt": null,
+          "completed_at": "2026-09-06T16:10:08.533449Z",
+          "component": "phase6_economics",
+          "cycle": null,
+          "duration_ms": 1.015,
+          "event_id": "c702dd73d3694a54aa7eb7856112ca5a",
+          "model_id": null,
+          "name": "economics_calculation",
+          "outcome": "succeeded",
+          "started_at": "2026-09-06T16:10:08.532429Z"
+        }
+      ],
+      "stage_durations_ms": {
+        "approval_to_provider_submission": null,
+        "provider_confirmation_to_etsy_visibility": null,
+        "provider_submission_to_confirmation": null,
+        "publication_request_to_provider_submission": null,
+        "strands_execution": 18253.502999999997,
+        "strands_to_editable_review": 63437.233,
+        "strands_to_synchronized_draft": 49936.891,
+        "synchronized_draft_to_economics": 13500.177000000001,
+        "upload_to_editable_content": 127133.019,
+        "upload_to_strands_start": 45442.283,
+        "upload_to_synchronized_draft": 113632.677
+      }
+    }
+  ],
+  "sample": {
+    "run_count": 5,
+    "window_completed_at": "2026-09-06T16:18:26.071529Z",
+    "window_started_at": "2026-09-06T16:07:41.712000Z"
+  },
+  "schema_version": "1.0.0",
+  "source_commit": "cbfcd3a4ee7ef15bc4f43cac2b6503bf7d9efaaf",
+  "summary": {
+    "counts_per_run": {
+      "model_invocations": {
+        "maximum": 4.0,
+        "median": 4.0,
+        "minimum": 4.0,
+        "p90_nearest_rank": 4.0,
+        "samples": 5
+      },
+      "printify_requests": {
+        "maximum": 14.0,
+        "median": 14.0,
+        "minimum": 14.0,
+        "p90_nearest_rank": 14.0,
+        "samples": 5
+      },
+      "strands_cycles": {
+        "maximum": 2.0,
+        "median": 2.0,
+        "minimum": 2.0,
+        "p90_nearest_rank": 2.0,
+        "samples": 5
+      }
+    },
+    "coverage_percent": {
+      "upload_to_editable_content": {
+        "maximum": 95.98,
+        "median": 95.58,
+        "minimum": 41.82,
+        "p90_nearest_rank": 95.98,
+        "samples": 5
+      },
+      "upload_to_synchronized_draft": {
+        "maximum": 96.68,
+        "median": 96.42,
+        "minimum": 35.3,
+        "p90_nearest_rank": 96.68,
+        "samples": 5
+      }
+    },
+    "optional_milestone_observation_counts": {
+      "approval_recorded": 0,
+      "artwork_normalization_completed": 5,
+      "economics_completed": 5,
+      "etsy_visibility_confirmed": 0,
+      "prepared_review_recorded": 5,
+      "provider_publication_confirmed": 0,
+      "provider_publication_submitted": 0,
+      "publication_requested": 0,
+      "strands_completed": 5,
+      "strands_started": 5,
+      "upload_response_received": 5
+    },
+    "printify_call_map": [
+      {
+        "duration_ms": {
+          "maximum": 1243.378,
+          "median": 754.868,
+          "minimum": 709.087,
+          "p90_nearest_rank": 1243.378,
+          "samples": 5
+        },
+        "method": "POST",
+        "purpose": "artwork_upload",
+        "request_count": 5,
+        "route": "/v1/uploads/images.json"
+      },
+      {
+        "duration_ms": {
+          "maximum": 266.551,
+          "median": 261.834,
+          "minimum": 235.664,
+          "p90_nearest_rank": 266.551,
+          "samples": 5
+        },
+        "method": "GET",
+        "purpose": "artwork_upload_readback",
+        "request_count": 5,
+        "route": "/v1/uploads/{image_id}.json"
+      },
+      {
+        "duration_ms": {
+          "maximum": 124.294,
+          "median": 82.119,
+          "minimum": 69.05,
+          "p90_nearest_rank": 98.318,
+          "samples": 10
+        },
+        "method": "GET",
+        "purpose": "blueprint_catalog",
+        "request_count": 10,
+        "route": "/v1/catalog/blueprints.json"
+      },
+      {
+        "duration_ms": {
+          "maximum": 6912.098,
+          "median": 4342.0,
+          "minimum": 4012.481,
+          "p90_nearest_rank": 6912.098,
+          "samples": 5
+        },
+        "method": "POST",
+        "purpose": "draft_create",
+        "request_count": 5,
+        "route": "/v1/shops/{shop_id}/products.json"
+      },
+      {
+        "duration_ms": {
+          "maximum": 624.201,
+          "median": 498.437,
+          "minimum": 477.878,
+          "p90_nearest_rank": 624.201,
+          "samples": 5
+        },
+        "method": "GET",
+        "purpose": "draft_readback",
+        "request_count": 5,
+        "route": "/v1/shops/{shop_id}/products/{product_id}.json"
+      },
+      {
+        "duration_ms": {
+          "maximum": 89.298,
+          "median": 74.697,
+          "minimum": 58.872,
+          "p90_nearest_rank": 85.429,
+          "samples": 10
+        },
+        "method": "GET",
+        "purpose": "print_provider_catalog",
+        "request_count": 10,
+        "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers.json"
+      },
+      {
+        "duration_ms": {
+          "maximum": 583.652,
+          "median": 528.23,
+          "minimum": 491.93,
+          "p90_nearest_rank": 583.652,
+          "samples": 5
+        },
+        "method": "GET",
+        "purpose": "product_cost_readback",
+        "request_count": 5,
+        "route": "/v1/shops/{shop_id}/products/{product_id}.json"
+      },
+      {
+        "duration_ms": {
+          "maximum": 354.119,
+          "median": 263.313,
+          "minimum": 242.655,
+          "p90_nearest_rank": 279.766,
+          "samples": 10
+        },
+        "method": "GET",
+        "purpose": "shop_identity",
+        "request_count": 10,
+        "route": "/v1/shops.json"
+      },
+      {
+        "duration_ms": {
+          "maximum": 8805.372,
+          "median": 195.836,
+          "minimum": 178.351,
+          "p90_nearest_rank": 8805.372,
+          "samples": 5
+        },
+        "method": "GET",
+        "purpose": "standard_shipping",
+        "request_count": 5,
+        "route": "/v2/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/shipping/standard.json"
+      },
+      {
+        "duration_ms": {
+          "maximum": 379.947,
+          "median": 50.347,
+          "minimum": 39.457,
+          "p90_nearest_rank": 54.452,
+          "samples": 10
+        },
+        "method": "GET",
+        "purpose": "variant_catalog",
+        "request_count": 10,
+        "route": "/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json"
+      }
+    ],
+    "printify_request_count": 70,
+    "stage_durations_ms": {
+      "strands_execution": {
+        "maximum": 23897.755,
+        "median": 21146.687,
+        "minimum": 16967.313,
+        "p90_nearest_rank": 23897.755,
+        "samples": 5
+      },
+      "strands_to_editable_review": {
+        "maximum": 63437.233,
+        "median": 14350.975,
+        "minimum": 14210.99,
+        "p90_nearest_rank": 63437.233,
+        "samples": 5
+      },
+      "strands_to_synchronized_draft": {
+        "maximum": 49936.891,
+        "median": 10310.681,
+        "minimum": 10084.477,
+        "p90_nearest_rank": 49936.891,
+        "samples": 5
+      },
+      "synchronized_draft_to_economics": {
+        "maximum": 13500.177,
+        "median": 4140.034,
+        "minimum": 3910.029,
+        "p90_nearest_rank": 13500.177,
+        "samples": 5
+      },
+      "upload_to_editable_content": {
+        "maximum": 127133.019,
+        "median": 45053.441,
+        "minimum": 38942.315,
+        "p90_nearest_rank": 127133.019,
+        "samples": 5
+      },
+      "upload_to_strands_start": {
+        "maximum": 45442.283,
+        "median": 7624.027,
+        "minimum": 6944.696,
+        "p90_nearest_rank": 45442.283,
+        "samples": 5
+      },
+      "upload_to_synchronized_draft": {
+        "maximum": 113632.677,
+        "median": 40978.387,
+        "minimum": 34902.021,
+        "p90_nearest_rank": 113632.677,
+        "samples": 5
+      }
+    }
+  }
+}
