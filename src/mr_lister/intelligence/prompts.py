@@ -10,7 +10,13 @@ from typing import Literal
 
 PROMPT_VERSION = "2026-08-18.7"
 ETSY_SEO_CANDIDATE_PROMPT_VERSION = "2026-09-08.1-etsy-seo-candidate"
-PromptVersion = Literal["2026-08-18.7", "2026-09-08.1-etsy-seo-candidate"]
+# Keep the reviewed preview identifier so its exact content fingerprint survives promotion.
+ETSY_SEO_RELEASE_PROMPT_VERSION = "2026-09-08.2-etsy-seo-plain-preview-tag-diversity"
+PromptVersion = Literal[
+    "2026-08-18.7",
+    "2026-09-08.1-etsy-seo-candidate",
+    "2026-09-08.2-etsy-seo-plain-preview-tag-diversity",
+]
 
 SYSTEM_PROMPT = """You are Mr Lister's bounded listing-intelligence component.
 Interpret artwork and recommend listing content, but never authorize publication or perform tools.
@@ -128,6 +134,46 @@ Validation problems:
 {problems}
 """
 
+# These are the exact two reviewed V2 sections. The frozen v1 reference and original
+# production bundle above remain unchanged and independently selectable for rollback.
+_ETSY_SEO_RELEASE_DESCRIPTION = """DESCRIPTION
+- Write clear, direct listing copy in a restrained tone. Open by identifying the graphic T-shirt
+  and the visible subject, rather than a slogan or an imagined story.
+- Retain useful depth: describe distinguishing visual details, composition, illustration style,
+  and relevant buyer interests supported by the supplied artwork analysis.
+- Use concrete nouns and plainly stated observations. Describe depicted clothing and accessories
+  as elements of the artwork, not physical accessories included with the product.
+- Do not invent narrative, character intentions, personality, adventures, or emotional promises.
+  Do not add playful slogans, rhetorical flourishes, or embellish why someone should give it.
+- Let any existing humor or character come from accurate design details. Avoid promotional
+  adjectives such as charming, dapper, whimsical, delightful, perfect, and must-have.
+- Keep buyer or gift context brief, specific, and supported. Do not invent recipient stories or
+  force a gift occasion. Incorporate relevant search language naturally without keyword stuffing.
+- Use only supplied facts. Do not invent materials, garment blanks, sizes, fit, printing method,
+  manufacturing location, care, shipping, durability, or other product specifications.
+
+"""
+_ETSY_SEO_TAG_DIVERSITY = (
+    "When generating tag candidates, diversify repeated references to the primary subject "
+    "using accurate synonyms, taxonomic/group terms, geographic associations, style "
+    "combinations, audience language, and buyer-intent phrases. Do not substitute a related "
+    "but different subject merely to create keyword variety."
+)
+ETSY_SEO_RELEASE_LISTING_PROMPT = (
+    ETSY_SEO_CANDIDATE_LISTING_PROMPT.split("DESCRIPTION\n", 1)[0]
+    + _ETSY_SEO_RELEASE_DESCRIPTION
+    + "TAG CANDIDATES\n- "
+    + _ETSY_SEO_TAG_DIVERSITY
+    + "\n"
+    + ETSY_SEO_CANDIDATE_LISTING_PROMPT.split("TAG CANDIDATES\n", 1)[1]
+).replace(
+    "  without repeated meaningful keyword roots. "
+    "Do not pad with irrelevant synonyms or generic gifts.",
+    "  without redundant search intent. Shared meaningful words are allowed across distinct\n"
+    "  useful phrases. Do not pad with irrelevant synonyms or generic gifts.",
+    1,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class PromptBundle:
@@ -163,10 +209,19 @@ ETSY_SEO_CANDIDATE_PROMPT_BUNDLE = PromptBundle(
     repair=REPAIR_PROMPT,
 )
 
+ETSY_SEO_RELEASE_PROMPT_BUNDLE = PromptBundle(
+    version=ETSY_SEO_RELEASE_PROMPT_VERSION,
+    system=SYSTEM_PROMPT,
+    artwork=ARTWORK_PROMPT,
+    listing=ETSY_SEO_RELEASE_LISTING_PROMPT,
+    repair=REPAIR_PROMPT,
+)
+
 PROMPT_BUNDLES: Mapping[str, PromptBundle] = MappingProxyType(
     {
         BASELINE_PROMPT_BUNDLE.version: BASELINE_PROMPT_BUNDLE,
         ETSY_SEO_CANDIDATE_PROMPT_BUNDLE.version: ETSY_SEO_CANDIDATE_PROMPT_BUNDLE,
+        ETSY_SEO_RELEASE_PROMPT_BUNDLE.version: ETSY_SEO_RELEASE_PROMPT_BUNDLE,
     }
 )
 

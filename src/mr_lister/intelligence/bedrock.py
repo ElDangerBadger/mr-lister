@@ -116,7 +116,14 @@ class BedrockListingIntelligenceAdapter:
         self._prompt_bundle = prompt_bundle
 
     def inspect_artwork(self, artwork: ArtworkInput, content: bytes) -> ArtworkAnalysis:
-        image = prepare_bedrock_image(content)
+        # Gemma rejected a valid 3.27 MB PNG inspection rendition at request buffering.
+        # These limits are the successful live-preview envelope; the seller's original
+        # print artwork and the generic Converse boundary are unchanged.
+        image = (
+            prepare_bedrock_image(content, max_side=1600, max_bytes=750_000)
+            if self._settings.model_id == "google.gemma-3-27b-it"
+            else prepare_bedrock_image(content)
+        )
         prompt = self._prompt_bundle.artwork + _transparency_note(image)
         return self._invoke_contract(
             operation="inspect_artwork",

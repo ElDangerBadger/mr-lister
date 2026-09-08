@@ -3,6 +3,7 @@ from __future__ import annotations
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from bedrock_agentcore import BedrockAgentCoreApp
@@ -13,9 +14,11 @@ from mr_lister.agent.phase6_composition import (
     ExactPinnedSourceS3,
     Phase6AgentCoreConfigurationError,
     Phase6AgentCoreDependencyError,
+    build_phase6_agentcore_runtime,
     compose_phase6_agentcore_runtime,
     load_phase6_agentcore_configuration,
 )
+from mr_lister.intelligence.prompts import ETSY_SEO_RELEASE_PROMPT_BUNDLE
 from mr_lister.review_profile import FilesystemReviewProductAuthority
 
 ROOT = Path(__file__).parents[1]
@@ -101,6 +104,31 @@ def test_configuration_pins_gemma_worker_and_nova_strands_controller() -> None:
     assert configuration.intelligence.max_repair_attempts == 2
     assert configuration.controller_model_id == PHASE6_STRANDS_CONTROLLER_MODEL_ID
     assert configuration.profile.exact.fingerprint == PROFILE.fingerprint
+
+
+def test_runtime_factory_explicitly_selects_reviewed_seo_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Mock()
+    adapter_factory = Mock(return_value=FakeIntelligence())
+    controller_factory = Mock()
+    composer = Mock(return_value=object())
+    monkeypatch.setattr("mr_lister.agent.phase6_composition.build_bedrock_adapter", adapter_factory)
+    monkeypatch.setattr("strands.models.BedrockModel", controller_factory)
+    monkeypatch.setattr(
+        "mr_lister.agent.phase6_composition.compose_phase6_agentcore_runtime", composer
+    )
+
+    application = build_phase6_agentcore_runtime(_environment(), session=session)
+
+    assert application is composer.return_value
+    assert adapter_factory.call_count == 1
+    assert adapter_factory.call_args.kwargs == {
+        "session": session,
+        "prompt_bundle": ETSY_SEO_RELEASE_PROMPT_BUNDLE,
+    }
+    assert adapter_factory.call_args.args[0].model_id == PHASE6_GEMMA_MODEL_ID
+    assert controller_factory.call_args.kwargs["model_id"] == PHASE6_STRANDS_CONTROLLER_MODEL_ID
 
 
 @pytest.mark.parametrize(

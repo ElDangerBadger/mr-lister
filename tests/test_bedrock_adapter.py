@@ -17,6 +17,8 @@ from mr_lister.intelligence.prompts import (
     BASELINE_PROMPT_BUNDLE,
     ETSY_SEO_CANDIDATE_PROMPT_BUNDLE,
     ETSY_SEO_CANDIDATE_PROMPT_VERSION,
+    ETSY_SEO_RELEASE_PROMPT_BUNDLE,
+    ETSY_SEO_RELEASE_PROMPT_VERSION,
     PROMPT_VERSION,
     prompt_bundle_for,
 )
@@ -179,6 +181,83 @@ def test_default_prompt_bundle_remains_the_versioned_baseline() -> None:
     assert "18 to 30 unique candidate tags" in BASELINE_PROMPT_BUNDLE.listing
     assert "BUYER PSYCHOLOGY" not in BASELINE_PROMPT_BUNDLE.listing
     assert prompt_bundle_for(PROMPT_VERSION) is BASELINE_PROMPT_BUNDLE
+
+
+def test_release_prompt_is_exact_reviewed_v2_and_preserves_rollback() -> None:
+    assert (
+        BASELINE_PROMPT_BUNDLE.fingerprint
+        == "c5b2a76ebcc9fff8bd5363beb2db2d1651ad554fab21340a6a4cdb1a166ac96f"
+    )
+    assert (
+        ETSY_SEO_CANDIDATE_PROMPT_BUNDLE.fingerprint
+        == "d72948fe5a7ea155f6fa5283428ffcd26011e1e871342086ecf89e27398c56c2"
+    )
+    assert (
+        ETSY_SEO_RELEASE_PROMPT_BUNDLE.fingerprint
+        == "c91e5ed73eaa62754b00ae335189298548a593fe5662e3445c049efbebab6cd3"
+    )
+    assert prompt_bundle_for(ETSY_SEO_RELEASE_PROMPT_VERSION) is ETSY_SEO_RELEASE_PROMPT_BUNDLE
+    assert "without repeated meaningful keyword roots" not in ETSY_SEO_RELEASE_PROMPT_BUNDLE.listing
+    assert (
+        "Do not substitute a related but different subject"
+        in ETSY_SEO_RELEASE_PROMPT_BUNDLE.listing
+    )
+
+
+def test_release_prompt_reaches_listing_request_without_extra_calls_or_prose_changes() -> None:
+    content = transparent_png()
+    original = listing()
+    client = ScriptedConverseClient(response(original))
+    diagnostics = InMemoryDiagnosticSink()
+    adapter = build_adapter(
+        client,
+        diagnostics=diagnostics,
+        prompt_bundle=ETSY_SEO_RELEASE_PROMPT_BUNDLE,
+        model_id="google.gemma-3-27b-it",
+        temperature=0.0,
+    )
+
+    result = adapter.draft_listing(
+        artwork_input(content), content, ArtworkAnalysis.model_validate(artwork_analysis())
+    )
+
+    assert len(client.calls) == 1
+    assert len(result.tags) == 13
+    for field in ("title", "description", "audience", "title_rationale", "tag_rationale"):
+        assert result.model_dump(mode="json")[field] == original[field]
+    request = client.calls[0]
+    assert request["messages"][0]["content"][-1]["text"] == (
+        ETSY_SEO_RELEASE_PROMPT_BUNDLE.listing.format(
+            analysis_json=ArtworkAnalysis.model_validate(artwork_analysis()).model_dump_json()
+        )
+    )
+    assert request["inferenceConfig"]["temperature"] == 0.0
+    assert diagnostics.records[-1]["prompt_version"] == ETSY_SEO_RELEASE_PROMPT_VERSION
+
+
+@pytest.mark.parametrize(
+    ("model_id", "expected_size"),
+    [("google.gemma-3-27b-it", (1600, 800)), ("us.anthropic.claude-sonnet-4-6", (2000, 1000))],
+)
+def test_gemma_uses_tested_inspection_envelope_without_changing_source_or_other_models(
+    model_id: str, expected_size: tuple[int, int]
+) -> None:
+    source = Image.new("RGBA", (2000, 1000), (10, 20, 30, 128))
+    output = BytesIO()
+    source.save(output, format="PNG")
+    content = output.getvalue()
+    original = bytes(content)
+    client = ScriptedConverseClient(response(artwork_analysis()))
+    adapter = build_adapter(client, model_id=model_id)
+
+    adapter.inspect_artwork(artwork_input(content), content)
+
+    assert content == original
+    image_bytes = client.calls[0]["messages"][0]["content"][0]["image"]["source"]["bytes"]
+    assert len(image_bytes) <= 750_000
+    with Image.open(BytesIO(image_bytes)) as rendition:
+        assert rendition.size == expected_size
+    assert "checkerboard" in client.calls[0]["messages"][0]["content"][-1]["text"]
 
 
 def test_etsy_seo_candidate_is_explicit_and_keeps_the_application_contract() -> None:

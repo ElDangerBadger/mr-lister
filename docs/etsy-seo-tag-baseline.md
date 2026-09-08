@@ -1,5 +1,8 @@
 # Bounded Etsy SEO/tag checkpoint — 2026-09-08
 
+This is the historical selector checkpoint. The later user-approved V2 rollout and current
+deployment status are recorded in [SEO release state](etsy-seo-release-state.md).
+
 ## Decision and status
 
 Candidate v1 is the frozen SEO copy-quality reference. The deterministic whole-phrase policy is
@@ -100,7 +103,8 @@ pass does not authorize an inference run to recover historical evidence.
 
 Known limitations: lexical rules cannot establish arbitrary synonym equivalence, visual grounding,
 or natural shopper intent; those remain Gemma/seller judgments. Saved v1 copy retains its documented
-historical inaccuracies rather than silently rewriting the reference. Before any future deployment,
-old stored reviews rejected solely by the previous rule need explicit handling because projection
-checks stored validation against current validation. No stored review, approval, or product was
-migrated or modified here.
+historical inaccuracies rather than silently rewriting the reference. Projection checks stored
+validation against current validation, so some older test reviews may become unavailable after
+deployment. The user explicitly excluded compatibility/migration for those disposable Mr. Lister
+test jobs and will create fresh listings. Existing on-store products are outside this work and
+remain untouched. No stored review, approval, or product was migrated or modified here.

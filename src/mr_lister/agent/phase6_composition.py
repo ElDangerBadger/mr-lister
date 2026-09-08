@@ -27,6 +27,7 @@ from mr_lister.agent.phase6_producer import PinnedSourcePreparedReviewProducer
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
 from mr_lister.control.worker_service import WorkerControlService
 from mr_lister.intelligence.bedrock import build_bedrock_adapter
+from mr_lister.intelligence.prompts import ETSY_SEO_RELEASE_PROMPT_BUNDLE
 from mr_lister.intelligence.settings import BedrockSettings
 from mr_lister.review_profile import (
     ExactReviewProductProfile,
@@ -312,6 +313,7 @@ def build_phase6_agentcore_runtime(
         intelligence = build_bedrock_adapter(
             configuration.intelligence,
             session=active_session,
+            prompt_bundle=ETSY_SEO_RELEASE_PROMPT_BUNDLE,
         )
         controller = BedrockModel(
             boto_session=active_session,

@@ -224,9 +224,11 @@ strips words or manufactures filler. An unusable pool receives the bounded repai
 the intelligence boundary; human-edited listings retain the same redundancy validation before
 production or approval.
 
-Candidate v1 (`2026-09-08.1-etsy-seo-candidate`) is the frozen SEO copy-quality reference, not the
-deployed/default prompt. The unchanged `2026-08-18.7` production bundle remains the rollback point;
-no v3 prompt or one-call optimization is included. The retained eleven-case v1 artifacts contain
+Candidate v1 (`2026-09-08.1-etsy-seo-candidate`) remains the frozen SEO copy-quality reference.
+The Phase 6 runtime now explicitly selects the reviewed V2 plain-copy/tag-diversity bundle;
+the unchanged `2026-08-18.7` generic adapter default remains available for rollback.
+See the [SEO release record](docs/etsy-seo-release-state.md) for deployment and live-test status.
+No v3 prompt or one-call optimization is included. The retained eleven-case v1 artifacts contain
 final listing prose and tags but not the original candidate pools, so they cannot establish an
 exact old-selector/new-selector replay. See the [SEO/tag checkpoint](docs/etsy-seo-tag-baseline.md)
 for the bounded implementation, available verification, and that evidence limitation.
