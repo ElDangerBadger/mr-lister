@@ -3,7 +3,11 @@
 ## Status
 
 User authorized commit, push, merge to main, and deployment to `https://massskutiny.com`.
-Source promotion and local verification are complete; integration and AWS deployment are pending.
+Source promotion, local verification, push and merge to main are complete. **Not yet deployed:**
+AWS deployment is waiting on the existing bootstrap login/scoped permissions.
+Release source: `e197eec2aa9820aad0862f07ab87bf907b24d3e2`.
+GitHub clean-checkout verification: [release CI run](https://github.com/ElDangerBadger/mr-lister/actions/runs/34272912104)
+(the linked run is authoritative for its current result).
 The seller will run fresh live tests after deployment. Latency Stage 1 remains paused.
 
 ## Exact approved content
@@ -63,7 +67,10 @@ New listings use the new rules. Existing on-store products are outside scope and
   `d72948fe5a7ea155f6fa5283428ffcd26011e1e871342086ecf89e27398c56c2`.
 - Update only AgentCore, PreparationDispatch, ReviewQueryApi and SellerCommandApi. No web asset
   deployment is needed for this backend change. Keep the working Phase 7 deployment unchanged.
+- Locally built and sealed deployment candidate:
+  `e7adb0e8709323af4a49a828635d4c74666471d9c7bf042718b88933355eb3ea`.
+  Uses the existing locked Linux ARM64 dependency artifacts; nothing has been uploaded to AWS.
 - Initial AWS preflight: dev identity verified; its previous temporary deployment permissions
   expired. Bootstrap login is required before the existing scoped deployment path can resume.
 
-Final source commit, CI result, deployed version and readback will be recorded here when complete.
+Deployed version and readback will be recorded here after the AWS deployment completes.
