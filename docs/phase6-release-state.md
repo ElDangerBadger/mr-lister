@@ -1,5 +1,10 @@
 # Phase 6 release state
 
+This record preserves the Phase 6 acceptance seal below. Subsequent deployed runtime identity is
+tracked in [Stage 0](latency-waterfall-v1.md) and the current
+[SEO release record](etsy-seo-release-state.md): AgentCore v6 was deployed on 2026-09-08 with
+Phase 6 acceptance semantics and the already-enabled Phase 7 publication flow unchanged.
+
 ## Decision
 
 **PHASE 6 COMPLETE AND SEALED**

@@ -3,12 +3,36 @@
 ## Status
 
 User authorized commit, push, merge to main, and deployment to `https://massskutiny.com`.
-Source promotion, local verification, push and merge to main are complete. **Not yet deployed:**
-AWS deployment is waiting on the existing bootstrap login/scoped permissions.
+**DEPLOYED AND READBACK VERIFIED** on 2026-09-08. Source promotion, local verification,
+push, merge to main and AWS deployment are complete. Fresh seller live testing is pending.
 Release source: `e197eec2aa9820aad0862f07ab87bf907b24d3e2`.
 GitHub clean-checkout verification: [release CI run](https://github.com/ElDangerBadger/mr-lister/actions/runs/34272912104)
-(the linked run is authoritative for its current result).
-The seller will run fresh live tests after deployment. Latency Stage 1 remains paused.
+passed, as did [merged release-record CI](https://github.com/ElDangerBadger/mr-lister/actions/runs/34273072203).
+The checkout remains on main. Latency Stage 1 and the speed-optimization branch remain paused
+until the seller reviews new listings on the live site.
+
+## Live release and readback
+
+- Stack `mr-lister-phase6-dev`: `UPDATE_COMPLETE`; update started `2026-09-08T21:44:39Z`.
+- Release fingerprint: `e7adb0e8709323af4a49a828635d4c74666471d9c7bf042718b88933355eb3ea`.
+- AgentCore: runtime `mr_lister_phase6-4HoPmq2hCI`, immutable version **6**, endpoint
+  `phase6_v6_dev`, `READY` with `liveVersion=6`.
+- Runtime binding: `c1ba05785a5105e94637e7a370008d79abff6278926bf074d4aab316670a6bfe`.
+- AgentCore archive SHA-256: `a1ba0d053566f152f7a7b535f549472d60e585f57ef39e7ff260c94e6daa4024`;
+  S3 VersionId `TnFrRt62SRfAkgPts27q0Bz0ShEjXB0c`.
+- Lambda archive SHA-256: `0914055544d75a83f4cbb49fa2a403008e9277983a2a52b94b11a3e738f2b8b0`;
+  S3 VersionId `58boyAlACxjC1cJHOZnfCDytodYGY_lE`.
+- Exact archive deployed to PreparationDispatch, ReviewQueryApi and SellerCommandApi. Saved
+  readbacks verify their code hashes and expected environment changes, with other configuration
+  unchanged. AgentCore role, network, protocol, lifecycle and workload identity are unchanged.
+- Original deployed template matches the reviewed template exactly, SHA-256
+  `1c5855d7e065cdb0b3354060fb3b8fd39a85b04752eaee69956f6f648941c7c0`, S3 VersionId
+  `64j9PfTaauSLn1nrhZD.CDbQOSJWYlaL`. Dependent ARN references required no resource replacements.
+- Phase 7's complete stack readback equals its predecessor. No provider, approval, publication,
+  existing store product or web asset was changed. The public site returned HTTP 200.
+- Private operational evidence: `.mr_lister_private/seo-release-20260908/readback/verification.json`
+  plus eight hashed AWS responses. Independent local comparison also passed. These are deployment
+  readbacks, not evidence of a new end-to-end seller job; the seller owns that next test.
 
 ## Exact approved content
 
@@ -35,8 +59,8 @@ publication changes are included. Exact-version approval and explicit publicatio
 Local release checks: **4,092 Python tests passed**, 11 explicitly gated live tests skipped;
 **162 web tests passed**. Python/web lint, formatting, TypeScript, web production build, Python
 sdist/wheel build, all three contract checks, all eleven CI SAM validations and the web dependency
-audit passed. GitHub CI will verify the merged source separately; no live inference or product
-publication was performed for these checks.
+audit passed. GitHub CI verified the merged source separately; no live inference or product
+publication was performed during release verification or deployment.
 
 The direct-description V2 prompt was run on real Gemma with the badger and llama images. The
 llama inspection plus listing took 12.323 seconds across two successful calls without repair after
@@ -55,22 +79,24 @@ New listings use the new rules. Existing on-store products are outside scope and
 
 ## Rollback and deployment boundary
 
-- Current deployed predecessor: Stage 0 source `cbfcd3a4ee7ef15bc4f43cac2b6503bf7d9efaaf`;
+- Retained rollback predecessor: Stage 0 source `cbfcd3a4ee7ef15bc4f43cac2b6503bf7d9efaaf`;
   AgentCore immutable version 5, endpoint `phase6_v5_dev`.
 - Predecessor preparation release:
   `3ae13d46db5e11731a5f69f541175d5c540cd93db823629d38cc91a108d790cc`.
-- Preserve the exact predecessor stack template, parameters, per-function archives and runtime
-  endpoint before deployment. Restore those bindings for a full operational rollback.
+- Exact predecessor stack template, parameters, per-function archives and runtime endpoint
+  are preserved. Restore those bindings for a full operational rollback. The saved original
+  template exceeds the inline CloudFormation size limit; use an exact versioned S3 template URL.
 - Original production prompt fingerprint:
   `c5b2a76ebcc9fff8bd5363beb2db2d1651ad554fab21340a6a4cdb1a166ac96f`.
 - Frozen v1 fingerprint:
   `d72948fe5a7ea155f6fa5283428ffcd26011e1e871342086ecf89e27398c56c2`.
-- Update only AgentCore, PreparationDispatch, ReviewQueryApi and SellerCommandApi. No web asset
-  deployment is needed for this backend change. Keep the working Phase 7 deployment unchanged.
-- Locally built and sealed deployment candidate:
-  `e7adb0e8709323af4a49a828635d4c74666471d9c7bf042718b88933355eb3ea`.
-  Uses the existing locked Linux ARM64 dependency artifacts; nothing has been uploaded to AWS.
-- Initial AWS preflight: dev identity verified; its previous temporary deployment permissions
-  expired. Bootstrap login is required before the existing scoped deployment path can resume.
-
-Deployed version and readback will be recorded here after the AWS deployment completes.
+- Deployment reused existing locked Linux ARM64 dependency artifacts. The existing runtime-role
+  bootstrap stack is `UPDATE_COMPLETE` and `CONTRACTED` to the new exact Lambda archive.
+- Temporary policy `MrListerSeoArtifactTransition20260908` on the deployment role now permits
+  only the three exact predecessor archive versions, expiring `2026-09-09T20:40:28Z`. After that
+  date, a rollback needs renewed exact-version read permission; the archived artifacts remain.
+- With explicit seller approval, retired endpoint `phase6_v4_dev` was removed to free the AWS
+  endpoint-quota slot. Runtime version 4 was not deleted and its endpoint can be recreated.
+  The immediately preceding live/rollback endpoint `phase6_v5_dev` remains intact.
+- AWS login refresh failures interrupted staging; no application/IAM redesign was introduced.
+  The approved deployment resumed from preserved checkpoints after renewed bootstrap login.
