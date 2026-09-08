@@ -83,3 +83,21 @@ project generic leftovers. It should explicitly reject transparency-rendition ch
 garment-color inferences, non-apparel audiences, and unsupported sustainability claims. Retest the
 affected fixtures before any default or deployed-runtime change.
 
+## Follow-up: stricter prompt-only revision rejected
+
+That bounded revision was tested once across the same eleven fixtures as
+`2026-09-08.2-etsy-seo-candidate`, fingerprint
+`075d59a1bcc51ec2c3f666ad4d682f22fc4e7aafa94b40135638c8c374f2f345`. It was not retained as a
+selectable bundle. All eleven outputs again reached valid editable review with zero publication,
+and the same seahorse case remained the only automated quality-floor miss. However, repairs rose
+from two in v1 to four, total tokens rose from 31,741 to 36,949, and mean model latency rose from
+14.975 to 15.494 seconds. Listing audiences were empty in all eleven accepted outputs, compared
+with populated audiences in all eleven v1 outputs.
+
+The stricter prose also did not reliably prevent projected fragments or unsupported language:
+accepted results still contained examples such as `graphic`, `gift`, `lover`, and garment-color
+tags, while some descriptions reintroduced `comfortable`. This establishes the stopping point for
+prompt-only tuning. Candidate v1 remains the useful qualitative reference and optional evaluator
+bundle; the sealed baseline remains the runtime default. Resolving final-tag projection and
+grounding further belongs with the measured Stage 1 intelligence-path work, not another cycle of
+instructions layered onto the current two-call path.
