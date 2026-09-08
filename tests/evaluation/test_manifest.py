@@ -163,13 +163,27 @@ def test_score_artifact_summary_keeps_runs_and_models_separate() -> None:
         "total_tokens": 30,
     }
     documents = (
-        {"run_id": "nova-run", "model_id": "nova", "score": base_score},
         {
             "run_id": "nova-run",
             "model_id": "nova",
+            "prompt_version": "baseline",
+            "prompt_fingerprint": "baseline-fingerprint",
+            "score": base_score,
+        },
+        {
+            "run_id": "nova-run",
+            "model_id": "nova",
+            "prompt_version": "baseline",
+            "prompt_fingerprint": "baseline-fingerprint",
             "score": {**base_score, "latency_ms": 200},
         },
-        {"run_id": "claude-run", "model_id": "claude", "score": base_score},
+        {
+            "run_id": "claude-run",
+            "model_id": "claude",
+            "prompt_version": "candidate",
+            "prompt_fingerprint": "candidate-fingerprint",
+            "score": base_score,
+        },
     )
 
     summaries = summarize_score_documents(documents)
@@ -177,6 +191,11 @@ def test_score_artifact_summary_keeps_runs_and_models_separate() -> None:
     assert [(item["run_id"], item["model_id"]) for item in summaries] == [
         ("claude-run", "claude"),
         ("nova-run", "nova"),
+    ]
+    assert [item["prompt_version"] for item in summaries] == ["candidate", "baseline"]
+    assert [item["prompt_fingerprint"] for item in summaries] == [
+        "candidate-fingerprint",
+        "baseline-fingerprint",
     ]
     assert summaries[1]["score_count"] == 2
     assert summaries[1]["pass_rate"] == 1.0

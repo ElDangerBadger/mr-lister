@@ -37,6 +37,7 @@ CASES = load_manifest(MANIFEST).cases
 EVALUATION_CASE_ID = os.getenv("MR_LISTER_EVAL_CASE")
 if EVALUATION_CASE_ID is not None and EVALUATION_CASE_ID not in {case.case_id for case in CASES}:
     raise ValueError("MR_LISTER_EVAL_CASE must name a case in the evaluation manifest")
+EVALUATION_PROMPT_VERSION = os.getenv("MR_LISTER_EVAL_PROMPT_VERSION", "2026-08-18.7")
 
 pytestmark = [
     pytest.mark.live_bedrock,
@@ -60,7 +61,7 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
         FilesystemDiagnosticSink,
         InMemoryDiagnosticSink,
     )
-    from mr_lister.intelligence.prompts import PROMPT_VERSION
+    from mr_lister.intelligence.prompts import PROMPT_VERSION, prompt_bundle_for
     from mr_lister.intelligence.settings import BedrockSettings
     from mr_lister.workflow.fakes import FakeProductionAdapter
     from mr_lister.workflow.profiles import ProductProfileRepository
@@ -69,6 +70,7 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
 
     manifest = load_manifest(MANIFEST)
     assert manifest.prompt_version == PROMPT_VERSION
+    prompt_bundle = prompt_bundle_for(EVALUATION_PROMPT_VERSION)
     missing = [case.asset for case in manifest.cases if not case.asset.is_file()]
     assert not missing, "Missing original evaluation assets: " + ", ".join(map(str, missing))
     mismatched = [
@@ -119,6 +121,7 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
             settings,
             session=session,
             diagnostics=CompositeDiagnosticSink(diagnostics, private_diagnostics),
+            prompt_bundle=prompt_bundle,
         ),
         production=production,
         job_id_factory=lambda: f"job_eval_{case.case_id}_trial_{trial_index + 1}",
@@ -129,7 +132,7 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
         content_type="image/png",
         content=content,
         idempotency_key=(
-            f"eval:{manifest.prompt_version}:{settings.model_id}:{case.case_id}:{trial_index + 1}"
+            f"eval:{prompt_bundle.version}:{settings.model_id}:{case.case_id}:{trial_index + 1}"
         ),
         profile_id="synthetic_gildan_5000",
     )
@@ -146,7 +149,9 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
     score_artifact = {
         "run_id": EVALUATION_RUN_ID,
         "model_id": settings.model_id,
-        "prompt_version": manifest.prompt_version,
+        "prompt_version": prompt_bundle.version,
+        "prompt_fingerprint": prompt_bundle.fingerprint,
+        "fixture_baseline_prompt_version": manifest.prompt_version,
         "split": case.split,
         "trial": trial_index + 1,
         "workflow": {

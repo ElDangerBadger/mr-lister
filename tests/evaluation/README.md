@@ -78,6 +78,30 @@ AWS_PROFILE=mr-lister-dev \
   .venv/bin/python -m pytest -m live_bedrock -s tests/evaluation/test_live_bedrock.py
 ```
 
+### Reversible Etsy SEO prompt comparison
+
+Production and ordinary evaluation default to the sealed `2026-08-18.7` prompt bundle. The
+adapted `2026-09-08.1-etsy-seo-candidate` bundle carries the useful merchandising guidance from
+the seller's expanded prompt into Mr Lister's existing flat listing contract. It deliberately
+does not request unused alternate titles, mockup advice, or a second schema, and it retains the
+application-owned 18–30 candidate-tag pool from which exactly 13 final tags are selected.
+
+Select the candidate only inside the opt-in evaluator:
+
+```shell
+MR_LISTER_RUN_LIVE_BEDROCK=1 \
+MR_LISTER_RUN_FULL_BEDROCK_EVAL=1 \
+MR_LISTER_EVAL_PROMPT_VERSION=2026-09-08.1-etsy-seo-candidate \
+MR_LISTER_EVAL_RUN_ID=gemma-etsy-seo-candidate \
+MR_LISTER_BEDROCK_CONFIG=config/bedrock/google_gemma_3_27b_it.json \
+AWS_PROFILE=mr-lister-dev \
+  .venv/bin/python -m pytest -m live_bedrock -s tests/evaluation/test_live_bedrock.py
+```
+
+Omit `MR_LISTER_EVAL_PROMPT_VERSION` for a same-fixture baseline run. The selected bundle version
+is written into each private score artifact and Bedrock diagnostic. An unknown version fails
+closed before model invocation. This evaluator-only selector does not change the deployed runtime.
+
 Each accepted score and its validated synthetic-evaluation contracts are written under the gitignored
 `.mr_lister_private/evaluation-results/<run-id>/` directory. Compare provider or repeated-trial
 summaries without contacting AWS:

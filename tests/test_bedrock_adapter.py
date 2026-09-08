@@ -13,6 +13,13 @@ from PIL import Image
 from mr_lister.contracts import ArtworkAnalysis
 from mr_lister.intelligence.bedrock import BedrockListingIntelligenceAdapter
 from mr_lister.intelligence.diagnostics import InMemoryDiagnosticSink
+from mr_lister.intelligence.prompts import (
+    BASELINE_PROMPT_BUNDLE,
+    ETSY_SEO_CANDIDATE_PROMPT_BUNDLE,
+    ETSY_SEO_CANDIDATE_PROMPT_VERSION,
+    PROMPT_VERSION,
+    prompt_bundle_for,
+)
 from mr_lister.intelligence.settings import BedrockSettings
 from mr_lister.workflow.errors import (
     IntelligenceConfigurationError,
@@ -110,11 +117,18 @@ def artwork_input(content: bytes) -> ArtworkInput:
     )
 
 
-def build_adapter(client, diagnostics=None, **settings):
+def build_adapter(
+    client,
+    diagnostics=None,
+    *,
+    prompt_bundle=BASELINE_PROMPT_BUNDLE,
+    **settings,
+):
     return BedrockListingIntelligenceAdapter(
         client=client,
         settings=BedrockSettings(**settings),
         diagnostics=diagnostics,
+        prompt_bundle=prompt_bundle,
     )
 
 
@@ -156,6 +170,49 @@ def test_nova_uses_prompted_json_without_native_structured_output() -> None:
     assert "Return only one JSON object matching this JSON Schema exactly" in prompt
     assert '"additionalProperties":false' in prompt
     assert '"confidence"' in prompt
+
+
+def test_default_prompt_bundle_remains_the_versioned_baseline() -> None:
+    assert BASELINE_PROMPT_BUNDLE.version == PROMPT_VERSION == "2026-08-18.7"
+    assert len(BASELINE_PROMPT_BUNDLE.fingerprint) == 64
+    assert BASELINE_PROMPT_BUNDLE.fingerprint != ETSY_SEO_CANDIDATE_PROMPT_BUNDLE.fingerprint
+    assert "18 to 30 unique candidate tags" in BASELINE_PROMPT_BUNDLE.listing
+    assert "BUYER PSYCHOLOGY" not in BASELINE_PROMPT_BUNDLE.listing
+    assert prompt_bundle_for(PROMPT_VERSION) is BASELINE_PROMPT_BUNDLE
+
+
+def test_etsy_seo_candidate_is_explicit_and_keeps_the_application_contract() -> None:
+    content = transparent_png()
+    diagnostics = InMemoryDiagnosticSink()
+    client = ScriptedConverseClient(response(listing()))
+    adapter = build_adapter(
+        client,
+        diagnostics=diagnostics,
+        prompt_bundle=ETSY_SEO_CANDIDATE_PROMPT_BUNDLE,
+    )
+
+    result = adapter.draft_listing(
+        artwork_input(content),
+        content,
+        ArtworkAnalysis.model_validate(artwork_analysis()),
+    )
+
+    assert len(result.tags) == 13
+    request = client.calls[0]
+    prompt = request["messages"][0]["content"][-1]["text"]
+    assert "Find the most credible design hook" in prompt
+    assert "Return 18 to 30 unique Etsy tag candidates" in prompt
+    assert "Return no alternate titles, mockup" in prompt
+    assert diagnostics.records[-1]["prompt_version"] == ETSY_SEO_CANDIDATE_PROMPT_VERSION
+    assert (
+        diagnostics.records[-1]["metadata"]["prompt_fingerprint"]
+        == ETSY_SEO_CANDIDATE_PROMPT_BUNDLE.fingerprint
+    )
+
+
+def test_unknown_prompt_version_fails_closed() -> None:
+    with pytest.raises(ValueError, match="Unsupported prompt version"):
+        prompt_bundle_for("unreviewed-prompt")
 
 
 def test_nova_accepts_one_json_fence_then_applies_the_strict_contract() -> None:

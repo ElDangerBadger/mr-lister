@@ -250,24 +250,32 @@ def summarize_score_documents(
 ) -> tuple[dict[str, Any], ...]:
     """Summarize immutable live-score artifacts by run and configured model."""
 
-    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+    grouped: dict[tuple[str, str, str, str], list[Mapping[str, Any]]] = {}
     for document in documents:
         run_id = document.get("run_id")
         model_id = document.get("model_id")
+        prompt_version = document.get("prompt_version")
+        prompt_fingerprint = document.get("prompt_fingerprint", "legacy-unbound")
         score = document.get("score")
         if (
             not isinstance(run_id, str)
             or not run_id
             or not isinstance(model_id, str)
             or not model_id
+            or not isinstance(prompt_version, str)
+            or not prompt_version
+            or not isinstance(prompt_fingerprint, str)
+            or not prompt_fingerprint
         ):
-            raise ValueError("Evaluation score artifact requires run_id and model_id")
+            raise ValueError(
+                "Evaluation score artifact requires run_id, model_id, and prompt identity"
+            )
         if not isinstance(score, Mapping):
             raise ValueError("Evaluation score artifact requires a score object")
-        grouped.setdefault((run_id, model_id), []).append(score)
+        grouped.setdefault((run_id, model_id, prompt_version, prompt_fingerprint), []).append(score)
 
     summaries: list[dict[str, Any]] = []
-    for (run_id, model_id), scores in sorted(grouped.items()):
+    for (run_id, model_id, prompt_version, prompt_fingerprint), scores in sorted(grouped.items()):
         averages: dict[str, float] = {}
         for metric in SUMMARY_METRICS:
             values = [score.get(metric) for score in scores]
@@ -280,6 +288,8 @@ def summarize_score_documents(
             {
                 "run_id": run_id,
                 "model_id": model_id,
+                "prompt_version": prompt_version,
+                "prompt_fingerprint": prompt_fingerprint,
                 "score_count": len(scores),
                 "passed": passed,
                 "pass_rate": round(passed / len(scores), 4),

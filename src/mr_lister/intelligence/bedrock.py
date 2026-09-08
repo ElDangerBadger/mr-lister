@@ -29,13 +29,7 @@ from mr_lister.intelligence.listing_draft import (
     finalize_listing_draft,
     select_etsy_tags,
 )
-from mr_lister.intelligence.prompts import (
-    ARTWORK_PROMPT,
-    LISTING_PROMPT,
-    PROMPT_VERSION,
-    REPAIR_PROMPT,
-    SYSTEM_PROMPT,
-)
+from mr_lister.intelligence.prompts import BASELINE_PROMPT_BUNDLE, PromptBundle
 from mr_lister.intelligence.schema import bedrock_output_schema
 from mr_lister.intelligence.settings import BedrockSettings
 from mr_lister.latency import latency_span
@@ -84,6 +78,7 @@ def build_bedrock_adapter(
     *,
     session: boto3.Session | None = None,
     diagnostics: DiagnosticSink | None = None,
+    prompt_bundle: PromptBundle = BASELINE_PROMPT_BUNDLE,
 ) -> BedrockListingIntelligenceAdapter:
     """Build an adapter using the AWS default credential chain."""
 
@@ -101,6 +96,7 @@ def build_bedrock_adapter(
         client=client,
         settings=settings,
         diagnostics=diagnostics,
+        prompt_bundle=prompt_bundle,
     )
 
 
@@ -113,14 +109,16 @@ class BedrockListingIntelligenceAdapter:
         client: ConverseClient,
         settings: BedrockSettings,
         diagnostics: DiagnosticSink | None = None,
+        prompt_bundle: PromptBundle = BASELINE_PROMPT_BUNDLE,
     ) -> None:
         self._client = client
         self._settings = settings
         self._diagnostics = diagnostics or NoOpDiagnosticSink()
+        self._prompt_bundle = prompt_bundle
 
     def inspect_artwork(self, artwork: ArtworkInput, content: bytes) -> ArtworkAnalysis:
         image = prepare_bedrock_image(content)
-        prompt = ARTWORK_PROMPT + _transparency_note(image)
+        prompt = self._prompt_bundle.artwork + _transparency_note(image)
         return self._invoke_contract(
             operation="inspect_artwork",
             contract=ArtworkAnalysis,
@@ -137,7 +135,7 @@ class BedrockListingIntelligenceAdapter:
         analysis: ArtworkAnalysis,
     ) -> ListingIntelligence:
         del content
-        prompt = LISTING_PROMPT.format(analysis_json=analysis.model_dump_json())
+        prompt = self._prompt_bundle.listing.format(analysis_json=analysis.model_dump_json())
         draft = self._invoke_contract(
             operation="draft_listing",
             contract=ListingCandidateDraft,
@@ -217,7 +215,7 @@ class BedrockListingIntelligenceAdapter:
                 repair_messages.append(
                     {
                         "role": "user",
-                        "content": [{"text": REPAIR_PROMPT.format(problems=problems)}],
+                        "content": [{"text": self._prompt_bundle.repair.format(problems=problems)}],
                     }
                 )
                 messages = repair_messages
@@ -244,7 +242,9 @@ class BedrockListingIntelligenceAdapter:
                     {"role": "assistant", "content": [{"text": raw_output}]},
                     {
                         "role": "user",
-                        "content": [{"text": REPAIR_PROMPT.format(problems=quality_problems)}],
+                        "content": [
+                            {"text": self._prompt_bundle.repair.format(problems=quality_problems)}
+                        ],
                     },
                 ]
                 continue
@@ -279,7 +279,7 @@ class BedrockListingIntelligenceAdapter:
         try:
             request: dict[str, Any] = {
                 "modelId": self._settings.model_id,
-                "system": [{"text": SYSTEM_PROMPT}],
+                "system": [{"text": self._prompt_bundle.system}],
                 "messages": messages,
                 "inferenceConfig": {
                     "maxTokens": self._settings.max_tokens,
@@ -316,11 +316,12 @@ class BedrockListingIntelligenceAdapter:
                     operation=operation,
                     model_id=self._settings.model_id,
                     status="provider_error",
-                    prompt_version=PROMPT_VERSION,
+                    prompt_version=self._prompt_bundle.version,
                     attempt=attempt,
                     request_id=request_id,
                     artwork_sha256=artwork_sha256,
                     metadata={
+                        "prompt_fingerprint": self._prompt_bundle.fingerprint,
                         **_image_metadata(image),
                     },
                     error_type=type(error).__name__,
@@ -376,10 +377,11 @@ class BedrockListingIntelligenceAdapter:
                 operation=operation,
                 model_id=self._settings.model_id,
                 status="provider_error",
-                prompt_version=PROMPT_VERSION,
+                prompt_version=self._prompt_bundle.version,
                 attempt=attempt,
                 artwork_sha256=artwork_sha256,
                 metadata={
+                    "prompt_fingerprint": self._prompt_bundle.fingerprint,
                     **_image_metadata(image),
                 },
                 error_type=type(error).__name__,
@@ -408,13 +410,14 @@ class BedrockListingIntelligenceAdapter:
                 operation=operation,
                 model_id=self._settings.model_id,
                 status=status,
-                prompt_version=PROMPT_VERSION,
+                prompt_version=self._prompt_bundle.version,
                 attempt=attempt,
                 latency_ms=metrics.get("latencyMs"),
                 request_id=response_metadata.get("RequestId"),
                 artwork_sha256=artwork_sha256,
                 usage=response.get("usage", {}),
                 metadata={
+                    "prompt_fingerprint": self._prompt_bundle.fingerprint,
                     "stop_reason": response.get("stopReason"),
                     "validation_problems": validation_problems,
                     **_image_metadata(image),
