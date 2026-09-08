@@ -35,8 +35,10 @@ from tools.build_phase79_worker_source_release import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE_PATH = (ROOT / "config/product_profiles/gildan_64000_swiftpod.json").resolve()
-EXPECTED_MANIFEST_FINGERPRINT = "6ef0ad14098598337a739608e5a55f70ca8622077d30098c7b736655f5fa0789"
-EXPECTED_ARCHIVE_FINGERPRINT = "50ef471e9f20e90ccfbe08e2393c35bace29da0b4d8707a3c83e8cbc682aca4e"
+# Whole-phrase tag validation adds only workflow.tag_policy to the audited closure.
+# Double-built and verified locally; this is not a deployed-runtime release seal.
+EXPECTED_MANIFEST_FINGERPRINT = "d45bc407680156f9ef75f7983afef90a375e392ef324750d87a2bbc10b3d1fc3"
+EXPECTED_ARCHIVE_FINGERPRINT = "60fa1be144e46fb5f2a1aa34973e059ef90452089112ca5b9fbf81631f6c0406"
 CAPABILITY_FREE_INITIALIZERS = {
     "mr_lister/__init__.py",
     "mr_lister/cloud/__init__.py",
@@ -147,7 +149,8 @@ def test_worker_closure_is_exact_and_has_no_default_aws_or_runtime_registration(
     manifest = _manifest(artifact.source_root)
     paths = {record["path"] for record in manifest["files"]}
 
-    assert len(closure) == 47
+    assert len(closure) == 48
+    assert "mr_lister.workflow.tag_policy" in closure
     assert WORKER_COMPOSITION_ROOT in closure
     assert "mr_lister.cloud.phase7_configuration" in closure
     assert "mr_lister.publication.provider_runtime" in closure

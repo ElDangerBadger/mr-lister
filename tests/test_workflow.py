@@ -242,17 +242,65 @@ def test_unresolved_external_claim_stops_retry_for_reconciliation(
     assert production.calls == 1
 
 
-def test_repeated_tag_keywords_are_a_deterministic_validation_error(
-    listing,
+@pytest.fixture
+def redundant_listing(listing):
+    return listing.model_copy(
+        update={
+            "tags": (
+                "octopus art",
+                "octopus print",
+                "compass artwork",
+                "forest adventure",
+                "vintage illustration",
+                "outdoor apparel",
+                "nature lover gift",
+                "crescent moon",
+                "pine silhouette",
+                "earthy palette",
+                "camping keepsake",
+                "wildlife design",
+                "retro shirt",
+            )
+        }
+    )
+
+
+def test_redundant_tag_intents_are_a_deterministic_validation_error(
+    redundant_listing,
 ) -> None:
     from mr_lister.workflow.validation import validate_listing
+
+    result = validate_listing(redundant_listing)
+
+    assert result.passed is False
+    assert [issue.code for issue in result.issues] == ["TAG_REDUNDANCY"]
+    assert result.issues[0].severity.value == "error"
+    assert "search intent" in result.issues[0].message
+
+
+def test_distinct_search_intents_can_repeat_a_meaningful_word(redundant_listing) -> None:
+    from mr_lister.workflow.validation import validate_listing
+
+    listing = redundant_listing.model_copy(
+        update={"tags": ("diamond ring", "engagement ring", *redundant_listing.tags[2:])}
+    )
+
+    assert validate_listing(listing).passed is True
+
+
+@pytest.mark.parametrize(
+    "tags",
+    (("diamond ring", "diamond rings"), ("octopus print", "octopuses prints")),
+)
+def test_trivial_plural_tag_variants_are_redundant(redundant_listing, tags) -> None:
+    from mr_lister.workflow.validation import validate_listing
+
+    listing = redundant_listing.model_copy(update={"tags": (*tags, *redundant_listing.tags[2:])})
 
     result = validate_listing(listing)
 
     assert result.passed is False
-    assert [issue.code for issue in result.issues] == ["TAG_KEYWORD_REPETITION"]
-    assert result.issues[0].severity.value == "error"
-    assert "badger" in result.issues[0].message
+    assert [issue.code for issue in result.issues] == ["TAG_REDUNDANCY"]
 
 
 def test_tag_keyword_validation_normalizes_simple_plural_variants() -> None:
@@ -267,17 +315,17 @@ def test_tag_keyword_validation_normalizes_simple_plural_variants() -> None:
     assert find_repeated_tag_keyword_locations(tags) == {"artist": (1, 2)}
 
 
-def test_repeated_model_keywords_stop_before_production_and_require_revision(
+def test_redundant_model_tags_stop_before_production_and_require_revision(
     workflow: ListingWorkflow,
     production: FakeProductionAdapter,
-    listing,
+    redundant_listing,
 ) -> None:
     class RepeatingIntelligenceAdapter:
         def inspect_artwork(self, _artwork, _content):
             return ArtworkAnalysis(subject="Badger", confidence=0.9)
 
         def draft_listing(self, _artwork, _content, _analysis):
-            return listing
+            return redundant_listing
 
     workflow.intelligence = RepeatingIntelligenceAdapter()
 
@@ -286,28 +334,28 @@ def test_repeated_model_keywords_stop_before_production_and_require_revision(
 
     assert job.state is JobState.NEEDS_REVISION
     assert review.validation.passed is False
-    assert [issue.code for issue in review.validation.issues] == ["TAG_KEYWORD_REPETITION"]
+    assert [issue.code for issue in review.validation.issues] == ["TAG_REDUNDANCY"]
     assert production.create_calls == 0
     assert workflow.store.external_writes[job.job_id] == []
     with pytest.raises(InvalidStateError, match="awaiting approval"):
         workflow.approve(job.job_id, review.review_version)
 
 
-def test_valid_human_revision_recovers_a_repeated_keyword_draft(
+def test_valid_human_revision_recovers_a_redundant_tag_draft(
     workflow: ListingWorkflow,
     production: FakeProductionAdapter,
-    listing,
+    redundant_listing,
 ) -> None:
     class RepeatingIntelligenceAdapter:
         def inspect_artwork(self, _artwork, _content):
             return ArtworkAnalysis(subject="Badger", confidence=0.9)
 
         def draft_listing(self, _artwork, _content, _analysis):
-            return listing
+            return redundant_listing
 
     workflow.intelligence = RepeatingIntelligenceAdapter()
     job = submit(workflow)
-    revision_payload = listing.model_dump(exclude={"contract_version"})
+    revision_payload = redundant_listing.model_dump(exclude={"contract_version"})
     revision_payload["tags"] = (
         "badger portrait",
         "woodland explorer",

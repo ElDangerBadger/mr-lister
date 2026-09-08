@@ -130,6 +130,7 @@ _WORKFLOW_FILES = (
     "models.py",
     "ports.py",
     "secrets.py",
+    "tag_policy.py",
     "validation.py",
 )
 _AGENTCORE_AGENT_FILES = (

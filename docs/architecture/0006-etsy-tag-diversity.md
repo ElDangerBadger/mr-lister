@@ -1,7 +1,7 @@
 # ADR 0006: Etsy tag diversity policy
 
 - Status: Accepted
-- Date: 2026-08-18
+- Date: 2026-08-18; revised 2026-09-08 by the bounded SEO/tag decision
 
 ## Context
 
@@ -16,28 +16,44 @@ model's self-assessment.
 
 Mr Lister asks the model for 18–30 ranked, buyer-relevant candidate phrases covering the subject,
 concrete visual elements, style or aesthetic, visible wording, theme, audience, and buyer intent.
-Application code then selects exactly 13. Candidate alternatives may overlap because only a subset
-is used, but the pool must contain enough relevant alternative vocabulary for a collision-free set.
+Application code then selects exactly 13 complete input phrases, each at most 20 characters.
+It preserves ranked order, skipping obvious fragments, generic-only phrases, duplicate inflections,
+and low-information paraphrases. It backtracks only to find a complete nonredundant set. It never
+strips, truncates, recombines, or invents words to fill tag slots.
 
-Exact duplicate tags are an application-contract failure. Repeated normalized meaningful words
-across different tags are a deterministic workflow-validation error and increment
-`tag_keyword_reuse_count`. The provider now returns a ranked pool of 18–30 candidate phrases.
-Application code deterministically selects the strongest feasible 13-tag subset without normalized
-keyword collisions. The model receives a bounded repair opportunity only when its entire candidate
-pool cannot produce a valid subset, but its rationale or claim of compliance is never treated as
-evidence. A provider draft that still cannot be finalized after repair fails at the intelligence
-boundary and performs no production write. A human-edited public listing with repetition is
-preserved in `needs_revision` until corrected. Stop words are ignored, and the system must not
-substitute irrelevant filler merely to make the metric pass.
+The original absolute repeated-root prohibition is superseded by
+`2026-09-08.phrase-coverage-1`. Shared meaningful words are allowed when phrases add distinct useful
+intent: `diamond ring` and `engagement ring` are valid together; `octopus art` and `octopus print`
+are redundant. The small explicit lexical policy normalizes case, whitespace, common inflections,
+and generic product/artwork/audience heads. A phrase must contribute a specific concept beyond
+generic heads. It is not a complete semantic model or proof of grounding; Gemma and seller review
+still own interpretation, shopper-language relevance, and factual correctness.
+
+Exact duplicates remain an application-contract failure. Material lexical redundancy is a
+`TAG_REDUNDANCY` workflow-validation error with one-based tag locations in review feedback.
+`tag_keyword_reuse_count` is retained solely as historical diagnostic telemetry; the current
+evaluation gate uses `tag_redundancy_count`. Historical scores missing that metric are unassessed
+under the new policy, not retrospectively certified.
+
+If the pool cannot yield 13 eligible phrases, the existing listing invocation path permits at
+most one repair, requesting additional relevant candidates and preserving all other copy fields.
+Code preserves the original prose during a tag-only repair. No new tag inference operation is
+introduced. An insufficient repaired pool fails before production writes; filler is never generated
+by the selector. Human edits remain subject to exact-version review and approval.
 
 ## Consequences
 
-- The generated set uses Etsy's combinatorial matching more efficiently.
+- The selector prioritizes ranked, distinct whole phrases; actual search impact is not established
+  by lexical metrics or offline tests.
 - Human judgment remains authoritative through revision, while the automated ready-to-post gate
   stays consistent.
-- Repetition is visible and measurable across providers and prompt versions.
+- Useful shared words no longer block review solely because their roots recur.
 - Invalid tag sets never cross the production adapter boundary.
 - Changes to normalization or stop words require tests because they can change evaluation scores.
+- This source change does not deploy or migrate stored reviews. Previously rejected records whose
+  stored validation reflects the old policy need explicit consideration before a future rollout.
+- Candidate v1 is the frozen copy-quality reference; its bytes and the production rollback bundle
+  are unchanged. See [the bounded checkpoint](../etsy-seo-tag-baseline.md) for the evidence gap.
 
 ## References
 

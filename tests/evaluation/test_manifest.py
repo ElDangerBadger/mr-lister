@@ -85,6 +85,7 @@ def test_offline_score_combines_grounding_contract_and_safe_telemetry() -> None:
     assert result["tag_relevance"] == 1.0
     assert result["tag_diversity"] == 1.0
     assert result["tag_keyword_reuse_count"] == 0
+    assert result["tag_redundancy_count"] == 0
     assert result["latency_ms"] == 250.5
     assert result["input_tokens"] == 50
     assert result["output_tokens"] == 15
@@ -103,6 +104,7 @@ def test_quality_floor_rejects_stale_generic_evaluation_output() -> None:
             "tag_relevance": 0.0,
             "tag_diversity": 1.0,
             "tag_keyword_reuse_count": 0,
+            "tag_redundancy_count": 0,
         }
     )
 
@@ -144,6 +146,7 @@ def test_concept_aliases_count_once_without_lowering_the_typography_floor() -> N
     assert result["visual_anchor_recall"] == 0.5
     assert result["tag_relevance"] == 0.3333
     assert result["tag_keyword_reuse_count"] == 0
+    assert result["tag_redundancy_count"] == 0
     assert quality_failures(result) == ()
 
 
@@ -157,6 +160,7 @@ def test_score_artifact_summary_keeps_runs_and_models_separate() -> None:
         "tag_relevance": 1.0,
         "tag_diversity": 1.0,
         "tag_keyword_reuse_count": 0,
+        "tag_redundancy_count": 0,
         "latency_ms": 100,
         "input_tokens": 20,
         "output_tokens": 10,
@@ -198,8 +202,91 @@ def test_score_artifact_summary_keeps_runs_and_models_separate() -> None:
         "baseline-fingerprint",
     ]
     assert summaries[1]["score_count"] == 2
+    assert summaries[1]["quality_unassessed_score_count"] == 0
     assert summaries[1]["pass_rate"] == 1.0
     assert summaries[1]["averages"]["latency_ms"] == 150.0
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "redundancy_count"),
+    (("diamond ring", "engagement ring", 0), ("octopus art", "octopus print", 1)),
+)
+def test_score_measures_redundant_intent_not_shared_roots(
+    listing, first, second, redundancy_count
+) -> None:
+    case = load_manifest(MANIFEST).cases[0]
+    tags = (
+        first,
+        second,
+        "compass artwork",
+        "forest adventure",
+        "vintage illustration",
+        "outdoor apparel",
+        "nature lover gift",
+        "crescent moon",
+        "pine silhouette",
+        "earthy palette",
+        "camping keepsake",
+        "wildlife design",
+        "retro shirt",
+    )
+
+    result = score_case(
+        case,
+        analysis=ArtworkAnalysis(subject="A badger", confidence=0.9),
+        listing=listing.model_copy(update={"tags": tags}),
+    )
+
+    assert result["tag_keyword_reuse_count"] > 0
+    assert result["tag_redundancy_count"] == redundancy_count
+
+
+@pytest.fixture
+def passing_score() -> dict[str, int | float | bool]:
+    return {
+        "contract_pass": True,
+        "repair_attempts": 0,
+        "visual_anchor_recall": 1.0,
+        "visible_text_recall": 1.0,
+        "title_specificity": 1.0,
+        "tag_relevance": 1.0,
+        "tag_diversity": 1.0,
+        "tag_keyword_reuse_count": 3,
+        "tag_redundancy_count": 0,
+    }
+
+
+def test_quality_floor_allows_shared_roots_but_rejects_redundancy(passing_score) -> None:
+    assert quality_failures(passing_score) == ()
+    assert quality_failures({**passing_score, "tag_redundancy_count": 1}) == (
+        "tag_redundancy_count must be at most 0",
+    )
+
+
+@pytest.mark.parametrize("legacy_reuse_count", (0, 3))
+def test_legacy_scores_are_not_recertified_from_root_counts(
+    passing_score, legacy_reuse_count
+) -> None:
+    legacy = {key: value for key, value in passing_score.items() if key != "tag_redundancy_count"}
+    legacy["tag_keyword_reuse_count"] = legacy_reuse_count
+    document = {
+        "run_id": "legacy-run",
+        "model_id": "gemma",
+        "prompt_version": "baseline",
+        "score": legacy,
+    }
+
+    assert quality_failures(legacy) == (
+        "tag_redundancy_count is missing; legacy scores are not assessed "
+        "under the current tag policy",
+    )
+    summary = summarize_score_documents((document,))[0]
+
+    assert summary["quality_unassessed_score_count"] == 1
+    assert summary["passed"] is None
+    assert summary["pass_rate"] is None
+    assert summary["averages"]["tag_keyword_reuse_count"] == legacy_reuse_count
+    assert "tag_redundancy_count" not in summary["averages"]
 
 
 def test_manifest_rejects_asset_path_escape(tmp_path: Path) -> None:

@@ -257,9 +257,9 @@ def test_source_is_deterministic_full_production_closure_and_topology_bound(
     assert (first / SOURCE_MANIFEST_FILENAME).read_bytes() == (
         second / SOURCE_MANIFEST_FILENAME
     ).read_bytes()
-    # Stage 0 adds the capability-free latency trace contract to the shared provider-resource
-    # closure. It performs no AWS, provider, or state operation during import or disabled use.
-    assert len(closure) == 75
+    # Phrase coverage adds one pure, standard-library-only module through shared validation.
+    # The frozen publication topology and external dependency closure remain unchanged.
+    assert len(closure) == 76
     assert manifest["files"] == inventory(first, excluded=frozenset({SOURCE_MANIFEST_FILENAME}))
     assert manifest["third_party_import_roots"] == list(PRODUCTION_THIRD_PARTY_IMPORT_ROOTS)
     assert manifest["topology"]["production_disabled_template_sha256"] == (
@@ -275,6 +275,7 @@ def test_source_is_deterministic_full_production_closure_and_topology_bound(
         "mr_lister.cloud.phase7_operations_composition",
         "mr_lister.cloud.phase7_production_entrypoints",
         "mr_lister.release.phase7_production_disabled",
+        "mr_lister.workflow.tag_policy",
     }
     assert required.issubset(closure)
     assert all(

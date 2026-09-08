@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from mr_lister.contracts import ArtworkAnalysis, ListingIntelligence
+from mr_lister.workflow.tag_policy import redundant_tag_pairs
 from mr_lister.workflow.validation import tag_keyword_reuse_count
 
 REQUIRED_CASE_CATEGORIES = frozenset(
@@ -27,6 +28,8 @@ REQUIRED_CASE_CATEGORIES = frozenset(
         "visible_prompt_injection",
     }
 )
+# The original artwork manifest stays frozen; current scores additionally require
+# tag_redundancy_count through QUALITY_MAXIMUMS below.
 REQUIRED_METRICS = frozenset(
     {
         "contract_pass",
@@ -50,7 +53,7 @@ QUALITY_MINIMUMS = {
     "tag_relevance": 0.3333,
     "tag_diversity": 1.0,
 }
-QUALITY_MAXIMUMS = {"repair_attempts": 2, "tag_keyword_reuse_count": 0}
+QUALITY_MAXIMUMS = {"repair_attempts": 2, "tag_redundancy_count": 0}
 type ConceptAliases = tuple[str, ...]
 EVALUATION_SPLITS = frozenset({"calibration", "regression", "holdout"})
 SUMMARY_METRICS = (
@@ -61,6 +64,7 @@ SUMMARY_METRICS = (
     "tag_relevance",
     "tag_diversity",
     "tag_keyword_reuse_count",
+    "tag_redundancy_count",
     "latency_ms",
     "input_tokens",
     "output_tokens",
@@ -183,6 +187,7 @@ def score_case(
         "tag_relevance": _concept_recall(case.tag_concepts, tag_text),
         "tag_diversity": round(len(normalized_tags) / len(listing.tags), 4),
         "tag_keyword_reuse_count": tag_keyword_reuse_count(listing.tags),
+        "tag_redundancy_count": len(redundant_tag_pairs(listing.tags)),
         "latency_ms": telemetry["latency_ms"],
         "input_tokens": telemetry["input_tokens"],
         "output_tokens": telemetry["output_tokens"],
@@ -239,6 +244,12 @@ def quality_failures(score: Mapping[str, Any]) -> tuple[str, ...]:
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value < minimum:
             failures.append(f"{metric} must be at least {minimum}")
     for metric, maximum in QUALITY_MAXIMUMS.items():
+        if metric == "tag_redundancy_count" and metric not in score:
+            failures.append(
+                "tag_redundancy_count is missing; legacy scores are not assessed "
+                "under the current tag policy"
+            )
+            continue
         value = score.get(metric)
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value > maximum:
             failures.append(f"{metric} must be at most {maximum}")
@@ -283,7 +294,8 @@ def summarize_score_documents(
                 isinstance(value, (int, float)) and not isinstance(value, bool) for value in values
             ):
                 averages[metric] = round(sum(values) / len(values), 4)
-        passed = sum(not quality_failures(score) for score in scores)
+        unassessed = sum("tag_redundancy_count" not in score for score in scores)
+        passed = sum(not quality_failures(score) for score in scores) if not unassessed else None
         summaries.append(
             {
                 "run_id": run_id,
@@ -291,8 +303,9 @@ def summarize_score_documents(
                 "prompt_version": prompt_version,
                 "prompt_fingerprint": prompt_fingerprint,
                 "score_count": len(scores),
+                "quality_unassessed_score_count": unassessed,
                 "passed": passed,
-                "pass_rate": round(passed / len(scores), 4),
+                "pass_rate": round(passed / len(scores), 4) if passed is not None else None,
                 "averages": averages,
             }
         )

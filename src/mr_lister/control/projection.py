@@ -60,10 +60,8 @@ from mr_lister.control.projection_models import (
 from mr_lister.control.source_artwork import validate_source_artifact_authority
 from mr_lister.review_profile import ExactReviewProductProfile
 from mr_lister.review_security import is_safe_mockup_url, is_safe_preview_url
-from mr_lister.workflow.validation import (
-    find_repeated_tag_keyword_locations,
-    validate_listing,
-)
+from mr_lister.workflow.tag_policy import redundant_tag_pairs
+from mr_lister.workflow.validation import validate_listing
 
 MAX_PREVIEW_TTL = timedelta(minutes=5)
 
@@ -460,14 +458,13 @@ class SellerReviewProjectionService:
                 "The consolidated review is temporarily unavailable"
             )
         issues: list[PublicValidationIssue] = []
-        repeated_locations = find_repeated_tag_keyword_locations(candidate.tags)
-        repeated_positions = sorted(
-            {position for positions in repeated_locations.values() for position in positions}
+        redundant_positions = sorted(
+            {position for pair in redundant_tag_pairs(candidate.tags) for position in pair}
         )
         for issue in result.issues:
             paths = (
-                tuple(f"tags[{position}]" for position in repeated_positions)
-                if issue.code == "TAG_KEYWORD_REPETITION"
+                tuple(f"tags[{position}]" for position in redundant_positions)
+                if issue.code == "TAG_REDUNDANCY"
                 else (issue.field or "$",)
             )
             issues.extend(

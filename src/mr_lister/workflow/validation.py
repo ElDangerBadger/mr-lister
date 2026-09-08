@@ -11,6 +11,7 @@ from PIL import Image, UnidentifiedImageError
 from mr_lister.contracts import ListingIntelligence, ValidationIssue, ValidationResult
 from mr_lister.workflow.errors import InvalidArtworkError
 from mr_lister.workflow.models import ArtworkInput
+from mr_lister.workflow.tag_policy import redundant_tag_pairs
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 MAX_ARTWORK_BYTES = 25 * 1024 * 1024
@@ -76,16 +77,14 @@ def validate_listing(listing: ListingIntelligence) -> ValidationResult:
                 severity="warning",
             )
         )
-    repeated_keywords = find_repeated_tag_keywords(listing.tags)
-    if repeated_keywords:
+    if redundant_tag_pairs(listing.tags):
         issues.append(
             ValidationIssue(
-                code="TAG_KEYWORD_REPETITION",
+                code="TAG_REDUNDANCY",
                 field="tags",
                 message=(
-                    "Tags repeat searchable keywords and are not ready for publication: "
-                    + ", ".join(repeated_keywords)
-                    + "."
+                    "Tags repeat the same search intent; replace redundant phrases with "
+                    "relevant alternatives."
                 ),
                 severity="error",
             )

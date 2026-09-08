@@ -299,7 +299,7 @@ def test_invalid_candidate_pool_is_repaired_once_and_revalidated() -> None:
     assert len(diagnostics.records[-1]["response_sha256"]) == 64
 
 
-def test_selector_skips_colliding_candidates_without_model_repair() -> None:
+def test_selector_accepts_distinct_shared_word_intents_without_model_repair() -> None:
     content = transparent_png()
     repeated = listing()
     repeated["tag_candidates"] = [
@@ -318,7 +318,7 @@ def test_selector_skips_colliding_candidates_without_model_repair() -> None:
     )
 
     assert result.tags[0] == "badger portrait"
-    assert "badger explorer" not in result.tags
+    assert "badger explorer" in result.tags
     assert len(result.tags) == 13
     assert len(client.calls) == 1
     assert [record["status"] for record in diagnostics.records] == ["accepted"]
@@ -345,7 +345,48 @@ def test_unselectable_candidate_pool_receives_bounded_repair() -> None:
     assert len(result.tags) == 13
     assert len(client.calls) == 2
     assert diagnostics.records[0]["status"] == "invalid_output"
-    assert "cannot produce 13 tags" in client.calls[1]["messages"][-1]["content"][0]["text"]
+    assert "cannot produce 13 complete" in client.calls[1]["messages"][-1]["content"][0]["text"]
+
+
+def test_listing_repair_is_capped_at_one_even_with_larger_pinned_setting() -> None:
+    content = transparent_png()
+    client = ScriptedConverseClient(
+        response(listing(tag_count=17)), response(listing(tag_count=17)), response(listing())
+    )
+    adapter = build_adapter(client, max_repair_attempts=2)
+    with pytest.raises(InvalidGeneratedOutputError, match="bounded repair"):
+        adapter.draft_listing(
+            artwork_input(content), content, ArtworkAnalysis.model_validate(artwork_analysis())
+        )
+    assert len(client.calls) == 2
+    assert len(client.results) == 1
+
+
+def test_tag_only_repair_preserves_all_original_copy() -> None:
+    content = transparent_png()
+    original = listing()
+    # Each phrase is overlength: repair must supply new whole phrases, not truncate.
+    original["tag_candidates"] = [f"geometric woodland badger {index}" for index in range(18)]
+    repaired = listing()
+    repaired.update(
+        title="Different title",
+        description="Different description",
+        audience=["Different audience"],
+        title_rationale="Different hook",
+        tag_rationale="Different rationale",
+    )
+    client = ScriptedConverseClient(response(original), response(repaired))
+    adapter = build_adapter(
+        client, max_repair_attempts=2, prompt_bundle=ETSY_SEO_CANDIDATE_PROMPT_BUNDLE
+    )
+    result = adapter.draft_listing(
+        artwork_input(content), content, ArtworkAnalysis.model_validate(artwork_analysis())
+    )
+    for field in ("title", "description", "title_rationale", "tag_rationale"):
+        assert getattr(result, field) == original[field]
+    assert result.audience == tuple(original["audience"])
+    assert len(result.tags) == 13
+    assert len(client.calls) == 2
 
 
 def test_final_unselectable_pool_raises_sanitized_domain_error() -> None:

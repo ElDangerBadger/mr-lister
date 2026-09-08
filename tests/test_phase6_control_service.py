@@ -587,11 +587,16 @@ def revision_command(
     )
 
 
-def test_valid_revision_atomically_creates_review_decision_receipt_and_one_sync_work() -> None:
+@pytest.mark.parametrize(
+    "tags",
+    (VALID_TAGS, ("diamond ring", "engagement ring", *VALID_TAGS[2:])),
+    ids=("distinct-vocabulary", "distinct-intents-with-shared-word"),
+)
+def test_valid_revision_atomically_creates_review_decision_receipt_and_one_sync_work(tags) -> None:
     store = InMemorySellerControlStore()
     job, review, sync, pricing = seed_reviewable(store)
     service = SellerControlService(store=store, clock=lambda: NOW)
-    command = revision_command(job, review, sync, pricing)
+    command = revision_command(job, review, sync, pricing, tags=tags)
 
     first = service.revise_listing(command)
     replayed = service.revise_listing(command)
@@ -620,7 +625,7 @@ def test_invalid_revision_persists_review_without_external_work() -> None:
     store = InMemorySellerControlStore()
     job, review, sync, pricing = seed_reviewable(store)
     service = SellerControlService(store=store, clock=lambda: NOW)
-    repeated = ("badger art", "badger gift", *VALID_TAGS[2:])
+    repeated = ("octopus art", "octopus print", *VALID_TAGS[2:])
 
     result = service.revise_listing(revision_command(job, review, sync, pricing, tags=repeated))
 
@@ -628,7 +633,7 @@ def test_invalid_revision_persists_review_without_external_work() -> None:
     assert result.state is ControlJobState.NEEDS_REVISION
     assert result.work_request_id is None
     assert revised.validation_passed is False
-    assert revised.validation_issue_codes == ("TAG_KEYWORD_REPETITION",)
+    assert revised.validation_issue_codes == ("TAG_REDUNDANCY",)
     assert not [
         item
         for item in store.list_work_requests(job.job_id)

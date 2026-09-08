@@ -39,7 +39,6 @@ from mr_lister.workflow.errors import (
     InvalidGeneratedOutputError,
 )
 from mr_lister.workflow.models import ArtworkInput
-from mr_lister.workflow.validation import find_repeated_tag_keyword_locations
 
 ContractT = TypeVar("ContractT", bound=BaseModel)
 
@@ -170,7 +169,13 @@ class BedrockListingIntelligenceAdapter:
             }
         ]
 
-        for attempt in range(self._settings.max_repair_attempts + 1):
+        # Listing selection gets at most one repair in the existing call path. Do not
+        # change artwork inspection's separately pinned configuration or add a tag call.
+        repair_limit = self._settings.max_repair_attempts
+        if contract is ListingCandidateDraft:
+            repair_limit = min(repair_limit, 1)
+        tag_repair_source: ListingCandidateDraft | None = None
+        for attempt in range(repair_limit + 1):
             response = self._converse(
                 operation=operation,
                 attempt=attempt + 1,
@@ -207,7 +212,7 @@ class BedrockListingIntelligenceAdapter:
                     error_message="Model output failed application validation",
                     validation_problems=problems,
                 )
-                if attempt >= self._settings.max_repair_attempts:
+                if attempt >= repair_limit:
                     break
                 repair_messages = [*messages]
                 if raw_output:
@@ -221,6 +226,11 @@ class BedrockListingIntelligenceAdapter:
                 messages = repair_messages
                 continue
 
+            if tag_repair_source is not None and isinstance(accepted, ListingCandidateDraft):
+                # A tag-only repair cannot silently replace the already accepted copy.
+                accepted = accepted.model_copy(
+                    update=tag_repair_source.model_dump(exclude={"tag_candidates"})
+                )
             quality_problems = _repairable_quality_problems(accepted)
             if quality_problems:
                 self._emit_response_diagnostic(
@@ -235,8 +245,10 @@ class BedrockListingIntelligenceAdapter:
                     error_message="Model output missed a repairable listing quality target",
                     validation_problems=quality_problems,
                 )
-                if attempt >= self._settings.max_repair_attempts:
+                if attempt >= repair_limit:
                     break
+                if isinstance(accepted, ListingCandidateDraft):
+                    tag_repair_source = accepted
                 messages = [
                     *messages,
                     {"role": "assistant", "content": [{"text": raw_output}]},
@@ -457,13 +469,13 @@ def _repairable_quality_problems(contract: BaseModel) -> str:
     try:
         select_etsy_tags(contract.tag_candidates)
     except ValueError:
-        collisions = find_repeated_tag_keyword_locations(contract.tag_candidates)
-        repeated = ", ".join(collisions) or "insufficient alternative vocabulary"
         return (
-            "- tag_candidates: The ranked pool cannot produce 13 tags without meaningful "
-            f"keyword reuse. Add relevant alternative phrases using distinct vocabulary; the "
-            f"most constraining repeated roots include: {repeated}. Keep 18 to 30 unique "
-            "candidates and do not remove listing fields. (candidate_selection)"
+            "- tag_candidates: The ranked pool cannot produce 13 complete, nonredundant "
+            "natural search phrases of at most 20 characters. Supply additional grounded "
+            "phrases with distinct useful search intent, not filler, duplicate plurals or "
+            "generic paraphrases. Shared words are allowed when the phrases add distinct "
+            "intent. Keep 18 to 30 ranked unique candidates. Preserve every other field "
+            "exactly; change only tag_candidates. (candidate_selection)"
         )
     else:
         return ""

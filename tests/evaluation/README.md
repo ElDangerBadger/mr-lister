@@ -52,9 +52,9 @@ set `MR_LISTER_CAPTURE_RAW_BEDROCK=1` to retain raw model responses in that priv
 Never commit or paste those artifacts into an issue, log, or public chat.
 
 That permission/model canary has two logical stages: artwork inspection and listing drafting.
-The Nova profile may make up to two semantic-repair requests per stage when validation or the
-tag-diversity target fails, and the AWS SDK may separately retry transient failures. Run all eleven
-cases only with a second explicit cost switch:
+Artwork-inspection repairs remain configuration-bounded. Listing drafting now allows at most one
+repair for invalid output or fewer than thirteen selectable complete tag phrases. The AWS SDK may
+separately retry transient failures. Run all eleven cases only with a second explicit cost switch:
 
 ```shell
 MR_LISTER_RUN_LIVE_BEDROCK=1 \
@@ -85,6 +85,15 @@ adapted `2026-09-08.1-etsy-seo-candidate` bundle carries the useful merchandisin
 the seller's expanded prompt into Mr Lister's existing flat listing contract. It deliberately
 does not request unused alternate titles, mockup advice, or a second schema, and it retains the
 application-owned 18–30 candidate-tag pool from which exactly 13 final tags are selected.
+
+Candidate v1 is now the frozen copy-quality reference; neither prompt bundle has changed, and it
+is not deployed or selected by default. Final tag selection uses deterministic whole-phrase
+redundancy and coverage, permitting shared words for distinct search intents while rejecting
+duplicate inflections and redundant alternatives. There is no token-stripping fallback. The
+retained eleven-case v1 outputs do not contain the original candidate pools, so they cannot prove
+the exact requested A/B selector comparison from identical model output. The
+[SEO/tag checkpoint](../../docs/etsy-seo-tag-baseline.md) records that evidence boundary; existing
+final tags must not be relabeled as original model candidates.
 
 Select the candidate only inside the opt-in evaluator:
 
@@ -121,11 +130,18 @@ if retention is needed.
 
 Every live case must pass the explicit Phase 2 quality floor: all case-specific title terms, at
 least half of the expected visual and visible-text signals, at least one-third of expected tag
-concepts, zero repeated meaningful tag keywords, valid contracts, and no more than two semantic
+concepts, zero redundant tag pairs, valid contracts, and no more than two semantic
 repairs across both stages. Visual anchors and tag concepts may define reviewed synonym groups;
 one matching alias credits one concept without changing the denominator or threshold. Phase 2
-v6 closes only after the full eleven-case run passes; the one-case canary proves access and request
-wiring but not representative quality. Exact duplicate tags remain a hard contract failure.
-Repeated normalized keywords across otherwise distinct tags fail deterministic acceptance and the
-evaluation floor, not the schema: a reviewer may keep justified overlap without replacing
-it with irrelevant filler.
+historical acceptance and its known secondary-object limitation remain recorded in the original
+evaluation reports; this refinement does not reopen them. The one-case canary proves access and
+request wiring but not representative quality. Exact duplicate tags remain a hard contract
+failure. Shared words across genuinely distinct natural phrases are allowed; `diamond ring` and
+`engagement ring` are not redundant, whereas `octopus art` and `octopus print` are.
+
+New scores report `tag_redundancy_count`, which must equal zero. The legacy
+`tag_keyword_reuse_count` remains descriptive telemetry, not a quality gate. The original fixture
+manifest and prompt identity remain frozen. Legacy score artifacts without the new metric are
+not recertified under the current policy: summaries retain their numeric telemetry, identify
+`quality_unassessed_score_count`, and leave current-policy `passed`/`pass_rate` null when any score
+in the group lacks the metric. Missing redundancy evidence is never inferred from a root count.

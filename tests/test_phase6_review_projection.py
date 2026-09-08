@@ -956,9 +956,9 @@ def test_refresh_economics_is_not_advertised_for_an_invalid_review() -> None:
     store, preview = _fixture()
     review = store.reviews[1].model_copy(
         update={
-            "tags": ("badger portrait", "badger token", *VALID_TAGS[2:]),
+            "tags": ("octopus art", "octopus print", *VALID_TAGS[2:]),
             "validation_passed": False,
-            "validation_issue_codes": ("TAG_KEYWORD_REPETITION",),
+            "validation_issue_codes": ("TAG_REDUNDANCY",),
         }
     )
     review = review.model_copy(update={"fingerprint": _review_content_fingerprint(review)})
@@ -1224,15 +1224,21 @@ def test_failure_projection_uses_only_sanitized_codes_and_persisted_recovery(
         assert "PRIVATE" not in result.failure.message
 
 
-def test_repeated_tag_keywords_return_deterministic_exact_paths() -> None:
+def test_redundant_tag_intents_return_deterministic_exact_paths() -> None:
     store, preview = _fixture()
     review = store.reviews[1]
-    tags = ("badger portrait", "badger token", *review.tags[2:])
+    tags = (
+        "octopus art",
+        "octopus print",
+        "diamond ring",
+        "engagement ring",
+        *review.tags[4:],
+    )
     invalid = review.model_copy(
         update={
             "tags": tags,
             "validation_passed": False,
-            "validation_issue_codes": ("TAG_KEYWORD_REPETITION",),
+            "validation_issue_codes": ("TAG_REDUNDANCY",),
         }
     )
     invalid = invalid.model_copy(update={"fingerprint": _review_content_fingerprint(invalid)})

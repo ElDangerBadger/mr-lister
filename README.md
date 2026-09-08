@@ -212,14 +212,24 @@ deliberately non-live identifiers cannot create a real Printify product.
 The completed Phase 2 implementation adds a provider-neutral Amazon Bedrock Converse adapter. It creates a
 bounded inspection rendition from the seller's original PNG, asks the configured model for artwork
 analysis and listing intelligence, and then applies stricter application-owned contracts.
-Unsupported outputs receive only a configuration-bounded number of semantic repair attempts. The
-Nova development profile permits two so it can perform a second global tag-diversity cleanup.
+Artwork-inspection repairs remain configuration-bounded. Listing generation permits at most one
+repair for invalid output or an unusable tag-candidate pool; it never opens another reasoning loop.
 
 Prompt version `2026-08-18.7` first inventories concrete visual elements before interpretation and
-asks for a ranked pool of 18–30 buyer-relevant tag phrases. Application code selects the strongest
-feasible 13-tag subset without repeated meaningful keywords. An unusable pool receives bounded
-repair and cannot cross the intelligence boundary; human-edited listings remain subject to the
-same deterministic validation before production or approval.
+asks for a ranked pool of 18–30 buyer-relevant tag phrases. Application code selects exactly 13
+complete phrases within the 20-character application limit, favoring incremental search coverage
+and rejecting duplicate inflections or materially redundant intents. Meaningful words may repeat
+across distinct useful phrases, such as `diamond ring` and `engagement ring`. The selector never
+strips words or manufactures filler. An unusable pool receives the bounded repair and cannot cross
+the intelligence boundary; human-edited listings retain the same redundancy validation before
+production or approval.
+
+Candidate v1 (`2026-09-08.1-etsy-seo-candidate`) is the frozen SEO copy-quality reference, not the
+deployed/default prompt. The unchanged `2026-08-18.7` production bundle remains the rollback point;
+no v3 prompt or one-call optimization is included. The retained eleven-case v1 artifacts contain
+final listing prose and tags but not the original candidate pools, so they cannot establish an
+exact old-selector/new-selector replay. See the [SEO/tag checkpoint](docs/etsy-seo-tag-baseline.md)
+for the bounded implementation, available verification, and that evidence limitation.
 
 Routine development uses the deterministic fake adapter. Cost-gated live evaluation currently
 uses Gemma 3 27B as the provisional quality lead; Amazon Nova 2 Lite remains the low-cost baseline,

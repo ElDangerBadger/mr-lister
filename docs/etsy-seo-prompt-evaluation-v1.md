@@ -12,6 +12,12 @@
 
 ## Decision
 
+**Superseded on 2026-09-08:** candidate v1 is now the frozen SEO copy-quality reference, with no
+v3 prompt. Whole-phrase deterministic tag selection replaces the strict root policy in source.
+The deployed/default prompt remains unchanged. See [the bounded tag checkpoint](etsy-seo-tag-baseline.md)
+for verification and the missing original candidate-pool evidence. The decisions and measurements
+below describe the historical first-look experiment; they do not authorize another prompt cycle.
+
 Keep the sealed baseline as the deployed/default prompt. The expanded Etsy SEO prompt is a useful
 quality direction, but candidate v1 is not ready for default promotion because final tag quality
 regressed in several cases. Retain the reversible prompt-bundle seam and make one narrow candidate
@@ -53,10 +59,11 @@ diagnostics show baseline listing requests totaled 65.533 seconds, while candida
 complete two-call workflow. A single trial is enough to expose the cost direction, not to claim a
 stable latency delta.
 
-## Blinded qualitative review
+## Historical AI-scored qualitative review
 
-The pair order was randomized per case before scoring concept hook, buyer specificity, natural
-copy, restrained voice, tag usefulness, and factual grounding on a five-point scale.
+The pair order was randomized per case before AI-agent scoring of concept hook, buyer specificity,
+natural copy, restrained voice, tag usefulness, and factual grounding on a five-point scale.
+This was not an independently blinded seller assessment or evidence of Etsy ranking performance.
 
 | Result | Baseline | Candidate v1 |
 | --- | ---: | ---: |
@@ -75,7 +82,7 @@ The remaining defects are concentrated and observable: generic one-word tags suc
 colors; transparency checkerboards treated as printable content; and unsupported child, home-decor,
 or sustainability audiences. Candidate v1 therefore remains evaluation-only.
 
-## Next bounded revision
+## Historical proposed revision (subsequently rejected; do not repeat)
 
 The next candidate should require the first thirteen candidates to be independently useful,
 multiword, and mutually free of meaningful keyword-root reuse so deterministic selection does not
