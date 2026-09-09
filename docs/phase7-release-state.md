@@ -17,7 +17,59 @@ publication POST. Mr Lister still has no unpublish, product-delete, order, fulfi
 channel-status capability. The sealed Phase 6 preparation, draft, review, and approval runtime was
 not changed by the Phase 7 deployment.
 
-## Authoritative release identity
+## Publication-status timeout correction — 2026-09-09
+
+**DEPLOYED; CONFIGURATION READBACK AND COLD-START CHECK PASSED.** The final authenticated
+Safari status refresh is pending seller action because the Computer Use click channel failed.
+A cold publication-status read after seller approval timed out
+at the query Lambda's 10-second limit. API Gateway returned HTTP 500 instead of the normal
+application error envelope, which the browser displayed as an unexpected publication response.
+The reported job remains approved; diagnosis and verification never submit publication.
+
+This is a query-only configuration correction over the sealed release below:
+`PublicationQueryFunction.Properties.Timeout` changes **10 → 25 seconds**, below the existing
+30-second API integration limit. Memory remains 512 MB; the runtime archive, environment,
+permissions, approval/publication semantics, other five functions, and Phase 6 are preserved.
+The frozen topology, renderer and historical seal verifier remain unchanged as predecessor
+authorities; this separate deployment record supersedes only the live query timeout/template.
+
+- Source baseline: `ba572ba`; no application code or dependency changes.
+- Existing focused Phase 7 backend, infrastructure, release and deployment tests: **25 passed**.
+  SAM lint/validation passed. Independent review verified an exact one-property source and
+  processed-template delta. No new acceptance program or runtime instrumentation was added.
+- Before-update cold probe: **8.637 s** Lambda duration, 72.488 ms managed init, 179 MB peak;
+  a no-JWT request reached the expected HTTP 401 after initialization. The original seller
+  invocation timed out at 10 seconds with the same 179 MB peak. This was not an OOM failure.
+- After-update probe confirmed a fresh Lambda instance and completed in **8.770 s**, with
+  74.938 ms managed init and the same 179 MB peak. It returned the expected HTTP 401 for a
+  no-JWT request, not a gateway error. This demonstrates startup headroom, not a speed gain.
+  The exact job's authenticated read remains the final browser check; no synthetic JWT or
+  publication POST was used.
+- Target template SHA-256: `2b9e333837ea3dafefc7dc50759090cea19446e156821be2c743dcbf053c43b2`,
+  stored under `phase7/sam/query-timeout-20260909/2b9e333837ea3dafefc7dc50759090cea19446e156821be2c743dcbf053c43b2/template.json`
+  in `mr-lister-phase6-artifacts-dev-384627057108-us-west-2`, VersionId
+  `232a9NVR8mRoHEsRct1DeuR0idFMIxO7`.
+- Change set: `mr-lister-phase7-dev-query-timeout-25s-20260909-r2`. Only the query timeout is a
+  direct change; the query integration has an unchanged dependent ARN reference. No replacement.
+  The first change set was not executed because sorted JSON changed SAM-generated tag-list
+  ordering on unrelated functions. Revision 2 preserves the original map order and those tags.
+- Stack is `UPDATE_COMPLETE`; update started `2026-09-09T21:42:07.400000Z`. Exact readback
+  verifies timeout 25 seconds as the only configuration change; the other five functions and
+  Phase 6 stack match their captures. Query code SHA remains
+  `0S+klcK570KO9dgwU14DGtrchrwt9Zs83Uv6vcATatE=`. No web redeployment occurred.
+- Immediate rollback: the captured live packaged template, file SHA-256
+  `0780d1d4716a261612667b08736e297ba6a7f3693282f5af8ceb0058836d3bbd`, with current parameters
+  retained. Removing its exact SAM resource annotations yields the sealed source template
+  `8966030f5f03b3b1da15bb15b1872323bca5042db39ace03e5443ae4ffe61517` below. Restoring the
+  10-second timeout would reintroduce the observed cold-start risk; no code rollback is needed.
+- Private deployment/probe evidence: `.mr_lister_private/publication-query-timeout-20260909/`,
+  with final versioned artifact, change set and readbacks under `r2/`.
+
+This correction does not implement latency Stage 1 or alter seller publication behavior.
+Current web/SEO release and the separate development-dependency CI advisory are recorded in
+[the current release log](etsy-seo-release-state.md).
+
+## Original sealed release identity
 
 | Item | Authority |
 | --- | --- |
