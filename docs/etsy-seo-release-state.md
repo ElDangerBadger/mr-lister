@@ -9,8 +9,11 @@ Etsy successfully on 2026-09-09, as recorded under the publication-dialog update
 Release source: `e197eec2aa9820aad0862f07ab87bf907b24d3e2`.
 GitHub clean-checkout verification: [release CI run](https://github.com/ElDangerBadger/mr-lister/actions/runs/34272912104)
 passed, as did [merged release-record CI](https://github.com/ElDangerBadger/mr-lister/actions/runs/34273072203).
-The checkout remains on main. The seller has requested a return to speed optimization after
-the publication-dialog deployment. Stage 1 is the next checkpoint; it has not started.
+The checkout remains on main. The seller has started the bounded
+[Pass A performance program](pass-a-performance.md): A1 timing is recorded and the A2
+one-call candidate was benchmarked but is not promoted: its median gain was under
+one second with modest quality loss. The deployed SEO
+release described here remains unchanged.
 
 ## CI dependency maintenance — 2026-09-09
 

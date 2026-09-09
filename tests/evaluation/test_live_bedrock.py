@@ -9,14 +9,19 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from time import perf_counter
+from typing import Any
 
 import boto3
 import pytest
 
-from mr_lister.contracts import JobState
+from mr_lister.contracts import ArtworkAnalysis, JobState, ListingIntelligence
+from mr_lister.workflow.models import ArtworkInput
+from mr_lister.workflow.ports import IntelligencePort
 from tools.phase2_evaluation import EVALUATION_SPLITS, load_manifest, quality_failures, score_case
 
 MANIFEST = Path(__file__).with_name("manifest.json")
@@ -38,6 +43,9 @@ EVALUATION_CASE_ID = os.getenv("MR_LISTER_EVAL_CASE")
 if EVALUATION_CASE_ID is not None and EVALUATION_CASE_ID not in {case.case_id for case in CASES}:
     raise ValueError("MR_LISTER_EVAL_CASE must name a case in the evaluation manifest")
 EVALUATION_PROMPT_VERSION = os.getenv("MR_LISTER_EVAL_PROMPT_VERSION", "2026-08-18.7")
+EVALUATION_EXECUTION = os.getenv("MR_LISTER_EVAL_EXECUTION", "two_call")
+if EVALUATION_EXECUTION not in {"two_call", "one_call"}:
+    raise ValueError("MR_LISTER_EVAL_EXECUTION must be two_call or one_call")
 
 pytestmark = [
     pytest.mark.live_bedrock,
@@ -46,6 +54,169 @@ pytestmark = [
         reason="set MR_LISTER_RUN_LIVE_BEDROCK=1 to permit AWS calls",
     ),
 ]
+
+
+class _EvaluationIntelligence:
+    """Time the existing port, or adapt one real unified result to its two methods."""
+
+    def __init__(
+        self,
+        *,
+        delegate: IntelligencePort | None = None,
+        agent: Any = None,
+        transport_prompt_fingerprint: str | None = None,
+    ) -> None:
+        if (delegate is None) == (agent is None):
+            raise ValueError("Evaluation requires exactly one intelligence execution path")
+        self.delegate = delegate
+        self.agent = agent
+        self.transport_prompt_fingerprint = transport_prompt_fingerprint
+        self.wall_clock_ms = 0.0
+        self.prepared: tuple[ArtworkInput, ArtworkAnalysis, ListingIntelligence] | None = None
+
+    def inspect_artwork(self, artwork: ArtworkInput, content: bytes) -> ArtworkAnalysis:
+        started = perf_counter()
+        try:
+            if self.delegate is not None:
+                return self.delegate.inspect_artwork(artwork, content)
+            from mr_lister.intelligence.unified import prepare_unified_review
+
+            if self.prepared is not None or sha256(content).hexdigest() != artwork.content_sha256:
+                raise ValueError("Unified evaluation source changed or was already inspected")
+            analysis, listing = prepare_unified_review(self.agent, artwork, content)
+            self.prepared = (artwork, analysis, listing)
+            return analysis
+        finally:
+            self.wall_clock_ms += (perf_counter() - started) * 1_000
+
+    def draft_listing(
+        self, artwork: ArtworkInput, content: bytes, analysis: ArtworkAnalysis
+    ) -> ListingIntelligence:
+        started = perf_counter()
+        try:
+            if self.delegate is not None:
+                return self.delegate.draft_listing(artwork, content, analysis)
+            if (
+                self.prepared is None
+                or artwork != self.prepared[0]
+                or sha256(content).hexdigest() != artwork.content_sha256
+                or analysis != self.prepared[1]
+            ):
+                raise ValueError("Unified evaluation listing must match its exact inspection")
+            return self.prepared[2]
+        finally:
+            self.wall_clock_ms += (perf_counter() - started) * 1_000
+
+    def telemetry(self, legacy_diagnostics: list[dict[str, Any]]) -> dict[str, Any]:
+        if self.agent is None:
+            return {
+                "execution": "two_call",
+                "intelligence_wall_clock_ms": round(self.wall_clock_ms, 3),
+                "model_calls": len(legacy_diagnostics),
+                "strands_cycles": None,  # The legacy local workflow does not run Strands.
+                "transport_prompt_fingerprint": self.transport_prompt_fingerprint,
+            }
+        summary = self.agent.event_loop_metrics.get_summary()
+        return {
+            "execution": "one_call",
+            "intelligence_wall_clock_ms": round(self.wall_clock_ms, 3),
+            "model_calls": self.agent.model.request_count,
+            "strands_cycles": summary["total_cycles"],
+            "repair_attempts": self.agent.model.request_count - 1,
+            "accumulated_usage": summary["accumulated_usage"],
+            "transport_prompt_fingerprint": self.transport_prompt_fingerprint,
+            "provider_responses": self.agent.model.response_metadata,
+        }
+
+
+def _one_call_intelligence(
+    session: Any, settings: Any, prompt_bundle: Any
+) -> _EvaluationIntelligence:
+    """Use production's native request boundary; observe only response metadata here."""
+
+    from botocore.config import Config
+    from strands import Agent
+    from strands.agent.conversation_manager import NullConversationManager
+
+    from mr_lister.intelligence.prompts import ETSY_SEO_RELEASE_PROMPT_BUNDLE
+    from mr_lister.intelligence.schema import bedrock_output_schema
+    from mr_lister.intelligence.unified import (
+        MAX_UNIFIED_OUTPUT_TOKENS,
+        UNIFIED_SYSTEM_PROMPT,
+        NativeJsonBedrockModel,
+        UnifiedArtworkListing,
+        unified_review_prompt,
+    )
+
+    if prompt_bundle != ETSY_SEO_RELEASE_PROMPT_BUNDLE:
+        raise ValueError("One-call evaluation requires the exact released SEO reference")
+    if settings.model_id != "google.gemma-3-27b-it" or settings.output_mode != "native_json_schema":
+        raise ValueError("One-call evaluation requires the released native Gemma configuration")
+
+    class EvaluationNativeJsonModel(NativeJsonBedrockModel):
+        def __init__(self, **kwargs: Any) -> None:
+            self.response_metadata: list[dict[str, Any]] = []
+            super().__init__(**kwargs)
+
+        def convert_non_streaming_to_streaming(
+            self, response: dict[str, Any], **kwargs: Any
+        ) -> Iterable[Any]:
+            self.response_metadata.append(
+                {
+                    "latency_ms": response.get("metrics", {}).get("latencyMs"),
+                    "usage": dict(response.get("usage", {})),
+                }
+            )
+            yield from super().convert_non_streaming_to_streaming(response, **kwargs)
+
+    model = EvaluationNativeJsonModel(
+        boto_session=session,
+        boto_client_config=Config(
+            connect_timeout=10,
+            read_timeout=300,
+            retries={"mode": "standard", "max_attempts": 0},
+        ),
+        model_id=settings.model_id,
+        max_tokens=min(settings.max_tokens, MAX_UNIFIED_OUTPUT_TOKENS),
+        temperature=settings.temperature,
+        streaming=False,
+        use_native_token_count=False,
+    )
+    transport = {
+        "system": UNIFIED_SYSTEM_PROMPT,
+        "prompt": unified_review_prompt(),
+        "repair": prompt_bundle.repair,
+        "output_schema": bedrock_output_schema(UnifiedArtworkListing),
+    }
+    return _EvaluationIntelligence(
+        agent=Agent(
+            model=model,
+            system_prompt=UNIFIED_SYSTEM_PROMPT,
+            retry_strategy=None,
+            conversation_manager=NullConversationManager(),
+            callback_handler=None,
+        ),
+        transport_prompt_fingerprint=sha256(
+            json.dumps(transport, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+    )
+
+
+def _apply_one_call_telemetry(score: dict[str, Any], telemetry: Mapping[str, Any]) -> None:
+    """Use real SDK cumulative usage and the authorized request count for repairs."""
+
+    if telemetry["execution"] != "one_call":
+        return
+    score["repair_attempts"] = telemetry["repair_attempts"]
+    if any(record["latency_ms"] is None for record in telemetry["provider_responses"]):
+        score["latency_ms"] = None  # Missing provider timing is unknown, not zero milliseconds.
+    usage = telemetry["accumulated_usage"]
+    for name, key in (
+        ("input_tokens", "inputTokens"),
+        ("output_tokens", "outputTokens"),
+        ("total_tokens", "totalTokens"),
+    ):
+        score[name] = usage[key]
 
 
 @pytest.mark.parametrize("case_index", range(len(CASES)), ids=[case.case_id for case in CASES])
@@ -61,7 +232,11 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
         FilesystemDiagnosticSink,
         InMemoryDiagnosticSink,
     )
-    from mr_lister.intelligence.prompts import PROMPT_VERSION, prompt_bundle_for
+    from mr_lister.intelligence.prompts import (
+        ETSY_SEO_RELEASE_PROMPT_BUNDLE,
+        PROMPT_VERSION,
+        prompt_bundle_for,
+    )
     from mr_lister.intelligence.settings import BedrockSettings
     from mr_lister.workflow.fakes import FakeProductionAdapter
     from mr_lister.workflow.profiles import ProductProfileRepository
@@ -71,6 +246,8 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
     manifest = load_manifest(MANIFEST)
     assert manifest.prompt_version == PROMPT_VERSION
     prompt_bundle = prompt_bundle_for(EVALUATION_PROMPT_VERSION)
+    if EVALUATION_EXECUTION == "one_call":
+        assert prompt_bundle == ETSY_SEO_RELEASE_PROMPT_BUNDLE
     missing = [case.asset for case in manifest.cases if not case.asset.is_file()]
     assert not missing, "Missing original evaluation assets: " + ", ".join(map(str, missing))
     mismatched = [
@@ -114,15 +291,23 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
     )
     profiles = ProductProfileRepository(safe_profile_directory)
     assert profiles.get("synthetic_gildan_5000").publish_enabled is False
+    intelligence = (
+        _one_call_intelligence(session, settings, prompt_bundle)
+        if EVALUATION_EXECUTION == "one_call"
+        else _EvaluationIntelligence(
+            delegate=build_bedrock_adapter(
+                settings,
+                session=session,
+                diagnostics=CompositeDiagnosticSink(diagnostics, private_diagnostics),
+                prompt_bundle=prompt_bundle,
+            ),
+            transport_prompt_fingerprint=prompt_bundle.fingerprint,
+        )
+    )
     workflow = ListingWorkflow(
         store=InMemoryJobStore(),
         profiles=profiles,
-        intelligence=build_bedrock_adapter(
-            settings,
-            session=session,
-            diagnostics=CompositeDiagnosticSink(diagnostics, private_diagnostics),
-            prompt_bundle=prompt_bundle,
-        ),
+        intelligence=intelligence,
         production=production,
         job_id_factory=lambda: f"job_eval_{case.case_id}_trial_{trial_index + 1}",
     )
@@ -140,17 +325,20 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
 
     assert review.profile.publish_enabled is False
     assert production.publish_calls == 0
+    telemetry = intelligence.telemetry(diagnostics.records)
     score = score_case(
         case,
         analysis=review.artwork_analysis,
         listing=review.listing,
-        diagnostics=diagnostics.records,
+        diagnostics=telemetry.get("provider_responses", diagnostics.records),
     )
+    _apply_one_call_telemetry(score, telemetry)
     score_artifact = {
         "run_id": EVALUATION_RUN_ID,
         "model_id": settings.model_id,
         "prompt_version": prompt_bundle.version,
         "prompt_fingerprint": prompt_bundle.fingerprint,
+        "intelligence_execution": telemetry,
         "fixture_baseline_prompt_version": manifest.prompt_version,
         "split": case.split,
         "trial": trial_index + 1,
@@ -166,6 +354,7 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
             "temperature": settings.temperature,
             "max_tokens": settings.max_tokens,
             "max_repair_attempts": settings.max_repair_attempts,
+            "unified_max_model_calls": 2 if EVALUATION_EXECUTION == "one_call" else None,
         },
         "score": score,
         "accepted_output": {
