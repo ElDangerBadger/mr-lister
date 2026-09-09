@@ -11,6 +11,43 @@ passed, as did [merged release-record CI](https://github.com/ElDangerBadger/mr-l
 The checkout remains on main. Latency Stage 1 and the speed-optimization branch remain paused
 until the seller reviews new listings on the live site.
 
+## Memory-only runtime update — 2026-09-09
+
+**DEPLOYED AND READBACK VERIFIED.** A real 6,984 × 6,545 PNG exposed an out-of-memory
+failure in `mr-lister-phase6-dev-provider-draft`. With seller authorization, the only template
+change was `Resources.ProviderDraftFunction.Properties.MemorySize`: inherited 256 MB to
+explicit **1,024 MB**. Global memory defaults, the 600-second timeout, code, environment,
+roles, prompts, approval/publication behavior and all other resource definitions are unchanged.
+The frozen foundation template is not a deployable replacement for this current live template.
+
+- Current template SHA-256: `f8c37351b50ac3dac5f6b9d5214ec93b3f1f5f2ea6590ea2d3e3028b04400704`.
+- Versioned artifact: `private/deployments/cloudformation/core/provider-memory/f8c37351b50ac3dac5f6b9d5214ec93b3f1f5f2ea6590ea2d3e3028b04400704/core-template.json`
+  in the existing Phase 6 artifact bucket; VersionId `ooLWxZWnhKqm86HbGSk1ipOXxwUlTrc_`.
+- Change set: `mr-lister-phase6-dev-provider-memory-f8c37351b50a`;
+  stack `UPDATE_COMPLETE` at `2026-09-09T18:28:15Z`. Only ProviderDraftFunction received
+  resource update events; dependent ARN references remained unchanged, with no replacements.
+- Provider code SHA-256 remains `IF8GhvHDJLkgixNrYcfWxrcPNGpqB7hqggx4FfZY+aA=`.
+- Verification: exact one-property template diff, independent local review, SAM lint/validation,
+  inspected standard change set, exact live configuration/template readback, unchanged Phase 7
+  stack, and successful automatic recovery of the same seller job. No application/test code
+  changed and the complete regression suites were not rerun for this configuration-only update.
+- Job `job_c39cabdb911ee1040ba410fc3f1a4024` recovered its existing Printify image, synchronized
+  draft `6aa1a552c31539ee0a0d1308`, and reached `awaiting_approval` at
+  `2026-09-09T18:28:51.089823Z`, record version 60. No manual retry, new upload, approval or
+  publication was issued. Successful Lambda durations were 13.24 s (reconciliation), 7.76 s
+  (draft synchronization) and 11.82 s (economics); reported environment peak memory was 582 MB.
+  This recovery is not a fresh-job latency benchmark or seller copy-quality acceptance.
+- Evidence: `.mr_lister_private/provider-memory-20260909/`, including rollback captures,
+  target template, change sets, live verification and recovery logs/events.
+- Memory-only rollback: the exact 2026-09-08 template below, SHA-256 `1c5855d7e065cdb0b3354060fb3b8fd39a85b04752eaee69956f6f648941c7c0`,
+  VersionId `64j9PfTaauSLn1nrhZD.CDbQOSJWYlaL`, with current parameters retained. Restoring
+  256 MB would reintroduce the known failure for this artwork.
+
+Known limits remain: generic crash reconciliation can bypass its intended deadline; this
+memory-only update does not change retry semantics. Safari preview/iOS editing issues are
+separate and unresolved. Latency Stage 1 remains paused. The historical SEO deployment tuple
+below is retained as the memory update's predecessor, not the current template identity.
+
 ## Live release and readback
 
 - Stack `mr-lister-phase6-dev`: `UPDATE_COMPLETE`; update started `2026-09-08T21:44:39Z`.
