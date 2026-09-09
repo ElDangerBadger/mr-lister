@@ -12,6 +12,27 @@ passed, as did [merged release-record CI](https://github.com/ElDangerBadger/mr-l
 The checkout remains on main. The seller has requested a return to speed optimization after
 the publication-dialog deployment. Stage 1 is the next checkpoint; it has not started.
 
+## CI dependency maintenance — 2026-09-09
+
+The CI-blocking high development-dependency finding is fixed by a lockfile-only update from
+`js-yaml` 4.3.1 to **4.3.2**, within ESLint's existing `^4.3.0` transitive dependency range.
+The version, registry URL and verified package integrity are the only lockfile changes.
+[Maintainer advisory](https://github.com/nodeca/js-yaml/security/advisories/GHSA-2883-xcg3-v3hh).
+Application dependencies, `package.json`, CI configuration and its existing
+`npm audit --audit-level=high` threshold are unchanged.
+
+Fresh `npm ci`, the high-severity audit gate, all **174 web tests**, lint, typecheck and build
+passed locally. Production-only audit reports zero findings. Rebuilt HTML, JavaScript, CSS and
+favicon hashes match the deployed publication-dialog release exactly; no site/AWS redeployment
+is needed. GitHub runs the same checks on the pushed maintenance checkpoint.
+
+Two moderate development-only entries remain for `vitest` and `@vitest/mocker`, from one
+[Vitest advisory](https://github.com/vitest-dev/vitest/security/advisories/GHSA-82fw-gwwq-j7x9).
+Addressing those requires a coordinated major test-runner update, deferred from this bounded
+CI unblock. They are not production dependencies and do not fail the existing high-severity
+gate; they are not represented as resolved. No audit bypass or forced package override was used.
+The earlier failed CI runs recorded below are historical results, not four artwork-job failures.
+
 ## Safari preview correction — 2026-09-09
 
 **DEPLOYED, READBACK VERIFIED AND CONFIRMED IN LIVE SAFARI.** Source checkpoint:
