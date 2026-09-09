@@ -19,12 +19,13 @@ not changed by the Phase 7 deployment.
 
 ## Publication-status timeout correction — 2026-09-09
 
-**DEPLOYED; CONFIGURATION READBACK AND COLD-START CHECK PASSED.** The final authenticated
-Safari status refresh is pending seller action because the Computer Use click channel failed.
+**DEPLOYED; CONFIGURATION, COLD-START AND AUTHENTICATED STATUS CHECKS PASSED.** The seller
+refreshed successfully and then initiated publication on the same job. The Computer Use click
+channel had failed, so no refresh or publication click was issued by the agent.
 A cold publication-status read after seller approval timed out
 at the query Lambda's 10-second limit. API Gateway returned HTTP 500 instead of the normal
 application error envelope, which the browser displayed as an unexpected publication response.
-The reported job remains approved; diagnosis and verification never submit publication.
+Diagnosis and verification never submit publication; the later publication request was seller-initiated.
 
 This is a query-only configuration correction over the sealed release below:
 `PublicationQueryFunction.Properties.Timeout` changes **10 → 25 seconds**, below the existing
@@ -43,8 +44,15 @@ authorities; this separate deployment record supersedes only the live query time
 - After-update probe confirmed a fresh Lambda instance and completed in **8.770 s**, with
   74.938 ms managed init and the same 179 MB peak. It returned the expected HTTP 401 for a
   no-JWT request, not a gateway error. This demonstrates startup headroom, not a speed gain.
-  The exact job's authenticated read remains the final browser check; no synthetic JWT or
-  publication POST was used.
+  No synthetic JWT or agent-issued publication POST was used.
+- Live follow-up: the seller confirmed success. The first observed authenticated status GET at
+  `2026-09-09T21:46:35.209Z` returned HTTP 200 in 99 ms; all 30 sampled subsequent/initial status
+  reads returned 200, with 61–142 ms integration latency. Access logs identify the route template,
+  not the job ID; the seller report and exact durable job read tie this walkthrough together.
+  Job `job_1acf457a38ea75c3da5970c802801b17` advanced to record 10 with one publication aggregate,
+  requested at `2026-09-09T21:46:52.126115Z`. Latest inspected aggregate was `publication_verifying`,
+  updated `2026-09-09T21:48:39.840804Z`; this is not a claim of recorded terminal Etsy confirmation.
+  The timeout correction's final acceptance check is closed.
 - Target template SHA-256: `2b9e333837ea3dafefc7dc50759090cea19446e156821be2c743dcbf053c43b2`,
   stored under `phase7/sam/query-timeout-20260909/2b9e333837ea3dafefc7dc50759090cea19446e156821be2c743dcbf053c43b2/template.json`
   in `mr-lister-phase6-artifacts-dev-384627057108-us-west-2`, VersionId
