@@ -139,6 +139,33 @@ describe("active Phase 7 publication browser", () => {
     expect(screen.queryByRole("button", { name: "Publish this approved listing" })).not.toBeInTheDocument();
   });
 
+  it("keeps acknowledgement text clickable and keyboard cancellation non-publishing", async () => {
+    const user = userEvent.setup();
+    const requestPublication = vi.fn<PublicationApiPort["requestPublication"]>();
+    render(<PublicationWorkspace
+      jobId={JOB_ID}
+      approvedReview={approvedReview()}
+      api={{ getPublication: vi.fn().mockResolvedValue(decoded(projection("not_requested"))), requestPublication }}
+    />);
+    const trigger = await screen.findByRole("button", { name: "Publish this approved listing" });
+    await user.click(trigger);
+    const label = "I understand this is the one publication request for this approved listing.";
+    const checkbox = screen.getByRole("checkbox", { name: label });
+    const confirm = screen.getByRole("button", { name: "Publish exact approved listing" });
+    expect(confirm).toBeDisabled();
+    await user.click(screen.getByText(label));
+    expect(checkbox).toBeChecked();
+    expect(confirm).toBeEnabled();
+    expect(checkbox).toHaveFocus();
+    await user.keyboard(" ");
+    expect(checkbox).not.toBeChecked();
+    expect(confirm).toBeDisabled();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(requestPublication).not.toHaveBeenCalled();
+  });
+
   it("shows progress and confirmation when a manual status refresh returns no change", async () => {
     const user = userEvent.setup();
     const current = projection("queued");

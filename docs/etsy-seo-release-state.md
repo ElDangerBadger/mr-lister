@@ -80,6 +80,31 @@ image decoding and the artwork/mockup approval gate are unchanged. No S3 CORS ch
 
 iOS keyboard handling, progress-map UI and latency Stage 1 are outside this correction.
 
+## Publication dialog layout — 2026-09-09
+
+The seller reports that the anglerfish job completed approval and publication and is visible
+in Etsy, confirming the fresh end-to-end seller run. This is seller-reported live evidence;
+no additional publication request was made by the agent.
+
+**WEB PATCH PREPARED; NOT DEPLOYED.** The publication acknowledgement checkbox inherited
+the full-width text-input rule inside a flex label, compressing its text. A publication-only
+label class now gives the checkbox fixed sizing and left/top alignment. Dialog wording,
+approval authority, acknowledgement requirement, focus behavior and publication semantics
+are unchanged. No provider, infrastructure, model or dependency change is included.
+
+The actual React component was checked with local-only fixtures in WebKit at 320×640,
+390×844, 1280×800 and 667×320: the dialog remains within the viewport without horizontal
+overflow, the checkbox is 20 px wide, and publishing stays disabled until acknowledgement.
+Visual phone-width inspection passed. All **174 web tests**, ESLint, TypeScript and production
+build passed, including a new label-click/keyboard/cancellation regression. Existing CI's
+development-dependency advisory remains separate; no audit bypass was introduced.
+
+Prepared source: `web/src/styles.css`, `web/src/publication/PublicationWorkspace.tsx`,
+and its existing active-publication test suite. Local reproduction/screenshot is under
+`output/playwright/publication-dialog/`. Deploy only the next static web bundle when authorized;
+the live Safari preview bundle above remains the immediate web rollback point. Broader
+workflow simplification and progress-map work have not started.
+
 ## Memory-only runtime update — 2026-09-09
 
 **DEPLOYED AND READBACK VERIFIED.** A real 6,984 × 6,545 PNG exposed an out-of-memory

@@ -243,6 +243,8 @@ thead th { background: #efeee8; color: #414943; font-size: 0.72rem; text-transfo
 .alert--info { border-color: #90adbf; background: var(--blue-pale); color: #2d4657; }
 .confirmation-dialog { width: min(calc(100% - 2rem), 34rem); padding: 2rem; border: 0; border-radius: 0.8rem; background: var(--paper); color: var(--ink); box-shadow: 0 1rem 5rem rgb(0 0 0 / 35%); }
 .confirmation-dialog::backdrop { background: rgb(20 26 22 / 72%); }
+.publication-acknowledgement { align-items: flex-start; justify-content: flex-start; gap: 0.75rem; }
+.publication-acknowledgement input[type="checkbox"] { flex: 0 0 auto; width: 1.25rem; height: 1.25rem; margin: 0.15rem 0 0; padding: 0; accent-color: var(--green-dark); }
 .configuration-error { width: min(100% - 2rem, 42rem); margin: 6rem auto; padding: 2rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--paper); }
 .loading-line { padding: 1rem; border-left: 4px solid var(--green); background: var(--green-pale); }
 footer { padding: 2rem 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.78rem; text-align: center; }

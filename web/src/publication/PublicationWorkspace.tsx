@@ -271,7 +271,7 @@ export function PublicationWorkspace({ jobId, approvedReview, api }: Publication
           <p id="phase7-confirmation-description">
             This can create a public Etsy listing. After the request is accepted, Mr. Lister cannot cancel, retry, or unpublish it.
           </p>
-          <label>
+          <label className="publication-acknowledgement">
             <input
               type="checkbox"
               checked={acknowledged}
