@@ -4,12 +4,13 @@
 
 User authorized commit, push, merge to main, and deployment to `https://massskutiny.com`.
 **DEPLOYED AND READBACK VERIFIED** on 2026-09-08. Source promotion, local verification,
-push, merge to main and AWS deployment are complete. Fresh seller live testing is pending.
+push, merge to main and AWS deployment are complete. Subsequent seller live testing reached
+Etsy successfully on 2026-09-09, as recorded under the publication-dialog update below.
 Release source: `e197eec2aa9820aad0862f07ab87bf907b24d3e2`.
 GitHub clean-checkout verification: [release CI run](https://github.com/ElDangerBadger/mr-lister/actions/runs/34272912104)
 passed, as did [merged release-record CI](https://github.com/ElDangerBadger/mr-lister/actions/runs/34273072203).
-The checkout remains on main. Latency Stage 1 and the speed-optimization branch remain paused
-until the seller reviews new listings on the live site.
+The checkout remains on main. The seller has requested a return to speed optimization after
+the publication-dialog deployment. Stage 1 is the next checkpoint; it has not started.
 
 ## Safari preview correction — 2026-09-09
 
@@ -86,7 +87,8 @@ The seller reports that the anglerfish job completed approval and publication an
 in Etsy, confirming the fresh end-to-end seller run. This is seller-reported live evidence;
 no additional publication request was made by the agent.
 
-**WEB PATCH PREPARED; NOT DEPLOYED.** The publication acknowledgement checkbox inherited
+**DEPLOYED AND PUBLIC READBACK VERIFIED.** Source checkpoint:
+`2779d23f543e470447f027636f19f32f29a0b979` on main. The publication acknowledgement checkbox inherited
 the full-width text-input rule inside a flex label, compressing its text. A publication-only
 label class now gives the checkbox fixed sizing and left/top alignment. Dialog wording,
 approval authority, acknowledgement requirement, focus behavior and publication semantics
@@ -96,14 +98,38 @@ The actual React component was checked with local-only fixtures in WebKit at 320
 390×844, 1280×800 and 667×320: the dialog remains within the viewport without horizontal
 overflow, the checkbox is 20 px wide, and publishing stays disabled until acknowledgement.
 Visual phone-width inspection passed. All **174 web tests**, ESLint, TypeScript and production
-build passed, including a new label-click/keyboard/cancellation regression. Existing CI's
-development-dependency advisory remains separate; no audit bypass was introduced.
+build passed, including a new label-click/keyboard/cancellation regression. The checks passed
+again before deployment. [Source CI](https://github.com/ElDangerBadger/mr-lister/actions/runs/34400778424)
+passed Python/infrastructure verification; the web job stopped at the existing development-only
+`js-yaml` high advisory, with two moderate Vitest findings also reported. Overall CI is not green;
+no dependency update or audit bypass was introduced.
 
-Prepared source: `web/src/styles.css`, `web/src/publication/PublicationWorkspace.tsx`,
-and its existing active-publication test suite. Local reproduction/screenshot is under
-`output/playwright/publication-dialog/`. Deploy only the next static web bundle when authorized;
-the live Safari preview bundle above remains the immediate web rollback point. Broader
-workflow simplification and progress-map work have not started.
+- Deployment readback completed at `2026-09-09T21:00:39Z`; only the existing static web bucket
+  was updated, with checksummed/versioned assets first and `index.html` last.
+- Bundle SHA-256: `9658c819375bc7cee389dffb37141c801405394c19ed2eb9d411be6166af4a09`.
+  JavaScript: `assets/index-2ubZw1FB.js`; CSS: `assets/index-C4GjAhvG.css`.
+- Public `/`, `index.html`, JavaScript, CSS and favicon hashes match the manifest exactly.
+  Runtime-config SHA-256 remains `d1f969e5545ba76f76b8f6ef8e66def4d162ae74330a34d64796aebd7f25b5aa`,
+  with unchanged S3 VersionId `IdRmSDEqfGAjcfmiYHvjrUJ2SQ6s5wqx`.
+- CloudFront invalidation `I6IZTDF3GTLRO1PAWJMLCTCR3J` is `Completed`, scoped to `/`,
+  `/index.html` and `/favicon.svg`. Deployed index VersionId: `vIxCATS8mvUjW0jPpwfemBuDrxccCXLL`.
+- Immediate rollback: restore the Safari predecessor index, VersionId
+  `k0yGwzG1ybOW71XM9O990_2n9Ow9feXj`, in `mr-lister-phase6-web-dev-384627057108-us-west-2`
+  and invalidate the entry paths. Prior assets were retained; no runtime rollback is needed.
+- Local versioned rollback files, manifest, upload results and public verification:
+  `.mr_lister_private/publication-dialog-20260909/`. WebKit reproduction/screenshot:
+  `output/playwright/publication-dialog/`. The post-deployment check verified public bytes;
+  no seller approval or publication was triggered for this layout deployment.
+
+Next: latency **Stage 1 only**, from current main, preserving this deployed source as rollback.
+[Stage 0](latency-waterfall-v1.md) measured 45.053 s median to editable review, 40.978 s to
+synchronized draft, four model calls (two controller plus two Gemma) and two Strands cycles.
+SEO, image-envelope and provider-memory changes since then need a small current-version control
+measurement using existing instrumentation before claiming savings. Stage 1 targets one normal
+multimodal intelligence call plus at most one bounded repair, retaining Strands and reviewed SEO
+copy/tag semantics. The old speed branch is an ancestor of main, not a newer implementation.
+No Stage 1 code, provider caching, broader workflow simplification or progress-map work was
+included in this deployment.
 
 ## Memory-only runtime update — 2026-09-09
 
