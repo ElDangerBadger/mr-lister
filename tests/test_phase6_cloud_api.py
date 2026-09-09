@@ -842,17 +842,128 @@ def test_review_read_reconstructs_exact_schema_and_rejects_custom_private_fields
     assert reviews.calls == [(OWNER, JOB_ID)]
 
 
-def test_preview_route_returns_only_bodyless_no_referrer_redirect() -> None:
+@pytest.mark.parametrize(
+    "headers",
+    (
+        {},
+        {"Accept": "image/png"},
+        {"Accept": "application/json"},
+    ),
+)
+def test_preview_route_returns_only_bodyless_no_referrer_redirect(
+    headers: dict[str, object],
+) -> None:
     previews = PreviewSpy()
     response = query_adapter(QueryStoreSpy(), ReviewSpy(), previews).handle(
-        api_event("GET /v1/jobs/{job_id}/artwork-preview")
+        api_event("GET /v1/jobs/{job_id}/artwork-preview", headers=headers)
     )
 
     assert response["statusCode"] == 302
     assert response["body"] == ""
+    assert "versionId=version-1" in response["headers"]["Location"]
     assert response["headers"]["Cache-Control"] == "private, no-store, max-age=0"
     assert response["headers"]["Referrer-Policy"] == "no-referrer"
     assert previews.calls == [(OWNER, JOB_ID)]
+
+
+@pytest.mark.parametrize("headers", ({}, {"Accept": "application/json"}))
+def test_preview_route_negotiates_owner_scoped_json_grant_without_location(
+    headers: dict[str, object],
+) -> None:
+    previews = PreviewSpy()
+    response = query_adapter(QueryStoreSpy(), ReviewSpy(), previews).handle(
+        api_event(
+            "GET /v1/jobs/{job_id}/artwork-preview",
+            query={"format": "json"},
+            headers=headers,
+        )
+    )
+
+    assert response["statusCode"] == 200
+    assert response["isBase64Encoded"] is False
+    assert response["headers"] == {
+        "Cache-Control": "private, no-store, max-age=0",
+        "Content-Type": "application/json",
+        "Pragma": "no-cache",
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+        "X-Request-Id": "request-phase64-api",
+    }
+    assert response_body(response) == {
+        "url": (
+            "https://phase64-bucket.s3.us-west-2.amazonaws.com/source.png?"
+            "versionId=version-1&X-Amz-Expires=300&X-Amz-Signature=signed"
+        ),
+        "expires_at": (NOW + timedelta(minutes=5)).isoformat(),
+    }
+    assert "browser-secret" not in response["body"]
+    assert previews.calls == [(OWNER, JOB_ID)]
+
+
+def test_preview_json_negotiation_preserves_cross_owner_not_found_response() -> None:
+    class ForeignPreviewSpy(PreviewSpy):
+        def authorize(self, *, owner_id: str, job_id: str) -> PreviewRedirect:
+            self.calls.append((owner_id, job_id))
+            if owner_id != OTHER_OWNER:
+                raise NotFoundError("private storage detail")
+            return super().authorize(owner_id=owner_id, job_id=job_id)
+
+    previews = ForeignPreviewSpy()
+    adapter = query_adapter(QueryStoreSpy(), ReviewSpy(), previews)
+    responses = [
+        adapter.handle(api_event("GET /v1/jobs/{job_id}/artwork-preview", query=query))
+        for query in (None, {"format": "json"})
+    ]
+
+    assert responses[0] == responses[1]
+    assert responses[1]["statusCode"] == 404
+    assert response_body(responses[1])["error"]["code"] == "NOT_FOUND"
+    assert "Location" not in responses[1]["headers"]
+    assert "private storage detail" not in responses[1]["body"]
+    assert "url" not in response_body(responses[1])
+    assert previews.calls == [(OWNER, JOB_ID), (OWNER, JOB_ID)]
+
+
+def test_preview_json_grant_requires_authentication_before_authorization() -> None:
+    previews = PreviewSpy()
+    response = query_adapter(QueryStoreSpy(), ReviewSpy(), previews).handle(
+        api_event(
+            "GET /v1/jobs/{job_id}/artwork-preview",
+            query={"format": "json"},
+            authenticated=False,
+        )
+    )
+
+    assert response["statusCode"] == 401
+    assert response_body(response)["error"]["code"] == "AUTHENTICATION_REQUIRED"
+    assert "Location" not in response["headers"]
+    assert previews.calls == []
+
+
+@pytest.mark.parametrize(
+    "query",
+    ({"format": "xml"}, {"format": ""}, {"format": "json", "owner_id": OTHER_OWNER}),
+)
+def test_preview_grant_rejects_unsupported_query_before_authorization(
+    query: dict[str, str],
+) -> None:
+    previews = PreviewSpy()
+    response = query_adapter(QueryStoreSpy(), ReviewSpy(), previews).handle(
+        api_event("GET /v1/jobs/{job_id}/artwork-preview", query=query)
+    )
+
+    assert response["statusCode"] == 400
+    assert previews.calls == []
+
+
+def test_preview_grant_rejects_duplicate_format_before_authorization() -> None:
+    previews = PreviewSpy()
+    event = api_event("GET /v1/jobs/{job_id}/artwork-preview", query={"format": "json"})
+    event["rawQueryString"] = "format=json&format=json"
+    response = query_adapter(QueryStoreSpy(), ReviewSpy(), previews).handle(event)
+
+    assert response["statusCode"] == 400
+    assert previews.calls == []
 
 
 def test_health_is_information_minimal_and_requires_no_identity() -> None:

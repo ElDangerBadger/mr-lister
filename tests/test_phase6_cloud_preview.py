@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 import pytest
 
@@ -10,6 +11,7 @@ from mr_lister.cloud.preview import (
     ExactVersionArtworkPreviewService,
     PreviewAuthorizationUnavailableError,
     PreviewRedirect,
+    preview_grant_response,
     preview_redirect_response,
 )
 from mr_lister.control.errors import NotFoundError
@@ -176,6 +178,23 @@ def test_preview_presigns_only_the_exact_pinned_version_for_five_minutes() -> No
     assert response["headers"]["Cache-Control"] == "private, no-store, max-age=0"
     assert response["headers"]["Referrer-Policy"] == "no-referrer"
 
+    grant_response = preview_grant_response(redirect, request_id="request-preview-1")
+    assert grant_response["statusCode"] == 200
+    assert grant_response["isBase64Encoded"] is False
+    assert grant_response["headers"] == {
+        "Cache-Control": "private, no-store, max-age=0",
+        "Content-Type": "application/json",
+        "Pragma": "no-cache",
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+        "X-Request-Id": "request-preview-1",
+    }
+    grant = json.loads(grant_response["body"])
+    assert grant == {"url": redirect.location, "expires_at": redirect.expires_at.isoformat()}
+    assert parse_qs(urlsplit(grant["url"]).query)["versionId"] == ["pinned-version-1"]
+    assert (datetime.fromisoformat(grant["expires_at"]) - NOW).total_seconds() == 300
+    assert len(signer.calls) == 1
+
 
 @pytest.mark.parametrize(
     "location",
@@ -244,6 +263,11 @@ def test_preview_rejects_header_controls_before_and_at_redirect_emission(control
         service(store, signer).authorize(owner_id=OWNER, job_id=JOB_ID)
     with pytest.raises(PreviewAuthorizationUnavailableError):
         preview_redirect_response(
+            PreviewRedirect(location=hostile, expires_at=NOW),
+            request_id="request-preview-1",
+        )
+    with pytest.raises(PreviewAuthorizationUnavailableError):
+        preview_grant_response(
             PreviewRedirect(location=hostile, expires_at=NOW),
             request_id="request-preview-1",
         )

@@ -43,7 +43,11 @@ from mr_lister.cloud.http import (
     request_id_from_event,
     require_exact_route_key,
 )
-from mr_lister.cloud.preview import PreviewRedirect, preview_redirect_response
+from mr_lister.cloud.preview import (
+    PreviewRedirect,
+    preview_grant_response,
+    preview_redirect_response,
+)
 from mr_lister.control.commands import (
     ApproveReviewCommand,
     CancelJobCommand,
@@ -352,7 +356,12 @@ class ReviewQueryApiAdapter(_ProtectedApiAdapter):
                 request_id=request_id,
             )
 
-        _require_no_query(event)
+        parameters = _query(event)
+        json_preview = route_key == "GET /v1/jobs/{job_id}/artwork-preview" and parameters == {
+            "format": "json"
+        }
+        if parameters and not json_preview:
+            raise InvalidRequestError
         job_id = _resource_id(event, name="job_id")
         suffix = {
             "GET /v1/jobs/{job_id}": "",
@@ -385,6 +394,8 @@ class ReviewQueryApiAdapter(_ProtectedApiAdapter):
                 extra_headers=headers,
             )
         redirect = self._previews.authorize(owner_id=seller.owner_id, job_id=job_id)
+        if json_preview:
+            return preview_grant_response(redirect, request_id=request_id)
         return preview_redirect_response(redirect, request_id=request_id)
 
 

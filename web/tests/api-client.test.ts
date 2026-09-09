@@ -5,6 +5,99 @@ import { MemoryAuthSession } from "../src/auth/session";
 import { sellerReviewSchema } from "../src/contracts";
 
 describe("BrowserApiClient", () => {
+  const previewPath = "/v1/jobs/job_preview/artwork-preview";
+  const grantPath = `${previewPath}?format=json`;
+  const imageUrl = "https://mr-lister-phase6-artifacts-dev-384627057108-us-west-2.s3.us-west-2.amazonaws.com/private/owners/test-owner/jobs/job_preview/source/source.png?versionId=pinned-version&X-Amz-Signature=test-only";
+  const grantResponse = (url = imageUrl) => new Response(JSON.stringify({
+    url, expires_at: new Date(Date.now() + 300_000).toISOString(),
+  }), { headers: { "Content-Type": "application/json", "X-Request-Id": "request-preview" } });
+  const pngResponse = () => new Response(new Uint8Array([137, 80, 78, 71]), {
+    headers: { "Content-Type": "image/png" },
+  });
+
+  it("fetches an authenticated preview grant then downloads its pinned image without seller credentials", async () => {
+    const session = new MemoryAuthSession();
+    session.set("seller-token", 3600, "refresh-token");
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(grantResponse())
+      .mockResolvedValueOnce(pngResponse());
+    const signal = new AbortController().signal;
+    const blob = await new BrowserApiClient(session, fetcher).fetchArtwork(previewPath, signal);
+    expect(blob.size).toBe(4);
+    expect(blob.type).toBe("image/png");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const [grantInput, grantOptions] = fetcher.mock.calls[0]!;
+    const [imageInput, imageOptions] = fetcher.mock.calls[1]!;
+    expect(grantInput).toBe(grantPath);
+    expect(new Headers(grantOptions?.headers).get("Authorization")).toBe("Bearer seller-token");
+    expect(new Headers(grantOptions?.headers).get("Accept")).toBe("application/json");
+    expect(imageInput).toBe(imageUrl);
+    expect(new Headers(imageOptions?.headers).has("Authorization")).toBe(false);
+    expect(new Headers(imageOptions?.headers).get("Accept")).toBe("image/png");
+    for (const options of [grantOptions, imageOptions]) {
+      expect(options).toMatchObject({ method: "GET", cache: "no-store", credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal });
+    }
+  });
+
+  it("renews authentication only for the same-origin preview grant", async () => {
+    const session = new MemoryAuthSession();
+    session.set("first-token", 3600, "refresh-token");
+    const renew = vi.fn().mockResolvedValue({ accessToken: "second-token", expiresInSeconds: 3600 });
+    session.setRenewer(renew);
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("", { status: 401 }))
+      .mockResolvedValueOnce(grantResponse())
+      .mockResolvedValueOnce(pngResponse());
+    await new BrowserApiClient(session, fetcher).fetchArtwork(previewPath, new AbortController().signal);
+    expect(renew).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls.map(([input]) => input)).toEqual([grantPath, grantPath, imageUrl]);
+    expect(new Headers(fetcher.mock.calls[1]?.[1]?.headers).get("Authorization")).toBe("Bearer second-token");
+    expect(new Headers(fetcher.mock.calls[2]?.[1]?.headers).has("Authorization")).toBe(false);
+  });
+
+  it.each([
+    "https://untrusted.example/image.png?versionId=pinned-version",
+    imageUrl.replace("https:", "http:"),
+    imageUrl.replace("job_preview/source", "job_other/source"),
+    imageUrl.replace("versionId=pinned-version&", ""),
+    `${imageUrl}&versionId=other-version`,
+  ])("rejects an invalid image grant before sending a download request: %s", async (url) => {
+    const session = new MemoryAuthSession();
+    session.set("seller-token", 3600, "refresh-token");
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(grantResponse(url));
+    await expect(new BrowserApiClient(session, fetcher).fetchArtwork(previewPath, new AbortController().signal))
+      .rejects.toBeInstanceOf(ContractError);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not send or renew seller credentials when the image download is denied", async () => {
+    const session = new MemoryAuthSession();
+    session.set("seller-token", 3600, "refresh-token");
+    const renew = vi.fn();
+    session.setRenewer(renew);
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(grantResponse())
+      .mockResolvedValueOnce(new Response("Access denied", { status: 403 }));
+    await expect(new BrowserApiClient(session, fetcher).fetchArtwork(previewPath, new AbortController().signal)).rejects.toThrow();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(renew).not.toHaveBeenCalled();
+    expect(new Headers(fetcher.mock.calls[1]?.[1]?.headers).has("Authorization")).toBe(false);
+  });
+
+  it.each([
+    { body: new Uint8Array(), type: "image/png" },
+    { body: new Uint8Array([1]), type: "text/html" },
+    { body: new Uint8Array(5 * 1024 * 1024 + 1), type: "image/png" },
+  ])("retains preview content validation: $type ($body.length bytes)", async ({ body, type }) => {
+    const session = new MemoryAuthSession();
+    session.set("seller-token", 3600, "refresh-token");
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(grantResponse())
+      .mockResolvedValueOnce(new Response(body, { headers: { "Content-Type": type } }));
+    await expect(new BrowserApiClient(session, fetcher).fetchArtwork(previewPath, new AbortController().signal))
+      .rejects.toBeInstanceOf(ContractError);
+  });
+
   it("replays one exact mutation after memory-only token renewal", async () => {
     const session = new MemoryAuthSession();
     session.set("first-token", 3600, "refresh-token");

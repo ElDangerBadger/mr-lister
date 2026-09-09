@@ -1,7 +1,8 @@
-"""Owner-scoped artwork-preview links and exact-version S3 redirect authorization."""
+"""Owner-scoped artwork-preview links and exact-version S3 preview authorization."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -212,6 +213,27 @@ def preview_redirect_response(
     }
 
 
+def preview_grant_response(
+    redirect: PreviewRedirect,
+    *,
+    request_id: str,
+) -> dict[str, Any]:
+    """Expose the same authorized object as a non-cacheable grant without a redirect."""
+
+    response = preview_redirect_response(redirect, request_id=request_id)
+    response["statusCode"] = 200
+    del response["headers"]["Location"]
+    response["headers"]["Content-Type"] = "application/json"
+    response["body"] = json.dumps(
+        {"url": redirect.location, "expires_at": redirect.expires_at.isoformat()},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    )
+    return response
+
+
 __all__ = [
     "AuthenticatedPreviewLinkIssuer",
     "ExactVersionArtworkPreviewService",
@@ -219,5 +241,6 @@ __all__ = [
     "PreviewAuthorizationUnavailableError",
     "PreviewAuthorityStore",
     "PreviewRedirect",
+    "preview_grant_response",
     "preview_redirect_response",
 ]

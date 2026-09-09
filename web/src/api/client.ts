@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import { z } from "zod";
 import {
   commandResponseSchema,
   errorEnvelopeSchema,
@@ -16,6 +16,11 @@ import {
   type UploadRecovery,
 } from "../contracts";
 import type { AuthSession } from "../auth/session";
+
+const artworkPreviewGrantSchema = z.strictObject({
+  url: z.string().url().max(8_192),
+  expires_at: z.string().datetime({ offset: true }),
+});
 
 export interface DecodedResponse<T> {
   value: T;
@@ -186,26 +191,35 @@ export class BrowserApiClient implements ApiPort {
       || url.hash !== "") {
       throw new ContractError("unavailable");
     }
-    const token = this.session.getAccessToken() ?? await this.session.renewAccessToken();
-    if (token === null) throw new ApiError(401, "AUTHENTICATION_REQUIRED", "Sign in is required to continue.", "unavailable", null);
-    const fetchPreview = (accessToken: string) => this.fetcher(url.pathname, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${accessToken}`, Accept: "image/png" },
-        cache: "no-store",
-        credentials: "omit",
-        redirect: "follow",
-        referrerPolicy: "no-referrer",
-        signal,
-      });
-    let response = await fetchPreview(token);
-    if (response.status === 401) {
-      const renewed = await this.session.renewAccessToken(true);
-      if (renewed !== null) response = await fetchPreview(renewed);
+    // WebKit preflights Authorization across a cross-origin redirect. Authorize the
+    // pinned image first, then fetch it without forwarding the seller's access token.
+    // CloudFront already forwards query strings, but not the Accept header.
+    const grant = await this.request(`${url.pathname}?format=json`, { method: "GET", signal }, artworkPreviewGrantSchema);
+    const imageUrl = new URL(grant.value.url);
+    const jobId = url.pathname.split("/")[3];
+    if (imageUrl.protocol !== "https:"
+      || imageUrl.username !== "" || imageUrl.password !== ""
+      || imageUrl.port !== "" || imageUrl.hash !== ""
+      || !/^[a-z0-9][a-z0-9.-]+\.s3\.[a-z0-9-]+\.amazonaws\.com$/u.test(imageUrl.hostname)
+      || !imageUrl.pathname.startsWith("/private/owners/")
+      || !imageUrl.pathname.endsWith(`/jobs/${jobId}/source/source.png`)
+      || imageUrl.searchParams.getAll("versionId").length !== 1
+      || !imageUrl.searchParams.get("versionId")) {
+      throw new ContractError(grant.requestId);
     }
+    const response = await this.fetcher(imageUrl.href, {
+      method: "GET",
+      headers: { Accept: "image/png" },
+      cache: "no-store",
+      credentials: "omit",
+      redirect: "error",
+      referrerPolicy: "no-referrer",
+      signal,
+    });
     if (!response.ok) await throwApiError(response);
     const blob = await response.blob();
     if (blob.size === 0 || blob.size > 5 * 1024 * 1024 || blob.type !== "image/png") {
-      throw new ContractError(response.headers.get("X-Request-Id") ?? "unavailable");
+      throw new ContractError(grant.requestId);
     }
     return blob;
   }
