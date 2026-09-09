@@ -13,9 +13,11 @@ until the seller reviews new listings on the live site.
 
 ## Safari preview correction — 2026-09-09
 
-**IMPLEMENTED AND VERIFIED LOCALLY; NOT DEPLOYED.** Source checkpoint:
-`1e882b1f5d1af33f3c43f1e61681282566a09401` on main. AWS bootstrap login expired
-before any AWS changes for this fix. The memory update below remains the live template.
+**DEPLOYED, READBACK VERIFIED AND CONFIRMED IN LIVE SAFARI.** Source checkpoint:
+`1e882b1f5d1af33f3c43f1e61681282566a09401` on main. The preview API and web update are
+live on `https://massskutiny.com`. After seller MFA, the same Safari job loaded the original
+artwork and all five mockups, and `Approve draft` became enabled. Record version remains 8.
+No approval or publication was issued. The memory update below is the rollback predecessor.
 
 Safari's authenticated cross-origin redirect caused an S3 preflight for `Authorization`,
 which the existing bucket correctly rejected. The web client now obtains a same-origin,
@@ -29,7 +31,15 @@ image decoding and the artwork/mockup approval gate are unchanged. No S3 CORS ch
   Python formatting, TypeScript, production build and all three contract drift checks passed.
   Independent review found no blocker. Isolated WebKit reproduced the original 403 preflight;
   the corrected request returned HTTP 200, decoded the PNG and sent no cross-origin seller
-  authorization. This is not yet a deployed Safari/iOS seller-session acceptance.
+  authorization. The deployed macOS Safari seller-session check also passed as described above;
+  a physical iOS-device check was not performed.
+- [GitHub CI](https://github.com/ElDangerBadger/mr-lister/actions/runs/34393879268): the complete
+  Python/infrastructure job passed (**4,102 tests passed, 11 skipped**, lint, format, contracts,
+  all SAM validations and package build). Overall CI is **not green**: the web job stopped at
+  its dependency audit before running web verification. The high `js-yaml` advisory is in the
+  dev-only ESLint dependency tree, not the shipped bundle; production-only dependency audit
+  is clean. Two additional moderate findings are dev-only Vitest tooling. The complete local
+  web check passed. No dependency update or CI bypass was included in this deployment.
 - Sealed candidate: `6c82db059f8bb8537e0bf3df77b93490c10f81223edfd4f71631e3e33204f91b`;
   Lambda archive SHA-256 `cc98c85d0c9baec28cdac07f21a6aa2a2363a4ec3c0a650978a24ba7abc9868e`.
   Compared with the live SEO archive, only `cloud/api.py`, `cloud/preview.py` and three
@@ -37,14 +47,36 @@ image decoding and the artwork/mockup approval gate are unchanged. No S3 CORS ch
 - Prepared artifacts: `.mr_lister_private/safari-preview-20260909/candidate2/phase6-artifacts/`
   and `.mr_lister_private/safari-preview-20260909/web-release.json`. The earlier candidate
   outside `candidate2` is superseded and must not be deployed.
-- Resume: renew `mr-lister-bootstrap`, read back the exact memory-update predecessor, stage
-  the immutable candidate archive, retain the live SEO archive and add only the exact candidate
-  object/version through the existing runtime-role bootstrap mechanism. Update only Query's
-  CodeUri key/version and release-fingerprint override, then deploy web assets with index last.
-  Preserve runtime config, AgentCore v6, all other Lambdas, 1,024 MB Provider memory and Phase 7.
-- Rollback: retain the memory template below and capture the live web object versions before
-  deployment. Deploy Query first to preserve old clients; roll back web before Query if needed.
-  Recheck job `job_1026b34e63d035c99f3f1d378b0a6295` in Safari without approving or publishing.
+- Lambda VersionId: `fqZ0rqACYOEv7OD8LBE_QpJE9cASXYUp`. The existing runtime-role bootstrap is
+  `EXPANDED` to that exact candidate object/version while retaining the unchanged live SEO
+  archive tuple for the other functions and rollback. No wildcard archive grant was added.
+- Current core template SHA-256: `02593facd958693b1a27d432a3bfa305cb7b12dc1195da42665e106d185ab7a2`;
+  VersionId `pAqjeHCNmLqZ8i9RtxVcq1lDwMYOv4OD` at
+  `private/deployments/cloudformation/core/safari-preview/02593facd958693b1a27d432a3bfa305cb7b12dc1195da42665e106d185ab7a2/core-template.json`.
+  SAM validation passed. Change set `mr-lister-phase6-dev-safari-preview-6c82db059f8b` contained
+  one direct Query code/environment modification plus the API's unchanged dependent Query ARN
+  reference; no replacements. Stack is `UPDATE_COMPLETE` and matches this template exactly.
+- Query was deployed first. ProviderDraft (including 1,024 MB memory), PreparationDispatch and
+  SellerCommand configuration readbacks equal their predecessors exactly; Phase 7 stack is
+  unchanged. No AgentCore, provider-processing, prompt, approval or publication update occurred.
+- Web bundle SHA-256: `e1602068255c0051e33385d254c6c7d0e34fa7fe92f227620454d751b403af83`;
+  JavaScript `assets/index-B6yt4Lkt.js`, SHA-256
+  `ad37c7096b26eb6d2a8fc6933c9916a899529f5531eb686b5db54ddb985eeb3c`.
+  Assets were uploaded/read back with versioned checksums and index last; public bytes match.
+  CloudFront invalidation `I15E2U3J39B0VLHNVXOPHUVEIE` is `Completed`, scoped to `/`, `/index.html`
+  and `/favicon.svg`. Public runtime-config SHA remains
+  `d1f969e5545ba76f76b8f6ef8e66def4d162ae74330a34d64796aebd7f25b5aa`.
+- Rollback: restore the prior web index from the immutable versions captured in
+  `.mr_lister_private/safari-preview-20260909/web-before.json`, then the memory template below
+  with retained parameters if Query rollback is needed. Previous web assets were not deleted.
+  Prior web `index.html` VersionId: `Tgr3ZaKNAxwq.JKde2FO0To.TFM4la97`; deployed version:
+  `k0yGwzG1ybOW71XM9O990_2n9Ow9feXj` in `mr-lister-phase6-web-dev-384627057108-us-west-2`.
+  Full local before/after, object-version and deployment evidence is in that private directory.
+- Live seller check passed on `job_1026b34e63d035c99f3f1d378b0a6295`: Safari accessibility
+  readback shows `Original uploaded artwork for this seller review`, all five mockups and
+  `Approve draft` without the disabled flag. The unchanged image-load approval gate confirms
+  the source and mockups loaded. No new upload, backend processing, approval or publication
+  was triggered. Readback recorded at approximately `2026-09-09T19:36Z`.
 
 iOS keyboard handling, progress-map UI and latency Stage 1 are outside this correction.
 
@@ -57,7 +89,7 @@ explicit **1,024 MB**. Global memory defaults, the 600-second timeout, code, env
 roles, prompts, approval/publication behavior and all other resource definitions are unchanged.
 The frozen foundation template is not a deployable replacement for this current live template.
 
-- Current template SHA-256: `f8c37351b50ac3dac5f6b9d5214ec93b3f1f5f2ea6590ea2d3e3028b04400704`.
+- Memory-update predecessor template SHA-256: `f8c37351b50ac3dac5f6b9d5214ec93b3f1f5f2ea6590ea2d3e3028b04400704`.
 - Versioned artifact: `private/deployments/cloudformation/core/provider-memory/f8c37351b50ac3dac5f6b9d5214ec93b3f1f5f2ea6590ea2d3e3028b04400704/core-template.json`
   in the existing Phase 6 artifact bucket; VersionId `ooLWxZWnhKqm86HbGSk1ipOXxwUlTrc_`.
 - Change set: `mr-lister-phase6-dev-provider-memory-f8c37351b50a`;
@@ -81,8 +113,8 @@ The frozen foundation template is not a deployable replacement for this current 
   256 MB would reintroduce the known failure for this artwork.
 
 Known limits remain: generic crash reconciliation can bypass its intended deadline; this
-memory-only update does not change retry semantics. Safari preview/iOS editing issues are
-separate and unresolved. Latency Stage 1 remains paused. The historical SEO deployment tuple
+memory-only update does not change retry semantics. Safari preview is addressed by the separate
+correction above; iOS editing remains unresolved. Latency Stage 1 remains paused. The historical SEO deployment tuple
 below is retained as the memory update's predecessor, not the current template identity.
 
 ## Live release and readback
