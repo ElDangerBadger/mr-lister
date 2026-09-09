@@ -11,6 +11,43 @@ passed, as did [merged release-record CI](https://github.com/ElDangerBadger/mr-l
 The checkout remains on main. Latency Stage 1 and the speed-optimization branch remain paused
 until the seller reviews new listings on the live site.
 
+## Safari preview correction — 2026-09-09
+
+**IMPLEMENTED AND VERIFIED LOCALLY; NOT DEPLOYED.** Source checkpoint:
+`1e882b1f5d1af33f3c43f1e61681282566a09401` on main. AWS bootstrap login expired
+before any AWS changes for this fix. The memory update below remains the live template.
+
+Safari's authenticated cross-origin redirect caused an S3 preflight for `Authorization`,
+which the existing bucket correctly rejected. The web client now obtains a same-origin,
+owner-authorized `?format=json` preview grant and separately downloads its exact-version PNG
+without a seller token, cookies or referrer. Query selection uses the existing CloudFront
+forwarding policy; `Accept` is not forwarded. Legacy no-query clients retain their 302 response.
+Owner isolation, immutable source validation, five-minute presigning, no-store behavior,
+image decoding and the artwork/mockup approval gate are unchanged. No S3 CORS change is needed.
+
+- Verification: **179 focused Python tests and all 173 web tests passed**; Python/web lint,
+  Python formatting, TypeScript, production build and all three contract drift checks passed.
+  Independent review found no blocker. Isolated WebKit reproduced the original 403 preflight;
+  the corrected request returned HTTP 200, decoded the PNG and sent no cross-origin seller
+  authorization. This is not yet a deployed Safari/iOS seller-session acceptance.
+- Sealed candidate: `6c82db059f8bb8537e0bf3df77b93490c10f81223edfd4f71631e3e33204f91b`;
+  Lambda archive SHA-256 `cc98c85d0c9baec28cdac07f21a6aa2a2363a4ec3c0a650978a24ba7abc9868e`.
+  Compared with the live SEO archive, only `cloud/api.py`, `cloud/preview.py` and three
+  release manifests differ; dependency bytes and archive membership are unchanged.
+- Prepared artifacts: `.mr_lister_private/safari-preview-20260909/candidate2/phase6-artifacts/`
+  and `.mr_lister_private/safari-preview-20260909/web-release.json`. The earlier candidate
+  outside `candidate2` is superseded and must not be deployed.
+- Resume: renew `mr-lister-bootstrap`, read back the exact memory-update predecessor, stage
+  the immutable candidate archive, retain the live SEO archive and add only the exact candidate
+  object/version through the existing runtime-role bootstrap mechanism. Update only Query's
+  CodeUri key/version and release-fingerprint override, then deploy web assets with index last.
+  Preserve runtime config, AgentCore v6, all other Lambdas, 1,024 MB Provider memory and Phase 7.
+- Rollback: retain the memory template below and capture the live web object versions before
+  deployment. Deploy Query first to preserve old clients; roll back web before Query if needed.
+  Recheck job `job_1026b34e63d035c99f3f1d378b0a6295` in Safari without approving or publishing.
+
+iOS keyboard handling, progress-map UI and latency Stage 1 are outside this correction.
+
 ## Memory-only runtime update — 2026-09-09
 
 **DEPLOYED AND READBACK VERIFIED.** A real 6,984 × 6,545 PNG exposed an out-of-memory
