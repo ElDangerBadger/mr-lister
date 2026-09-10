@@ -2,7 +2,9 @@
 
 ## Current checkpoint
 
-**A1 measured; A2 held; A3–A5 assessed; A6 deployed; A7 backend sample recorded.**
+**Recommendation A — PASS A COMPLETE as a practical demo checkpoint.**
+A1 measured; A2 held; A3–A5 assessed; A6 deployed; A7 backend sample recorded;
+accepted 1024 MB preparation setting deployed and readback verified.
 The early local editor is live on `https://massskutiny.com`. AI/provider execution
 remains unchanged. The corrected-editor sample has one cold run and one warm run;
 warm backend text/draft/Save readiness was **20.376 / 30.187 / 32.436 seconds**.
@@ -16,10 +18,13 @@ also at 1024 MB. Cancel the 1769 MB trial and automatic restoration to 256 MB.
 The final matched cold run at 1024 MB reached validated text in **29.982 s**, draft
 in **50.695 s**, and Save readiness in **61.073 s**. First-use preparation setup
 fell from **32.056 to 7.626 s**. The final-job readback is complete; the one-property
-stack-template persistence change is prepared and awaiting renewed AWS access for
-execution/readback. No further performance experimentation is recommended before
+stack-template persistence reached `UPDATE_COMPLETE` at `2026-09-10T06:18:21.901Z`.
+Exact template, all four Lambda configurations, parameters/service role and
+unchanged Phase 7 stack checks passed. No further experimentation is recommended before
 demo/UI work. See [cold-path exploration](cold-path-exploration.md) for the measured
-comparison, costs, browser-timing caveat and exact remaining administrative step.
+comparison, costs, browser-timing caveat and immutable deployment/rollback tuple.
+This is practical closure under the seller's final decision, not a claim that the
+original browser median target was independently proven. No deployment step remains.
 The A1/A7 timing tables below
 precede this accepted memory setting and are not its measured performance result.
 
@@ -199,7 +204,10 @@ found no blocker. Live timing remains to be measured; this is not yet an achieve
 KPI. The connected-browser service was unavailable, so live browser timing requires
 a seller-operated sample or a connected authenticated browser.
 
-## Pass A scorecard
+## Pass A scorecard — before accepted memory closeout
+
+This historical scorecard predates the final cold-memory result in the current
+checkpoint and [cold-path comparison](cold-path-exploration.md#final-matched-artwork-timing).
 
 | Metric | A1 baseline | Current live | Goal |
 |---|---:|---:|---:|
@@ -211,7 +219,7 @@ a seller-operated sample or a connected authenticated browser.
 | Normal Strands cycles | 2 | 2; held candidate 1 | 1 bounded path |
 | Printify requests | 14 | 14 | ≤6 / stretch ≤5 |
 
-No measured performance win or Pass A completion is claimed at this checkpoint.
+No measured performance win or completion was claimed at that earlier checkpoint.
 
 Local verification after parking the runtime experiment: complete Python suite
 **4,128 passed, 11 live tests skipped**; Ruff lint/format, all three existing

@@ -8,23 +8,25 @@ validated text**, with both preparation and provider confirmed cold. This
 supersedes the temporary-trial plan: **do not revert to
 256 MB automatically and do not run the 1769 MB comparison.**
 
-Last successful live readback at `2026-09-10T05:45:16Z` confirmed only preparation
-memory changed from 256 to 1024 MB, with state Active and update Successful.
-Provider configuration was byte-for-byte unchanged; no code, prompt, seller data,
-publication or other infrastructure change was made. No preparation was running
-before the revision-conditional update. Fresh readback on acceptance was blocked
-by expired bootstrap OAuth authorization; no further AWS mutation occurred.
+**DEPLOYED AND READBACK VERIFIED.** CloudFormation reached `UPDATE_COMPLETE` at
+`2026-09-10T06:18:21.901Z`. The deployed Original template equals the reviewed
+target exactly; its only difference from predecessor SHA-256
+`02593facd958693b1a27d432a3bfa305cb7b12dc1195da42665e106d185ab7a2` is
+`Resources.PreparationDispatchFunction.Properties.MemorySize = 1024`.
+The stack events record only PreparationDispatchFunction updating; no resource
+replacement occurred. All ten parameters and the existing service role are retained.
 
-**CloudFormation persistence is prepared but not executed.** The current Original
-template was captured and matched exact predecessor SHA-256 `02593facd958693b1a27d432a3bfa305cb7b12dc1195da42665e106d185ab7a2`.
-The validated target changes only
-`Resources.PreparationDispatchFunction.Properties.MemorySize = 1024`. The standard
-change set is ready, with no replacements. AWS OAuth expired again before its
-execution. No 256 MB restoration or other runtime mutation occurred.
+Full preparation, provider, query and command configuration comparisons match the
+pre-execution capture, excluding only update-status/revision timestamps (preparation
+was already running the accepted 1024 MB trial). All four are Active / Successful;
+code and environment are unchanged. Phase 7 stack readback is identical. This
+persists the accepted memory allocation without another application deployment.
 
-The seller's acceptance does not establish a measured 30-second cold/browser
-KPI. Capture the final supplied job's existing traces without reopening a broad
-benchmark or acceptance program. Pass B remains out of scope.
+**Recommendation A — PASS A COMPLETE, as a practical demo checkpoint.** The final
+cold backend text result is approximately 30 seconds; further optimization is not
+worth delaying demo/UI work. This does not establish the original browser median
+KPI: actual first-edit timing was not captured. No additional benchmarking,
+optimization or Pass B implementation is part of this assignment.
 The final supplied run digest is `354cc93551460bee352e7dda`; it reached
 `awaiting_approval`, review version 1 / record version 8, with both uncertainty
 flags false. No additional upload, approval or publication is required for this
@@ -137,18 +139,16 @@ imports and AWS clients are already reused within each environment. Moving them
 to module scope alone would shift the timing label, not remove cold wall time.
 Job/work checks and owner-bound provider credential resolution remain per request.
 
-## Accepted setting and remaining confirmation
+## Accepted setting and completed confirmation
 
 The original plan was a bounded 256 / 1024 / 1769 MB comparison followed by
 restoration pending user review. The seller has now completed that review by
 accepting 1024 MB; the higher-memory trial and automatic restoration are canceled.
 No result at 1769 MB exists or is required.
 
-For the seller's final supplied job, use the existing traces to record
-upload-to-text, draft, Save, setup/AI/provider intervals and billed duration.
-Classify cold/warm from platform records and separately label actual browser
-first-edit timing if available. Do not mistake allocation acceptance for measured
-speedup, or demand additional runs solely to make the sample statistically ideal.
+The seller's final supplied job has been read back using existing traces; the
+timing, platform classification and billed-duration results are recorded above.
+No additional run is required solely to make this sample statistically ideal.
 
 [AWS memory documentation](https://docs.aws.amazon.com/lambda/latest/dg/configuration-memory.html)
 states CPU allocation scales with memory and 1769 MB corresponds to one vCPU.
@@ -191,15 +191,17 @@ Python 3.12 ARM64. Provider remains 1024 MB with its original configuration.
 The 1769 MB trial is canceled. Current serving source and web rollback remain in
 [Pass A performance](pass-a-performance.md#active-write-editor-correction--deployed).
 
-Prepared persistence artifact:
+Deployed persistence artifact:
 
 - Template SHA-256 `a505a639bd881f677f416a296760fb6686d72f5f21dcdf657f95a8bfb0ef52b3`.
 - S3 key `private/deployments/cloudformation/core/preparation-memory/a505a639bd881f677f416a296760fb6686d72f5f21dcdf657f95a8bfb0ef52b3/core-template.json`,
   existing Phase 6 artifact bucket; VersionId `61a72toPlUm8KNAN57NnbXarcSjRpNfq`.
 - Change set `mr-lister-phase6-dev-preparation-memory-a505a639bd88`,
-  ID `825a59d8-3f32-4516-b3da-c25b49a210ea`, currently unexecuted.
+  ID `825a59d8-3f32-4516-b3da-c25b49a210ea`, executed successfully.
+  Client request token `persist-preparation-memory-a505a639bd88`; stack update
+  started `2026-09-10T06:18:04.016Z`, completed `2026-09-10T06:18:21.901Z`.
 - Exact single-property diff, independent review and SAM lint/validation passed.
-  Retain all ten existing parameters and the existing runtime CloudFormation role.
+  Readback confirms all ten existing parameters and the runtime CloudFormation role.
   Standard inspection shows only the memory modification and dependent, unchanged
   preparation-function/role ARN references; no replacements.
 - Expanded property-value inspection reproduced the prior provider-memory
@@ -211,6 +213,20 @@ Prepared persistence artifact:
   `pAqjeHCNmLqZ8i9RtxVcq1lDwMYOv4OD`; deploying it would restore preparation to
   256 MB and therefore requires explicit rollback approval, not automatic use.
 
-Remaining work is only execution and exact configuration/template readback of
-this prepared persistence change after renewed AWS authorization. Final timing
-readback is complete. No further memory optimization is authorized or recommended.
+Private `persist-verification.json` records the successful exact-template,
+configuration, parameter, role and unchanged-Phase-7 checks. Final timing and
+configuration persistence are complete; no deployment step remains.
+
+Tracked closeout files are this report, `docs/pass-a-performance.md`,
+`docs/etsy-seo-release-state.md` and the already recorded 44-event evidence file.
+No application, prompt, publication, frozen template or release-seal source was
+changed. The exact memory overlay is versioned in S3 as recorded above.
+Focused collector regression was rerun after persistence: **11 passed**.
+[Pre-closeout main CI](https://github.com/ElDangerBadger/mr-lister/actions/runs/34444400245)
+is green at `20466c56f343f38b2691ff903304dd45c92ee121`; the deployed source's full
+green verification remains **4,130 Python tests / 187 web tests**, plus lint,
+formatting, typecheck, contract/SAM validations and builds. The closeout commit
+runs the unchanged CI workflow again; its result is reported with the handoff.
+
+Stop here. No further optimization, memory trial or Pass B work is authorized
+by this closeout.

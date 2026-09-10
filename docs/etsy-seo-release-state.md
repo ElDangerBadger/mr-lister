@@ -21,30 +21,32 @@ source `14a9afa0591aacda63bef96561509eb2814fb565`.
 The current web bundle/index, green source CI and rollback tuple are recorded in
 [Pass A editor correction release](pass-a-performance.md#active-write-editor-correction--deployed).
 This supersedes only the web bundle below. All backend/AgentCore/provider and
-publication code release tuples on this page remain unchanged; final Pass A
-live timing acceptance is still pending.
+publication code release tuples on this page remain unchanged. Pass A is now
+closed as a practical demo checkpoint, with the memory-only update below.
 
 ## Accepted preparation memory — 2026-09-10
 
 The seller accepts **1024 MB for preparation**, retaining provider at **1024 MB**.
-Last successful direct Lambda readback was `2026-09-10T05:45:16Z`; only preparation
-memory changed, with code/environment/other configuration unchanged. Do not
+The direct trial and subsequent stack update changed only preparation memory,
+with code/environment/other configuration unchanged. Do not
 automatically restore preparation to 256 MB or continue the 1769 MB experiment.
 The final supplied matched-artwork job reached `awaiting_approval` with validated
 text recorded at **29.982 s** (cold), draft at **50.695 s**, and Save at **61.073 s**.
 This records backend readiness, not a captured browser first-edit timestamp.
 
-**Stack-template persistence is prepared but not yet executed:** bootstrap OAuth
-expired before execution. Current-template capture, the exact one-property diff,
-SAM validation, artifact upload and standard change-set review are complete.
-Target SHA `a505a639bd881f677f416a296760fb6686d72f5f21dcdf657f95a8bfb0ef52b3`,
-change set `mr-lister-phase6-dev-preparation-memory-a505a639bd88`.
-The accepted live override must be carried into the exact current
-core template as the single PreparationDispatchFunction MemorySize property;
-otherwise a future stack update could undo it. Preserve the existing provider
-memory, Safari and publication overlays. The template tuple recorded below is
-the historical predecessor, not proof that this property has been persisted.
-See [cold-path record](cold-path-exploration.md) for exact evidence and next step.
+**DEPLOYED AND READBACK VERIFIED:** stack `UPDATE_COMPLETE` at
+`2026-09-10T06:18:21.901Z`. Current core template SHA-256 is
+`a505a639bd881f677f416a296760fb6686d72f5f21dcdf657f95a8bfb0ef52b3`,
+VersionId `61a72toPlUm8KNAN57NnbXarcSjRpNfq`, from change set
+`mr-lister-phase6-dev-preparation-memory-a505a639bd88`.
+The exact Original-template comparison proves only PreparationDispatchFunction
+MemorySize was added. All four Lambda code/configuration readbacks match their
+pre-execution captures; ten parameters, service role and Phase 7 are unchanged.
+Provider memory, Safari and publication overlays are retained. Future deployment
+templates must preserve this accepted setting. The Safari tuple below is now the
+historical predecessor; restoring it would also restore 256 MB and requires
+explicit rollback approval. See [cold-path record](cold-path-exploration.md) for
+the full immutable tuple, timing, cost and completed verification.
 
 ## CI dependency maintenance — 2026-09-09
 
@@ -106,12 +108,14 @@ image decoding and the artwork/mockup approval gate are unchanged. No S3 CORS ch
 - Lambda VersionId: `fqZ0rqACYOEv7OD8LBE_QpJE9cASXYUp`. The existing runtime-role bootstrap is
   `EXPANDED` to that exact candidate object/version while retaining the unchanged live SEO
   archive tuple for the other functions and rollback. No wildcard archive grant was added.
-- Current core template SHA-256: `02593facd958693b1a27d432a3bfa305cb7b12dc1195da42665e106d185ab7a2`;
+- Historical Safari core template SHA-256 (superseded by accepted preparation memory above):
+  `02593facd958693b1a27d432a3bfa305cb7b12dc1195da42665e106d185ab7a2`;
   VersionId `pAqjeHCNmLqZ8i9RtxVcq1lDwMYOv4OD` at
   `private/deployments/cloudformation/core/safari-preview/02593facd958693b1a27d432a3bfa305cb7b12dc1195da42665e106d185ab7a2/core-template.json`.
   SAM validation passed. Change set `mr-lister-phase6-dev-safari-preview-6c82db059f8b` contained
   one direct Query code/environment modification plus the API's unchanged dependent Query ARN
-  reference; no replacements. Stack is `UPDATE_COMPLETE` and matches this template exactly.
+  reference; no replacements. At that release, stack `UPDATE_COMPLETE` readback
+  matched this template exactly.
 - Query was deployed first. ProviderDraft (including 1,024 MB memory), PreparationDispatch and
   SellerCommand configuration readbacks equal their predecessors exactly; Phase 7 stack is
   unchanged. No AgentCore, provider-processing, prompt, approval or publication update occurred.
