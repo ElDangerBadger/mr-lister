@@ -6,15 +6,21 @@
 The early local editor is live on `https://massskutiny.com`. AI/provider execution
 remains unchanged. The corrected-editor sample has one cold run and one warm run;
 warm backend text/draft/Save readiness was **20.376 / 30.187 / 32.436 seconds**.
-**Pass A is not yet complete:** actual browser first-edit timing and a warm median
-have not been established. The seller reports the second run was noticeably
-faster. No additional runtime changes or uploads are required for this readback.
+Actual browser first-edit timing and a warm median have not been established.
+The seller reports the second run was noticeably faster. No additional uploads
+are required for this readback.
 UI simplification and publication changes are outside this pass.
 
 Subsequent seller decision: **retain preparation memory at 1024 MB**, with provider
 also at 1024 MB. Cancel the 1769 MB trial and automatic restoration to 256 MB.
-The final seller confirmation and stack-template persistence/readback are tracked
-in [cold-path exploration](cold-path-exploration.md). The timing tables below
+The final matched cold run at 1024 MB reached validated text in **29.982 s**, draft
+in **50.695 s**, and Save readiness in **61.073 s**. First-use preparation setup
+fell from **32.056 to 7.626 s**. The final-job readback is complete; the one-property
+stack-template persistence change is prepared and awaiting renewed AWS access for
+execution/readback. No further performance experimentation is recommended before
+demo/UI work. See [cold-path exploration](cold-path-exploration.md) for the measured
+comparison, costs, browser-timing caveat and exact remaining administrative step.
+The A1/A7 timing tables below
 precede this accepted memory setting and are not its measured performance result.
 
 Source rollback: `d71218d982b68a078b02ce3914f96ed2523da948` on main,
@@ -449,8 +455,12 @@ cannot recover its original first-edit timestamp. Polling runs three seconds
 after the preceding requests finish and pauses when hidden/offline; backend time
 plus three seconds is not an upper bound.
 
-The largest measured next opportunity is first-use preparation setup, followed
+At that earlier checkpoint, the largest measured next opportunity was first-use preparation setup, followed
 by the remaining AgentCore bridge/start interval and model work on the warm path.
 Recommend a bounded startup profile/memory comparison before any warm-runtime
 infrastructure purchase, not another SEO cycle or provider-cache project. No such
-change is made here. Pass A remains unproven against its KPI; Pass B does not begin.
+change was made in that checkpoint. The subsequent accepted-memory result is
+recorded in [cold-path exploration](cold-path-exploration.md): cold backend text
+now reaches approximately 30 seconds. A strict measured browser median remains
+unproven, not a reason to reopen the practical MVP acceptance program. Pass B
+does not begin in this assignment.

@@ -30,11 +30,16 @@ The seller accepts **1024 MB for preparation**, retaining provider at **1024 MB*
 Last successful direct Lambda readback was `2026-09-10T05:45:16Z`; only preparation
 memory changed, with code/environment/other configuration unchanged. Do not
 automatically restore preparation to 256 MB or continue the 1769 MB experiment.
-One final seller confirmation is pending, not a prerequisite to accepting the
-allocation.
+The final supplied matched-artwork job reached `awaiting_approval` with validated
+text recorded at **29.982 s** (cold), draft at **50.695 s**, and Save at **61.073 s**.
+This records backend readiness, not a captured browser first-edit timestamp.
 
-**Stack-template persistence is not yet complete:** bootstrap OAuth expired on
-fresh readback. The accepted live override must be carried into the exact current
+**Stack-template persistence is prepared but not yet executed:** bootstrap OAuth
+expired before execution. Current-template capture, the exact one-property diff,
+SAM validation, artifact upload and standard change-set review are complete.
+Target SHA `a505a639bd881f677f416a296760fb6686d72f5f21dcdf657f95a8bfb0ef52b3`,
+change set `mr-lister-phase6-dev-preparation-memory-a505a639bd88`.
+The accepted live override must be carried into the exact current
 core template as the single PreparationDispatchFunction MemorySize property;
 otherwise a future stack update could undo it. Preserve the existing provider
 memory, Safari and publication overlays. The template tuple recorded below is
