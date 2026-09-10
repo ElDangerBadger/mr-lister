@@ -81,6 +81,18 @@ describe("browser latency observability", () => {
     expect(events).toHaveLength(100);
   });
 
+  it("records first browser editing separately from backend save readiness", async () => {
+    recordBrowserLatencyMilestone(JOB_ID, "first_editable_review");
+    await waitFor(() => expect(bufferedBrowserLatencyEvents()).toHaveLength(1));
+    expect(bufferedBrowserLatencyEvents()[0]).toMatchObject({
+      run_id: "d589007d5d7b454348fb3b5f",
+      component: "seller_web",
+      name: "first_editable_review",
+      kind: "milestone",
+      outcome: "observed",
+    });
+  });
+
   it("keeps console failures outside the observed workflow", async () => {
     vi.mocked(console.info).mockImplementation(() => {
       throw new Error("console unavailable");

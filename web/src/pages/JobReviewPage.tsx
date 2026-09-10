@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { ApiError, ContractError, newIdempotencyKey, type ListingDraft } from "../api/client";
 import { useAppDependencies } from "../app-context";
 import { sellerActions, type SellerAction, type SellerReview } from "../contracts";
+import { recordBrowserLatencyMilestone } from "../observability/latency";
 import { PublicationWorkspace } from "../publication/PublicationWorkspace";
 
 const POLLING_STATES = new Set([
@@ -412,8 +413,25 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
   const saveKey = useRef<{ authority: string; value: string } | null>(null);
   const acceptedMinimum = useRef<ReviewMinimum | null>(null);
   const editAuthority = useRef<SellerReview | null>(null);
+  const startedEditingEarly = useRef(false);
+  const editableMilestones = useRef(new Set<string>());
   const validationSummary = useRef<HTMLDivElement>(null);
   const focusValidationSummary = useRef(false);
+  const canAdvanceEarlyAuthority = startedEditingEarly.current
+    && editAuthority.current !== null
+    && isUnchangedPreparationProgress(editAuthority.current, review);
+
+  useEffect(() => {
+    if (!startedEditingEarly.current || editAuthority.current === null) return;
+    if (isUnchangedPreparationProgress(editAuthority.current, review)) {
+      editAuthority.current = review;
+      if (!canEditDuringPreparation(review)) startedEditingEarly.current = false;
+    } else {
+      // A changed listing or an interrupted lifecycle keeps the ordinary deliberate
+      // conflict/reapply boundary, even if preparation later resumes.
+      startedEditingEarly.current = false;
+    }
+  }, [review]);
 
   useEffect(() => {
     if (review.listing.readiness !== "ready") return;
@@ -421,6 +439,7 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
       if (acceptedMinimum.current !== null && !meetsMinimum(review, acceptedMinimum.current)) return;
       acceptedMinimum.current = null;
       editAuthority.current = null;
+      startedEditingEarly.current = false;
     } else if (saveState !== "pristine") return;
     setDraft({
       title: review.listing.title ?? "",
@@ -428,6 +447,7 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
       tags: [...review.listing.tags],
     });
     editAuthority.current = null;
+    startedEditingEarly.current = false;
     setSaveState("pristine");
   }, [review, saveState]);
 
@@ -443,6 +463,7 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
     saveKey.current = null;
     acceptedMinimum.current = null;
     editAuthority.current = null;
+    startedEditingEarly.current = false;
     setDraft({
       title: review.listing.title ?? "",
       description: review.listing.description ?? "",
@@ -465,6 +486,15 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
   }, [onEditBarrierChange, saveState]);
 
   const capability = capabilityFor(review, "edit_listing");
+  const earlyEditingAvailable = canEditDuringPreparation(review);
+  const locallyEditable = capability.enabled || earlyEditingAvailable;
+  useEffect(() => {
+    if (draft === null || !locallyEditable || saveState === "saving" || saveState === "saved"
+      || editableMilestones.current.has(review.job_id)) return;
+    editableMilestones.current.add(review.job_id);
+    recordBrowserLatencyMilestone(review.job_id, "first_editable_review");
+  }, [draft, locallyEditable, review.job_id, saveState]);
+
   if (draft === null) {
     return (
       <section className="panel" aria-labelledby="listing-heading">
@@ -476,7 +506,11 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
   }
 
   const change = (next: ListingDraft) => {
-    if (editAuthority.current === null) editAuthority.current = review;
+    if (!locallyEditable || saveState === "saving" || saveState === "saved") return;
+    if (editAuthority.current === null) {
+      editAuthority.current = review;
+      startedEditingEarly.current = earlyEditingAvailable;
+    }
     setDraft(next);
     setSaveState("dirty");
     setMessage(null);
@@ -488,6 +522,7 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
       tags: [...review.listing.tags],
     });
     editAuthority.current = null;
+    startedEditingEarly.current = false;
     saveKey.current = null;
     acceptedMinimum.current = null;
     focusValidationSummary.current = false;
@@ -501,7 +536,8 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
     else setMessage("Revision accepted. The latest authoritative review is temporarily unavailable; your accepted text remains visible.");
   };
   const submit = async () => {
-    const authorityReview = editAuthority.current ?? review;
+    if (!capability.enabled || saveState === "saving" || saveState === "saved" || saveState === "pristine") return;
+    const authorityReview = canAdvanceEarlyAuthority ? review : editAuthority.current ?? review;
     if (!sameReviewAuthority(authorityReview, review)) {
       setSaveState("conflict");
       setMessage("A newer authoritative review is available. Reapply this preserved revision deliberately before saving.");
@@ -549,7 +585,9 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
   };
 
   const mergedIssues = review.validation.issues;
-  const authorityConflict = editAuthority.current !== null && !sameReviewAuthority(editAuthority.current, review);
+  const authorityConflict = editAuthority.current !== null
+    && !sameReviewAuthority(editAuthority.current, review)
+    && !canAdvanceEarlyAuthority;
   const displayedSaveState: SaveState = authorityConflict ? "conflict" : saveState;
   const displayedMessage = authorityConflict
     ? "A newer authoritative review is available. Your local revision is preserved; reapply it deliberately before saving."
@@ -565,13 +603,16 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
     <section className="panel listing-panel" aria-labelledby="listing-heading">
       <SectionHeader
         eyebrow="Listing"
-        heading={capability.enabled ? "Review and edit listing" : "Listing details"}
+        heading={locallyEditable ? "Review and edit listing" : "Listing details"}
         id="listing-heading"
         readiness={review.listing.readiness}
       />
       <p className="validation-result">Validation: {validationResultLabel(review)}</p>
       {capability.enabled && (
         <p className="listing-guidance">Edit the generated title, description, or tags below. Save or discard any changes before approving this exact listing version.</p>
+      )}
+      {!capability.enabled && earlyEditingAvailable && (
+        <p className="listing-guidance">You can edit the title, description, and tags while preparation finishes. Changes stay only on this page until you save; keep this page open. Saving becomes available when preparation is ready.</p>
       )}
       {(Object.keys(errors).length > 0 || mergedIssues.length > 0) && (
         <div id="listing-errors" ref={validationSummary} className="validation-summary" role="alert" tabIndex={-1}>
@@ -584,11 +625,11 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
       )}
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }} noValidate>
         <label htmlFor="listing-title">Title <span>{draft.title.length}/140</span></label>
-        <input id="listing-title" value={draft.title} maxLength={140} readOnly={!capability.enabled || saveState === "saved"} disabled={saveState === "saving"} aria-invalid={fieldErrors.title !== undefined} aria-describedby={fieldErrors.title === undefined ? undefined : "listing-title-error"} onChange={(event) => change({ ...draft, title: event.target.value })} />
+        <input id="listing-title" value={draft.title} maxLength={140} readOnly={!locallyEditable || saveState === "saved"} disabled={saveState === "saving"} aria-invalid={fieldErrors.title !== undefined} aria-describedby={fieldErrors.title === undefined ? undefined : "listing-title-error"} onChange={(event) => change({ ...draft, title: event.target.value })} />
         {fieldErrors.title !== undefined && <small id="listing-title-error" className="field-error">{fieldErrors.title}</small>}
 
         <label htmlFor="listing-description">Description <span>{draft.description.length}/100,000</span></label>
-        <textarea id="listing-description" rows={12} value={draft.description} maxLength={100_000} readOnly={!capability.enabled || saveState === "saved"} disabled={saveState === "saving"} aria-invalid={fieldErrors.description !== undefined} aria-describedby={fieldErrors.description === undefined ? undefined : "listing-description-error"} onChange={(event) => change({ ...draft, description: event.target.value })} />
+        <textarea id="listing-description" rows={12} value={draft.description} maxLength={100_000} readOnly={!locallyEditable || saveState === "saved"} disabled={saveState === "saving"} aria-invalid={fieldErrors.description !== undefined} aria-describedby={fieldErrors.description === undefined ? undefined : "listing-description-error"} onChange={(event) => change({ ...draft, description: event.target.value })} />
         {fieldErrors.description !== undefined && <small id="listing-description-error" className="field-error">{fieldErrors.description}</small>}
 
         <fieldset disabled={saveState === "saving"}>
@@ -599,7 +640,7 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
               return (
                 <div key={path}>
                   <label htmlFor={`listing-tag-${index + 1}`}>Tag {index + 1}</label>
-                  <input id={`listing-tag-${index + 1}`} value={draft.tags[index] ?? ""} maxLength={20} readOnly={!capability.enabled || saveState === "saved"} aria-invalid={fieldErrors[path] !== undefined} aria-describedby={fieldErrors[path] === undefined ? undefined : `listing-tag-${index + 1}-error`} onChange={(event) => {
+                  <input id={`listing-tag-${index + 1}`} value={draft.tags[index] ?? ""} maxLength={20} readOnly={!locallyEditable || saveState === "saved"} aria-invalid={fieldErrors[path] !== undefined} aria-describedby={fieldErrors[path] === undefined ? undefined : `listing-tag-${index + 1}-error`} onChange={(event) => {
                     const tags = Array.from({ length: 13 }, (_, tagIndex) => draft.tags[tagIndex] ?? "");
                     tags[index] = event.target.value;
                     change({ ...draft, tags });
@@ -619,7 +660,7 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
           )}
           <span className={`save-state save-state--${displayedSaveState}`} role="status" aria-live="polite">{displayedMessage}</span>
           {displayedSaveState === "conflict" && (
-            <button className="button" type="button" onClick={() => { editAuthority.current = review; setSaveState("dirty"); setMessage("Revision reapplied to the latest review. Review it, then save deliberately."); }}>Reapply revision to latest review</button>
+            <button className="button" type="button" disabled={!capability.enabled} onClick={() => { if (!capability.enabled) return; editAuthority.current = review; startedEditingEarly.current = false; setSaveState("dirty"); setMessage("Revision reapplied to the latest review. Review it, then save deliberately."); }}>Reapply revision to latest review</button>
           )}
           {saveState === "saved" && acceptedMinimum.current !== null && (
             <button className="button" type="button" onClick={() => { if (acceptedMinimum.current !== null) void reconcileAcceptedRevision(acceptedMinimum.current); }}>Refresh authoritative review</button>
@@ -985,6 +1026,40 @@ function sameReviewAuthority(left: SellerReview, right: SellerReview): boolean {
     && left.review_version === right.review_version
     && left.review_fingerprint === right.review_fingerprint
     && left.review_authority_etag === right.review_authority_etag;
+}
+
+function canEditDuringPreparation(review: SellerReview): boolean {
+  return hasValidatedListing(review) && preparationProgressRank(review) >= 0
+    && review.display_state !== "ready_for_review";
+}
+
+function hasValidatedListing(review: SellerReview): boolean {
+  return review.review_version > 0 && review.review_fingerprint !== null
+    && review.listing.readiness === "ready"
+    && review.listing.title !== null && review.listing.description !== null
+    && review.listing.tags.length === 13
+    && review.validation.readiness === "ready" && review.validation.passed === true
+    && review.failure === null && !review.provider_outcome_unconfirmed;
+}
+
+function preparationProgressRank(review: SellerReview): number {
+  if (review.display_state === "preparing" && review.stage === "listing_validation") return 0;
+  if (review.display_state === "synchronizing" && review.stage === "product_sync") return 1;
+  if (review.display_state === "refreshing_estimate" && review.stage === "economics_refresh") return 2;
+  if (review.display_state === "ready_for_review" && review.stage === "human_review"
+    && capabilityFor(review, "edit_listing").enabled) return 3;
+  return -1;
+}
+
+function isUnchangedPreparationProgress(previous: SellerReview, current: SellerReview): boolean {
+  return hasValidatedListing(previous) && hasValidatedListing(current)
+    && preparationProgressRank(previous) >= 0
+    && preparationProgressRank(current) >= preparationProgressRank(previous)
+    && previous.job_id === current.job_id
+    && current.record_version >= previous.record_version
+    && previous.review_version === current.review_version
+    && previous.review_fingerprint === current.review_fingerprint
+    && JSON.stringify(previous.listing) === JSON.stringify(current.listing);
 }
 
 function authoritativeListingMatchesDraft(review: SellerReview, draft: ListingDraft): boolean {

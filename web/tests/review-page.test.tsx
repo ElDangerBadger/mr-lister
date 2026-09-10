@@ -9,6 +9,7 @@ import type { ApiPort } from "../src/api/client";
 import { AppRoutes } from "../src/App";
 import { MemoryAuthSession, type AuthCoordinator } from "../src/auth/session";
 import { sellerReviewSchema, type SellerReview } from "../src/contracts";
+import * as latency from "../src/observability/latency";
 import type { PublicationApiPort } from "../src/publication/api-client";
 import { sellerPublicationProjectionSchema } from "../src/publication/contracts";
 
@@ -86,6 +87,155 @@ describe("authoritative seller review", () => {
     expect(title).toHaveValue("Seller edited title");
     expect(description).toHaveValue("Seller edited description.");
     expect(firstTag).toHaveValue("seller edit");
+  });
+
+  it("preserves early local edits through preparation and saves only against the latest ready authority", async () => {
+    const original = preparingReview("preparing", "listing_validation", 7);
+    let latest = original;
+    const getReview = vi.fn().mockImplementation(() => Promise.resolve(reviewResponse(latest, "request-current")));
+    const getJob = vi.fn().mockImplementation(() => Promise.resolve(progressResponse(latest)));
+    const reviseListing = vi.fn().mockRejectedValue(new TypeError("deliberate save reached API"));
+    const milestone = vi.spyOn(latency, "recordBrowserLatencyMilestone");
+    render(<MemoryRouter initialEntries={[`/jobs/${original.job_id}`]}><AppRoutes dependencies={dependencies(original, { getReview, getJob, reviseListing })} /></MemoryRouter>);
+    const title = await screen.findByRole("textbox", { name: /^Title/u });
+    const description = screen.getByRole("textbox", { name: /^Description/u });
+    const tag = screen.getByRole("textbox", { name: "Tag 1" });
+    expect(title).not.toHaveAttribute("readonly");
+    expect(description).not.toHaveAttribute("readonly");
+    expect(tag).not.toHaveAttribute("readonly");
+    expect(screen.getByText(/Changes stay only on this page until you save/u)).toBeInTheDocument();
+    fireEvent.change(title, { target: { value: "Early seller title" } });
+    fireEvent.change(description, { target: { value: "Early seller description." } });
+    fireEvent.change(tag, { target: { value: "seller edit" } });
+
+    for (const progress of [
+      preparingReview("synchronizing", "product_sync", 8),
+      preparingReview("refreshing_estimate", "economics_refresh", 9),
+    ]) {
+      latest = progress;
+      await act(async () => { window.dispatchEvent(new Event("focus")); await Promise.resolve(); });
+      await screen.findByText(new RegExp(`Authoritative record ${progress.record_version}`, "u"));
+      expect(title).toHaveValue("Early seller title");
+      expect(description).toHaveValue("Early seller description.");
+      expect(tag).toHaveValue("seller edit");
+      expect(screen.queryByRole("button", { name: "Reapply revision to latest review" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save listing revision" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Approve draft" })).toBeDisabled();
+      const form = title.closest("form");
+      if (form === null) throw new Error("Listing form missing");
+      fireEvent.submit(form);
+      expect(reviseListing).not.toHaveBeenCalled();
+    }
+
+    latest = sellerReviewSchema.parse({
+      ...completeReadyReview(), record_version: 10, review_authority_etag: "d".repeat(64),
+    });
+    await act(async () => { window.dispatchEvent(new Event("focus")); await Promise.resolve(); });
+    await screen.findByText(/Authoritative record 10/u);
+    expect(title).toHaveValue("Early seller title");
+    expect(screen.getByRole("button", { name: "Save listing revision" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Reapply revision to latest review" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve draft" })).toBeDisabled();
+    expect(reviseListing).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Save listing revision" }));
+    await screen.findByText("deliberate save reached API");
+    expect(reviseListing).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ record_version: 10, review_version: 2, review_authority_etag: "d".repeat(64) }),
+      expect.objectContaining({ title: "Early seller title", description: "Early seller description.", tags: ["seller edit", ...original.listing.tags.slice(1)] }),
+      expect.any(String),
+    );
+    expect(milestone.mock.calls.filter(([job, name]) => job === original.job_id && name === "first_editable_review")).toHaveLength(1);
+    milestone.mockRestore();
+  });
+
+  it.each(["version", "content"])("requires deliberate reapplication when early editing encounters a changed %s", async (change) => {
+    const original = preparingReview("synchronizing", "product_sync", 7);
+    const latest = sellerReviewSchema.parse({
+      ...completeReadyReview(), record_version: 8,
+      ...(change === "version" ? { review_version: 3, review_fingerprint: "e".repeat(64), review_authority_etag: "e".repeat(64) } : {}),
+      listing: { ...original.listing, title: "Changed server listing content" },
+    });
+    const getReview = vi.fn().mockResolvedValueOnce(reviewResponse(original, "request-original"))
+      .mockResolvedValue(reviewResponse(latest, "request-latest"));
+    const getJob = vi.fn().mockResolvedValue(progressResponse(latest));
+    const reviseListing = vi.fn().mockRejectedValue(new TypeError("deliberately reapplied"));
+    render(<MemoryRouter initialEntries={[`/jobs/${original.job_id}`]}><AppRoutes dependencies={dependencies(original, { getReview, getJob, reviseListing })} /></MemoryRouter>);
+    const title = await screen.findByRole("textbox", { name: /^Title/u });
+    fireEvent.change(title, { target: { value: "Preserved early seller title" } });
+    await act(async () => { window.dispatchEvent(new Event("focus")); await Promise.resolve(); });
+    await screen.findByText(/newer authoritative review is available/u);
+    expect(title).toHaveValue("Preserved early seller title");
+    expect(screen.getByRole("button", { name: "Save listing revision" })).toBeDisabled();
+    expect(reviseListing).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Reapply revision to latest review" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save listing revision" }));
+    await screen.findByText("deliberately reapplied");
+    expect(reviseListing.mock.calls[0]?.[0]).toEqual(latest);
+  });
+
+  it.each([
+    ["terminal_failure", "complete"], ["retryable_failure", "recovery"],
+    ["cancelled", "complete"], ["cancelling", "cancellation"],
+    ["approved", "complete"], ["reconciling", "provider_reconciliation"],
+  ] as const)("keeps local edits and submission unavailable in %s", async (displayState, stage) => {
+    const review = preparingReview(displayState, stage, 7);
+    const reviseListing = vi.fn();
+    const milestone = vi.spyOn(latency, "recordBrowserLatencyMilestone");
+    render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { reviseListing })} /></MemoryRouter>);
+    const title = await screen.findByRole("textbox", { name: /^Title/u });
+    for (const input of screen.getAllByRole("textbox")) expect(input).toHaveAttribute("readonly");
+    fireEvent.change(title, { target: { value: "Blocked attempted edit" } });
+    expect(title).toHaveValue(review.listing.title);
+    expect(screen.getByRole("button", { name: "Save listing revision" })).toBeDisabled();
+    const form = title.closest("form");
+    if (form === null) throw new Error("Listing form missing");
+    fireEvent.submit(form);
+    expect(reviseListing).not.toHaveBeenCalled();
+    expect(milestone).not.toHaveBeenCalled();
+    milestone.mockRestore();
+  });
+
+  it("does not silently rebase early edits across failure and later recovery", async () => {
+    const original = preparingReview("synchronizing", "product_sync", 7);
+    let latest = original;
+    const getReview = vi.fn().mockImplementation(() => Promise.resolve(reviewResponse(latest, "request-current")));
+    const getJob = vi.fn().mockImplementation(() => Promise.resolve(progressResponse(latest)));
+    const reviseListing = vi.fn();
+    render(<MemoryRouter initialEntries={[`/jobs/${original.job_id}`]}><AppRoutes dependencies={dependencies(original, { getReview, getJob, reviseListing })} /></MemoryRouter>);
+    const title = await screen.findByRole("textbox", { name: /^Title/u });
+    fireEvent.change(title, { target: { value: "Preserved through failure" } });
+    latest = preparingReview("retryable_failure", "recovery", 8);
+    await act(async () => { window.dispatchEvent(new Event("focus")); await Promise.resolve(); });
+    await screen.findByText(/Authoritative record 8/u);
+    expect(title).toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "Reapply revision to latest review" })).toBeDisabled();
+    latest = sellerReviewSchema.parse({ ...completeReadyReview(), record_version: 9 });
+    await act(async () => { window.dispatchEvent(new Event("focus")); await Promise.resolve(); });
+    await screen.findByText(/Authoritative record 9/u);
+    expect(title).toHaveValue("Preserved through failure");
+    expect(screen.getByRole("button", { name: "Save listing revision" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reapply revision to latest review" })).toBeEnabled();
+    expect(reviseListing).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary ready-state edits conflicted when only provider authority advances", async () => {
+    const original = completeReadyReview();
+    const latest = sellerReviewSchema.parse({
+      ...original, record_version: 8, review_authority_etag: "e".repeat(64),
+    });
+    const getReview = vi.fn().mockResolvedValueOnce(reviewResponse(original, "request-original"))
+      .mockResolvedValue(reviewResponse(latest, "request-latest"));
+    const getJob = vi.fn().mockResolvedValue(progressResponse(latest));
+    const reviseListing = vi.fn();
+    render(<MemoryRouter initialEntries={[`/jobs/${original.job_id}`]}><AppRoutes dependencies={dependencies(original, { getReview, getJob, reviseListing })} /></MemoryRouter>);
+    const title = await screen.findByRole("textbox", { name: /^Title/u });
+    fireEvent.change(title, { target: { value: "Ordinary ready edit" } });
+    await act(async () => { window.dispatchEvent(new Event("focus")); await Promise.resolve(); });
+    await screen.findByText(/newer authoritative review is available/u);
+    expect(title).toHaveValue("Ordinary ready edit");
+    expect(screen.getByRole("button", { name: "Save listing revision" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reapply revision to latest review" })).toBeEnabled();
+    expect(reviseListing).not.toHaveBeenCalled();
   });
 
   it("blocks approval for dirty listing edits until the seller saves or discards them", async () => {
@@ -985,6 +1135,17 @@ function completeReadyReview(): SellerReview {
       correlation_id: "c".repeat(24),
       completed_at: "2026-08-22T12:07:00Z",
     },
+  });
+}
+
+function preparingReview(displayState: SellerReview["display_state"], stage: SellerReview["stage"], recordVersion: number): SellerReview {
+  const base = completeReadyReview();
+  return sellerReviewSchema.parse({
+    ...base, record_version: recordVersion, display_state: displayState, stage,
+    review_authority_etag: String(recordVersion % 10).repeat(64),
+    actions: base.actions.map((item) => ({
+      ...item, enabled: false, reason: "NOT_IN_CURRENT_STATE", message: "Preparation must finish before saving.",
+    })),
   });
 }
 

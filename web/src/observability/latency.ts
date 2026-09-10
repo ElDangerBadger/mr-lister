@@ -4,7 +4,7 @@ const LATENCY_TRACE_BUFFER_LIMIT = 100;
 const LATENCY_RUN_DOMAIN = "mr-lister-latency-v1:";
 
 export type BrowserLatencySpanName = "artwork_normalization" | "direct_artwork_upload";
-export type BrowserLatencyMilestoneName = "upload_response_received";
+export type BrowserLatencyMilestoneName = "upload_response_received" | "first_editable_review";
 
 interface BrowserLatencyEventBase {
   schema_version: typeof LATENCY_TRACE_SCHEMA_VERSION;

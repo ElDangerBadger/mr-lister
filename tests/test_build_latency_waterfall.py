@@ -164,6 +164,34 @@ def _five_run_jsonl() -> str:
     return "\n".join(lines)
 
 
+def test_browser_editing_is_measured_separately_from_backend_save_readiness() -> None:
+    origin = datetime(2026, 9, 9, tzinfo=UTC)
+    events = parse_latency_jsonl(
+        "\n".join(
+            json.dumps(event)
+            for event in (
+                _milestone(1, 1, "upload_accepted", origin),
+                {
+                    **_milestone(1, 2, "first_editable_review", origin + timedelta(seconds=25)),
+                    "component": "seller_web",
+                },
+                _milestone(1, 3, "synchronized_draft", origin + timedelta(seconds=39)),
+                _milestone(1, 4, "editable_review_available", origin + timedelta(seconds=41)),
+            )
+        )
+    )
+    document = assemble_latency_waterfall(
+        events,
+        source_commit=SOURCE_COMMIT,
+        release_fingerprint=RELEASE_FINGERPRINT,
+        expected_runs=1,
+    )
+    durations = document["runs"][0]["stage_durations_ms"]
+    assert durations["upload_to_first_editable_review"] == 25_000
+    assert durations["upload_to_editable_content"] == 41_000
+    assert durations["upload_to_synchronized_draft"] == 39_000
+
+
 def test_assembles_five_runs_and_uses_interval_union_for_coverage() -> None:
     events = parse_latency_jsonl(_five_run_jsonl())
 
