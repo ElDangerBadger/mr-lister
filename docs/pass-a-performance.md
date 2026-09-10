@@ -2,11 +2,14 @@
 
 ## Current checkpoint
 
-**A1 measured; A2 held; A3–A5 assessed; A6 deployed; A7 live sample pending.**
+**A1 measured; A2 held; A3–A5 assessed; A6 deployed; A7 backend sample recorded.**
 The early local editor is live on `https://massskutiny.com`. AI/provider execution
-remains unchanged. **Pass A is not yet complete:** the ≤30-second median must
-still be demonstrated by fresh live measurements. UI simplification and
-publication changes are outside this pass.
+remains unchanged. The corrected-editor sample has one cold run and one warm run;
+warm backend text/draft/Save readiness was **20.376 / 30.187 / 32.436 seconds**.
+**Pass A is not yet complete:** actual browser first-edit timing and a warm median
+have not been established. The seller reports the second run was noticeably
+faster. No additional runtime changes or uploads are required for this readback.
+UI simplification and publication changes are outside this pass.
 
 Source rollback: `d71218d982b68a078b02ce3914f96ed2523da948` on main,
 [green CI](https://github.com/ElDangerBadger/mr-lister/actions/runs/34412919494).
@@ -188,9 +191,9 @@ a seller-operated sample or a connected authenticated browser.
 
 | Metric | A1 baseline | Current live | Goal |
 |---|---:|---:|---:|
-| Upload → editable review | Warm observation 41.495 s; mixed median 58.822 s | Early editor live; browser timing pending | Median ≤30 s; strong ≤25 s; stretch ≤20 s |
-| Upload → synchronized draft | Warm observation 39.673 s; mixed median 56.421 s | Unchanged | Secondary KPI |
-| AI/Strands duration | 21.056 s mixed median | Unchanged | ≤15 s strong / ≤10 s stretch |
+| Upload → browser first edit | Not captured; prior backend Save-ready warm observation 41.495 s | Not captured; warm backend text ready 20.376 s, Save ready 32.436 s | Median ≤30 s; strong ≤25 s; stretch ≤20 s |
+| Upload → synchronized draft | Warm observation 39.673 s; mixed median 56.421 s | Warm observation 30.187 s; execution unchanged | Secondary KPI |
+| AI/Strands duration | 21.056 s mixed median; warm observation 16.897 s | Warm observation 13.377 s; execution unchanged | ≤15 s strong / ≤10 s stretch |
 | Normal model calls | 4 | 4; held offline candidate 1 | 1 |
 | Repair model calls | Legacy paths have separate repair budgets | Unchanged; held candidate ≤2 total | ≤2 total |
 | Normal Strands cycles | 2 | 2; held candidate 1 | 1 bounded path |
@@ -350,21 +353,98 @@ publication code was changed or deployed.
 This corrects local editing availability during normal provider writes, not cold
 startup latency. Browser timing and the Pass A performance target remain unproven.
 
-### Remaining sample
+### Corrected-editor sample — readback complete
 
-Run the remaining two fresh individual submissions after the correction,
-sequentially, with no publication. Retain the first cold observation separately
-and report the actual warm sample size and input comparability. Refresh the site
-before the first corrected run, then
-keep the review page open during preparation. On one run, change text before
-provider completion and verify it survives until Save becomes available; discard
-or deliberately save afterward. Existing price policy remains fixed.
+The two requested individual submissions both reached `awaiting_approval`, review
+version 1 / record version 8, with both provider uncertainty flags false. No
+approval, publication, model or provider operation was initiated by this readback.
+They used identical artwork SHA-256 and 449,186-byte content, with the same
+`gildan_64000_swiftpod` v2 profile. The A1 artwork SHA-256 differs and its content
+was 3,595,318 bytes, so this is not a matched A1/A7 input comparison.
 
-Capture the job IDs and browser console `latency_trace=` records, particularly
-`first_editable_review`, with the console open and Preserve log enabled. This is
-the actual browser KPI; job IDs/backend traces alone cannot prove render/edit
-availability. Record cold/warm conditions separately using existing platform logs.
-Compare actual median and slowest observed editable/draft/AI/provider times;
-model, cycle and provider counts are expected unchanged because execution was not
-modified. No before/after improvement or Pass A success is claimed until this
-sample is complete. Pass B remains out of scope.
+| Milestone / duration | `67fe655f20f9176c9e3abf9a` — cold | `e1154a5f6cda6e99ee17174e` — warm |
+|---|---:|---:|
+| Upload → Strands start | 41.604 s | 8.390 s |
+| Strands execution | 14.629 s | 13.377 s |
+| Upload → backend validated text | 55.172 s | 20.376 s |
+| Upload → synchronized draft | 77.478 s | 30.187 s |
+| Upload → economics / Save readiness | 88.316 s | 32.436 s |
+| Actual browser first-edit time | Not captured | Not captured |
+| Provider synchronization span | 11.792 s | 7.855 s |
+| Model calls / Strands cycles / Printify requests | 4 / 2 / 14 | 4 / 2 / 14 |
+
+The first job was accepted at `2026-09-10T03:22:47.686203Z`; the second at
+`2026-09-10T03:24:02.177775Z`, while the first was still completing provider work.
+These were two individual submissions, **not strictly non-overlapping jobs**.
+Their preparation and provider invocations reused the same respective Lambda
+streams in order. START/REPORT records, rather than duration alone, confirm cold
+first use followed by warm reuse. AgentCore emitted different runtime log streams;
+the warm classification here refers to the preparation/provider Lambdas, not
+proven AgentCore container reuse.
+
+Cold preparation spent **32.056 s** between handler START and its first bridge
+span, versus **1.037 ms** warm. Cold provider startup added **7.767 s**, versus
+**1.400 ms** warm. Managed Lambda INIT was only **72.20 / 71.47 ms**; the long
+delay is first-use setup inside the handler, not the managed INIT metric.
+The first shipping request took **8.913 s** versus **0.095 s** on the warm job;
+this provider-request latency is separate from the Lambda setup intervals. Draft
+creation was also variable: **7.681 s** versus **4.331 s**. The source does not
+establish why shipping was slower; do not attribute its entire delay to imports.
+
+Both requests completed normally, without model repair or additional provider
+requests. Both had two Nova controller and two Gemma calls. Warm Gemma analysis /
+copy took **4.100 / 5.980 s**. The unchanged 14-request purpose map remains the A1
+map above. Browser normalization/upload-transfer events were not supplied.
+
+#### Before/after observations, not an attributed optimization benchmark
+
+| Comparable endpoint | A1 fully warm, n=1 | Corrected-editor fully warm, n=1 | Observed difference |
+|---|---:|---:|---:|
+| Upload → backend validated text | 27.922 s | 20.376 s | −7.547 s |
+| Upload → synchronized draft | 39.673 s | 30.187 s | −9.487 s |
+| Upload → backend Save readiness | 41.495 s | 32.436 s | −9.059 s |
+| Strands execution | 16.897 s | 13.377 s | −3.519 s |
+| Provider synchronization span | 10.022 s | 7.855 s | −2.166 s |
+| Model calls / cycles / Printify requests | 4 / 2 / 14 | 4 / 2 / 14 | No reduction |
+
+Input size/content and natural model/provider variability prevent attributing
+these reductions to the web change. A1 already recorded validated text before
+Save; A6 exposes that existing interval. In the corrected warm run it is
+**12.060 s**, before browser polling/render lag. It is not a demonstrated
+12-second browser speedup. The two corrected runs have mixed-condition medians
+**37.774 s** backend text / **53.832 s** draft / **60.376 s** Save; slowest is
+**55.172 / 77.478 / 88.316 s**. These are not warm medians. The earlier cold sample
+against the predecessor editor remains separate, rather than pooled across
+different web releases.
+
+Evidence: [88 sanitized events](evidence/pass-a-corrected-editor-latency.jsonl).
+Existing offline collector succeeded; its report is at
+`.mr_lister_private/pass-a-20260909/a7-pair-waterfall.{json,md}` and exact
+START/REPORT records at `a7-pair-platform.jsonl`. The legacy collector label
+"Upload → editable" means backend Save readiness when the optional browser
+milestone is absent; this document labels it explicitly. Warm sync span coverage
+is **90.81%**; cold application-only coverage is **42.35%**, excluding the
+separately measured first-use setup. No new instrumentation was added.
+
+Focused collector regression: **11 passed**. Existing release source CI remains
+green (**4,130 Python / 187 web**); release-record CI
+[34423031067](https://github.com/ElDangerBadger/mr-lister/actions/runs/34423031067)
+is also green. This checkpoint adds only the sanitized evidence and this record;
+no application, infrastructure, prompt, safety, or publication changes. Deployed
+source and versioned rollback remain those in the correction release above.
+There is no newly introduced listing-quality tradeoff because the model path and
+SEO baseline were not changed; this readback did not independently score copy.
+
+**Stop assessment:** the warm observation is promising, not a proven ≤30-second
+browser median. The missing evidence is actual first-edit timing and repeated
+warm observations; it is not an MVP functional failure. Existing console records,
+if retained, can supply the first-edit event without another run. Reloading a job
+cannot recover its original first-edit timestamp. Polling runs three seconds
+after the preceding requests finish and pauses when hidden/offline; backend time
+plus three seconds is not an upper bound.
+
+The largest measured next opportunity is first-use preparation setup, followed
+by the remaining AgentCore bridge/start interval and model work on the warm path.
+Recommend a bounded startup profile/memory comparison before any warm-runtime
+infrastructure purchase, not another SEO cycle or provider-cache project. No such
+change is made here. Pass A remains unproven against its KPI; Pass B does not begin.
