@@ -3,10 +3,14 @@
 ## Status and boundary
 
 Step 1 local attribution and historical provider-request review are complete.
-**Live memory comparison has not started.** The first read-only configuration
-request failed because `mr-lister-bootstrap` OAuth authorization expired. No AWS
-configuration, runtime, prompt, seller data, or publication change was made.
-Resume with `aws login --profile mr-lister-bootstrap --region us-west-2`.
+**The 1024 MB trial is staged; the seller's matched-artwork upload is pending.**
+The first configuration request was blocked by expired bootstrap authorization;
+the renewed session succeeded. At `2026-09-10T05:45:16Z`, readback confirmed only
+preparation memory changed from 256 to 1024 MB, with state Active and update
+Successful. This is a temporary experiment, not an approved permanent setting.
+Provider configuration is byte-for-byte unchanged; no code, prompt, seller data,
+publication or other infrastructure change was made. No preparation was running
+before the revision-conditional update.
 The browser skill also found no connected browser; fresh matched submissions
 will require the seller-operated site or a newly connected authenticated browser.
 Do not substitute synthetic seller authorization or modify acceptance runners.
@@ -94,7 +98,17 @@ variability pending the controlled runs; do not attribute it to client creation.
 
 ## Rollback / verification
 
-No application or infrastructure change has been made in this checkpoint, so no
-rollback is necessary. Current serving source and rollback remain in
+Preparation must be restored to **256 MB** after the comparison, or if the trial
+is abandoned. Read current configuration, verify only the authorized memory
+setting differs from the capture, and use its current RevisionId for restoration;
+do not overwrite unexpected concurrent drift. Then read back the original memory
+and unchanged code/configuration. No automatic rollback scheduler was installed.
+
+Exact private baseline and successful 1024 MB readback:
+`.mr_lister_private/pass-a-20260909/cold-memory-20260910/`.
+Preparation code SHA-256 remains
+`CRQFVUTXWoP0y7SfoqQDAI6Sd5g6KlK5SxGj5zjyuLA=`; timeout 600 seconds,
+Python 3.12 ARM64. Provider remains 1024 MB with its original configuration.
+The 1769 MB trial has not been staged. Current serving source and web rollback remain in
 [Pass A performance](pass-a-performance.md#active-write-editor-correction--deployed).
 The memory table and final A/B/C decision remain pending actual measurements.
