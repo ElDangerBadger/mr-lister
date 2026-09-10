@@ -2,9 +2,11 @@
 
 ## Current checkpoint
 
-**A1 measured; A2 benchmarked and held; A3–A5 assessed; A6 locally verified.**
-No Pass A code has been deployed. The released AI/provider execution remains
-unchanged. UI simplification and publication changes are outside this pass.
+**A1 measured; A2 held; A3–A5 assessed; A6 deployed; A7 live sample pending.**
+The early local editor is live on `https://massskutiny.com`. AI/provider execution
+remains unchanged. **Pass A is not yet complete:** the ≤30-second median must
+still be demonstrated by fresh live measurements. UI simplification and
+publication changes are outside this pass.
 
 Source rollback: `d71218d982b68a078b02ce3914f96ed2523da948` on main,
 [green CI](https://github.com/ElDangerBadger/mr-lister/actions/runs/34412919494).
@@ -183,12 +185,12 @@ a seller-operated sample or a connected authenticated browser.
 
 | Metric | A1 baseline | Current live | Goal |
 |---|---:|---:|---:|
-| Upload → editable review | Warm observation 41.495 s; mixed median 58.822 s | Unchanged | Median ≤30 s; strong ≤25 s; stretch ≤20 s |
+| Upload → editable review | Warm observation 41.495 s; mixed median 58.822 s | Early editor live; browser timing pending | Median ≤30 s; strong ≤25 s; stretch ≤20 s |
 | Upload → synchronized draft | Warm observation 39.673 s; mixed median 56.421 s | Unchanged | Secondary KPI |
 | AI/Strands duration | 21.056 s mixed median | Unchanged | ≤15 s strong / ≤10 s stretch |
-| Normal model calls | 4 | 4; local candidate 1 | 1 |
-| Repair model calls | Legacy paths have separate repair budgets | Unchanged; local candidate ≤2 total | ≤2 total |
-| Normal Strands cycles | 2 | 2; local candidate 1 | 1 bounded path |
+| Normal model calls | 4 | 4; held offline candidate 1 | 1 |
+| Repair model calls | Legacy paths have separate repair budgets | Unchanged; held candidate ≤2 total | ≤2 total |
+| Normal Strands cycles | 2 | 2; held candidate 1 | 1 bounded path |
 | Printify requests | 14 | 14 | ≤6 / stretch ≤5 |
 
 No measured performance win or Pass A completion is claimed at this checkpoint.
@@ -206,5 +208,69 @@ offline-experiment tests failed because clean installation selected Strands
 positional argument. The isolated adapter now accepts the unchanged zero-default
 case and rejects unsupported nonzero values. All 27 focused evaluator/adapter
 tests pass with both SDK versions; dependencies and production composition were
-not changed. Fresh-environment full verification and CI rerun are pending.
-No candidate has been deployed yet.
+not changed. A fresh isolated install then passed **4,130 tests, 11 skipped**,
+and the corrected [source CI](https://github.com/ElDangerBadger/mr-lister/actions/runs/34420029221)
+is fully green: the same Python totals, **186 web tests**, lint, format,
+typecheck, all contract/SAM validations and both package/web builds. The earlier
+failed run is retained as historical evidence, not represented as green.
+
+## Static web release — 2026-09-09 Pacific
+
+**DEPLOYED AND PUBLIC READBACK VERIFIED** at `2026-09-10T00:16:34Z`.
+Release source on main: `45bb547c5033e847edeab96c31e1166149ee41f1`.
+Logical checkpoints: `fc6f8b2` (baseline/offline experiment), `e396e36` (early
+editor), `45bb547` (offline SDK compatibility). No branch divergence or merge was
+needed. This release changes no Lambda/AgentCore code, runtime configuration,
+permissions, provider operations, approval or publication behavior.
+
+- Bucket: `mr-lister-phase6-web-dev-384627057108-us-west-2`; distribution
+  `EXC2KQ0RRVWF0`.
+- Bundle SHA-256:
+  `d284922823a9702244f15b0f89ef3c36e3b3e5c4268ab275184b007d9bb755da`.
+- JavaScript: `assets/index-ZNsNEEWR.js`, SHA-256
+  `0880dd3a033903df47ffd51ef695f9c6f183453dce7ff8f3e3c679f3109d8038`.
+  CSS and favicon bytes equal the predecessor exactly.
+- Index SHA-256:
+  `37f9d0414dbcd131d93f9b0c1ea17b4ac6626736df93c45220f5b30fa82bc88c`;
+  VersionId `VS3NIO8LoofST2jpciTVbwiP2g.LQkhN`.
+- Runtime configuration stayed at VersionId `IdRmSDEqfGAjcfmiYHvjrUJ2SQ6s5wqx`,
+  SHA-256 `d1f969e5545ba76f76b8f6ef8e66def4d162ae74330a34d64796aebd7f25b5aa`.
+- Invalidation `I8C8BB4OKW2OVJHKIVJRYUTKVB` completed. Public `/`, index, JavaScript,
+  CSS, favicon and runtime-config bytes match the exact release manifest.
+- Rollback: restore index VersionId `vIxCATS8mvUjW0jPpwfemBuDrxccCXLL` (previous
+  publication-dialog bundle), then invalidate `/` and `/index.html`. Its hashed
+  assets remain present; no backend rollback is required.
+- Private release/readback evidence:
+  `.mr_lister_private/pass-a-20260909/a6-web/`. `web-release-fixed.json` is the
+  deployed manifest; the earlier `web-release.json` was prepared before the CI
+  correction and was never deployed.
+
+### Exact tracked files changed
+
+- Web behavior: `web/src/pages/JobReviewPage.tsx`.
+- Existing timing seam: `web/src/observability/latency.ts`,
+  `tools/build_latency_waterfall.py`.
+- Focused timing/editor tests: `web/tests/review-page.test.tsx`,
+  `web/tests/latency-observability.test.ts`, `tests/test_build_latency_waterfall.py`.
+- Held offline AI experiment: `src/mr_lister/intelligence/unified.py`,
+  `tests/test_unified_intelligence.py`, `tests/evaluation/test_live_bedrock.py`,
+  `tests/evaluation/test_execution_modes.py`. No production composition imports it.
+- Records: `docs/pass-a-performance.md`, `docs/etsy-seo-release-state.md`,
+  `docs/evidence/pass-a-baseline-latency.jsonl`.
+
+## A7 — exact remaining checkpoint
+
+Run three fresh individual submissions of the same representative artwork,
+sequentially, with no publication. Refresh the site before the first run, then
+keep the review page open during preparation. On one run, change text before
+provider completion and verify it survives until Save becomes available; discard
+or deliberately save afterward. Existing price policy remains fixed.
+
+Capture the job IDs and browser console `latency_trace=` records, particularly
+`first_editable_review`, with the console open and Preserve log enabled. This is
+the actual browser KPI; job IDs/backend traces alone cannot prove render/edit
+availability. Record cold/warm conditions separately using existing platform logs.
+Compare actual median and slowest observed editable/draft/AI/provider times;
+model, cycle and provider counts are expected unchanged because execution was not
+modified. No before/after improvement or Pass A success is claimed until this
+sample is complete. Pass B remains out of scope.
