@@ -1039,7 +1039,7 @@ function hasValidatedListing(review: SellerReview): boolean {
     && review.listing.title !== null && review.listing.description !== null
     && review.listing.tags.length === 13
     && review.validation.readiness === "ready" && review.validation.passed === true
-    && review.failure === null && !review.provider_outcome_unconfirmed;
+    && review.failure === null;
 }
 
 function preparationProgressRank(review: SellerReview): number {

@@ -62,12 +62,15 @@ be added again to the enclosing Strands interval.
 | Product cost readback | 1 | Immediate reread for economics |
 | Standard shipping | 1 | Provider metadata for economics |
 
-Method limitations: the existing upload milestone is the reservation's creation
-time, before direct S3 transfer completes. Browser normalization precedes that
-milestone. These manually operated samples have no captured browser-console
+Method clarification from the A7 source check: the upload milestone uses the
+timestamp captured at the start of `complete_upload`, persisted on the completed
+upload receipt and job. Direct S3 transfer and browser normalization precede it;
+backend object verification/pinning and completion response follow it. It is not
+reservation creation or the browser's drop/response time. Historical measured
+intervals are unchanged. These samples have no captured browser-console
 normalization/upload spans; do not invent them or fold normalization into this
-KPI. The editable milestone is backend readiness, not separately measured browser
-poll/render lag. No new observability system was introduced.
+KPI. The original editable milestone is backend readiness, not separately measured
+browser poll/render lag. No new observability system was introduced.
 
 Sanitized application traces: [A1 input](evidence/pass-a-baseline-latency.jsonl),
 readable by the existing `tools.build_latency_waterfall` collector. Private raw
@@ -260,8 +263,59 @@ permissions, provider operations, approval or publication behavior.
 
 ## A7 — exact remaining checkpoint
 
-Run three fresh individual submissions of the same representative artwork,
-sequentially, with no publication. Refresh the site before the first run, then
+### First sample and exposed editor defect
+
+Sample digest `4df70f19867c5f5f6f9ba28a`, collected 2026-09-10 UTC against the
+initial early-editor bundle, was **cold preparation and cold provider**, not a
+warm-path acceptance result. The seller reported that text took about a minute
+to appear; no browser `first_editable_review` event was supplied, so its actual
+first-visible/first-editable timestamp is unknown.
+
+| Initial preparation milestone | From upload accepted |
+|---|---:|
+| Strands started | 33.656 s |
+| Validated listing recorded | 45.981 s |
+| Strands completed | 47.376 s |
+| First synchronized draft | 65.379 s |
+| First economics / backend Save readiness | 76.235 s |
+
+START/REPORT and handler traces identify **23.426 s** of first-use preparation
+setup before the AgentCore bridge and **7.768 s** of first-use provider setup.
+Managed Lambda INIT was only 47.79 / 70.63 ms. Strands took **13.720 s**; Gemma
+analysis and copy calls took 5.259 / 5.013 s. Initial shipping GET took **8.706 s**.
+The normal first pass retained 4 model calls, 2 cycles and 14 Printify requests.
+The seller subsequently saved review version 2; its successful resynchronization
+is excluded from the initial-preparation timing window, not counted as another
+fresh sample or hidden as an initial-path retry.
+Its normalized PNG was 449,186 bytes versus 3,595,318 bytes in A1, with the same
+product profile/version. Exact-input parity is therefore not established; do not
+present this as a matched before/after performance improvement.
+
+Evidence: [44 initial-pass events](evidence/pass-a-first-cold-sample-latency.jsonl);
+private collector report and START/REPORT evidence are
+`.mr_lister_private/pass-a-20260909/a7-first-waterfall.*` and
+`a7-first-platform.jsonl`. Application-only span coverage does not include lazy
+initialization; the explicit platform readback supplies that explanation.
+
+The source check also exposed an A6 defect: `provider_outcome_unconfirmed` is true
+during normal authorized artwork upload and draft creation, not just failures.
+The early editor incorrectly used it to deny local editing and continuity. This
+can make fields read-only/conflicted during otherwise successful preparation;
+it does **not** withhold listing text from the API and does not explain the entire
+46-second initial wait. The scoped correction removes that one local eligibility
+condition. Exact allowed stages, validated listing/version/content, failure and
+server Save/approval/publication barriers remain unchanged. Focused tests now
+exercise normal false→true→false provider-flag transitions and first-view editing
+during a write, as well as blocked failure/reconciliation/cancellation states.
+Full web check: **187 tests**, lint, typecheck and build passed. Correction is local
+pending CI and static deployment; pause remaining live timing samples until then.
+
+### Remaining sample
+
+Run the remaining two fresh individual submissions after the correction,
+sequentially, with no publication. Retain the first cold observation separately
+and report the actual warm sample size and input comparability. Refresh the site
+before the first corrected run, then
 keep the review page open during preparation. On one run, change text before
 provider completion and verify it survives until Save becomes available; discard
 or deliberately save afterward. Existing price policy remains fixed.

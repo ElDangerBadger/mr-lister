@@ -110,7 +110,10 @@ describe("authoritative seller review", () => {
 
     for (const progress of [
       preparingReview("synchronizing", "product_sync", 8),
-      preparingReview("refreshing_estimate", "economics_refresh", 9),
+      preparingReview("synchronizing", "product_sync", 9, true),
+      preparingReview("synchronizing", "product_sync", 10),
+      preparingReview("synchronizing", "product_sync", 11, true),
+      preparingReview("refreshing_estimate", "economics_refresh", 12),
     ]) {
       latest = progress;
       await act(async () => { window.dispatchEvent(new Event("focus")); await Promise.resolve(); });
@@ -118,6 +121,7 @@ describe("authoritative seller review", () => {
       expect(title).toHaveValue("Early seller title");
       expect(description).toHaveValue("Early seller description.");
       expect(tag).toHaveValue("seller edit");
+      for (const input of [title, description, tag]) expect(input).not.toHaveAttribute("readonly");
       expect(screen.queryByRole("button", { name: "Reapply revision to latest review" })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Save listing revision" })).toBeDisabled();
       expect(screen.getByRole("button", { name: "Approve draft" })).toBeDisabled();
@@ -128,10 +132,10 @@ describe("authoritative seller review", () => {
     }
 
     latest = sellerReviewSchema.parse({
-      ...completeReadyReview(), record_version: 10, review_authority_etag: "d".repeat(64),
+      ...completeReadyReview(), record_version: 13, review_authority_etag: "d".repeat(64),
     });
     await act(async () => { window.dispatchEvent(new Event("focus")); await Promise.resolve(); });
-    await screen.findByText(/Authoritative record 10/u);
+    await screen.findByText(/Authoritative record 13/u);
     expect(title).toHaveValue("Early seller title");
     expect(screen.getByRole("button", { name: "Save listing revision" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Reapply revision to latest review" })).not.toBeInTheDocument();
@@ -140,11 +144,30 @@ describe("authoritative seller review", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save listing revision" }));
     await screen.findByText("deliberate save reached API");
     expect(reviseListing).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ record_version: 10, review_version: 2, review_authority_etag: "d".repeat(64) }),
+      expect.objectContaining({ record_version: 13, review_version: 2, review_authority_etag: "d".repeat(64) }),
       expect.objectContaining({ title: "Early seller title", description: "Early seller description.", tags: ["seller edit", ...original.listing.tags.slice(1)] }),
       expect.any(String),
     );
     expect(milestone.mock.calls.filter(([job, name]) => job === original.job_id && name === "first_editable_review")).toHaveLength(1);
+    milestone.mockRestore();
+  });
+
+  it("allows first-view local edits during an active provider write without enabling save or approval", async () => {
+    const review = preparingReview("synchronizing", "product_sync", 7, true);
+    const reviseListing = vi.fn();
+    const milestone = vi.spyOn(latency, "recordBrowserLatencyMilestone");
+    render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { reviseListing })} /></MemoryRouter>);
+    const title = await screen.findByRole("textbox", { name: /^Title/u });
+    for (const input of screen.getAllByRole("textbox")) expect(input).not.toHaveAttribute("readonly");
+    fireEvent.change(title, { target: { value: "Early title during provider write" } });
+    expect(title).toHaveValue("Early title during provider write");
+    expect(screen.getByRole("button", { name: "Save listing revision" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Approve draft" })).toBeDisabled();
+    const form = title.closest("form");
+    if (form === null) throw new Error("Listing form missing");
+    fireEvent.submit(form);
+    expect(reviseListing).not.toHaveBeenCalled();
+    expect(milestone).toHaveBeenCalledExactlyOnceWith(review.job_id, "first_editable_review");
     milestone.mockRestore();
   });
 
@@ -178,7 +201,7 @@ describe("authoritative seller review", () => {
     ["cancelled", "complete"], ["cancelling", "cancellation"],
     ["approved", "complete"], ["reconciling", "provider_reconciliation"],
   ] as const)("keeps local edits and submission unavailable in %s", async (displayState, stage) => {
-    const review = preparingReview(displayState, stage, 7);
+    const review = preparingReview(displayState, stage, 7, true);
     const reviseListing = vi.fn();
     const milestone = vi.spyOn(latency, "recordBrowserLatencyMilestone");
     render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { reviseListing })} /></MemoryRouter>);
@@ -1138,10 +1161,11 @@ function completeReadyReview(): SellerReview {
   });
 }
 
-function preparingReview(displayState: SellerReview["display_state"], stage: SellerReview["stage"], recordVersion: number): SellerReview {
+function preparingReview(displayState: SellerReview["display_state"], stage: SellerReview["stage"], recordVersion: number, providerOutcomeUnconfirmed = false): SellerReview {
   const base = completeReadyReview();
   return sellerReviewSchema.parse({
     ...base, record_version: recordVersion, display_state: displayState, stage,
+    provider_outcome_unconfirmed: providerOutcomeUnconfirmed,
     review_authority_etag: String(recordVersion % 10).repeat(64),
     actions: base.actions.map((item) => ({
       ...item, enabled: false, reason: "NOT_IN_CURRENT_STATE", message: "Preparation must finish before saving.",
