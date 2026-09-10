@@ -15,10 +15,11 @@ one-call candidate was benchmarked but is not promoted: its median gain was unde
 one second with modest quality loss. The deployed SEO
 release described here remains unchanged.
 
-The Pass A **early local editor** was subsequently deployed and public-readback
-verified on 2026-09-09 Pacific, source `45bb547c5033e847edeab96c31e1166149ee41f1`.
+The Pass A **early local editor**, including its active-provider-write correction,
+was subsequently deployed and public-readback verified on 2026-09-09 Pacific,
+source `14a9afa0591aacda63bef96561509eb2814fb565`.
 The current web bundle/index, green source CI and rollback tuple are recorded in
-[Pass A static web release](pass-a-performance.md#static-web-release--2026-09-09-pacific).
+[Pass A editor correction release](pass-a-performance.md#active-write-editor-correction--deployed).
 This supersedes only the web bundle below. All backend/AgentCore/provider and
 publication runtime release tuples on this page remain unchanged; final Pass A
 live timing acceptance is still pending.

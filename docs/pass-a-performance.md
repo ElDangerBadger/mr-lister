@@ -219,6 +219,10 @@ failed run is retained as historical evidence, not represented as green.
 
 ## Static web release — 2026-09-09 Pacific
 
+The initial release below is retained as history. The current serving web release
+is the [active-write editor correction](#active-write-editor-correction--deployed)
+recorded under A7; backend release tuples remain unchanged.
+
 **DEPLOYED AND PUBLIC READBACK VERIFIED** at `2026-09-10T00:16:34Z`.
 Release source on main: `45bb547c5033e847edeab96c31e1166149ee41f1`.
 Logical checkpoints: `fc6f8b2` (baseline/offline experiment), `e396e36` (early
@@ -307,8 +311,44 @@ condition. Exact allowed stages, validated listing/version/content, failure and
 server Save/approval/publication barriers remain unchanged. Focused tests now
 exercise normal false→true→false provider-flag transitions and first-view editing
 during a write, as well as blocked failure/reconciliation/cancellation states.
-Full web check: **187 tests**, lint, typecheck and build passed. Correction is local
-pending CI and static deployment; pause remaining live timing samples until then.
+Full web check: **187 tests**, lint, typecheck and build passed. The correction is
+now deployed and readback verified; remaining live timing samples may resume
+after refreshing the site.
+
+### Active-write editor correction — deployed
+
+**DEPLOYED AND PUBLIC READBACK VERIFIED** at `2026-09-10T00:49:32Z`.
+Source on main: `14a9afa0591aacda63bef96561509eb2814fb565`.
+[Source CI](https://github.com/ElDangerBadger/mr-lister/actions/runs/34422098573)
+is green: **4,130 Python tests passed, 11 skipped; 187 web tests passed**, plus
+lint, formatting, typecheck, dependency audit, existing contract/SAM checks and
+package/web builds. No backend, runtime configuration, provider, approval or
+publication code was changed or deployed.
+
+- Same static bucket and distribution as the initial release above.
+- Bundle SHA-256:
+  `903c63b35154326fd82a8c0ce5b4022ba18bd4908096936453149283191ca79d`.
+- JavaScript: `assets/index-Dfo0LvLH.js`, SHA-256
+  `3721efed1c868f1668269f428ec3d10bbdeb5ab437670c04249f7d2ee909ed74`.
+  CSS and favicon bytes remain unchanged.
+- Index SHA-256:
+  `4819bd8c14803459a7483012f06c289287c11090a0160cdb1be53403da916ead`;
+  VersionId `sfg2im9_yuRF4ZMFUyjV0fpEHVlDkDc0`.
+- Invalidation `I28F44RKTZ696KA1DLPEBV3E1W` completed. Public `/`, index,
+  JavaScript, CSS, favicon and runtime-config bytes match the release manifest.
+  Runtime-config SHA and VersionId remain exactly those recorded above.
+- Rollback: restore predecessor index VersionId
+  `VS3NIO8LoofST2jpciTVbwiP2g.LQkhN`, then invalidate `/` and `/index.html`.
+  Previous hashed assets remain present; no backend rollback is required.
+- Exact correction files: `web/src/pages/JobReviewPage.tsx`,
+  `web/tests/review-page.test.tsx`, this record and
+  `docs/evidence/pass-a-first-cold-sample-latency.jsonl`. The release pointer in
+  `docs/etsy-seo-release-state.md` is updated separately.
+- Private versioned rollback, release manifest and public-readback evidence:
+  `.mr_lister_private/pass-a-20260909/a6-active-write-web/`.
+
+This corrects local editing availability during normal provider writes, not cold
+startup latency. Browser timing and the Pass A performance target remain unproven.
 
 ### Remaining sample
 
