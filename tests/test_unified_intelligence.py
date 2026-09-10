@@ -14,6 +14,7 @@ from botocore.exceptions import ClientError
 from PIL import Image
 from strands import Agent, tool
 from strands.agent.conversation_manager import NullConversationManager
+from strands.models import BedrockModel
 
 from mr_lister.intelligence.listing_draft import finalize_listing_draft
 from mr_lister.intelligence.prompts import ETSY_SEO_RELEASE_PROMPT_BUNDLE
@@ -209,6 +210,56 @@ def test_schema_failure_has_one_shared_repair_and_real_accumulated_metrics() -> 
     assert "listing.title" in client.calls[1]["messages"][-1]["content"][0]["text"]
     assert agent.event_loop_metrics.get_summary()["total_cycles"] == 2
     assert agent.event_loop_metrics.get_summary()["accumulated_usage"]["outputTokens"] == 1200
+
+
+def test_new_sdk_positional_format_shape_preserves_native_json_and_call_budget() -> None:
+    agent, client, _ = agent_for([])
+    model = agent.model
+    assert isinstance(model, NativeJsonBedrockModel)
+
+    for count, remaining_tokens in enumerate((1900, 600), start=1):
+        model.authorize_inference(remaining_output_tokens=remaining_tokens)
+        request = model.format_request(
+            [{"role": "user", "content": [{"text": "Interpret the artwork."}]}],
+            None,
+            None,
+            None,
+            0,
+        )
+        assert request["inferenceConfig"]["maxTokens"] == remaining_tokens
+        assert request["outputConfig"]["textFormat"]["type"] == "json_schema"
+        schema = json.loads(
+            request["outputConfig"]["textFormat"]["structure"]["jsonSchema"]["schema"]
+        )
+        assert set(schema["properties"]) == {"analysis", "listing"}
+        assert "toolConfig" not in request
+        assert model.request_count == count
+        with pytest.raises(InvalidGeneratedOutputError, match="not authorized"):
+            model.format_request([], None, None, None, 0)
+
+    with pytest.raises(InvalidGeneratedOutputError, match="bounded budget"):
+        model.authorize_inference(remaining_output_tokens=1)
+    assert client.calls == []
+
+
+def test_dynamic_trailing_blocks_are_rejected_before_sdk_formatting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent, client, _ = agent_for([])
+    model = agent.model
+    assert isinstance(model, NativeJsonBedrockModel)
+
+    def unexpected_sdk_format(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("Unsupported dynamic trailing blocks reached SDK formatting")
+
+    monkeypatch.setattr(BedrockModel, "format_request", unexpected_sdk_format)
+    model.authorize_inference(remaining_output_tokens=1900)
+    with pytest.raises(IntelligenceConfigurationError, match="dynamic trailing blocks"):
+        model.format_request([], None, None, None, 1)
+    assert model.request_count == 0
+    assert client.calls == []
+    with pytest.raises(InvalidGeneratedOutputError, match="not authorized"):
+        model.format_request([], None, None, None, 0)
 
 
 def test_tag_only_repair_cannot_replace_accepted_copy_or_analysis() -> None:

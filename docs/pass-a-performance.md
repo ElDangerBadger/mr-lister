@@ -198,5 +198,13 @@ Local verification after parking the runtime experiment: complete Python suite
 contract checks and Python package build passed. Web verification is above;
 the existing high-severity dependency audit passes with the two previously known
 moderate development-only Vitest findings unchanged. Separate live quality
-evaluator failures are reported above. No new GitHub CI run has been initiated
-and no candidate deployed yet.
+evaluator failures are reported above. The first
+[Pass A CI run](https://github.com/ElDangerBadger/mr-lister/actions/runs/34419399765)
+passed web, lint, formatting, contract checks and SAM validation, but 21 new
+offline-experiment tests failed because clean installation selected Strands
+1.55.1 versus the original local 1.52.0. Its model formatter supplies one new
+positional argument. The isolated adapter now accepts the unchanged zero-default
+case and rejects unsupported nonzero values. All 27 focused evaluator/adapter
+tests pass with both SDK versions; dependencies and production composition were
+not changed. Fresh-environment full verification and CI rerun are pending.
+No candidate has been deployed yet.

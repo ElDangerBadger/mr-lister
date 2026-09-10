@@ -110,6 +110,7 @@ class NativeJsonBedrockModel(BedrockModel):
         tool_specs: list[ToolSpec] | None = None,
         system_prompt_content: list[SystemContentBlock] | None = None,
         tool_choice: ToolChoice | None = None,
+        dynamic_trailing_blocks: int = 0,
         **kwargs: Any,
     ) -> dict[str, Any]:
         del tool_specs, kwargs  # Only the application selects its scoped preparation tool.
@@ -117,6 +118,10 @@ class NativeJsonBedrockModel(BedrockModel):
         self._authorized_output_tokens = None
         if output_tokens is None or self._request_count >= MAX_UNIFIED_MODEL_CALLS:
             raise InvalidGeneratedOutputError("An additional model request was not authorized")
+        if dynamic_trailing_blocks != 0:
+            raise IntelligenceConfigurationError(
+                "Unified intelligence does not support dynamic trailing blocks"
+            )
         if (
             self.config.get("streaming") is not False
             or tool_choice is not None
