@@ -1,21 +1,38 @@
-# Final cold-path exploration — working checkpoint
+# Final cold-path exploration — accepted 1024 MB setting
 
 ## Status and boundary
 
-Step 1 local attribution and historical provider-request review are complete.
-**The 1024 MB trial is staged; the seller's matched-artwork upload is pending.**
-The first configuration request was blocked by expired bootstrap authorization;
-the renewed session succeeded. At `2026-09-10T05:45:16Z`, readback confirmed only
-preparation memory changed from 256 to 1024 MB, with state Active and update
-Successful. This is a temporary experiment, not an approved permanent setting.
-Provider configuration is byte-for-byte unchanged; no code, prompt, seller data,
+**Seller decision: retain preparation at 1024 MB permanently.** Provider remains
+1024 MB. The seller explicitly accepts the increased allocation and will run one
+final confirmation. This supersedes the temporary-trial plan: **do not revert to
+256 MB automatically and do not run the 1769 MB comparison.**
+
+Last successful live readback at `2026-09-10T05:45:16Z` confirmed only preparation
+memory changed from 256 to 1024 MB, with state Active and update Successful.
+Provider configuration was byte-for-byte unchanged; no code, prompt, seller data,
 publication or other infrastructure change was made. No preparation was running
-before the revision-conditional update.
+before the revision-conditional update. Fresh readback on acceptance was blocked
+by expired bootstrap OAuth authorization; no further AWS mutation occurred.
+
+**CloudFormation persistence remains pending.** The live trial used a direct
+Lambda configuration update, not a stack-template update. After renewed
+`aws login --profile mr-lister-bootstrap --region us-west-2`, capture the current
+Original template and persist only
+`Resources.PreparationDispatchFunction.Properties.MemorySize = 1024` using the
+existing one-property, versioned-template/change-set process. Preserve provider
+1024 MB, all code/environment bindings, parameters and service role. Do not
+deploy the frozen foundation template or claim template synchronization complete
+until readback verifies it. This closes configuration drift, not a new experiment.
 The browser skill also found no connected browser; fresh matched submissions
 will require the seller-operated site or a newly connected authenticated browser.
 Do not substitute synthetic seller authorization or modify acceptance runners.
 
-This is not the final A/B/C recommendation. Pass B remains out of scope.
+The seller's acceptance does not establish a measured 30-second cold/browser
+KPI. Capture the final supplied job's existing traces without reopening a broad
+benchmark or acceptance program. Pass B remains out of scope.
+The final supplied run digest is `354cc93551460bee352e7dda`; its live state/timings
+have not yet been read because AWS authorization remains unavailable. Do not
+request another upload merely because this readback is pending.
 
 ## Ranked setup attribution
 
@@ -57,19 +74,18 @@ imports and AWS clients are already reused within each environment. Moving them
 to module scope alone would shift the timing label, not remove cold wall time.
 Job/work checks and owner-bound provider credential resolution remain per request.
 
-## Bounded experiment to run next
+## Accepted setting and remaining confirmation
 
-1. Capture current live preparation/provider configuration, code hashes,
-   revisions and rollback settings before any mutation. Expected preparation
-   memory is 256 MB; provider remains 1024 MB. Verify, do not assume, these values.
-2. Compare preparation at **256 / 1024 / 1769 MB**, unchanged sealed code and
-   matched artwork. Change no other function or infrastructure setting. Record
-   actual cold/warm START/REPORT evidence; do not assume a configuration change
-   guarantees a particular execution environment.
-3. Record upload-to-text, draft, Save, setup/AI/provider intervals and billed
-   duration. Separately label actual browser first-edit timing if captured.
-4. Restore exact original memory and read back code/configuration. No permanent
-   promotion before user review. Stop on auth/permission denial; no IAM redesign.
+The original plan was a bounded 256 / 1024 / 1769 MB comparison followed by
+restoration pending user review. The seller has now completed that review by
+accepting 1024 MB; the higher-memory trial and automatic restoration are canceled.
+No result at 1769 MB exists or is required.
+
+For the seller's final supplied job, use the existing traces to record
+upload-to-text, draft, Save, setup/AI/provider intervals and billed duration.
+Classify cold/warm from platform records and separately label actual browser
+first-edit timing if available. Do not mistake allocation acceptance for measured
+speedup, or demand additional runs solely to make the sample statistically ideal.
 
 [AWS memory documentation](https://docs.aws.amazon.com/lambda/latest/dg/configuration-memory.html)
 states CPU allocation scales with memory and 1769 MB corresponds to one vCPU.
@@ -98,17 +114,18 @@ variability pending the controlled runs; do not attribute it to client creation.
 
 ## Rollback / verification
 
-Preparation must be restored to **256 MB** after the comparison, or if the trial
-is abandoned. Read current configuration, verify only the authorized memory
-setting differs from the capture, and use its current RevisionId for restoration;
-do not overwrite unexpected concurrent drift. Then read back the original memory
-and unchanged code/configuration. No automatic rollback scheduler was installed.
+The accepted preparation target is **1024 MB**. The old 256 MB capture remains
+available only as an explicitly authorized rollback option; it is not a pending
+action. No automatic rollback scheduler was installed. Future updates must retain
+1024 MB and must not overwrite unexpected concurrent configuration/code drift.
 
 Exact private baseline and successful 1024 MB readback:
 `.mr_lister_private/pass-a-20260909/cold-memory-20260910/`.
 Preparation code SHA-256 remains
 `CRQFVUTXWoP0y7SfoqQDAI6Sd5g6KlK5SxGj5zjyuLA=`; timeout 600 seconds,
 Python 3.12 ARM64. Provider remains 1024 MB with its original configuration.
-The 1769 MB trial has not been staged. Current serving source and web rollback remain in
+The 1769 MB trial is canceled. Current serving source and web rollback remain in
 [Pass A performance](pass-a-performance.md#active-write-editor-correction--deployed).
-The memory table and final A/B/C decision remain pending actual measurements.
+Remaining work: exact stack-template persistence and readback after AWS login,
+then the seller's final-job timing readback. No further memory optimization is
+authorized by this acceptance decision.

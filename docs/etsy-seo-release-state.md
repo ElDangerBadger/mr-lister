@@ -21,8 +21,25 @@ source `14a9afa0591aacda63bef96561509eb2814fb565`.
 The current web bundle/index, green source CI and rollback tuple are recorded in
 [Pass A editor correction release](pass-a-performance.md#active-write-editor-correction--deployed).
 This supersedes only the web bundle below. All backend/AgentCore/provider and
-publication runtime release tuples on this page remain unchanged; final Pass A
+publication code release tuples on this page remain unchanged; final Pass A
 live timing acceptance is still pending.
+
+## Accepted preparation memory — 2026-09-10
+
+The seller accepts **1024 MB for preparation**, retaining provider at **1024 MB**.
+Last successful direct Lambda readback was `2026-09-10T05:45:16Z`; only preparation
+memory changed, with code/environment/other configuration unchanged. Do not
+automatically restore preparation to 256 MB or continue the 1769 MB experiment.
+One final seller confirmation is pending, not a prerequisite to accepting the
+allocation.
+
+**Stack-template persistence is not yet complete:** bootstrap OAuth expired on
+fresh readback. The accepted live override must be carried into the exact current
+core template as the single PreparationDispatchFunction MemorySize property;
+otherwise a future stack update could undo it. Preserve the existing provider
+memory, Safari and publication overlays. The template tuple recorded below is
+the historical predecessor, not proof that this property has been persisted.
+See [cold-path record](cold-path-exploration.md) for exact evidence and next step.
 
 ## CI dependency maintenance — 2026-09-09
 

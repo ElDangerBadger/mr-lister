@@ -11,6 +11,12 @@ have not been established. The seller reports the second run was noticeably
 faster. No additional runtime changes or uploads are required for this readback.
 UI simplification and publication changes are outside this pass.
 
+Subsequent seller decision: **retain preparation memory at 1024 MB**, with provider
+also at 1024 MB. Cancel the 1769 MB trial and automatic restoration to 256 MB.
+The final seller confirmation and stack-template persistence/readback are tracked
+in [cold-path exploration](cold-path-exploration.md). The timing tables below
+precede this accepted memory setting and are not its measured performance result.
+
 Source rollback: `d71218d982b68a078b02ce3914f96ed2523da948` on main,
 [green CI](https://github.com/ElDangerBadger/mr-lister/actions/runs/34412919494).
 The deployed SEO/prompt, Safari, provider-memory and publication-query fixes remain
