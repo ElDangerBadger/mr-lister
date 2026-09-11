@@ -247,3 +247,10 @@ fixture credentials, test job IDs or temporary preview paths. The 16 focused sta
 release tests pass. The current deployed index still matches the first Pass B release
 at VersionId `bfyE58QPAn0PtR7t4uK5Sq29JnJDLubY`, which will be preserved for rollback.
 Fresh checks and deployment evidence for the frozen checkpoint will be recorded below.
+
+The UI checkpoint is `0bc487c83c57bbf785a68478d130b7302af61513`; all 237 frontend
+tests, lint, typecheck and production-build checks passed against it. A fresh browser
+run exposed an immediate visibility assertion racing the parent's edit-barrier render
+after Discard. The follow-up changes only the browser check to wait, with a five-second
+bound, for the expected edit barrier and controls before retaining the existing
+assertions. The frozen application code and approval safeguards are unchanged.

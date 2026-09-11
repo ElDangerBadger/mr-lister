@@ -93,6 +93,7 @@ async page => {
   const listingTitle = page.locator("#listing-title");
   const originalTitle = await listingTitle.inputValue();
   await listingTitle.fill(`${originalTitle} — local edit`);
+  await page.locator('.action-panel[data-listing-barrier="unsaved"]').waitFor({ state: "visible", timeout: 5000 });
   await page.getByRole("button", { name: "Save listing revision" }).waitFor({ state: "visible" });
   check(await page.evaluate(() => {
     const save = document.querySelector('#review-edit-actions button[type="submit"]');
@@ -100,6 +101,8 @@ async page => {
   }), "the action-bar save control lost its listing form association");
   check(await page.getByRole("button", { name: "Approve draft", exact: true }).count() === 0, "local edits expose a competing approval action");
   await page.getByRole("button", { name: "Discard edits" }).click();
+  await page.locator('.action-panel[data-listing-barrier="none"]').waitFor({ state: "visible", timeout: 5000 });
+  await page.getByRole("button", { name: "Approve draft", exact: true }).waitFor({ state: "visible", timeout: 5000 });
   check(await listingTitle.inputValue() === originalTitle, "discard did not restore the saved listing title");
   check(await page.getByRole("button", { name: "Save listing revision" }).count() === 0, "discard did not restore the pristine action bar");
   check(await page.getByRole("button", { name: "Approve draft", exact: true }).isVisible(), "discard did not restore the approval control");
