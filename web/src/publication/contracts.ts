@@ -150,6 +150,36 @@ export const sellerPublicationProjectionSchema = z.strictObject({
   }
 });
 
+// Evaluator reads have a distinct contract; active request/response authority stays 7.1.0.
+export const evaluatorPublicationProjectionSchema = z.strictObject({
+  contract_version: z.literal("evaluator-publication-v1"),
+  job_id: publicId,
+  publication_enabled: z.literal(false),
+  request_enabled: z.literal(false),
+  request_disabled_reason: z.literal("EVALUATOR_PUBLICATION_DISABLED"),
+  request_disabled_message: z.literal(
+    "Publishing is disabled in this evaluation workspace. You can review and approve drafts, "
+    + "but this workspace cannot publish Etsy listings.",
+  ),
+  state: z.literal("not_requested"),
+  stage: z.literal("awaiting_activation"),
+  aggregate_record_version: z.null(),
+  attempt_status: z.null(),
+  verification_deadline: z.null(),
+  safe_listing_url: z.null(),
+  verified_at: z.null(),
+  report_id: z.null(),
+  terminal_at: z.null(),
+  notification_available: z.literal(false),
+  updated_at: dateTime,
+  etag: fingerprint,
+});
+
+export const publicationStatusProjectionSchema = z.union([
+  sellerPublicationProjectionSchema,
+  evaluatorPublicationProjectionSchema,
+]);
+
 export const publicationErrorSchema = z.strictObject({
   error: z.strictObject({
     code: z.string().regex(/^[A-Z][A-Z0-9_]{0,99}$/u),
@@ -159,3 +189,6 @@ export const publicationErrorSchema = z.strictObject({
 
 export type PublicationRequestResponse = z.infer<typeof publicationRequestResponseSchema>;
 export type SellerPublicationProjection = z.infer<typeof sellerPublicationProjectionSchema>;
+
+export type EvaluatorPublicationProjection = z.infer<typeof evaluatorPublicationProjectionSchema>;
+export type PublicationStatusProjection = z.infer<typeof publicationStatusProjectionSchema>;

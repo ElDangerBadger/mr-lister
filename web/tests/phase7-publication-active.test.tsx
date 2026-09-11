@@ -40,7 +40,7 @@ describe("active Phase 7 publication browser", () => {
 
     expect(await screen.findByRole("heading", { name: "Publication status" })).toBeVisible();
     expect(await screen.findByRole("button", { name: "Publish this approved listing" })).toBeEnabled();
-    expect(screen.getByText("Nothing publishes without explicit seller confirmation")).toBeVisible();
+    expect(screen.getByText("Made for your next great listing. You review, approve, and confirm before anything is published.")).toBeVisible();
   });
 
   it("uses the exact authenticated GET and authority-bound POST contract", async () => {

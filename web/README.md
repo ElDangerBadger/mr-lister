@@ -1,19 +1,41 @@
-# Mr. Lister seller web
+# Mr Lister seller web
 
-Phase 6.5 provides a production-shaped React browser client for the owner-scoped seller API. The browser can submit an ordered, memory-only queue of up to five PNG, compatible self-contained SVG, or JPG/JPEG artwork files, observe each independent preparation, revise a generated listing, and record bounded human decisions. SVG and JPEG input are normalized locally to proportional PNG without crop, padding, distortion, or square enforcement; only canonical PNG is fingerprinted or uploaded. SVG linked resources, text, filters, masks, patterns, and animation are rejected. Transparent and opaque backgrounds are valid; artwork must contain at least one visible pixel. It has no Etsy publish, order, or fulfillment capability.
+This is the current React application served at [massskutiny.com](https://massskutiny.com).
+`src/main.tsx` starts OAuth, the owner-scoped seller API client, and the active publication
+client. The workflow is Upload → Review → Publish, with explicit seller approval and a separate
+publication confirmation. It has no order, fulfillment, delete, or unpublish capability.
 
-Each selected file creates one existing upload intent and one listing job. Queue order is submission order in the current browser session, not a durable batch or a promise that preparation will finish in the same order. API behavior in unit tests is injected through mock ports; passing local tests is not evidence of a deployed service.
+The browser accepts an ordered, memory-only queue of up to five PNG, compatible self-contained
+SVG, or JPEG files. Each file creates an independent job; submission order does not imply
+preparation completion order. SVG and JPEG convert locally to proportional PNG. PNG bytes,
+native aspect ratios, and valid transparent or opaque backgrounds are preserved. The picker
+and validation explain source-file restrictions.
 
-## Local checks
+## Development and verification
 
-Use the repository-supported Node version (22.12 or newer), then run:
+From this directory, using Node 22.12 or newer:
 
 ```sh
 npm ci
 npm run check
-npm run dev
 ```
 
-The app loads `/runtime-config.json` at startup. Production receives that public, no-secret object separately from the SAM stack's `SellerRuntimeConfig` output; it is deliberately absent from the Vite build. For deliberate local mock work only, copy `runtime-config.example.json` to `public/runtime-config.json`, replace every placeholder with the local deployment values, and remove the copy afterward. `public/runtime-config.json` is ignored by Git and the build verification fails if any runtime config is emitted.
+`npm run dev` starts the frontend server. The app requires valid, origin-matched public
+configuration at `/runtime-config.json`, an approved OAuth callback, and same-origin `/v1`
+API routing. A local Vite server alone does not provide those services. The Phase 1 fake API
+in `tools/legacy/` does not implement the current seller contract.
 
-OAuth access and refresh tokens exist only in memory. Session storage is limited to one short-lived PKCE transaction containing state, verifier, and an allowlisted return path.
+Production receives its public, secret-free runtime configuration separately from the SAM
+stack's `SellerRuntimeConfig` output. Keep it out of the Vite build. For an explicitly configured
+local integration, use `runtime-config.example.json` as the schema example; a temporary
+`public/runtime-config.json` must match that local environment and must be removed before
+building. The build fails if runtime configuration or source maps enter `dist`.
+
+Unit tests inject mock ports; `tests/` and `offline/phase7/` contain test support and the
+historical disabled-publication contract. They are excluded from the production dependency
+graph by a build-time guard. The active publication implementation is `src/publication/`.
+The [browser gate](../tools/phase66_browser/README.md) exercises the exact compiled application
+with deterministic local API responses. Passing offline checks does not verify a live deployment.
+
+OAuth access and refresh tokens stay in memory. Session storage contains only one short-lived
+PKCE transaction with state, verifier, and an allowlisted return path.

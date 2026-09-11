@@ -6,7 +6,7 @@ import argparse
 import shutil
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DESTINATION = ROOT / ".mr_lister_private" / "agentcore-bundle"
 PYPROJECT = """[build-system]
 requires = ["hatchling>=1.27"]
@@ -45,7 +45,7 @@ def build_bundle(destination: Path) -> Path:
         ROOT / "config" / "product_profiles",
         destination / "config" / "product_profiles",
     )
-    shutil.copy2(ROOT / "agentcore_runtime.py", destination / "main.py")
+    shutil.copy2(ROOT / "tools" / "legacy" / "agentcore_canary_runtime.py", destination / "main.py")
     (destination / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
 
     return destination

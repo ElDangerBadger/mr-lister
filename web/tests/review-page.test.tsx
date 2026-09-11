@@ -14,12 +14,16 @@ import type { PublicationApiPort } from "../src/publication/api-client";
 import { sellerPublicationProjectionSchema } from "../src/publication/contracts";
 
 describe("authoritative seller review", () => {
-  it("makes the unpublished and Strands boundaries prominent and exposes exactly 13 labeled tags", async () => {
+  it("keeps the seller boundary visible and preparation evidence accessible with 13 labeled tags", async () => {
     const review = readyReview();
     render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review)} /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: review.listing.title ?? "" })).toBeInTheDocument();
+    expect(await screen.findByDisplayValue(review.listing.title ?? "")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Make it yours." })).toBeVisible();
     expect(screen.getAllByText("Unpublished — not on Etsy").length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: "Prepared with Strands Agents" })).toBeInTheDocument();
+    const activitySummary = screen.getByText(/^Activity & details/u);
+    expect(activitySummary.closest("details")).not.toHaveAttribute("open");
+    await userEvent.click(activitySummary);
+    expect(screen.getByRole("heading", { name: "Prepared with Strands Agents" })).toBeVisible();
     expect(screen.getAllByText("record_prepared_review").length).toBeGreaterThan(0);
     expect(screen.getByText("a".repeat(24))).toBeInTheDocument();
     expect(screen.getByText("Review exact print placements")).toBeInTheDocument();
@@ -39,10 +43,12 @@ describe("authoritative seller review", () => {
     const review = completeReadyReview();
     const fetchArtwork = vi.fn().mockResolvedValue(new Blob(["png"], { type: "image/png" }));
     render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { fetchArtwork })} /></MemoryRouter>);
-    await screen.findByRole("heading", { name: review.listing.title ?? "" });
-    expect(screen.getByText("c".repeat(24))).toBeInTheDocument();
+    await screen.findByDisplayValue(review.listing.title ?? "");
+    await userEvent.click(screen.getByText(/^Activity & details/u));
+    expect(screen.getByText("c".repeat(24))).toBeVisible();
     expect(await screen.findByText("Nature lovers")).toBeInTheDocument();
-    expect(screen.getByText("printify_product_ready")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Product & print settings"));
+    expect(screen.getByText("printify_product_ready")).toBeVisible();
     expect(screen.getByText("Synchronized at").parentElement).toHaveTextContent("2026");
     await userEvent.click(screen.getByText("Review exact print placements"));
     expect(screen.getByText("placement_large")).toBeInTheDocument();
@@ -52,7 +58,8 @@ describe("authoritative seller review", () => {
     const table = screen.getByRole("table", { name: /Estimated proceeds by product color and size/u });
     expect(within(table).getAllByRole("row")).toHaveLength(31);
     expect(screen.getByText("$12.70–$12.99")).toBeInTheDocument();
-    expect(screen.getByText("Connected production product readback")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Cost sources & assumptions"));
+    expect(screen.getByText("Connected production product readback")).toBeVisible();
     expect(screen.getByText("Connected production standard US shipping")).toBeInTheDocument();
     expect(screen.getByText(/Etsy US standard fee policy · etsy-us-standard-v1/u)).toBeInTheDocument();
     expect(screen.getByText("Calculated at").parentElement).toHaveTextContent("2026");
@@ -337,7 +344,8 @@ describe("authoritative seller review", () => {
       resolveReadback?.(reviewResponse(current, "request-current"));
       await readback;
     });
-    await screen.findByRole("heading", { name: acceptedTitle });
+    await screen.findByText(new RegExp(`Authoritative record ${current.record_version} ·`, "u"));
+    expect(screen.getByRole("textbox", { name: /^Title/u })).toHaveValue(acceptedTitle);
     await waitFor(() => expect(fetchArtwork).toHaveBeenCalledTimes(2));
     fireEvent.load(screen.getByRole("img", { name: "Original uploaded artwork for this seller review" }));
     for (const mockup of screen.getAllByRole("img", { name: /representative mockup/u })) fireEvent.load(mockup);
@@ -378,7 +386,7 @@ describe("authoritative seller review", () => {
       window.dispatchEvent(new Event("focus"));
       await Promise.resolve();
     });
-    expect(await screen.findByRole("heading", { name: "Latest authoritative seller title" })).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Latest authoritative seller title")).toBeInTheDocument();
     expect(await screen.findByText(/review changed.*confirming approval again/iu)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve draft — keep unpublished" })).not.toBeInTheDocument();
     expect(runAction).not.toHaveBeenCalled();
@@ -474,13 +482,16 @@ describe("authoritative seller review", () => {
     expect(screen.getByRole("link", { name: "Skip to main content" })).toHaveFocus();
   });
 
-  it("has no automatically detectable accessibility violations in the ready review", async () => {
+  it("has no automatically detectable accessibility violations with ready-review details collapsed or expanded", async () => {
     const review = readyReview();
     const { container } = render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review)} /></MemoryRouter>);
-    await screen.findByRole("heading", { name: review.listing.title ?? "" });
+    await screen.findByDisplayValue(review.listing.title ?? "");
     await screen.findByRole("textbox", { name: "Tag 13" });
     const results = await axe.run(container, { rules: { "color-contrast": { enabled: false } } });
     expect(results.violations).toEqual([]);
+    for (const summary of container.querySelectorAll("summary")) await userEvent.click(summary);
+    const expandedResults = await axe.run(container, { rules: { "color-contrast": { enabled: false } } });
+    expect(expandedResults.violations).toEqual([]);
   });
 
   it("binds projected validation errors to the exact listing field", async () => {
@@ -550,7 +561,7 @@ describe("authoritative seller review", () => {
     const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
     render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { listJobs })} /></MemoryRouter>);
     const user = userEvent.setup();
-    await screen.findByRole("heading", { name: review.listing.title ?? "" });
+    await screen.findByDisplayValue(review.listing.title ?? "");
     await user.click(screen.getByRole("link", { name: "Mr. Lister seller review home" }));
     await waitFor(() => expect(document.getElementById("main-content")).toHaveFocus());
     expect(document.title).toBe("Uploads | Mr. Lister");
@@ -571,12 +582,12 @@ describe("authoritative seller review", () => {
       </MemoryRouter>,
     );
     const user = userEvent.setup();
-    await screen.findByRole("heading", { name: first.listing.title ?? "" });
+    await screen.findByDisplayValue(first.listing.title ?? "");
     await user.click(screen.getByRole("button", { name: "Open second route" }));
-    expect(screen.queryByRole("heading", { name: first.listing.title ?? "" })).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue(first.listing.title ?? "")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Preparing your review…" })).toBeInTheDocument();
     resolveSecond?.({ value: second, requestId: "request-second", etag: `"${second.review_authority_etag ?? ""}"` });
-    expect(await screen.findByRole("heading", { name: "Second listing" })).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Second listing")).toBeInTheDocument();
   });
 
   it("ignores delayed progress from job A after job B has become authoritative", async () => {
@@ -615,13 +626,13 @@ describe("authoritative seller review", () => {
       </MemoryRouter>,
     );
     const user = userEvent.setup();
-    await screen.findByRole("heading", { name: first.listing.title ?? "" });
+    await screen.findByDisplayValue(first.listing.title ?? "");
     await waitFor(() => {
       window.dispatchEvent(new Event("focus"));
       expect(getJob).toHaveBeenCalledWith(first.job_id);
     });
     await user.click(screen.getByRole("button", { name: "Open second route" }));
-    expect(await screen.findByRole("heading", { name: "Second listing" })).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Second listing")).toBeInTheDocument();
     await act(async () => {
       resolveProgress?.(staleProgress);
       await Promise.resolve();
@@ -629,7 +640,7 @@ describe("authoritative seller review", () => {
     expect(getReview).toHaveBeenCalledTimes(2);
     expect(getReview).toHaveBeenNthCalledWith(1, first.job_id);
     expect(getReview).toHaveBeenNthCalledWith(2, second.job_id);
-    expect(screen.getByRole("heading", { name: "Second listing" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Second listing")).toBeInTheDocument();
   });
 
   it("preserves an accepted listing draft when authoritative readback fails", async () => {
@@ -764,7 +775,7 @@ describe("authoritative seller review", () => {
       etag: null,
     });
     render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview, getJob })} /></MemoryRouter>);
-    await screen.findByRole("heading", { name: review.listing.title ?? "" });
+    await screen.findByDisplayValue(review.listing.title ?? "");
     await waitFor(() => {
       window.dispatchEvent(new Event("focus"));
       expect(getJob).toHaveBeenCalledTimes(1);
@@ -779,7 +790,7 @@ describe("authoritative seller review", () => {
     const getJob = vi.fn().mockReturnValue(progress);
     const getReview = vi.fn().mockResolvedValue(reviewResponse(review, "request-review"));
     const { unmount } = render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getJob, getReview })} /></MemoryRouter>);
-    await screen.findByRole("heading", { name: review.listing.title ?? "" });
+    await screen.findByDisplayValue(review.listing.title ?? "");
     await waitFor(() => {
       window.dispatchEvent(new Event("focus"));
       expect(getJob).toHaveBeenCalledTimes(1);
@@ -961,9 +972,9 @@ describe("authoritative seller review", () => {
       </MemoryRouter>,
     );
     const user = userEvent.setup();
-    await screen.findByRole("heading", { name: "First listing" });
+    await screen.findByDisplayValue("First listing");
     await user.click(screen.getByRole("button", { name: "Open second route" }));
-    await screen.findByRole("heading", { name: "Second listing" });
+    await screen.findByDisplayValue("Second listing");
     fireEvent.load(screen.getByRole("img", { name: "Front representative mockup" }));
     await act(async () => {
       resolveFirstPreview?.(new Blob(["first"], { type: "image/png" }));

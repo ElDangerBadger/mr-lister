@@ -24,14 +24,17 @@ async page => {
   await internalNavigate("/jobs/job_route_a");
   await slowRequest;
   await internalNavigate("/jobs/job_route_b");
-  await page.getByRole("heading", { name: "Current route B artwork" }).waitFor();
+  await page.waitForFunction(() => (
+    document.querySelector("#listing-title")?.value === "Current route B artwork"
+  ));
   await page.waitForTimeout(950);
   check(page.url().endsWith("/jobs/job_route_b"), "the delayed A response changed the current route");
-  check(await page.getByRole("heading", { name: "Current route B artwork" }).isVisible(), "route B evidence disappeared");
-  check(await page.getByText("Delayed route A artwork", { exact: true }).count() === 0, "route A data contaminated route B");
+  check(await page.locator("#listing-title").isVisible(), "route B listing editor disappeared");
+  check(await page.locator("#listing-title").inputValue() === "Current route B artwork", "route A data contaminated route B");
 
   await internalNavigate("/jobs/job_polling");
-  await page.getByRole("heading", { name: "Listing preparation" }).waitFor();
+  await page.locator(".stage-badge--preparing").waitFor({ state: "visible" });
+  check((await page.getByRole("navigation", { name: "Listing workflow" }).locator('[aria-current="step"]').textContent()).includes("Review"), "preparation is not in the Review step");
   const beforeOffline = await fixtureState();
   const initialProgress = beforeOffline.progress_requests.job_polling ?? 0;
   await page.context().setOffline(true);

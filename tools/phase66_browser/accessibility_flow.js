@@ -6,7 +6,9 @@ async page => {
     history.pushState(null, "", "/jobs/job_browser_fixture");
     dispatchEvent(new PopStateEvent("popstate"));
   });
-  await page.getByRole("heading", { name: "Moonlit botanical moth shirt" }).waitFor();
+  await page.waitForFunction(() => (
+    document.querySelector("#listing-title")?.value === "Moonlit botanical moth shirt"
+  ));
   await page.getByAltText("Original uploaded artwork for this seller review").waitFor({ state: "visible" });
 
   await page.setViewportSize({ width: 360, height: 800 });
@@ -21,6 +23,21 @@ async page => {
   check(narrow.clientWidth === 360, "the narrow viewport was not applied");
   check(narrow.scrollWidth <= narrow.clientWidth + 1, "the 360 CSS-pixel view has horizontal overflow");
   check(narrow.controlsOutsideViewport === 0, "an interactive control is clipped at 360 CSS pixels");
+
+  const activity = page.locator("details.activity-panel");
+  await activity.locator(":scope > summary").click();
+  check(await activity.getByRole("heading", { name: "Prepared with Strands Agents" }).isVisible(), "provenance cannot be opened at 360 CSS pixels");
+  const expanded = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    controlsOutsideViewport: [...document.querySelectorAll("a,button,input,textarea,summary")].filter(element => {
+      const box = element.getBoundingClientRect();
+      return box.left < -1 || box.right > document.documentElement.clientWidth + 1;
+    }).length,
+  }));
+  check(expanded.scrollWidth <= expanded.clientWidth + 1, "expanded activity has horizontal overflow at 360 CSS pixels");
+  check(expanded.controlsOutsideViewport === 0, "expanded activity clips an interactive control");
+  await activity.locator(":scope > summary").click();
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   const reducedMotion = await page.evaluate(() => {
@@ -37,16 +54,19 @@ async page => {
   await page.emulateMedia({ reducedMotion: "reduce", forcedColors: "active" });
   const forcedColors = await page.evaluate(() => ({
     matches: matchMedia("(forced-colors: active)").matches,
-    bannerBorder: getComputedStyle(document.querySelector(".authority-banner")).borderTopWidth,
+    currentStepBorder: getComputedStyle(document.querySelector('.workflow [aria-current="step"] .workflow-number')).borderTopWidth,
+    currentStepCount: document.querySelectorAll('.workflow [aria-current="step"]').length,
     primaryBorder: getComputedStyle(document.querySelector(".button--primary")).borderTopWidth,
   }));
   check(forcedColors.matches, "forced-colors emulation did not apply");
-  check(forcedColors.bannerBorder !== "0px", "the authority banner loses its boundary in forced colors");
+  check(forcedColors.currentStepCount === 1, "the current workflow step is ambiguous in forced colors");
+  check(forcedColors.currentStepBorder !== "0px", "the current workflow marker loses its boundary in forced colors");
   check(forcedColors.primaryBorder !== "0px", "the primary action loses its boundary in forced colors");
 
   return {
     reflowAt200PercentEquivalent: "passed at 360 CSS pixels",
-    horizontalOverflow: narrow.scrollWidth - narrow.clientWidth,
+    horizontalOverflow: Math.max(narrow.scrollWidth - narrow.clientWidth, expanded.scrollWidth - expanded.clientWidth),
+    expandedActivityReflow: "passed",
     reducedMotion: "passed",
     forcedColors: "passed",
   };

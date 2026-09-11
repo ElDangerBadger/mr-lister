@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAppDependencies } from "../app-context";
 import { useSessionStatus } from "../auth/use-session";
 import type { JobSummary } from "../contracts";
+import { WorkflowSteps } from "../components/WorkflowSteps";
 import {
   MAX_BATCH_FILES,
   type BatchUploadItemState,
@@ -84,29 +85,39 @@ export function HomePage() {
     return (
       <section className="page landing-page">
         <div>
-          <p className="eyebrow">Private seller workspace</p>
-          <h1>Your artwork in. Listings ready for your decision.</h1>
-          <p className="lede">Mr. Lister accepts PNG, compatible self-contained SVG, and JPEG artwork, prepares each listing independently, stages unpublished Printify products, and waits for you.</p>
+          <p className="eyebrow">From artwork to storefront</p>
+          <h1>Your artwork.<br />Your next listing.</h1>
+          <p className="lede">Turn a design into a listing you’re proud to publish. Mr. Lister prepares the copy, product mockups, and estimated proceeds. You make the final call.</p>
+          <ol className="process-list" aria-label="How Mr. Lister works">
+            <li><span>01</span><strong>Upload your artwork</strong><small>Start with a design you love.</small></li>
+            <li><span>02</span><strong>Review and make it yours</strong><small>Edit the words. Check the product and costs.</small></li>
+            <li><span>03</span><strong>Publish with confidence</strong><small>Confirm the exact listing before it goes to your store.</small></li>
+          </ol>
+        </div>
+        <div className="panel signin-panel">
+          <p className="eyebrow">Your workspace</p>
+          <h2>Welcome to Mr. Lister.</h2>
+          <p>Sign in to create your next listing or pick up where you left off.</p>
           <button className="button button--primary" type="button" onClick={() => { void auth.startSignIn(location.pathname); }}>
             Sign in securely
           </button>
+          <p className="signin-note">Have an invitation to try Mr. Lister? Use the account provided with your invitation.</p>
+          <p className="muted">Your drafts stay private until you approve and confirm publication.</p>
         </div>
-        <ol className="process-list" aria-label="How Mr. Lister works">
-          <li><span>01</span><strong>Add PNG, SVG, or JPEG artwork</strong><small>Up to {MAX_BATCH_FILES} files in one ordered queue</small></li>
-          <li><span>02</span><strong>Strands prepares it</strong><small>Agentic artwork and listing review</small></li>
-          <li><span>03</span><strong>You decide</strong><small>Nothing is published to Etsy</small></li>
-        </ol>
       </section>
     );
   }
 
   return (
     <div className="page dashboard-grid">
+      <WorkflowSteps current="Upload" />
       <section className="hero-panel" aria-labelledby="upload-heading">
         <p className="eyebrow">New listing</p>
-        <h1 id="upload-heading">Prepare a batch of artwork.</h1>
-        <p>Select up to {MAX_BATCH_FILES} PNG, compatible self-contained SVG, or JPEG files, then arrange their submission order. Each file creates its own private listing preparation.</p>
-        <p className="format-note"><strong>Source files stay local:</strong> your browser preserves PNG bytes and converts compatible SVG and JPEG artwork to proportional PNG without cropping or padding before fingerprinting or upload. Portrait, landscape, square, transparent, and opaque artwork are valid. Linked SVG assets, text, filters, and animation are not accepted. Each source file may be up to 5 MB.</p>
+        <h1 id="upload-heading">Let’s start with your artwork.</h1>
+        <p>Upload a design, and we’ll prepare the listing, mockups, and costs for your review.</p>
+        <details className="upload-requirements"><summary>PNG, SVG, or JPEG · Up to {MAX_BATCH_FILES} files · 5 MB each</summary>
+          <p className="format-note">Original files stay on your device. PNG bytes are preserved; compatible SVG and JPEG files are converted to PNG in your browser before upload. Proportions and backgrounds are preserved. SVG files must be self-contained, with no linked assets, text, filters, or animation.</p>
+        </details>
         <form onSubmit={(event) => {
           event.preventDefault();
           if (selectedFiles.length === 0 || selectedFiles.length > MAX_BATCH_FILES) return;
@@ -148,7 +159,7 @@ export function HomePage() {
           >
             <span className="drop-icon" aria-hidden="true">↑</span>
             <strong>{dragActive ? "Drop artwork here" : "Drag and drop PNG, SVG, or JPEG artwork, or choose files"}</strong>
-            <span>Choose one file or build a batch. Native aspect ratios and seller-chosen backgrounds are preserved. Originals are never put in browser storage.</span>
+            <span>One design or a batch of up to five. Your proportions and backgrounds stay as you chose them.</span>
           </label>
           <input
             id={inputId}
@@ -171,9 +182,9 @@ export function HomePage() {
           )}
           <button className="button button--primary" type="submit" disabled={uploadLocked || selectedFiles.length === 0}>
             {batchBusy
-              ? "Preparing batch…"
+              ? "Uploading artwork…"
               : batchFinished
-                ? "Batch complete"
+                ? "Uploads processed"
                 : selectedFiles.length === 0
                   ? "Choose artwork to continue"
                   : selectedFiles.length === 1
@@ -195,6 +206,16 @@ export function HomePage() {
         )}
       </section>
 
+      <aside className="panel upload-guide" aria-labelledby="next-heading">
+        <p className="eyebrow">A little help, all the way</p>
+        <h2 id="next-heading">You create. We prepare.</h2>
+        <ol className="process-list">
+          <li><span>01</span><strong>A listing that fits your artwork</strong><small>Title, description, and tags ready for your edits.</small></li>
+          <li><span>02</span><strong>See the finished product</strong><small>Review the original design and representative mockups together.</small></li>
+          <li><span>03</span><strong>Know what you could earn</strong><small>Check estimated proceeds before making your decision.</small></li>
+        </ol>
+        <p className="quiet-note">You’ll review every listing before approving it. Publishing is a separate confirmation.</p>
+      </aside>
       <section className="recent-panel" aria-labelledby="recent-heading">
         <div className="section-heading-row">
           <div>

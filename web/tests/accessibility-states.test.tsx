@@ -19,7 +19,7 @@ describe("accessible application states", () => {
   it("covers the signed-in upload home", async () => {
     const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
     const result = renderApp("/", true, { listJobs });
-    await screen.findByRole("heading", { name: "Prepare a batch of artwork." });
+    await screen.findByRole("heading", { name: "Let’s start with your artwork." });
     await waitFor(() => expect(listJobs).toHaveBeenCalledTimes(1));
     await expectNoViolations(result);
   });
@@ -60,7 +60,7 @@ describe("accessible application states", () => {
   it("covers a pending preparation review", async () => {
     const review = sellerReviewSchema.parse(browserFixtures.seller_review_pending);
     const result = renderReview(review);
-    await screen.findByRole("heading", { level: 1, name: "Listing preparation" });
+    await screen.findByRole("heading", { level: 1, name: "Your listing is taking shape." });
     await expectNoViolations(result);
   });
 

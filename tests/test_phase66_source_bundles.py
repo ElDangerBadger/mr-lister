@@ -87,6 +87,8 @@ def test_lambda_bundle_excludes_agentcore_and_legacy_broad_surfaces(tmp_path: Pa
     lambda_root, _agentcore = build_source_bundles(_destination(tmp_path, "lambda-surface"))
 
     assert (lambda_root / "phase6_lambda.py").is_file()
+    assert (lambda_root / "mr_lister/cloud/evaluator_publication.py").is_file()
+    assert not (lambda_root / "mr_lister/publication").exists()
     assert (lambda_root / "mr_lister/cloud/phase6_entrypoints.py").is_file()
     assert (lambda_root / "mr_lister/cloud/phase6_retention_entrypoint.py").is_file()
     assert (lambda_root / "mr_lister/cloud/phase6_operational_cleanup_entrypoint.py").is_file()

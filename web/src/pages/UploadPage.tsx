@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAppDependencies } from "../app-context";
 import type { UploadRecovery } from "../contracts";
+import { WorkflowSteps } from "../components/WorkflowSteps";
 import { useUpload } from "../upload/upload-context";
 
 const cancellable = new Set(["validating", "hashing", "creating_intent", "uploading", "finalizing"]);
@@ -38,7 +39,7 @@ export function UploadPage() {
 
   if (!validUploadId) {
     return (
-      <section className="page narrow-page">
+      <section className="page narrow-page"><WorkflowSteps current="Upload" />
         <p className="eyebrow">Invalid upload route</p>
         <h1>This private upload cannot be opened.</h1>
         <p><Link className="button" to="/">Return to uploads</Link></p>
@@ -48,7 +49,7 @@ export function UploadPage() {
 
   if (!active && recovery === null) {
     return (
-      <section className="page narrow-page">
+      <section className="page narrow-page"><WorkflowSteps current="Upload" />
         <p className="eyebrow">Upload recovery</p>
         <h1>Resume this private upload.</h1>
         {recoveryError === null ? <p role="status">Checking the owner-scoped upload record…</p> : <div className="alert alert--error" role="alert">{recoveryError}</div>}
@@ -59,13 +60,13 @@ export function UploadPage() {
 
   if (!active && recovery !== null) {
     if (recovery.status === "completed") {
-      return <section className="page narrow-page"><p className="eyebrow">Upload recovered</p><h1>Artwork verification is complete.</h1><p><Link className="button button--primary" to={`/jobs/${recovery.job_id}`}>Open seller review</Link></p></section>;
+      return <section className="page narrow-page"><WorkflowSteps current="Upload" /><p className="eyebrow">Upload recovered</p><h1>Artwork verification is complete.</h1><p><Link className="button button--primary" to={`/jobs/${recovery.job_id}`}>Open seller review</Link></p></section>;
     }
     if (recovery.status !== "open") {
-      return <section className="page narrow-page"><p className="eyebrow">Upload {recovery.status}</p><h1>This upload cannot be resumed.</h1><p><Link className="button" to="/">Start a new upload</Link></p></section>;
+      return <section className="page narrow-page"><WorkflowSteps current="Upload" /><p className="eyebrow">Upload {recovery.status}</p><h1>This upload cannot be resumed.</h1><p><Link className="button" to="/">Start a new upload</Link></p></section>;
     }
     return (
-      <section className="page narrow-page">
+      <section className="page narrow-page"><WorkflowSteps current="Upload" />
         <p className="eyebrow">Upload recovery</p>
         <h1>Re-select {recovery.filename}.</h1>
         <div className="alert alert--info" role="note">For your privacy, the browser did not retain the file. Mr. Lister will accept only the exact reserved PNG.</div>

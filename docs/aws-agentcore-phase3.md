@@ -1,5 +1,8 @@
 # Phase 3 AgentCore runbook
 
+This historical synthetic-canary runbook preserves the Phase 3 evidence and reproduction steps.
+The current seller runtime uses [`agentcore_phase6_runtime.py`](../agentcore_phase6_runtime.py).
+
 Mr Lister uses the official `bedrock-agentcore` Python SDK and current `@aws/agentcore` CLI. The
 runtime serves non-streaming `POST /invocations` and `GET /ping` on `0.0.0.0:8080`. WebSocket,
 MCP, A2A, memory, Gateway, and autonomous publication are intentionally deferred.
@@ -29,8 +32,9 @@ The first-look Nova/Gemma evidence is in
 .venv/bin/ruff format --check .
 ```
 
-The official SDK entry point is `agentcore_runtime.py`. It can be smoked locally with the synthetic
-job and fake intelligence/production adapters. That smoke makes real Nova controller calls, so keep
+The historical SDK entry point is now
+[`tools/legacy/agentcore_canary_runtime.py`](../tools/legacy/agentcore_canary_runtime.py). It can be
+smoked locally with the synthetic job and fake intelligence/production adapters. That smoke makes real Nova controller calls, so keep
 the same explicit profile and cost discipline used by the controller comparison.
 
 ## Render private deployment configuration
@@ -53,7 +57,7 @@ sed "s/<AWS_ACCOUNT_ID>/${MR_LISTER_ACCOUNT_ID}/g" \
 Build only the explicit runtime inputs, validate the schema, and package Linux ARM64 dependencies:
 
 ```bash
-.venv/bin/python -m tools.build_agentcore_bundle
+.venv/bin/python -m tools.legacy.build_agentcore_canary_bundle
 cd infra/agentcore/mrlisterphase3
 ../../../node_modules/.bin/agentcore validate --json
 PATH="$(cd ../../.. && pwd)/.venv/bin:$PATH" \

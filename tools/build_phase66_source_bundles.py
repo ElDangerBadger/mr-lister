@@ -96,6 +96,7 @@ _LAMBDA_CLOUD_FILES = (
     "artifacts.py",
     "auth.py",
     "browser_contracts.py",
+    "evaluator_publication.py",
     "http.py",
     "phase6_composition.py",
     "phase6_entrypoints.py",

@@ -1,17 +1,31 @@
 # Mr Lister
 
-**Your POD Listing Partner** *(working tagline)*
+**Upload artwork. Review your listing. Publish when ready.**
 
 Mr Lister turns finished artwork into a configured, validated, reviewable print-on-demand
 listing. It combines bounded AI judgment with deterministic marketplace and publishing
 safeguards.
 
+## Open the current application
+
+Use the [Mr Lister seller workspace](https://massskutiny.com) and sign in with an authorized
+seller account. The application uses the deployed owner-scoped API and real preparation flow.
+Review and save listing changes, approve the exact draft, then separately confirm publication.
+See [`web/README.md`](web/README.md) for frontend development and
+[`docs/phase7-release-state.md`](docs/phase7-release-state.md) for deployment evidence.
+The approved UI implementation and pending isolated judge release are tracked in
+[`docs/ui-and-evaluator-release.md`](docs/ui-and-evaluator-release.md).
+
+The fake local API and synthetic AgentCore canary are historical developer tools under
+[`tools/legacy/`](tools/legacy/README.md). They are not alternative ways to launch the current
+seller workspace. Offline fixtures support tests and browser verification.
+
 > [!IMPORTANT]
 > **Mr Lister is built with the Strands Agents SDK.** Strands runs the bounded preparation agent
 > loop—controller model, job-scoped tools, reasoning, and structured response—inside Amazon
 > Bedrock AgentCore. It is not an unused dependency or a label around a direct model call. Start
-> with [the agent construction](src/mr_lister/agent/runtime.py),
-> [the real `@tool` implementations](src/mr_lister/agent/tools.py), and the
+> with [the current agent and tool](src/mr_lister/agent/phase6.py),
+> [the production composition](src/mr_lister/agent/phase6_composition.py), and the
 > [judge-facing evidence map](docs/strands-submission-evidence.md).
 
 The Phase 6 product path is deliberately bounded:
@@ -89,16 +103,15 @@ python -m pytest -q \
   tests/test_phase6_agentcore_bridge.py
 ```
 
-## Phase 6 seller workspace
+## Current seller workspace
 
-The Phase 6.5 implementation includes a strict React/TypeScript seller application under
+The current React/TypeScript seller application lives under
 [`web/`](web/). It accepts one or multiple PNG, safe self-contained SVG, or JPG/JPEG artworks;
 validates and preserves PNG bytes while normalizing SVG and JPG/JPEG to proportional canonical PNG
 without cropping, padding, distortion, or square enforcement; and gives every file its own private
 job and progress/recovery state. It also
-provides consolidated artwork/listing/mockup/economics review, a prominent same-job Strands
-evidence card, and the five server-authorized seller actions. The interface keeps
-**Unpublished — not on Etsy** visible throughout preparation and approval. The separately enabled
+provides artwork, editable listing text, mockups, economics, same-job Strands evidence,
+and server-authorized seller actions. Preparation and approval keep the product unpublished. The separately enabled
 Phase 7 workspace appears only for an approved job and requires another explicit irreversible
 seller confirmation. No browser order, fulfillment, unpublish, or delete capability exists.
 
@@ -182,30 +195,12 @@ pytest
 ruff check .
 ```
 
-## Phase 1 local API
+## Historical development and offline verification
 
-Phase 1 provides a synchronous local workflow with in-memory state, deterministic validation,
-fake Bedrock intelligence, and fake Printify publication. It performs no network requests or
-external writes.
-
-```bash
-source .venv/bin/activate
-uvicorn mr_lister.api.app:app --reload
-```
-
-The API is available at `http://127.0.0.1:8000`, with interactive OpenAPI documentation at
-`/docs`. Its vertical slice exposes:
-
-- `POST /jobs`
-- `GET /jobs/{job_id}`
-- `GET /jobs/{job_id}/review`
-- `PUT /jobs/{job_id}/review/listing`
-- `POST /jobs/{job_id}/approve`
-- `POST /jobs/{job_id}/publish`
-- `GET /jobs/{job_id}/report`
-
-The local API wires the bundled `synthetic_gildan_5000` profile only to the fake adapter. Its
-deliberately non-live identifiers cannot create a real Printify product.
+The Phase 1 fake API is retained under [`tools/legacy/`](tools/legacy/README.md), with its
+regression tests. It uses in-memory state and synthetic providers; it is separate from the
+current seller application and its authenticated `/v1` API. Earlier phase sections below
+record architecture and evidence; current deployment state is linked above.
 
 ## Phase 2 Bedrock intelligence
 
@@ -238,9 +233,10 @@ uses Gemma 3 27B as the provisional quality lead; Amazon Nova 2 Lite remains the
 while OpenAI GPT-5.6 Luna and Claude Sonnet 4.6 are optional benchmarks. All paths must pass the
 same application validation before reaching human review.
 
-The default application and test suite remain offline. Real model traffic requires an explicit
-environment gate, uses fake production, and must stop at human review; AWS credentials alone do
-not silently select the live adapter.
+The local evaluation harness and ordinary tests run offline by default. Live evaluation
+requires an explicit environment gate, uses fake production, and stops at human review; AWS
+credentials alone do not select a live evaluation adapter. The deployed seller application
+uses its separately configured production adapters.
 
 ```bash
 python -m tools.phase2_evaluation --check-assets
@@ -284,8 +280,8 @@ sequence.
 
 ## Roadmap
 
-See the [roadmap](docs/roadmap.md), [demo target](docs/demo-target.md), and
-[phase checklist](docs/phase-checklist.md) for current progress. The
+See the [roadmap](docs/roadmap.md) and [phase checklist](docs/phase-checklist.md) for current
+progress. The [original demo target](docs/demo-target.md) records the historical scope. The
 [architecture decisions](docs/architecture) record the governing technical choices.
 
 ## License

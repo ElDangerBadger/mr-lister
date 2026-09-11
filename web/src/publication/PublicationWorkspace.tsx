@@ -5,9 +5,9 @@ import {
   PublicationContractError,
   type PublicationApiPort,
 } from "./api-client";
-import type { SellerPublicationProjection } from "./contracts";
+import type { PublicationStatusProjection } from "./contracts";
 
-const POLLING_STATES = new Set<SellerPublicationProjection["state"]>([
+const POLLING_STATES = new Set<PublicationStatusProjection["state"]>([
   "publication_requested",
   "publication_verifying",
   "publication_reconciling",
@@ -20,7 +20,7 @@ interface PublicationWorkspaceProps {
 }
 
 export function PublicationWorkspace({ jobId, approvedReview, api }: PublicationWorkspaceProps) {
-  const [projection, setProjection] = useState<SellerPublicationProjection | null>(null);
+  const [projection, setProjection] = useState<PublicationStatusProjection | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -67,7 +67,7 @@ export function PublicationWorkspace({ jobId, approvedReview, api }: Publication
     setStatusMessage(null);
   }, [approvalAuthority]);
 
-  const loadStatus = useCallback(async (): Promise<SellerPublicationProjection | null> => {
+  const loadStatus = useCallback(async (): Promise<PublicationStatusProjection | null> => {
     const sequence = ++requestSequence.current;
     try {
       const response = await api.getPublication(jobId);
@@ -176,7 +176,8 @@ export function PublicationWorkspace({ jobId, approvedReview, api }: Publication
   };
 
   const requestPublication = async () => {
-    if (!acknowledged || requesting) return;
+    if (!acknowledged || requesting || projection?.publication_enabled !== true
+      || !projection.request_enabled) return;
     const requestEpoch = authorityEpoch.current;
     const currentKey = idempotency.current;
     const key = currentKey?.authority === approvalAuthority
@@ -218,7 +219,8 @@ export function PublicationWorkspace({ jobId, approvedReview, api }: Publication
     && approvedReview.review_version > 0
     && approvedReview.review_fingerprint !== null
     && approvedReview.review_authority_etag !== null;
-  const mayRequest = projection?.state === "not_requested"
+  const mayRequest = projection?.publication_enabled === true
+    && projection.state === "not_requested"
     && projection.request_enabled
     && approvedAuthorityCurrent
     && !requestBlocked;
@@ -232,7 +234,9 @@ export function PublicationWorkspace({ jobId, approvedReview, api }: Publication
       {projection !== null && <PublicationStatus projection={projection} />}
       {message !== null && <p className="alert alert--info" role="status">{message}</p>}
       <p className="boundary-note">
-        Refresh reads Mr. Lister’s latest recorded status. Provider verification continues automatically.
+        {projection?.publication_enabled === false
+          ? "Refresh reads this workspace’s publication policy. No publication attempt is running."
+          : "Refresh reads Mr. Lister’s latest recorded status. Provider verification continues automatically."}
       </p>
       {(checkingStatus || statusMessage !== null) && (
         <p className="save-state" role="status" aria-live="polite">
@@ -254,10 +258,10 @@ export function PublicationWorkspace({ jobId, approvedReview, api }: Publication
           {checkingStatus ? "Refreshing publication status…" : "Refresh publication status"}
         </button>
       </div>
-      {projection?.state === "not_requested" && !projection.request_enabled && (
+      {projection?.publication_enabled === true && projection.state === "not_requested" && !projection.request_enabled && (
         <p>This approved listing is not eligible for publication.</p>
       )}
-      {confirming && (
+      {confirming && mayRequest && (
         <dialog
           ref={dialog}
           className="confirmation-dialog"
@@ -292,7 +296,10 @@ export function PublicationWorkspace({ jobId, approvedReview, api }: Publication
   );
 }
 
-function PublicationStatus({ projection }: { projection: SellerPublicationProjection }) {
+function PublicationStatus({ projection }: { projection: PublicationStatusProjection }) {
+  if (!projection.publication_enabled) {
+    return <p className="alert alert--info" role="status">{projection.request_disabled_message}</p>;
+  }
   if (projection.state === "not_requested") {
     return <p>No publication request exists for this approved listing.</p>;
   }
@@ -322,7 +329,7 @@ function PublicationStatus({ projection }: { projection: SellerPublicationProjec
       </div>
     );
   }
-  const messages: Record<Exclude<SellerPublicationProjection["stage"], "awaiting_activation" | "complete">, string> = {
+  const messages: Record<Exclude<PublicationStatusProjection["stage"], "awaiting_activation" | "complete">, string> = {
     queued: "Publication is queued for its one bounded attempt.",
     preflight: "Checking the exact connected Etsy shop and approved product.",
     publishing: "The one authorized publication request is being processed.",

@@ -4,8 +4,8 @@ from base64 import b64decode
 
 from fastapi.testclient import TestClient
 
-from mr_lister.api.app import create_app
 from mr_lister.workflow.service import ListingWorkflow
+from tools.legacy.local_api import create_app
 
 SYNTHETIC_PNG = b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR4nGNU07X8z8DAwMAEIkAYABbVAY+Z/lCyAAAAAElFTkSuQmCC"

@@ -105,7 +105,7 @@ describe("upload route authority", () => {
     const form = submit.closest("form");
     if (form === null) throw new Error("Upload form is missing");
     fireEvent.submit(form);
-    expect(await screen.findByRole("button", { name: "Preparing batch…" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Uploading artwork…" })).toBeDisabled();
     expect(input).toBeDisabled();
     await waitFor(() => expect(createUpload).toHaveBeenCalledTimes(1));
   });
@@ -254,7 +254,7 @@ describe("upload route authority", () => {
     const user = userEvent.setup();
     await user.upload(screen.getByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u), makePng("first.png", 1));
     submitBatchForm();
-    expect(await screen.findByRole("button", { name: "Preparing batch…" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Uploading artwork…" })).toBeDisabled();
     const dropField = screen.getByText(/Drag and drop PNG, SVG, or JPEG artwork/u).closest("label");
     if (dropField === null) throw new Error("Drop field is missing");
 
@@ -292,7 +292,7 @@ describe("upload route authority", () => {
 
     await user.upload(input, makePng());
     submitBatchForm();
-    expect(await screen.findByRole("button", { name: "Batch complete" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Uploads processed" })).toBeDisabled();
     expect(input).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "Choose another batch" }));

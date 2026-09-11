@@ -4,9 +4,9 @@ import type { SellerReview } from "../contracts";
 import {
   publicationErrorSchema,
   publicationRequestResponseSchema,
-  sellerPublicationProjectionSchema,
+  publicationStatusProjectionSchema,
   type PublicationRequestResponse,
-  type SellerPublicationProjection,
+  type PublicationStatusProjection,
 } from "./contracts";
 
 export interface PublicationDecodedResponse<T> {
@@ -16,7 +16,7 @@ export interface PublicationDecodedResponse<T> {
 }
 
 export interface PublicationApiPort {
-  getPublication(jobId: string): Promise<PublicationDecodedResponse<SellerPublicationProjection>>;
+  getPublication(jobId: string): Promise<PublicationDecodedResponse<PublicationStatusProjection>>;
   requestPublication(
     review: SellerReview,
     idempotencyKey: string,
@@ -53,11 +53,11 @@ export class BrowserPublicationApiClient implements PublicationApiPort {
     private readonly fetcher: typeof fetch = window.fetch.bind(window),
   ) {}
 
-  getPublication(jobId: string): Promise<PublicationDecodedResponse<SellerPublicationProjection>> {
+  getPublication(jobId: string): Promise<PublicationDecodedResponse<PublicationStatusProjection>> {
     return this.request(
       `/v1/jobs/${safeId(jobId)}/publication`,
       { method: "GET" },
-      sellerPublicationProjectionSchema,
+      publicationStatusProjectionSchema,
     ).then((response) => {
       if (response.value.job_id !== jobId || response.etag !== `"${response.value.etag}"`) {
         throw new PublicationContractError(response.requestId);

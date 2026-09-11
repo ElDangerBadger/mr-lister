@@ -8,6 +8,7 @@ import { JobReviewPage } from "./pages/JobReviewPage";
 import { UploadPage } from "./pages/UploadPage";
 import { UploadProvider } from "./upload/upload-context";
 import { useUpload } from "./upload/upload-context";
+import mrListerIcon from "./assets/mr-lister-icon.png";
 import "./styles.css";
 
 export function App({ dependencies }: { dependencies: AppDependencies }) {
@@ -28,15 +29,11 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
           <a className="skip-link" href="#main-content">Skip to main content</a>
           <header className="site-header">
             <Link className="brand" to="/" aria-label="Mr. Lister seller review home">
-              <span className="brand-mark" aria-hidden="true">ML</span>
+              <img className="brand-icon" src={mrListerIcon} alt="" width="56" height="56" />
               <span>Mr. Lister</span>
             </Link>
             <SessionControls status={status} dependencies={dependencies} />
           </header>
-          <div className="authority-banner" role="note">
-            <span aria-hidden="true">●</span>
-            <strong>Nothing publishes without explicit seller confirmation</strong>
-          </div>
           <main id="main-content" tabIndex={-1}>
             <Routes>
               <Route path="/" element={<HomePage />} />
@@ -47,7 +44,7 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
             </Routes>
           </main>
           <footer>
-            Drafts remain private until a seller explicitly approves and confirms publication. Mr. Lister cannot order or fulfill products.
+            Made for your next great listing. You review, approve, and confirm before anything is published.
           </footer>
         </div>
       </UploadProvider>
@@ -80,10 +77,12 @@ function routeTitle(pathname: string): string {
 
 function SessionControls({ status, dependencies }: { status: "anonymous" | "authenticated"; dependencies: AppDependencies }) {
   const upload = useUpload();
+  const location = useLocation();
   return (
     <div className="session-controls">
       <span className={`session-dot session-dot--${status}`} aria-hidden="true" />
       <span>{status === "authenticated" ? "Signed in" : "Signed out"}</span>
+      {status === "anonymous" && <button className="button button--quiet" type="button" onClick={() => { void dependencies.auth.startSignIn(location.pathname); }}>Sign in</button>}
       {status === "authenticated" && (
         <button className="button button--quiet" type="button" onClick={() => { upload.reset(); dependencies.auth.signOut(); }}>
           Sign out
@@ -101,7 +100,7 @@ function RequireSession({ status, children }: { status: "anonymous" | "authentic
     <section className="page narrow-page">
       <p className="eyebrow">Secure session</p>
       <h1>Restore your seller session.</h1>
-      <p>Your protected route is preserved. Cognito may restore its managed sign-in session without asking for credentials again.</p>
+      <p>Sign in to continue where you left off. Your artwork and listings are private to your account.</p>
       <button className="button button--primary" type="button" onClick={() => { void auth.startSignIn(location.pathname); }}>Continue securely</button>
     </section>
   );

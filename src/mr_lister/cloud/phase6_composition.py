@@ -24,6 +24,10 @@ from mr_lister.cloud.api import (
 )
 from mr_lister.cloud.artifacts import ExactKeyS3UploadArtifacts
 from mr_lister.cloud.auth import SellerClaimsPolicy
+from mr_lister.cloud.evaluator_publication import (
+    EVALUATOR_PUBLICATION_ROUTE,
+    EVALUATOR_PUBLICATION_SETTING,
+)
 from mr_lister.cloud.http import (
     InvalidRequestError,
     RouteNotFoundError,
@@ -147,6 +151,7 @@ class QueryApiConfiguration:
     artifacts: ArtifactConfiguration
     profile: PinnedProfileConfiguration
     application_origin: str
+    evaluator_publication_status: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,11 +199,18 @@ def load_query_api_configuration(environment: Mapping[str, object]) -> QueryApiC
         application_origin = _required(environment, "MR_LISTER_APPLICATION_ORIGIN")
         # Reuse the application boundary's own exact-origin validator.
         AuthenticatedPreviewLinkIssuer(application_origin=application_origin)
+        evaluator_policy = environment.get(EVALUATOR_PUBLICATION_SETTING, "disabled")
+        if not isinstance(evaluator_policy, str) or evaluator_policy not in {
+            "disabled",
+            "read_only",
+        }:
+            raise ValueError("Unknown evaluator publication policy")
         return QueryApiConfiguration(
             common=common,
             artifacts=_artifact_configuration(environment, common),
             profile=_profile_configuration(environment),
             application_origin=application_origin,
+            evaluator_publication_status=evaluator_policy == "read_only",
         )
     except Exception:
         pass
@@ -296,6 +308,7 @@ def compose_query_api_adapter(
         store=store,
         reviews=reviews,
         previews=previews,
+        evaluator_publication_status=configuration.evaluator_publication_status,
     )
 
 
@@ -343,7 +356,11 @@ def build_query_api_handler(
     configuration = load_query_api_configuration(environment)
     factory = client_factory or default_aws_client_factory
     return _LazyRoleHandler(
-        allowed_routes=QUERY_ROUTE_KEYS,
+        allowed_routes=(
+            QUERY_ROUTE_KEYS | {EVALUATOR_PUBLICATION_ROUTE}
+            if configuration.evaluator_publication_status
+            else QUERY_ROUTE_KEYS
+        ),
         builder=lambda: compose_query_api_adapter(configuration, client_factory=factory),
     )
 

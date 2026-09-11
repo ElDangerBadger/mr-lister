@@ -1,4 +1,8 @@
-"""FastAPI transport for the Phase 1 local vertical slice."""
+"""Historical Phase 1 fake API for offline development and regression tests.
+
+Run from the repository root with ``uvicorn tools.legacy.local_api:app --reload``.
+This transport is separate from the current owner-scoped seller API.
+"""
 
 from __future__ import annotations
 

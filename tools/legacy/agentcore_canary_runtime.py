@@ -1,4 +1,4 @@
-"""Executable Phase 3 AgentCore Runtime canary entrypoint."""
+"""Historical Phase 3 synthetic AgentCore canary; not the seller production runtime."""
 
 import os
 

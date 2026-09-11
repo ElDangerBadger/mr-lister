@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.build_agentcore_bundle import build_bundle
+from tools.legacy.build_agentcore_canary_bundle import build_bundle
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -13,7 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_agentcore_bundle_contains_only_explicit_runtime_inputs(tmp_path) -> None:
     destination = build_bundle(tmp_path / "agentcore-bundle")
 
-    assert (destination / "main.py").is_file()
+    assert (destination / "main.py").read_bytes() == (
+        ROOT / "tools/legacy/agentcore_canary_runtime.py"
+    ).read_bytes()
     assert (destination / "mr_lister/agent/agentcore_sdk.py").is_file()
     assert (destination / "config/product_profiles/synthetic_gildan_5000.json").is_file()
     assert not (destination / ".git").exists()

@@ -15,9 +15,21 @@ async page => {
     `${publicOrigin}/auth/callback?code=browser-restart&state=${encodeURIComponent(state)}`,
   );
   await page.waitForURL(`${publicOrigin}${protectedPath}`);
-  await page.getByRole("heading", { name: "Moonlit botanical moth shirt" }).waitFor();
+  await page.waitForFunction(() => (
+    document.querySelector("#listing-title")?.value === "Moonlit botanical moth shirt"
+  ));
   await page.getByText("Approved", { exact: true }).waitFor();
-  await page.getByText(/Current stage:\s*Complete/u).waitFor();
+  const workflow = page.getByRole("navigation", { name: "Listing workflow" });
+  await page.waitForFunction(() => (
+    document.querySelector('.workflow [aria-current="step"]')?.textContent?.includes("Publish") === true
+  ));
+  check(await workflow.locator('[aria-current="step"]').count() === 1, "restart did not retain exactly one current workflow step");
+  const readOnlyListing = await page.locator('#listing-title, #listing-description, input[id^="listing-tag-"]').evaluateAll(fields => (
+    fields.length === 15 && fields.every(field => (
+      (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) && field.readOnly
+    ))
+  ));
+  check(readOnlyListing, "restart reopened editing of the approved listing");
   check(
     await page.getByRole("button", { name: "Approve draft" }).isDisabled(),
     "browser restart resurrected approval authority",
@@ -35,6 +47,7 @@ async page => {
   return {
     browserRestartRecovery: "passed",
     durableApprovedRecovery: "passed",
+    approvedWorkflowAndReadOnlyFields: "passed",
     approvalAttempts: 1,
     providerTransportAttempts: 0,
   };

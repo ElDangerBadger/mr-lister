@@ -33,6 +33,10 @@ from mr_lister.cloud.browser_contracts import (
     UploadMutationResponse,
     UploadRecoveryProjection,
 )
+from mr_lister.cloud.evaluator_publication import (
+    EVALUATOR_PUBLICATION_ROUTE,
+    evaluator_publication_projection,
+)
 from mr_lister.cloud.http import (
     InvalidRequestError,
     RequestValidationError,
@@ -125,6 +129,8 @@ class UploadIntakePort(Protocol):
 
 
 class SellerQueryStore(Protocol):
+    def get_job_for_owner(self, owner_id: str, job_id: str) -> ControlJobRecord: ...
+
     def list_jobs_for_owner(
         self,
         owner_id: str,
@@ -303,8 +309,13 @@ class ReviewQueryApiAdapter(_ProtectedApiAdapter):
         store: SellerQueryStore,
         reviews: ReviewProjectionPort,
         previews: PreviewAuthorizationPort,
+        evaluator_publication_status: bool = False,
     ) -> None:
+        if type(evaluator_publication_status) is not bool:
+            raise ValueError("Evaluator publication policy must be an explicit boolean")
         super().__init__(claims_policy=claims_policy)
+        if evaluator_publication_status:
+            self._allowed_routes = _QUERY_ROUTES | {EVALUATOR_PUBLICATION_ROUTE}
         self._store = store
         self._reviews = reviews
         self._previews = previews
@@ -313,7 +324,9 @@ class ReviewQueryApiAdapter(_ProtectedApiAdapter):
         del context
         request_id = request_id_from_event(event)
         try:
-            route_key = require_exact_route_key(event)
+            route_key = event.get("routeKey")
+            if not (route_key == EVALUATOR_PUBLICATION_ROUTE and route_key in self._allowed_routes):
+                route_key = require_exact_route_key(event)
             if route_key == "GET /health":
                 _require_http_api_v2(event)
                 _require_path(event, expected="/health")
@@ -354,6 +367,30 @@ class ReviewQueryApiAdapter(_ProtectedApiAdapter):
                 200,
                 page_projection.model_dump(mode="json"),
                 request_id=request_id,
+            )
+
+        if route_key == EVALUATOR_PUBLICATION_ROUTE:
+            _require_no_query(event)
+            job_id = _resource_id(event, name="job_id")
+            path = f"/v1/jobs/{job_id}/publication"
+            _require_path(event, expected=path, resource_name="job_id")
+            context = event.get("requestContext")
+            http = context.get("http") if isinstance(context, Mapping) else None
+            if (
+                not isinstance(http, Mapping)
+                or http.get("method") != "GET"
+                or http.get("path") != path
+            ):
+                raise InvalidRequestError
+            job = self._store.get_job_for_owner(seller.owner_id, job_id)
+            projection = evaluator_publication_projection(
+                job, owner_id=seller.owner_id, job_id=job_id
+            )
+            return _json_response(
+                200,
+                projection.model_dump(mode="json"),
+                request_id=request_id,
+                extra_headers={"ETag": f'"{projection.etag}"'},
             )
 
         parameters = _query(event)
