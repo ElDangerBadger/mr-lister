@@ -206,10 +206,9 @@ All three engines passed the layout geometry and contextual action-bar checks,
 forced colors, exact-version approval and browser restart recovery. These checks used
 local fixtures and made zero provider transport attempts.
 
-This correction is local on `pass-b-ui-evaluator`. It has not been deployed while the
-seller tests the current live version. `main` remains at `9509d2d`; the current branch
-still contains uncommitted work and needs a reviewed release checkpoint before a new
-deployment.
+At visual review, this correction was local on `pass-b-ui-evaluator` while the seller
+tested the live version. `main` remained at `9509d2d`. The frozen release below records
+the subsequent checkpoint and deployment.
 
 ### Display preference addition
 
@@ -226,7 +225,8 @@ keys and Enter, Escape dismissal with focus restoration, and Auto following the 
 appearance on Review and Upload. Frontend lint, typecheck, all 237 tests, production
 build and build-content checks passed after this addition. The earlier three-engine
 attestation identifies the pre-theme bundle; regenerate it for the next release.
-The theme addition remains local with the other reviewed UI changes.
+The theme addition was included with the other reviewed UI changes in the frozen
+release below.
 
 The seller subsequently approved and froze this design, including Light / Dark / Auto.
 The final contrast adjustment applies only to the temporary local sample toolbar:
@@ -236,7 +236,7 @@ toolbar is outside the application and is not included in the production build.
 ### Frozen frontend release authorization
 
 The seller authorized deployment of the frozen layout and display themes on September
-11. The reviewed changes are being checkpointed on `pass-b-ui-evaluator` before the
+11. The reviewed changes were checkpointed on `pass-b-ui-evaluator` before the
 release checks and static deployment. `main` remains the pre-Pass-B production
 checkpoint at `9509d2d`. This release uses the existing application and connected
 account; the dedicated evaluator deployment remains deferred.
@@ -254,3 +254,44 @@ run exposed an immediate visibility assertion racing the parent's edit-barrier r
 after Discard. The follow-up changes only the browser check to wait, with a five-second
 bound, for the expected edit barrier and controls before retaining the existing
 assertions. The frozen application code and approval safeguards are unchanged.
+
+### Frozen layout and themes deployed
+
+The frozen frontend was deployed to `https://massskutiny.com` and publicly verified
+at `2026-09-11T19:32:10.902288+00:00` from release commit
+`9d3bb686b1e62f64dd81752e6fa0e2355399b95b` on `pass-b-ui-evaluator`. Its application
+code is unchanged from the approved UI checkpoint `0bc487c`. No merge to `main` or
+backend deployment was performed.
+
+- The fresh Chromium, Firefox and WebKit gate passed at
+  `2026-09-11T19:27:18.693495+00:00`; evidence is
+  `output/playwright/phase66/20260911T192523Z/browser-gate.json`.
+- Five-file bundle SHA-256:
+  `75c42551a3b1c8b62f8311601b9dd93cea061d652ba13a2a967ab5df8f96d854`.
+- Deployed index VersionId: `3rMNniGXWhYeu7jsTNpC0lnwt6xNZ6fu`.
+- Completed CloudFront invalidation: `I3Q9RZ4CIWK6OB81B251NS68GE`.
+- Rollback index VersionId: `bfyE58QPAn0PtR7t4uK5Sq29JnJDLubY`.
+  Its referenced hashed assets remain present; the older pre-Pass-B rollback evidence
+  is also preserved in the preceding release directory.
+
+Versioned uploads, checksums, metadata, response headers, and public index, JavaScript,
+CSS, icon, favicon and runtime bytes all matched the sealed manifest. The runtime
+configuration remains at VersionId `IdRmSDEqfGAjcfmiYHvjrUJ2SQ6s5wqx`, with the same
+SHA-256 recorded above. Both backend stack/template digests and all captured Lambda
+configuration digests match the prior verified release and remained unchanged through
+this deployment. Private evidence is under
+`.mr_lister_private/pass-b-ui-frozen-20260911/web/`.
+
+The deployed landing page, header and Light / Dark / Auto menu were observed in the
+browser, with theme switching working and no browser warnings or errors. Reloading the
+existing approved review correctly required a new seller sign-in; a fresh authenticated
+UI walkthrough remains available to the seller after sign-in. The local sample toolbar
+is absent from the deployed application.
+
+A read-only check of the previous live test confirmed matching saved, synchronized
+and approved review versions, correct owner/shop binding and no publication request.
+The recorded provider product returned HTTP 404. The seller then reported deleting
+the old Printify test uploads, consistent with that result. The readback is retained
+as incomplete provider verification, not a new successful store test or an inferred
+application defect. No new product, upload or publication was created for this static
+release. Dedicated judge access remains deferred.
