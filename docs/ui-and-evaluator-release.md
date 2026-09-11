@@ -3,8 +3,9 @@
 The main application uses the Upload → Review → Publish workflow in the existing
 React application and API clients. The first static release retained too much of the
 original page layout; the seller identified that mismatch during live testing.
-A local correction now follows the approved visual composition and awaits review.
-Production activation and live judge access are separate release steps.
+The corrected composition and Light / Dark / Auto display control were subsequently
+approved, frozen and deployed. The latest release evidence appears below; isolated
+judge access remains a separate, deferred release step.
 
 ## Implemented
 
@@ -112,7 +113,7 @@ not included in the application build.
 ## Connected-account release preparation, September 11, 2026
 
 Work continues on `pass-b-ui-evaluator`; `main` remains at
-`9509d2d2520a24f2ebaff37aee897e976a2dda23`. The frontend candidate comes from
+`9509d2d2520a24f2ebaff37aee897e976a2dda23`. The initial frontend candidate came from
 `53dbed13398c2fd0a1bdc033c499d05457054080`. The evaluator backend overlay is not part
 of this static release and must not be enabled on the current publication backend.
 
@@ -246,7 +247,7 @@ control or release tooling. The five-file build contains no local sample toolbar
 fixture credentials, test job IDs or temporary preview paths. The 16 focused static
 release tests pass. The current deployed index still matches the first Pass B release
 at VersionId `bfyE58QPAn0PtR7t4uK5Sq29JnJDLubY`, which will be preserved for rollback.
-Fresh checks and deployment evidence for the frozen checkpoint will be recorded below.
+Fresh checks and deployment evidence for the frozen checkpoint are recorded below.
 
 The UI checkpoint is `0bc487c83c57bbf785a68478d130b7302af61513`; all 237 frontend
 tests, lint, typecheck and production-build checks passed against it. A fresh browser
