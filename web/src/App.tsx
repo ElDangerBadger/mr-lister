@@ -9,6 +9,7 @@ import { UploadPage } from "./pages/UploadPage";
 import { UploadProvider } from "./upload/upload-context";
 import { useUpload } from "./upload/upload-context";
 import mrListerIcon from "./assets/mr-lister-icon.png";
+import { ThemeControl } from "./components/ThemeControl";
 import "./styles.css";
 
 export function App({ dependencies }: { dependencies: AppDependencies }) {
@@ -28,11 +29,16 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
           <RouteFocusManager />
           <a className="skip-link" href="#main-content">Skip to main content</a>
           <header className="site-header">
-            <Link className="brand" to="/" aria-label="Mr. Lister seller review home">
-              <img className="brand-icon" src={mrListerIcon} alt="" width="56" height="56" />
-              <span>Mr. Lister</span>
-            </Link>
-            <SessionControls status={status} dependencies={dependencies} />
+            <div className="site-header-inner">
+              <Link className="brand" to="/" aria-label="Mr. Lister seller review home">
+                <img className="brand-icon" src={mrListerIcon} alt="" width="56" height="56" />
+                <span>Mr. Lister</span>
+              </Link>
+              <div className="header-controls">
+                <ThemeControl />
+                <SessionControls status={status} dependencies={dependencies} />
+              </div>
+            </div>
           </header>
           <main id="main-content" tabIndex={-1}>
             <Routes>

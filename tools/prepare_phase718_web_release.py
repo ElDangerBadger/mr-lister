@@ -39,6 +39,10 @@ ENABLED_DESCRIPTOR_FORMAT: Final = "phase718-enabled-deployment-descriptor-v1"
 SERVER_SIDE_ENCRYPTION: Final = "AES256"
 
 _ASSET = re.compile(r"^assets/index-[A-Za-z0-9_-]{8}\.(css|js)$")
+_ICON_ASSET = re.compile(r"^assets/mr-lister-icon-[A-Za-z0-9_-]{8}\.png$")
+_ICON_REFERENCE = re.compile(r"/assets/mr-lister-icon-[A-Za-z0-9_-]{8}\.png")
+# The approved branding image is the only additional asset accepted by this release path.
+_ICON_SHA256 = "7499d74acd7348f7febad4fdb2068fd816617136d33df97e9e906ce4a9df49e9"
 _COMMIT = re.compile(r"^[a-f0-9]{40}$")
 _FINGERPRINT = re.compile(r"^[a-f0-9]{64}$")
 _GENERIC_ERROR = "Phase 7.18 web release input is invalid"
@@ -289,7 +293,7 @@ def _validate_rendered_manifest(value: Mapping[str, object], *, repository: Path
         }
         or value.get("deployment_scope") != "static_objects_only_phase6_stack_unchanged"
         or value.get("distribution_id") != WEB_DISTRIBUTION_ID
-        or value.get("file_count") != 4
+        or value.get("file_count") not in {4, 5}
         or value.get("format") != WEB_RELEASE_FORMAT
         or value.get("server_side_encryption") != SERVER_SIDE_ENCRYPTION
         or not isinstance(source_commit, str)
@@ -298,7 +302,7 @@ def _validate_rendered_manifest(value: Mapping[str, object], *, repository: Path
         or value.get("versioning_required") is not True
         or value.get("stack_name") != WEB_STACK_NAME
         or not isinstance(objects, list)
-        or len(objects) != 4
+        or len(objects) != value.get("file_count")
     ):
         raise ValueError
     enabled = value.get("enabled_runtime")
@@ -376,6 +380,7 @@ def _validate_rendered_manifest(value: Mapping[str, object], *, repository: Path
             or source_path != f"web/dist/{key}"
             or not isinstance(digest, str)
             or _FINGERPRINT.fullmatch(digest) is None
+            or (_ICON_ASSET.fullmatch(key) is not None and digest != _ICON_SHA256)
             or not isinstance(size, int)
             or not 1 <= size <= _MAX_FILE_BYTES
             or record.get("metadata") != metadata
@@ -492,11 +497,14 @@ def _dist_inventory(dist: Path) -> dict[str, Path]:
         else:
             raise ValueError
     assets = [key for key in files if _ASSET.fullmatch(key)]
+    icons = [key for key in files if _ICON_ASSET.fullmatch(key)]
     if (
         directories != _EXPECTED_DIRECTORIES
-        or set(files) != {*assets, "favicon.svg", "index.html"}
+        or set(files) != {*assets, *icons, "favicon.svg", "index.html"}
         or len([key for key in assets if key.endswith(".css")]) != 1
         or len([key for key in assets if key.endswith(".js")]) != 1
+        or len(icons) > 1
+        or any(sha256(files[key].read_bytes()).hexdigest() != _ICON_SHA256 for key in icons)
     ):
         raise ValueError
     order = _upload_order(files)
@@ -509,6 +517,8 @@ def _dist_inventory(dist: Path) -> dict[str, Path]:
     ):
         raise ValueError
     javascript = files[order[1]].read_text(encoding="utf-8")
+    if _ICON_REFERENCE.findall(javascript) != [f"/{key}" for key in icons]:
+        raise ValueError
     for marker in (
         PHASE718_CONTRACT_VERSION,
         "/publication",
@@ -524,12 +534,15 @@ def _dist_inventory(dist: Path) -> dict[str, Path]:
 def _upload_order(paths: Mapping[str, Path]) -> list[str]:
     css = sorted(key for key in paths if key.endswith(".css"))
     javascript = sorted(key for key in paths if key.endswith(".js"))
-    if len(css) != 1 or len(javascript) != 1:
+    icons = sorted(key for key in paths if _ICON_ASSET.fullmatch(key))
+    if len(css) != 1 or len(javascript) != 1 or len(icons) > 1:
         raise ValueError
-    return [css[0], javascript[0], "favicon.svg", "index.html"]
+    return [css[0], javascript[0], *icons, "favicon.svg", "index.html"]
 
 
 def _object_headers(key: str) -> tuple[str, str]:
+    if _ICON_ASSET.fullmatch(key):
+        return "image/png", "public, max-age=31536000, immutable"
     if _ASSET.fullmatch(key):
         content_type = (
             "text/css; charset=utf-8" if key.endswith(".css") else "text/javascript; charset=utf-8"

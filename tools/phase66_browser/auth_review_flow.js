@@ -47,6 +47,63 @@ async page => {
   check(await workflow.locator('[aria-current="step"]').count() === 1, "workflow must identify exactly one current step");
   check((await workflow.locator('[aria-current="step"]').textContent()).includes("Review"), "the ready draft is not in the Review step");
 
+  const layout = await page.evaluate(() => {
+    const rectangle = element => {
+      if (!(element instanceof HTMLElement)) return null;
+      const bounds = element.getBoundingClientRect();
+      return { x: bounds.x, right: bounds.right, top: bounds.top, bottom: bounds.bottom, width: bounds.width, height: bounds.height };
+    };
+    const navigation = document.querySelector('nav[aria-label="Listing workflow"]');
+    const grid = document.querySelector(".review-grid");
+    const actionBar = document.querySelector(".action-panel");
+    const activityPanel = document.querySelector(".activity-panel");
+    const progress = document.querySelector('[aria-label="Preparation milestones"]');
+    const milestoneItems = [...(progress?.querySelectorAll("li") ?? [])];
+    return {
+      viewportWidth: window.innerWidth,
+      navigation: rectangle(navigation),
+      steps: [...(navigation?.querySelectorAll("li") ?? [])].map(rectangle),
+      artworkRail: rectangle(document.querySelector(".review-preview-rail")),
+      editor: rectangle(document.querySelector(".review-editor-column")),
+      progress: rectangle(progress),
+      milestones: milestoneItems.map(rectangle),
+      ruledMilestones: milestoneItems.every(item => Number.parseFloat(getComputedStyle(item).borderTopWidth) > 0),
+      actionBarFollowsReview: grid?.nextElementSibling === actionBar,
+      activityFollowsActionBar: actionBar?.nextElementSibling === activityPanel,
+    };
+  });
+  check(layout.actionBarFollowsReview && layout.activityFollowsActionBar, "review, action bar, and activity are not in the approved order");
+  if (layout.viewportWidth >= 900) {
+    check(layout.navigation !== null && layout.steps.length === 3 && layout.steps.every(step => step !== null), "desktop workflow geometry is unavailable");
+    const widths = layout.steps.map(step => step.width);
+    check(Math.max(...widths) - Math.min(...widths) < 2, "desktop workflow tabs do not have equal widths");
+    check(Math.abs(layout.steps[0].x - layout.navigation.x) < 8
+      && Math.abs(layout.steps[2].right - layout.navigation.right) < 8, "workflow tabs do not span the workspace");
+    check(layout.artworkRail !== null && layout.editor !== null, "the desktop artwork and editor columns are absent");
+    const artworkShare = layout.artworkRail.width / (layout.artworkRail.width + layout.editor.width);
+    check(Math.abs(artworkShare - 0.375) <= 0.03, "the artwork/editor proportions drifted from the approved layout");
+    check(Math.abs(layout.artworkRail.top - layout.editor.top) < 2, "the artwork and editor no longer align at the top");
+    check(layout.progress !== null && layout.milestones.length === 4 && layout.milestones.every(item => item !== null), "preparation milestones are incomplete");
+    check(layout.ruledMilestones && layout.progress.height <= 65, "milestones no longer use compact horizontal rules");
+    check(Math.abs(layout.milestones[0].x - layout.progress.x) < 2
+      && Math.abs(layout.milestones[3].right - layout.progress.right) < 2
+      && layout.milestones.every(item => Math.abs(item.top - layout.progress.top) < 2), "the milestone row became an inset card");
+  }
+  check(await page.getByRole("button", { name: "Save listing revision" }).count() === 0, "an unchanged listing exposes a redundant Save action");
+  const listingTitle = page.locator("#listing-title");
+  const originalTitle = await listingTitle.inputValue();
+  await listingTitle.fill(`${originalTitle} — local edit`);
+  await page.getByRole("button", { name: "Save listing revision" }).waitFor({ state: "visible" });
+  check(await page.evaluate(() => {
+    const save = document.querySelector('#review-edit-actions button[type="submit"]');
+    return save instanceof HTMLButtonElement && save.form?.contains(document.querySelector("#listing-title")) === true;
+  }), "the action-bar save control lost its listing form association");
+  check(await page.getByRole("button", { name: "Approve draft", exact: true }).count() === 0, "local edits expose a competing approval action");
+  await page.getByRole("button", { name: "Discard edits" }).click();
+  check(await listingTitle.inputValue() === originalTitle, "discard did not restore the saved listing title");
+  check(await page.getByRole("button", { name: "Save listing revision" }).count() === 0, "discard did not restore the pristine action bar");
+  check(await page.getByRole("button", { name: "Approve draft", exact: true }).isVisible(), "discard did not restore the approval control");
+
   const activity = page.locator("details.activity-panel");
   check(await activity.getAttribute("open") === null, "activity should start collapsed");
   await activity.locator(":scope > summary").click();
@@ -97,6 +154,8 @@ async page => {
   check(stateAfterApproval.approval_if_match_valid, "approval did not bind the exact review ETag");
   check(stateAfterApproval.approval_idempotency_present, "approval omitted its idempotency key");
   check(stateAfterApproval.api_authorization_valid, "an API request lacked the in-memory bearer token");
+  check(stateAfterApproval.artwork_requests > 0, "the pinned artwork image was not fetched");
+  check(stateAfterApproval.artwork_credentials_absent, "seller credentials or a referrer reached the artwork host");
   check(stateAfterApproval.provider_transport_attempts === 0, "the offline browser gate invoked provider transport");
   const commerceControls = await page.getByRole("button", { name: /publish|order|fulfill|send.*etsy/iu }).count();
   check(commerceControls === 0, "a commerce action is exposed");
@@ -114,13 +173,17 @@ async page => {
     document.querySelector("#listing-title")?.value === "Moonlit botanical moth shirt"
   ));
   await recoveryTab.getByText("Approved", { exact: true }).waitFor();
-  check(await recoveryTab.getByRole("button", { name: "Approve draft" }).isDisabled(), "tab recovery resurrected approval authority");
+  await recoveryTab.getByRole("heading", { name: "Review approved", exact: true }).waitFor();
+  check(await recoveryTab.getByRole("button", { name: "Approve draft", exact: true }).count() === 0, "tab recovery resurrected approval authority");
   await recoveryTab.close();
 
   return {
     authRouteRecovery: "passed",
     brandArtworkLoaded: "passed",
+    artworkGrantAndCredentialBoundary: "passed",
     workflowSteps: "passed",
+    approvedLayoutGeometry: layout.viewportWidth >= 900 ? "passed" : "desktop viewport not used",
+    unifiedReviewActionBar: "passed",
     collapsedStrandsProvenance: "passed",
     unpublishedBoundary: "passed",
     listingValidation: "passed",

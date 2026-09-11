@@ -109,77 +109,126 @@ export function HomePage() {
   }
 
   return (
-    <div className="page dashboard-grid">
+    <div className="page upload-page">
       <WorkflowSteps current="Upload" />
-      <section className="hero-panel" aria-labelledby="upload-heading">
-        <p className="eyebrow">New listing</p>
-        <h1 id="upload-heading">Let’s start with your artwork.</h1>
-        <p>Upload a design, and we’ll prepare the listing, mockups, and costs for your review.</p>
-        <details className="upload-requirements"><summary>PNG, SVG, or JPEG · Up to {MAX_BATCH_FILES} files · 5 MB each</summary>
-          <p className="format-note">Original files stay on your device. PNG bytes are preserved; compatible SVG and JPEG files are converted to PNG in your browser before upload. Proportions and backgrounds are preserved. SVG files must be self-contained, with no linked assets, text, filters, or animation.</p>
-        </details>
-        <form onSubmit={(event) => {
-          event.preventDefault();
-          if (selectedFiles.length === 0 || selectedFiles.length > MAX_BATCH_FILES) return;
-          setSelectionError(null);
-          void upload.beginBatch(selectedFiles);
-        }}>
-          <label
-            className={dragActive ? "drop-field drop-field--active" : "drop-field"}
-            htmlFor={inputId}
-            aria-disabled={uploadLocked}
-            data-drag-active={dragActive ? "true" : "false"}
-            onDragEnter={(event) => {
-              if (!fileDrag(event)) return;
-              event.preventDefault();
-              if (uploadLocked) return;
-              dragDepthRef.current += 1;
-              setDragActive(true);
-            }}
-            onDragOver={(event) => {
-              if (!fileDrag(event)) return;
-              event.preventDefault();
-              event.dataTransfer.dropEffect = uploadLocked ? "none" : "copy";
-            }}
-            onDragLeave={(event) => {
-              if (dragDepthRef.current < 1) return;
-              event.preventDefault();
-              dragDepthRef.current -= 1;
-              if (dragDepthRef.current === 0) setDragActive(false);
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              const carriesFiles = fileDrag(event);
-              dragDepthRef.current = 0;
-              setDragActive(false);
-              if (uploadLocked || !carriesFiles) return;
-              if (inputRef.current !== null) inputRef.current.value = "";
-              applySelection([...event.dataTransfer.files]);
-            }}
-          >
-            <span className="drop-icon" aria-hidden="true">↑</span>
-            <strong>{dragActive ? "Drop artwork here" : "Drag and drop PNG, SVG, or JPEG artwork, or choose files"}</strong>
-            <span>One design or a batch of up to five. Your proportions and backgrounds stay as you chose them.</span>
-          </label>
-          <input
-            id={inputId}
-            ref={inputRef}
-            className="file-input"
-            name="artwork"
-            type="file"
-            accept={ARTWORK_FILE_INPUT_ACCEPT}
-            multiple
-            disabled={uploadLocked}
-            onChange={(event) => {
-              const files = [...(event.currentTarget.files ?? [])];
-              applySelection(files);
-              if (files.length > MAX_BATCH_FILES) event.currentTarget.value = "";
-            }}
-          />
-          {selectionError !== null && <p className="alert alert--error" role="alert">{selectionError}</p>}
-          {selectedFiles.length > 0 && (upload.batch.phase === "idle" || upload.batch.phase === "error") && (
-            <SelectedArtworkList files={selectedFiles} onChange={setSelectedFiles} />
-          )}
+      <div className="review-title-row upload-heading">
+        <div>
+          <p className="eyebrow">New listing</p>
+          <h1 id="upload-heading">Let’s start with your artwork.</h1>
+          <p>Upload a design. We’ll prepare the listing for your review.</p>
+        </div>
+        <span className="status-pill">1 artwork = 1 listing</span>
+      </div>
+      <form className="upload-form" aria-labelledby="upload-heading" onSubmit={(event) => {
+        event.preventDefault();
+        if (selectedFiles.length === 0 || selectedFiles.length > MAX_BATCH_FILES) return;
+        setSelectionError(null);
+        void upload.beginBatch(selectedFiles);
+      }}>
+        <div className="upload-grid">
+          <section className="upload-main" aria-label="Choose your artwork">
+            <label
+              className={dragActive ? "drop-field drop-field--active" : "drop-field"}
+              htmlFor={inputId}
+              aria-disabled={uploadLocked}
+              data-drag-active={dragActive ? "true" : "false"}
+              onDragEnter={(event) => {
+                if (!fileDrag(event)) return;
+                event.preventDefault();
+                if (uploadLocked) return;
+                dragDepthRef.current += 1;
+                setDragActive(true);
+              }}
+              onDragOver={(event) => {
+                if (!fileDrag(event)) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = uploadLocked ? "none" : "copy";
+              }}
+              onDragLeave={(event) => {
+                if (dragDepthRef.current < 1) return;
+                event.preventDefault();
+                dragDepthRef.current -= 1;
+                if (dragDepthRef.current === 0) setDragActive(false);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const carriesFiles = fileDrag(event);
+                dragDepthRef.current = 0;
+                setDragActive(false);
+                if (uploadLocked || !carriesFiles) return;
+                if (inputRef.current !== null) inputRef.current.value = "";
+                applySelection([...event.dataTransfer.files]);
+              }}
+            >
+              <span className="drop-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 16V3m-5 5 5-5 5 5M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
+                </svg>
+              </span>
+              <strong>{dragActive ? "Drop artwork here" : "Drop your artwork here"}</strong>
+              <span>PNG, SVG or JPEG · Up to {MAX_BATCH_FILES} files · 5 MB each</span>
+              <span className="button button--primary upload-choose"><span aria-hidden="true">＋</span> Choose artwork</span>
+              <span>Your design keeps its original proportions.</span>
+              <span id={`${inputId}-label`} className="visually-hidden">Drag and drop PNG, SVG, or JPEG artwork, or choose files</span>
+              <input
+                id={inputId}
+                aria-labelledby={`${inputId}-label`}
+                ref={inputRef}
+                className="file-input file-input--concealed"
+                name="artwork"
+                type="file"
+                accept={ARTWORK_FILE_INPUT_ACCEPT}
+                multiple
+                disabled={uploadLocked}
+                onChange={(event) => {
+                  const files = [...(event.currentTarget.files ?? [])];
+                  applySelection(files);
+                  if (files.length > MAX_BATCH_FILES) event.currentTarget.value = "";
+                }}
+              />
+            </label>
+            {selectionError !== null && <p className="alert alert--error" role="alert">{selectionError}</p>}
+            {selectedFiles.length > 0 && (upload.batch.phase === "idle" || upload.batch.phase === "error") && (
+              <SelectedArtworkList files={selectedFiles} onChange={setSelectedFiles} />
+            )}
+            <details className="upload-requirements">
+              <summary>File requirements</summary>
+              <p className="format-note">Original files stay on your device. PNG bytes are preserved; compatible SVG and JPEG files are converted to PNG in your browser before upload. Proportions and backgrounds are preserved. SVG files must be self-contained, with no linked assets, text, filters, or animation.</p>
+            </details>
+            {upload.batch.items.length > 0 && (
+              <BatchProgress
+                items={upload.batch.items}
+                message={upload.batch.message}
+                onReset={() => {
+                  upload.reset();
+                  setSelectedFiles([]);
+                  if (inputRef.current !== null) inputRef.current.value = "";
+                }}
+              />
+            )}
+          </section>
+          <aside className="panel upload-guide" aria-labelledby="next-heading">
+            <h2 id="next-heading">From design to storefront.</h2>
+            <ol className="process-list">
+              <li><span>01</span><strong>Upload</strong><small>Add your finished artwork.</small></li>
+              <li><span>02</span><strong>Review</strong><small>Edit the copy and check your product.</small></li>
+              <li><span>03</span><strong>Publish</strong><small>You choose when it goes live.</small></li>
+            </ol>
+          </aside>
+        </div>
+        <div className="upload-actionbar">
+          <div>
+            <strong>{batchBusy
+              ? "Preparing your artwork"
+              : batchFinished
+                ? "Your upload results are ready"
+                : selectedFiles.length === 0
+                  ? "Your next listing starts here"
+                  : `${selectedFiles.length} artwork ${selectedFiles.length === 1 ? "file" : "files"} selected`}
+            </strong>
+            <small>Nothing publishes until you approve and confirm.</small>
+            {upload.batch.phase === "running" && <p className="loading-line" role="status" aria-live="polite">{upload.batch.message}</p>}
+          </div>
           <button className="button button--primary" type="submit" disabled={uploadLocked || selectedFiles.length === 0}>
             {batchBusy
               ? "Uploading artwork…"
@@ -191,31 +240,8 @@ export function HomePage() {
                     ? "Prepare 1 listing"
                     : `Prepare ${selectedFiles.length} listings`}
           </button>
-          {upload.batch.phase === "running" && <p className="loading-line" role="status" aria-live="polite">{upload.batch.message}</p>}
-        </form>
-        {upload.batch.items.length > 0 && (
-          <BatchProgress
-            items={upload.batch.items}
-            message={upload.batch.message}
-            onReset={() => {
-              upload.reset();
-              setSelectedFiles([]);
-              if (inputRef.current !== null) inputRef.current.value = "";
-            }}
-          />
-        )}
-      </section>
-
-      <aside className="panel upload-guide" aria-labelledby="next-heading">
-        <p className="eyebrow">A little help, all the way</p>
-        <h2 id="next-heading">You create. We prepare.</h2>
-        <ol className="process-list">
-          <li><span>01</span><strong>A listing that fits your artwork</strong><small>Title, description, and tags ready for your edits.</small></li>
-          <li><span>02</span><strong>See the finished product</strong><small>Review the original design and representative mockups together.</small></li>
-          <li><span>03</span><strong>Know what you could earn</strong><small>Check estimated proceeds before making your decision.</small></li>
-        </ol>
-        <p className="quiet-note">You’ll review every listing before approving it. Publishing is a separate confirmation.</p>
-      </aside>
+        </div>
+      </form>
       <section className="recent-panel" aria-labelledby="recent-heading">
         <div className="section-heading-row">
           <div>

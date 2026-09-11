@@ -88,11 +88,11 @@ describe("accessible workflow and preparation status", () => {
     const milestones = screen.getByRole("region", { name: "Preparation milestones" });
     const items = within(milestones).getAllByRole("listitem");
     expect(items).toHaveLength(4);
-    expect(items[0]).toHaveTextContent("Artwork receivedComplete");
-    expect(items[1]).toHaveTextContent("Listing writtenIn progress");
+    expect(items[0]).toHaveTextContent("CompleteArtwork received");
+    expect(items[1]).toHaveTextContent("In progressListing written");
     expect(items[1]).toHaveAttribute("aria-current", "step");
-    expect(items[2]).toHaveTextContent("Mockups preparedWaiting");
-    expect(items[3]).toHaveTextContent("Costs checkedWaiting");
+    expect(items[2]).toHaveTextContent("WaitingMockups prepared");
+    expect(items[3]).toHaveTextContent("WaitingCosts checked");
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     rerender(<PreparationProgress review={{ ...review, provider_outcome_unconfirmed: true }} />);
     expect(container.querySelector('[aria-current="step"]')).toBeNull();

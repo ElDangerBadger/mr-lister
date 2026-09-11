@@ -13,7 +13,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DIST_ROOT = REPOSITORY_ROOT / "web" / "dist"
@@ -23,6 +23,8 @@ MOCKUP_PATH = REPOSITORY_ROOT / "tests" / "evaluation" / "assets" / "illustrated
 
 PUBLIC_ORIGIN = "https://seller.example.com"
 COGNITO_ORIGIN = "https://phase66.auth.us-west-2.amazoncognito.com"
+ARTWORK_ORIGIN = "https://phase66-browser-artifacts.s3.us-west-2.amazonaws.com"
+ARTWORK_OWNER = "a" * 64
 ACCESS_TOKEN = "phase66-access-token"
 REQUEST_ID = "request-phase66-browser"
 
@@ -247,6 +249,8 @@ class FixtureState:
     approval_if_match_valid: bool = True
     approval_idempotency_present: bool = True
     api_authorization_valid: bool = True
+    artwork_requests: int = 0
+    artwork_credentials_absent: bool = True
     provider_transport_attempts: int = 0
     approval_committed: bool = False
     stale_review_reads_remaining: int = 0
@@ -260,6 +264,8 @@ class FixtureState:
             self.approval_if_match_valid = True
             self.approval_idempotency_present = True
             self.api_authorization_valid = True
+            self.artwork_requests = 0
+            self.artwork_credentials_absent = True
             self.provider_transport_attempts = 0
             self.approval_committed = False
             self.stale_review_reads_remaining = 0
@@ -304,6 +310,11 @@ class FixtureState:
         with self.lock:
             self.provider_transport_attempts += 1
 
+    def record_artwork_request(self, credentials_absent: bool) -> None:
+        with self.lock:
+            self.artwork_requests += 1
+            self.artwork_credentials_absent = self.artwork_credentials_absent and credentials_absent
+
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
             return {
@@ -311,6 +322,8 @@ class FixtureState:
                 "approval_if_match_valid": self.approval_if_match_valid,
                 "approval_idempotency_present": self.approval_idempotency_present,
                 "api_authorization_valid": self.api_authorization_valid,
+                "artwork_requests": self.artwork_requests,
+                "artwork_credentials_absent": self.artwork_credentials_absent,
                 "provider_transport_attempts": self.provider_transport_attempts,
                 "approval_committed": self.approval_committed,
                 "progress_requests": dict(self.progress_requests),
@@ -358,7 +371,13 @@ class Phase66FixtureHandler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         path = unquote(parsed.path)
         if path == "/__fixture__/health":
-            self._json({"status": "ready", "public_origin": PUBLIC_ORIGIN})
+            self._json(
+                {
+                    "status": "ready",
+                    "public_origin": PUBLIC_ORIGIN,
+                    "artwork_origin": ARTWORK_ORIGIN,
+                }
+            )
             return
         if path == "/__fixture__/state":
             self._json(self.server.state.snapshot())
@@ -406,6 +425,23 @@ class Phase66FixtureHandler(BaseHTTPRequestHandler):
             return
         if path.startswith("/phase66/") and path.endswith(".png"):
             self._send(HTTPStatus.OK, MOCKUP_PATH.read_bytes(), "image/png")
+            return
+        if path.startswith(f"/private/owners/{ARTWORK_OWNER}/jobs/"):
+            job_id = path.split("/")[5]
+            credentials_absent = not any(
+                self.headers.get(name) for name in ("Authorization", "Cookie", "Referer")
+            )
+            self.server.state.record_artwork_request(credentials_absent)
+            if (
+                method != "GET"
+                or job_id not in REVIEWS
+                or path != f"/private/owners/{ARTWORK_OWNER}/jobs/{job_id}/source/source.png"
+                or parse_qs(parsed.query) != {"versionId": ["phase66-pinned-source"]}
+                or not credentials_absent
+            ):
+                self._error(HTTPStatus.FORBIDDEN, "FORBIDDEN", "Invalid artwork request.")
+                return
+            self._send(HTTPStatus.OK, ARTWORK_PATH.read_bytes(), "image/png")
             return
         if path.startswith("/v1/"):
             self._api(method, path)
@@ -465,7 +501,18 @@ class Phase66FixtureHandler(BaseHTTPRequestHandler):
                 self._json(_progress(review))
                 return
             if len(parts) == 4 and parts[3] == "artwork-preview" and method == "GET":
-                self._send(HTTPStatus.OK, ARTWORK_PATH.read_bytes(), "image/png")
+                if parse_qs(urlsplit(self.path).query) != {"format": ["json"]}:
+                    self._error(HTTPStatus.BAD_REQUEST, "BAD_REQUEST", "JSON grant required.")
+                    return
+                self._json(
+                    {
+                        "url": (
+                            f"{ARTWORK_ORIGIN}/private/owners/{ARTWORK_OWNER}"
+                            f"/jobs/{job_id}/source/source.png?versionId=phase66-pinned-source"
+                        ),
+                        "expires_at": "2030-08-22T12:05:00Z",
+                    }
+                )
                 return
             if (
                 len(parts) == 4

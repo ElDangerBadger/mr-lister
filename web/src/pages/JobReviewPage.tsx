@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import { ApiError, ContractError, newIdempotencyKey, type ListingDraft } from "../api/client";
 import { useAppDependencies } from "../app-context";
@@ -27,6 +28,7 @@ export function JobReviewPage() {
   const [loadedPreviewKey, setLoadedPreviewKey] = useState<string | null>(null);
   const [loadedMockupSetKey, setLoadedMockupSetKey] = useState<string | null>(null);
   const [listingEditBarrier, setListingEditBarrier] = useState<ListingEditBarrier>("none");
+  const [editActionsTarget, setEditActionsTarget] = useState<HTMLDivElement | null>(null);
   const lastStage = useRef<string | null>(null);
   const requestSequence = useRef(0);
   const nextPollDelay = useRef(3_000);
@@ -242,13 +244,8 @@ export function JobReviewPage() {
 
 
       <PreparationProgress review={review} />
-      {publicationApi !== undefined
-        && review.display_state === "approved"
-        && review.stage === "complete"
-        && listingEditBarrier === "none" && (
-          <PublicationWorkspace jobId={jobId} approvedReview={review} api={publicationApi} />
-      )}
       <div className="review-grid">
+        <aside className="review-preview-rail" aria-label="Artwork and product preview">
         <section className="panel artwork-panel" aria-labelledby="artwork-heading">
           <SectionHeader eyebrow="Source" heading="Artwork review" id="artwork-heading" readiness={review.artwork.readiness} />
           <ArtworkPreview
@@ -256,28 +253,17 @@ export function JobReviewPage() {
             onAvailable={markPreviewAvailable}
             onUnavailable={markPreviewUnavailable}
           />
-          {review.artwork.readiness === "ready" && (
-            <details className="artwork-notes"><summary>Artwork interpretation</summary>
-              <h3>{review.artwork.subject}</h3>
-              <TokenList label="Visual elements" values={review.artwork.visual_elements} />
-              <TokenList label="Styles" values={review.artwork.styles} />
-              <TokenList label="Themes" values={review.artwork.themes} />
-              {review.artwork.visible_text.length > 0 && <TokenList label="Visible text" values={review.artwork.visible_text} />}
-              {review.artwork.safety_notes.length > 0 && <TokenList label="Safety notes" values={review.artwork.safety_notes} warning />}
-              {review.artwork.confidence !== null && <p><small>Interpretation confidence: {Math.round(review.artwork.confidence * 100)}%</small></p>}
-            </details>
-          )}
-        </section>
 
-        <ListingEditor review={review} reload={load} onEditBarrierChange={setListingEditBarrier} />
         <MockupGallery
           key={mockupSetKey(review)}
           review={review}
           onAvailable={markMockupsAvailable}
           onUnavailable={markMockupsUnavailable}
         />
-        <EconomicsTable review={review} />
-        <details className="panel product-details"><summary>Product &amp; print settings</summary>
+        </section>
+
+        <details className="panel product-details"><summary>Product &amp; pricing <span>{review.product_policy.product_name}</span></summary>
+          <EconomicsTable review={review} />
           <div aria-labelledby="product-heading">
           <SectionHeader eyebrow="Fixed production policy" heading="Printify draft configuration" id="product-heading" readiness={review.synchronization.readiness} />
           <dl className="fact-grid">
@@ -309,8 +295,43 @@ export function JobReviewPage() {
           <p className="boundary-note">Its current Printify editability is shown above. Approval alone does not send it to Etsy; publication requires a separate explicit confirmation.</p>
           </div>
         </details>
+        </aside>
+        <div className="review-editor-column">
+          {publicationApi !== undefined && review.display_state === "approved" && review.stage === "complete" && listingEditBarrier === "none" ? (
+            <>
+              <PublicationWorkspace jobId={jobId} approvedReview={review} api={publicationApi} />
+              <details className="approved-listing-details"><summary>View the approved listing</summary>
+                <ListingEditor review={review} reload={load} onEditBarrierChange={setListingEditBarrier} actionsTarget={null} />
+              </details>
+            </>
+          ) : (
+            <ListingEditor review={review} reload={load} onEditBarrierChange={setListingEditBarrier} actionsTarget={editActionsTarget} />
+          )}
+        </div>
       </div>
+      <ActionPanel
+        editActionsRef={setEditActionsTarget}
+        review={review}
+        reload={load}
+        listingEditBarrier={listingEditBarrier}
+        approvalEvidenceAvailable={review.preview.url !== null
+          && loadedPreviewKey === previewEvidenceKey(review)
+          && loadedMockupSetKey === mockupSetKey(review)}
+      />
       <ActivityLog key={review.job_id} review={review}>
+        {review.validation.passed === true && <p className="validation-result">Validation: {validationResultLabel(review)}</p>}
+          {review.artwork.readiness === "ready" && (
+            <details className="artwork-notes"><summary>Artwork interpretation</summary>
+              <h3>{review.artwork.subject}</h3>
+              <TokenList label="Visual elements" values={review.artwork.visual_elements} />
+              <TokenList label="Styles" values={review.artwork.styles} />
+              <TokenList label="Themes" values={review.artwork.themes} />
+              {review.artwork.visible_text.length > 0 && <TokenList label="Visible text" values={review.artwork.visible_text} />}
+              {review.artwork.safety_notes.length > 0 && <TokenList label="Safety notes" values={review.artwork.safety_notes} warning />}
+              {review.artwork.confidence !== null && <p><small>Interpretation confidence: {Math.round(review.artwork.confidence * 100)}%</small></p>}
+            </details>
+          )}
+        {review.listing.audience.length > 0 && <TokenList label="Prepared audience" values={review.listing.audience} headingLevel={3} />}
         <section className="strands-card" aria-labelledby="strands-heading">
           <div className="strands-symbol" aria-hidden="true">S</div>
           <div>
@@ -332,17 +353,8 @@ export function JobReviewPage() {
           </dl>
         </section>
 
-      </ActivityLog>
-
-      <ActionPanel
-        review={review}
-        reload={load}
-        listingEditBarrier={listingEditBarrier}
-        approvalEvidenceAvailable={review.preview.url !== null
-          && loadedPreviewKey === previewEvidenceKey(review)
-          && loadedMockupSetKey === mockupSetKey(review)}
-      />
       <p className="updated-note">Authoritative record {review.record_version} · Updated {formatDate(review.updated_at)}</p>
+      </ActivityLog>
     </div>
   );
 }
@@ -409,10 +421,11 @@ function ArtworkPreview({ review, onAvailable, onUnavailable }: {
   />;
 }
 
-function ListingEditor({ review, reload, onEditBarrierChange }: {
+function ListingEditor({ review, reload, onEditBarrierChange, actionsTarget }: {
   review: SellerReview;
   reload: (minimum?: ReviewMinimum) => Promise<boolean>;
   onEditBarrierChange: (barrier: ListingEditBarrier) => void;
+  actionsTarget: HTMLDivElement | null;
 }) {
   const { api } = useAppDependencies();
   const [draft, setDraft] = useState<ListingDraft | null>(null);
@@ -608,6 +621,25 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
   const hasDiscardableEdits = displayedSaveState === "dirty"
     || displayedSaveState === "error"
     || displayedSaveState === "conflict";
+  const editActions = displayedSaveState === "pristine" && displayedMessage === null ? null : (
+    <div className={`form-actions listing-form-actions listing-actions--${displayedSaveState}`}>
+      {displayedSaveState !== "pristine" && (
+        <button className="button button--primary" type="submit" form="listing-review-form" disabled={!capability.enabled || displayedSaveState === "saving" || displayedSaveState === "saved" || displayedSaveState === "conflict"}>
+          {saveState === "saving" ? "Saving…" : "Save listing revision"}
+        </button>
+      )}
+      {hasDiscardableEdits && (
+        <button className="button" type="button" onClick={discard}>Discard edits</button>
+      )}
+      <span className={`save-state save-state--${displayedSaveState}`} role="status" aria-live="polite">{displayedMessage}</span>
+      {displayedSaveState === "conflict" && (
+        <button className="button" type="button" disabled={!capability.enabled} onClick={() => { if (!capability.enabled) return; editAuthority.current = review; startedEditingEarly.current = false; setSaveState("dirty"); setMessage("Revision reapplied to the latest review. Review it, then save deliberately."); }}>Reapply revision to latest review</button>
+      )}
+      {saveState === "saved" && acceptedMinimum.current !== null && (
+        <button className="button" type="button" onClick={() => { if (acceptedMinimum.current !== null) void reconcileAcceptedRevision(acceptedMinimum.current); }}>Refresh authoritative review</button>
+      )}
+    </div>
+  );
   return (
     <section className="panel listing-panel" aria-labelledby="listing-heading">
       <SectionHeader
@@ -616,10 +648,7 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
         id="listing-heading"
         readiness={review.listing.readiness}
       />
-      <p className="validation-result">Validation: {validationResultLabel(review)}</p>
-      {capability.enabled && (
-        <p className="listing-guidance">Edit the generated title, description, or tags below. Save or discard any changes before approving this exact listing version.</p>
-      )}
+      {review.validation.passed !== true && <p className="validation-result">Validation: {validationResultLabel(review)}</p>}
       {!capability.enabled && earlyEditingAvailable && (
         <p className="listing-guidance">You can edit the title, description, and tags while preparation finishes. Changes stay only on this page until you save; keep this page open. Saving becomes available when preparation is ready.</p>
       )}
@@ -632,13 +661,13 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
           </ul>
         </div>
       )}
-      <form onSubmit={(event) => { event.preventDefault(); void submit(); }} noValidate>
+      <form id="listing-review-form" onSubmit={(event) => { event.preventDefault(); void submit(); }} noValidate>
         <label htmlFor="listing-title">Title <span>{draft.title.length}/140</span></label>
         <input id="listing-title" value={draft.title} maxLength={140} readOnly={!locallyEditable || saveState === "saved"} disabled={saveState === "saving"} aria-invalid={fieldErrors.title !== undefined} aria-describedby={fieldErrors.title === undefined ? undefined : "listing-title-error"} onChange={(event) => change({ ...draft, title: event.target.value })} />
         {fieldErrors.title !== undefined && <small id="listing-title-error" className="field-error">{fieldErrors.title}</small>}
 
         <label htmlFor="listing-description">Description <span>{draft.description.length}/100,000</span></label>
-        <textarea id="listing-description" rows={4} value={draft.description} maxLength={100_000} readOnly={!locallyEditable || saveState === "saved"} disabled={saveState === "saving"} aria-invalid={fieldErrors.description !== undefined} aria-describedby={fieldErrors.description === undefined ? undefined : "listing-description-error"} onChange={(event) => change({ ...draft, description: event.target.value })} />
+        <textarea id="listing-description" rows={6} value={draft.description} maxLength={100_000} readOnly={!locallyEditable || saveState === "saved"} disabled={saveState === "saving"} aria-invalid={fieldErrors.description !== undefined} aria-describedby={fieldErrors.description === undefined ? undefined : "listing-description-error"} onChange={(event) => change({ ...draft, description: event.target.value })} />
         {fieldErrors.description !== undefined && <small id="listing-description-error" className="field-error">{fieldErrors.description}</small>}
 
         <fieldset disabled={saveState === "saving"}>
@@ -660,33 +689,19 @@ function ListingEditor({ review, reload, onEditBarrierChange }: {
             })}
           </div>
         </fieldset>
-        <div className="form-actions listing-form-actions">
-          <button className="button button--primary" type="submit" disabled={!capability.enabled || displayedSaveState === "saving" || displayedSaveState === "pristine" || displayedSaveState === "saved" || displayedSaveState === "conflict"}>
-            {saveState === "saving" ? "Saving…" : "Save listing revision"}
-          </button>
-          {hasDiscardableEdits && (
-            <button className="button" type="button" onClick={discard}>Discard edits</button>
-          )}
-          <span className={`save-state save-state--${displayedSaveState}`} role="status" aria-live="polite">{displayedMessage}</span>
-          {displayedSaveState === "conflict" && (
-            <button className="button" type="button" disabled={!capability.enabled} onClick={() => { if (!capability.enabled) return; editAuthority.current = review; startedEditingEarly.current = false; setSaveState("dirty"); setMessage("Revision reapplied to the latest review. Review it, then save deliberately."); }}>Reapply revision to latest review</button>
-          )}
-          {saveState === "saved" && acceptedMinimum.current !== null && (
-            <button className="button" type="button" onClick={() => { if (acceptedMinimum.current !== null) void reconcileAcceptedRevision(acceptedMinimum.current); }}>Refresh authoritative review</button>
-          )}
-        </div>
+        {actionsTarget === null ? editActions : createPortal(editActions, actionsTarget)}
         {!capability.enabled && <p className="capability-message">{capability.message}</p>}
       </form>
-      {review.listing.audience.length > 0 && <TokenList label="Prepared audience" values={review.listing.audience} headingLevel={3} />}
     </section>
   );
 }
 
-function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvailable }: {
+function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvailable, editActionsRef }: {
   review: SellerReview;
   reload: (minimum?: ReviewMinimum) => Promise<boolean>;
   listingEditBarrier: ListingEditBarrier;
   approvalEvidenceAvailable: boolean;
+  editActionsRef: (element: HTMLDivElement | null) => void;
 }) {
   const { api } = useAppDependencies();
   const [running, setRunning] = useState<SellerAction | null>(null);
@@ -832,13 +847,27 @@ function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvail
     );
   };
   const approved = review.display_state === "approved" && listingEditBarrier === "none";
+  const decisionTitle = approved ? "Review approved"
+    : listingEditBarrier === "unsaved" ? "Unsaved changes"
+    : listingEditBarrier === "saving" ? "Saving your changes"
+    : listingEditBarrier === "reconciling" ? "Saved · updating your product and estimate"
+    : capabilityFor(review, "approve_review").enabled && approvalEvidenceAvailable ? "Saved · all checks complete"
+    : review.display_state === "cancelled" ? "Preparation cancelled"
+    : POLLING_STATES.has(review.display_state) ? "Preparing your listing"
+    : "Review your listing";
+  const decisionHelp = approved ? `Saved review version ${review.review_version} is locked. Publication status is shown beside your artwork.`
+    : listingEditBarrier === "unsaved" ? "Save or discard your edits before approving."
+    : listingEditBarrier === "saving" ? "Your edited listing is being saved."
+    : listingEditBarrier === "reconciling" ? "Approval is available again when the updated product checks complete."
+    : "Approval locks this version. Publishing is a separate step.";
 
   return (
-    <section className={`panel action-panel ${approved ? "action-panel--approved" : ""}`} aria-labelledby="actions-heading">
+    <section className={`panel action-panel ${approved ? "action-panel--approved" : ""}`} aria-labelledby="actions-heading" data-listing-barrier={listingEditBarrier}>
       <div className="decision-copy">
-        <h2 id="actions-heading" ref={actionsHeading} tabIndex={-1}>{approved ? "Review approved" : "Ready to continue?"}</h2>
-        <p>{approved ? `Saved review version ${review.review_version} is locked. Publication status is shown above.` : "Approve your saved review. Publishing requires a separate confirmation."}</p>
+        <h2 id="actions-heading" ref={actionsHeading} tabIndex={-1}>{decisionTitle}</h2>
+        <p>{decisionHelp}</p>
       </div>
+      <div id="review-edit-actions" ref={editActionsRef} />
       <div className="decision-controls">
         <details className="secondary-actions">
           <summary>More actions</summary>
@@ -846,7 +875,7 @@ function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvail
             {(["refresh_economics", "retry_job", "cancel_job"] as const).map(renderAction)}
           </div>
         </details>
-        {!approved && renderAction("approve_review")}
+        {!approved && listingEditBarrier === "none" && renderAction("approve_review")}
       </div>
       {message !== null && <p ref={actionStatus} className="alert alert--info" role="status" tabIndex={-1}>{message}{requestId !== null && <> Support reference: {requestId}.</>}</p>}
       {pendingMinimum !== null && running === null && (

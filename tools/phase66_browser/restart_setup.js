@@ -13,6 +13,7 @@ async page => {
   await page.context().route(`${publicOrigin}/**`, proxy);
   await page.context().route(`${cognitoOrigin}/**`, proxy);
   await page.context().route("https://images.printify.com/**", proxy);
+  await page.context().route(`${health.artwork_origin}/**`, proxy);
   await page.context().route("https://api.printify.com/**", async route => {
     await page.request.post(`${fixtureOrigin}/__fixture__/provider-transport-attempt`);
     await route.abort("blockedbyclient");
@@ -20,7 +21,7 @@ async page => {
   page.__phase66 = { fixtureOrigin, publicOrigin, cognitoOrigin };
   return {
     fixtureReady: true,
-    proxyRoutes: 4,
+    proxyRoutes: 5,
     fixtureStatePreserved: true,
   };
 }

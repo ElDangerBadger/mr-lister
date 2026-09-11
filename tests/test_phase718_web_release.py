@@ -36,6 +36,7 @@ from tools.verify_phase718_web_release import (
 SOURCE_COMMIT = "a" * 40
 CSS_KEY = "assets/index-NewCss01.css"
 JS_KEY = "assets/index-NewJs001.js"
+ICON_KEY = "assets/mr-lister-icon-NewIcon1.png"
 OLD_CSS_KEY = "assets/index-OldCss01.css"
 OLD_JS_KEY = "assets/index-OldJs001.js"
 RUNTIME = b'{"client_id":"seller-client","scopes":["openid"]}\n'
@@ -137,6 +138,63 @@ def test_release_manifest_is_create_only_private_and_revalidates_source(tmp_path
     fixture["dist"].joinpath(JS_KEY).write_bytes(b"drift")
     with pytest.raises(Phase718WebReleaseError):
         load_phase718_web_release_manifest(written, repository_root=fixture["repository"])
+
+
+def test_approved_icon_release_preserves_runtime_and_uploads_image_before_index(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    icon = _add_approved_icon(fixture)
+
+    release_path, release = _release(fixture)
+    loaded_raw, loaded = load_phase718_web_release_manifest(
+        release_path, repository_root=fixture["repository"]
+    )
+
+    assert loaded_raw == release_path.read_bytes()
+    assert loaded == release
+    assert release["file_count"] == 5
+    assert release["upload_order"] == [CSS_KEY, JS_KEY, ICON_KEY, "favicon.svg", "index.html"]
+    image = next(record for record in release["objects"] if record["key"] == ICON_KEY)
+    assert image["content_type"] == "image/png"
+    assert image["cache_control"] == "public, max-age=31536000, immutable"
+    assert image["sha256"] == sha256(icon).hexdigest()
+    assert image["size_bytes"] == len(icon)
+    assert release["runtime_config"]["preserve_existing"] is True
+    assert "runtime-config.json" not in release["upload_order"]
+
+    fixture["dist"].joinpath(ICON_KEY).write_bytes(icon + b"changed")
+    with pytest.raises(Phase718WebReleaseError):
+        load_phase718_web_release_manifest(release_path, repository_root=fixture["repository"])
+
+
+@pytest.mark.parametrize(
+    "drift",
+    ["wrong_bytes", "unreferenced", "missing", "second_icon", "other_png", "runtime", "source_map"],
+)
+def test_approved_icon_does_not_open_the_release_asset_allowlist(
+    tmp_path: Path, drift: str
+) -> None:
+    fixture = _fixture(tmp_path)
+    icon = _add_approved_icon(fixture)
+    dist = fixture["dist"]
+    if drift == "wrong_bytes":
+        dist.joinpath(ICON_KEY).write_bytes(icon + b"changed")
+    elif drift == "unreferenced":
+        dist.joinpath(JS_KEY).write_bytes(DIST_FILES[JS_KEY])
+    elif drift == "missing":
+        dist.joinpath(ICON_KEY).unlink()
+    elif drift == "second_icon":
+        dist.joinpath("assets/mr-lister-icon-Other001.png").write_bytes(icon)
+    elif drift == "other_png":
+        dist.joinpath("assets/other-image-NewIcon1.png").write_bytes(icon)
+    elif drift == "runtime":
+        dist.joinpath("runtime-config.json").write_bytes(RUNTIME)
+    elif drift == "source_map":
+        dist.joinpath(f"{JS_KEY}.map").write_bytes(b"{}")
+
+    with pytest.raises(Phase718WebReleaseError):
+        _release(fixture)
 
 
 def test_live_readback_and_rollback_bind_exact_object_versions(tmp_path: Path) -> None:
@@ -518,6 +576,15 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "repository": repository,
         "runtime_manifest": runtime_manifest,
     }
+
+
+def _add_approved_icon(fixture: dict[str, Any]) -> bytes:
+    icon = (Path(__file__).resolve().parents[1] / "web/src/assets/mr-lister-icon.png").read_bytes()
+    fixture["dist"].joinpath(ICON_KEY).write_bytes(icon)
+    fixture["dist"].joinpath(JS_KEY).write_bytes(
+        DIST_FILES[JS_KEY] + f'const icon="/{ICON_KEY}";\n'.encode()
+    )
+    return icon
 
 
 def _enabled_descriptor() -> dict[str, object]:

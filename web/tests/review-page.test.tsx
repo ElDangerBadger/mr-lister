@@ -47,7 +47,7 @@ describe("authoritative seller review", () => {
     await userEvent.click(screen.getByText(/^Activity & details/u));
     expect(screen.getByText("c".repeat(24))).toBeVisible();
     expect(await screen.findByText("Nature lovers")).toBeInTheDocument();
-    await userEvent.click(screen.getByText("Product & print settings"));
+    await userEvent.click(screen.getByText(/^Product & pricing/u));
     expect(screen.getByText("printify_product_ready")).toBeVisible();
     expect(screen.getByText("Synchronized at").parentElement).toHaveTextContent("2026");
     await userEvent.click(screen.getByText("Review exact print placements"));
@@ -131,7 +131,7 @@ describe("authoritative seller review", () => {
       for (const input of [title, description, tag]) expect(input).not.toHaveAttribute("readonly");
       expect(screen.queryByRole("button", { name: "Reapply revision to latest review" })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Save listing revision" })).toBeDisabled();
-      expect(screen.getByRole("button", { name: "Approve draft" })).toBeDisabled();
+      expect(screen.queryByRole("button", { name: "Approve draft" })).not.toBeInTheDocument();
       const form = title.closest("form");
       if (form === null) throw new Error("Listing form missing");
       fireEvent.submit(form);
@@ -146,7 +146,7 @@ describe("authoritative seller review", () => {
     expect(title).toHaveValue("Early seller title");
     expect(screen.getByRole("button", { name: "Save listing revision" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Reapply revision to latest review" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Approve draft" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Approve draft" })).not.toBeInTheDocument();
     expect(reviseListing).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Save listing revision" }));
     await screen.findByText("deliberate save reached API");
@@ -169,7 +169,7 @@ describe("authoritative seller review", () => {
     fireEvent.change(title, { target: { value: "Early title during provider write" } });
     expect(title).toHaveValue("Early title during provider write");
     expect(screen.getByRole("button", { name: "Save listing revision" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Approve draft" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Approve draft" })).not.toBeInTheDocument();
     const form = title.closest("form");
     if (form === null) throw new Error("Listing form missing");
     fireEvent.submit(form);
@@ -216,7 +216,9 @@ describe("authoritative seller review", () => {
     for (const input of screen.getAllByRole("textbox")) expect(input).toHaveAttribute("readonly");
     fireEvent.change(title, { target: { value: "Blocked attempted edit" } });
     expect(title).toHaveValue(review.listing.title);
-    expect(screen.getByRole("button", { name: "Save listing revision" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save listing revision" })).not.toBeInTheDocument();
+    if (displayState === "approved") expect(screen.queryByRole("button", { name: "Approve draft" })).not.toBeInTheDocument();
+    else expect(screen.getByRole("button", { name: "Approve draft" })).toBeDisabled();
     const form = title.closest("form");
     if (form === null) throw new Error("Listing form missing");
     fireEvent.submit(form);
@@ -271,16 +273,17 @@ describe("authoritative seller review", () => {
   it("blocks approval for dirty listing edits until the seller saves or discards them", async () => {
     const review = completeReadyReview();
     const fetchArtwork = vi.fn().mockResolvedValue(new Blob(["png"], { type: "image/png" }));
-    render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { fetchArtwork })} /></MemoryRouter>);
+    const runAction = vi.fn();
+    render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { fetchArtwork, runAction })} /></MemoryRouter>);
     const user = userEvent.setup();
     const title = await screen.findByRole("textbox", { name: /^Title/u });
     const description = screen.getByRole("textbox", { name: /^Description/u });
     const firstTag = screen.getByRole("textbox", { name: "Tag 1" });
-    const approve = screen.getByRole("button", { name: "Approve draft" });
+    expect(screen.queryByRole("button", { name: "Save listing revision" })).not.toBeInTheDocument();
 
     fireEvent.load(await screen.findByRole("img", { name: "Original uploaded artwork for this seller review" }));
     for (const mockup of screen.getAllByRole("img", { name: /representative mockup/u })) fireEvent.load(mockup);
-    await waitFor(() => expect(approve).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Approve draft" })).toBeEnabled());
 
     await user.clear(title);
     await user.type(title, "Unsaved seller title");
@@ -289,14 +292,19 @@ describe("authoritative seller review", () => {
     await user.clear(firstTag);
     await user.type(firstTag, "unsaved tag");
 
-    expect(approve).toBeDisabled();
-    expect(screen.getAllByText(/save or discard.*before approval/iu).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Approve draft" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save listing revision" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save listing revision" })).toHaveAttribute("form", title.closest("form")?.id);
+    expect(screen.getByText("Save or discard your edits before approving.")).toBeInTheDocument();
+    expect(runAction).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Discard edits" }));
 
     expect(title).toHaveValue(review.listing.title);
     expect(description).toHaveValue(review.listing.description);
     expect(firstTag).toHaveValue(review.listing.tags[0]);
-    expect(approve).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Approve draft" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Save listing revision" })).not.toBeInTheDocument();
+    expect(runAction).not.toHaveBeenCalled();
   });
 
   it("keeps approval blocked after an accepted save until authoritative readback is current", async () => {
@@ -327,18 +335,18 @@ describe("authoritative seller review", () => {
     render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview, reviseListing, fetchArtwork })} /></MemoryRouter>);
     const user = userEvent.setup();
     const title = await screen.findByRole("textbox", { name: /^Title/u });
-    const approve = screen.getByRole("button", { name: "Approve draft" });
 
     fireEvent.load(await screen.findByRole("img", { name: "Original uploaded artwork for this seller review" }));
     for (const mockup of screen.getAllByRole("img", { name: /representative mockup/u })) fireEvent.load(mockup);
-    await waitFor(() => expect(approve).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Approve draft" })).toBeEnabled());
     await user.clear(title);
     await user.type(title, acceptedTitle);
     await user.click(screen.getByRole("button", { name: "Save listing revision" }));
 
     await waitFor(() => expect(getReview).toHaveBeenCalledTimes(2));
     expect(reviseListing).toHaveBeenCalledTimes(1);
-    expect(approve).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Approve draft" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save listing revision" })).toBeDisabled();
 
     await act(async () => {
       resolveReadback?.(reviewResponse(current, "request-current"));
@@ -349,7 +357,8 @@ describe("authoritative seller review", () => {
     await waitFor(() => expect(fetchArtwork).toHaveBeenCalledTimes(2));
     fireEvent.load(screen.getByRole("img", { name: "Original uploaded artwork for this seller review" }));
     for (const mockup of screen.getAllByRole("img", { name: /representative mockup/u })) fireEvent.load(mockup);
-    await waitFor(() => expect(approve).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Approve draft" })).toBeEnabled());
+    expect(screen.queryByRole("button", { name: "Save listing revision" })).not.toBeInTheDocument();
   });
 
   it("invalidates an open approval dialog when review authority changes and requires fresh confirmation", async () => {

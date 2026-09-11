@@ -5,7 +5,10 @@ import { App } from "./App";
 import { OAuthCoordinator } from "./auth/session";
 import { loadRuntimeConfig } from "./runtime";
 import { BrowserPublicationApiClient } from "./publication/api-client";
+import { initializeTheme } from "./theme";
 import "./styles.css";
+
+initializeTheme();
 
 const rootNode = document.getElementById("root");
 if (rootNode === null) throw new Error("Application root is missing");

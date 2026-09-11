@@ -3,11 +3,13 @@ async page => {
     if (!condition) throw new Error(`Phase 6.6 accessibility gate: ${message}`);
   };
   await page.evaluate(() => {
-    history.pushState(null, "", "/jobs/job_browser_fixture");
+    // The auth flow has already approved job_browser_fixture. Use the independent
+    // ready review so editable controls and its primary action are visible here.
+    history.pushState(null, "", "/jobs/job_route_b");
     dispatchEvent(new PopStateEvent("popstate"));
   });
   await page.waitForFunction(() => (
-    document.querySelector("#listing-title")?.value === "Moonlit botanical moth shirt"
+    document.querySelector("#listing-title")?.value === "Current route B artwork"
   ));
   await page.getByAltText("Original uploaded artwork for this seller review").waitFor({ state: "visible" });
 

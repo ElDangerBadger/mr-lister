@@ -30,8 +30,9 @@ async page => {
     ))
   ));
   check(readOnlyListing, "restart reopened editing of the approved listing");
+  await page.getByRole("heading", { name: "Review approved", exact: true }).waitFor();
   check(
-    await page.getByRole("button", { name: "Approve draft" }).isDisabled(),
+    await page.getByRole("button", { name: "Approve draft", exact: true }).count() === 0,
     "browser restart resurrected approval authority",
   );
   const stored = await page.evaluate(() => ({
@@ -43,6 +44,7 @@ async page => {
   check(fixtureState.approval_committed === true, "browser restart lost the durable approval");
   check(fixtureState.approval_attempts === 1, "browser restart repeated approval");
   check(fixtureState.provider_transport_attempts === 0, "browser restart invoked provider transport");
+  check(fixtureState.artwork_credentials_absent, "browser restart leaked seller credentials to the artwork host");
 
   return {
     browserRestartRecovery: "passed",

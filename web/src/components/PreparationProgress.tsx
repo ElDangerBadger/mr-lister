@@ -17,12 +17,12 @@ export function PreparationProgress({ review }: { review: SellerReview }) {
       <ol className="milestones">
         {preparationMilestones(review).map(({ id, label, state }) => (
           <li key={id} className={`milestone milestone--${state}`} aria-current={state === "current" ? "step" : undefined}>
-            <span className="milestone-marker" aria-hidden="true">{state === "done" ? "✓" : state === "current" ? "•" : ""}</span>
-            <span>{label}<small>{state === "done" ? "Complete" : state === "current" ? "In progress" : "Waiting"}</small></span>
+            <span className="milestone-status">{state === "done" && <span aria-hidden="true">✓ </span>}{state === "done" ? "Complete" : state === "current" ? "In progress" : "Waiting"}</span>
+            <strong>{label}</strong>
           </li>
         ))}
       </ol>
-      {preparing && <p className="preparation-hint">{longWait ? "The first preparation after a quiet period may take a little longer. Your work is still being checked; you can keep this page open." : "Listing text becomes editable as it arrives. Mockups and costs will follow."}</p>}
+      {preparing && <div className="preparation-hint"><span className="preparation-hint-icon" aria-hidden="true">◷</span><p><strong>Preparing your listing</strong>{longWait ? "The first preparation after a quiet period may take a little longer. Your work is still being checked; you can keep this page open." : "Listing text becomes editable as it arrives. Mockups and costs will follow."}</p></div>}
     </section>
   );
 }
