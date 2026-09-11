@@ -4,14 +4,17 @@ The main application uses the Upload → Review → Publish workflow in the exis
 React application and API clients. The first static release retained too much of the
 original page layout; the seller identified that mismatch during live testing.
 The corrected composition and Light / Dark / Auto display control were subsequently
-approved, frozen and deployed. The latest release evidence appears below; isolated
+approved, frozen and deployed. Popup sign-in and upload selection polish are now
+deployed as well. The latest release evidence appears below; isolated
 judge access remains a separate, deferred release step.
 
 ## Implemented
 
 - The supplied Mr. Lister artwork replaces the initials in the header. The landing
-  page leads to the existing hosted sign-in; invited users use their assigned account.
-- Upload preserves the existing ordered batch, private transfer and recovery behavior.
+  page opens hosted sign-in in a popup with full-tab fallback; invited users use their
+  assigned account.
+- Upload adds append/remove controls and places Prepare beside the selected-file list,
+  preserving the existing ordered batch, private transfer and recovery behavior.
   Completed transfers are described as preparation started, not finished listings.
 - Review shows original artwork, all representative mockups, editable title,
   description and 13 tags, estimates, and expandable product settings.
@@ -385,3 +388,37 @@ web-release and trace-redaction tests also pass. The currently verified frozen
 frontend will be preserved for rollback. `main`, runtime configuration, backend
 resources, and store data are outside the release scope. Deployment and live
 verification evidence will be recorded after the cutover.
+
+### Popup sign-in and upload polish deployed
+
+The frontend was deployed to `https://massskutiny.com` from source checkpoint
+`624d9590030a7454217320c4c40022d88ea14f68` and publicly verified at
+`2026-09-11T21:54:25.034162+00:00`. It contains the reviewed popup authorization flow,
+Add more artwork and per-file Remove controls, retained reorder controls, append
+behavior with a five-file limit, and the aligned file-list/Prepare grid.
+
+- Source branch: `pass-b-ui-evaluator`; `main` remains
+  `9509d2d2520a24f2ebaff37aee897e976a2dda23`.
+- Passing browser gate: `output/playwright/phase66/20260911T214138Z/browser-gate.json`.
+- Browser bundle SHA-256 (sorted order):
+  `628eaca702d7d1b3b979b5ed89f4f4c631660496bdd9894826823571ef696850`.
+- Release bundle SHA-256 (upload order):
+  `48919ab2f06e8fc24a88f6a34bb63798b59210b43966c77433117df9753f3bd9`.
+- Deployed index VersionId: `hbOMBh2oxfCXwLGqQqLXqsHCWFySHy_0`.
+- Completed CloudFront invalidation: `I4ZTG6RY0PRGVODSA5BL5UBW37`.
+- Rollback index VersionId: `3rMNniGXWhYeu7jsTNpC0lnwt6xNZ6fu`.
+
+All five versioned objects passed checksum, size, header, metadata, and current-version
+readback. Public index, root page, JavaScript, CSS, icon, favicon, and runtime bytes
+match the sealed release. Runtime configuration remains at VersionId
+`IdRmSDEqfGAjcfmiYHvjrUJ2SQ6s5wqx`; backend stack/template and Lambda configuration
+digests remain unchanged. Private deployment and rollback evidence is under
+`.mr_lister_private/pass-b-ui-polish-20260911/web/`.
+
+The live landing page and sign-in dialog were observed without browser warnings or
+errors. Native macOS Safari opened the real Cognito email/password form in a separate
+small window. Closing it displayed the expected retry and full-tab fallback controls;
+Cancel returned to the original landing page. Login/MFA completion remains a seller
+acceptance check: no credentials were entered and no new live upload, approval, or
+publication was performed during this deployment. Google/Apple login and dedicated
+judge account/shop provisioning remain deferred.
