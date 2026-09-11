@@ -196,6 +196,7 @@ main { min-height: calc(100vh - 150px); overflow-x: clip; }
 .queue-file small { color: var(--muted); }
 .queue-order-controls { display: flex; gap: 0.35rem; }
 .queue-order-controls .button { width: 2.25rem; padding: 0; }
+.queue-order-controls .file-remove { width: auto; padding: 0 10px; }
 .queue-status { align-self: start; padding: 0.28rem 0.55rem; border-radius: 99rem; background: var(--blue-pale); color: #2d4657; font-size: 0.72rem; font-weight: 750; white-space: nowrap; }
 .queue-status--complete { background: var(--green-pale); color: var(--green-dark); }
 .queue-status--error, .queue-status--expired { background: var(--red-pale); color: #791d19; }
@@ -403,6 +404,10 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
 .upload-form { display: grid; gap: 22px; }
 .upload-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(220px, 0.7fr); gap: 22px; align-items: start; }
 .upload-main { min-width: 0; }
+.upload-selection-column { display: grid; min-width: 0; gap: 16px; }
+.upload-selection-column > .selection-panel, .upload-selection-column > .batch-panel { margin: 0; }
+.selection-panel .section-heading-row { flex-wrap: wrap; }
+.selection-panel .section-heading-actions { margin-left: auto; }
 .upload-drop-zone, .drop-field { position: relative; display: grid; min-height: 260px; gap: 0; margin: 0; padding: 35px 24px; border: 1px dashed var(--green-dark); border-radius: 14px; background: var(--paper); font-weight: 400; }
 .drop-field strong { font-size: 18px; font-weight: 500; letter-spacing: -0.4px; margin-bottom: 6px; }
 .drop-field > span { font-size: 12px; }
@@ -425,7 +430,9 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
 .upload-guide .process-list li > span { font: 500 12px Inter, sans-serif; }
 .upload-guide .process-list strong { font-weight: 500; margin-bottom: 4px; }
 .upload-guide .process-list small { font-size: 12px; }
-.upload-actionbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.upload-actionbar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.upload-actionbar--selected { grid-column: 2; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; padding: 22px; }
+.upload-actionbar--selected > .button { width: 100%; }
 .upload-actionbar strong { display: block; font-size: 12px; font-weight: 600; }
 .upload-actionbar small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
 .upload-actionbar .button { flex-shrink: 0; }
@@ -487,6 +494,7 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
   .review-page > .action-panel { align-items: flex-start; }
   .decision-controls { margin-left: auto; }
   .upload-grid, .landing-page { grid-template-columns: 1fr; }
+  .upload-actionbar--selected { grid-column: 1; }
   .upload-guide .process-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .upload-guide .process-list li { margin: 0; }
   .landing-page { min-height: 0; gap: 30px; padding-top: 35px; }

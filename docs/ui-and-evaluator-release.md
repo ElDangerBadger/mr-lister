@@ -296,3 +296,92 @@ the old Printify test uploads, consistent with that result. The readback is reta
 as incomplete provider verification, not a new successful store test or an inferred
 application defect. No new product, upload or publication was created for this static
 release. Dedicated judge access remains deferred.
+
+### Safari confirmation and popup sign-in candidate — 2026-09-11
+
+The seller's new live Safari upload, `job_9fb912220c37e2944119436d18a345e4`,
+displayed the original Mr. Lister artwork and all five Printify shirt mockups.
+`Approve draft` was enabled. This was a read-only browser observation; no approval
+or publication was issued. The earlier missing mockups belonged to the old deleted
+test product. The accepted Safari authorization/download separation remains intact,
+and no preview-loading code was changed. Reusing the same image creates a new job
+because each new upload receives a new request key.
+
+Popup sign-in is a **local, uncommitted candidate on `pass-b-ui-evaluator`**.
+The deployed source remains `9d3bb686b1e62f64dd81752e6fa0e2355399b95b`;
+`main` remains `9509d2d2520a24f2ebaff37aee897e976a2dda23`.
+
+All three sign-in entry points now retain the original Mr. Lister page while
+opening hosted Cognito authorization in a centered browser popup. The existing
+dialog styling provides window focus, cancel, retry, and an explicit full-tab
+fallback. Cognito's frame restrictions remain unchanged; this does not embed a
+password form or add Google/Apple login.
+
+The parent keeps popup PKCE and tokens in memory, validates the callback's exact
+origin, popup identity, and one-use state, then completes the session on the
+original page. Only a non-secret popup ownership marker uses child session storage
+to tolerate browser clearing of `window.name`. Callback query cleanup, timeout
+feedback, cancellation, sign-out, and rejection of late responses are covered.
+Existing full-page PKCE fallback is retained. No infrastructure or authentication
+configuration was changed.
+
+Validation: all **268 web tests**, lint, TypeScript, and production build passed;
+the **17 focused release/trace tests** passed. A macOS Safari walkthrough with a
+local simulated identity service opened and closed the popup and returned to the
+original page successfully. This does not substitute for a live Cognito/MFA
+acceptance check after release review. The temporary local preview and its sample
+identity page remain outside the repository and production bundle.
+
+The exact production bundle also passed the full Chromium, Firefox, and WebKit
+matrix, including popup completion, closed-window retry, blocked-popup full-tab
+fallback, browser restart, artwork authorization, approval barriers, and layout
+checks. Evidence: `output/playwright/phase66/20260911T211021Z/browser-gate.json`,
+generated `2026-09-11T21:12:21.929391+00:00`, bundle SHA-256
+`d8cbd8137207b138b01c576e7cd7a1677731545a7d99f3c582b9186446ed8869`.
+The fixture returns from its sign-in document using a form, matching a provider
+navigation; forcing browser-level navigation had severed the popup opener and was
+correctly rejected by the application. No live Cognito completion or deployment
+is claimed by this offline evidence.
+
+### Upload selection polish candidate — 2026-09-11
+
+The local candidate adds `Add more artwork` and individual `Remove` controls while
+retaining reorder buttons. Picker and drop selections append to the existing order;
+an addition that would exceed five files is rejected without clearing that order.
+Picker cancellation preserves the selection, and a removed file can be selected
+again. Selection controls lock while uploads are running or results await reset.
+
+Once artwork is selected, the file list and compact Prepare panel share a second
+grid row beneath the existing upload and guide panels. Narrow screens stack the
+panels and keep individual controls accessible. The approved styling and proportions
+remain intact.
+
+All **276 web tests**, lint, TypeScript, and the production build passed. A native
+macOS Safari check selected two files, appended a third through `Add more artwork`,
+then removed it while retaining the original pair and updating `Prepare 2 listings`.
+The Prepare panel was visually aligned beside the file list. No upload was submitted
+and no store or provider mutation was performed during these local checks.
+
+The fresh production bundle passed the full Chromium, Firefox, and WebKit matrix,
+including multi-file selection, append/remove/reorder, the five-file limit, retained
+selections after an over-limit attempt, desktop alignment, and mobile stacking.
+Evidence: `output/playwright/phase66/20260911T214138Z/browser-gate.json`, generated
+`2026-09-11T21:43:48.421893+00:00`, five-file bundle SHA-256
+`628eaca702d7d1b3b979b5ed89f4f4c631660496bdd9894826823571ef696850`.
+The upload-selection flow recorded zero upload API mutations and zero provider
+transport attempts in every engine. All 13 focused trace-redaction and web-release
+tests also passed.
+
+This work remains uncommitted on `pass-b-ui-evaluator`, alongside the popup sign-in
+candidate. No deployment or merge was performed; `main` remains at
+`9509d2d2520a24f2ebaff37aee897e976a2dda23`.
+
+### Popup sign-in and upload polish release authorization — 2026-09-11
+
+The seller authorized deployment of the reviewed popup sign-in and upload polish.
+The candidate above is being checkpointed on `pass-b-ui-evaluator` for a static
+frontend release using the passing `20260911T214138Z` browser gate. All 29 focused
+web-release and trace-redaction tests also pass. The currently verified frozen
+frontend will be preserved for rollback. `main`, runtime configuration, backend
+resources, and store data are outside the release scope. Deployment and live
+verification evidence will be recorded after the cutover.

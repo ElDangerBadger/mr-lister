@@ -9,6 +9,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from hashlib import sha256
+from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -403,10 +404,20 @@ class Phase66FixtureHandler(BaseHTTPRequestHandler):
             )
             return
         if path == "/oauth2/authorize":
+            state = parse_qs(parsed.query).get("state", [""])[0]
+            # Return through document navigation, as the hosted provider does.
+            # Browser-initiated automation navigation can sever a popup's opener.
+            sign_in = (
+                "<!doctype html><title>Managed sign-in fixture</title>"
+                "<h1>Managed sign-in fixture</h1>"
+                f'<form action="{PUBLIC_ORIGIN}/auth/callback" method="get">'
+                '<input type="hidden" name="code" value="fixture-popup-code">'
+                f'<input type="hidden" name="state" value="{escape(state, quote=True)}">'
+                '<button type="submit">Complete fixture sign-in</button></form>'
+            )
             self._send(
                 HTTPStatus.OK,
-                b"<!doctype html><title>Managed sign-in fixture</title>"
-                b"<h1>Managed sign-in fixture</h1>",
+                sign_in.encode(),
                 "text/html; charset=utf-8",
             )
             return

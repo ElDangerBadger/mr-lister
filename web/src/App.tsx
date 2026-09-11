@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import { BrowserRouter, Link, Route, Routes, useLocation } from "react-router-dom";
-import { AppContext, useAppDependencies, type AppDependencies } from "./app-context";
+import { AppContext, type AppDependencies } from "./app-context";
 import { useSessionStatus } from "./auth/use-session";
+import { SignInProvider, useSignIn } from "./auth/sign-in";
 import { AuthCallbackPage } from "./pages/AuthCallbackPage";
 import { HomePage } from "./pages/HomePage";
 import { JobReviewPage } from "./pages/JobReviewPage";
@@ -24,6 +25,7 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
   const status = useSessionStatus(dependencies.auth.session);
   return (
     <AppContext.Provider value={dependencies}>
+      <SignInProvider>
       <UploadProvider api={dependencies.api}>
         <div className="app-shell">
           <RouteFocusManager />
@@ -54,6 +56,7 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
           </footer>
         </div>
       </UploadProvider>
+      </SignInProvider>
     </AppContext.Provider>
   );
 }
@@ -84,11 +87,12 @@ function routeTitle(pathname: string): string {
 function SessionControls({ status, dependencies }: { status: "anonymous" | "authenticated"; dependencies: AppDependencies }) {
   const upload = useUpload();
   const location = useLocation();
+  const { startSignIn } = useSignIn();
   return (
     <div className="session-controls">
       <span className={`session-dot session-dot--${status}`} aria-hidden="true" />
       <span>{status === "authenticated" ? "Signed in" : "Signed out"}</span>
-      {status === "anonymous" && <button className="button button--quiet" type="button" onClick={() => { void dependencies.auth.startSignIn(location.pathname); }}>Sign in</button>}
+      {status === "anonymous" && <button className="button button--quiet" type="button" onClick={() => { startSignIn(location.pathname); }}>Sign in</button>}
       {status === "authenticated" && (
         <button className="button button--quiet" type="button" onClick={() => { upload.reset(); dependencies.auth.signOut(); }}>
           Sign out
@@ -99,7 +103,7 @@ function SessionControls({ status, dependencies }: { status: "anonymous" | "auth
 }
 
 function RequireSession({ status, children }: { status: "anonymous" | "authenticated"; children: React.ReactNode }) {
-  const { auth } = useAppDependencies();
+  const { startSignIn } = useSignIn();
   const location = useLocation();
   if (status === "authenticated") return children;
   return (
@@ -107,7 +111,7 @@ function RequireSession({ status, children }: { status: "anonymous" | "authentic
       <p className="eyebrow">Secure session</p>
       <h1>Restore your seller session.</h1>
       <p>Sign in to continue where you left off. Your artwork and listings are private to your account.</p>
-      <button className="button button--primary" type="button" onClick={() => { void auth.startSignIn(location.pathname); }}>Continue securely</button>
+      <button className="button button--primary" type="button" onClick={() => { startSignIn(location.pathname); }}>Continue securely</button>
     </section>
   );
 }

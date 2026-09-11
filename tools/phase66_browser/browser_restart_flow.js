@@ -7,13 +7,15 @@ async page => {
 
   await page.goto(`${publicOrigin}${protectedPath}`);
   await page.getByRole("heading", { name: "Restore your seller session." }).waitFor();
+  const popupOpened = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Continue securely" }).click();
-  await page.waitForURL(`${cognitoOrigin}/oauth2/authorize**`);
-  const state = await page.evaluate(() => new URL(location.href).searchParams.get("state"));
+  const signInPopup = await popupOpened;
+  await signInPopup.waitForURL(`${cognitoOrigin}/oauth2/authorize**`);
+  const state = await signInPopup.evaluate(() => new URL(location.href).searchParams.get("state"));
   check(state !== null, "the restarted browser omitted OAuth state");
-  await page.goto(
-    `${publicOrigin}/auth/callback?code=browser-restart&state=${encodeURIComponent(state)}`,
-  );
+  const popupClosed = signInPopup.waitForEvent("close");
+  await signInPopup.getByRole("button", { name: "Complete fixture sign-in", exact: true }).click();
+  await popupClosed;
   await page.waitForURL(`${publicOrigin}${protectedPath}`);
   await page.waitForFunction(() => (
     document.querySelector("#listing-title")?.value === "Moonlit botanical moth shirt"

@@ -25,7 +25,12 @@ DEFAULT_PLAYWRIGHT_WRAPPER = (
     Path.home() / ".codex" / "skills" / "playwright" / "scripts" / "playwright_cli.sh"
 )
 ENGINE_MAP = {"chromium": "chrome", "firefox": "firefox", "webkit": "webkit"}
-FLOW_FILES = ("auth_review_flow.js", "route_polling_flow.js", "accessibility_flow.js")
+FLOW_FILES = (
+    "auth_review_flow.js",
+    "upload_selection_flow.js",
+    "route_polling_flow.js",
+    "accessibility_flow.js",
+)
 _TRACE_REDACTIONS = (
     re.compile(rb"phase66-(?:access|refresh)-token", re.IGNORECASE),
     re.compile(rb"authorization", re.IGNORECASE),

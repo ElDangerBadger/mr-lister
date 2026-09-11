@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type DragEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAppDependencies } from "../app-context";
 import { useSessionStatus } from "../auth/use-session";
+import { useSignIn } from "../auth/sign-in";
 import type { JobSummary } from "../contracts";
 import { WorkflowSteps } from "../components/WorkflowSteps";
 import {
@@ -18,6 +19,7 @@ export function HomePage() {
   const { api, auth } = useAppDependencies();
   const status = useSessionStatus(auth.session);
   const location = useLocation();
+  const { startSignIn, error: signInError } = useSignIn();
   const navigate = useNavigate();
   const upload = useUpload();
   const inputId = useId();
@@ -31,6 +33,8 @@ export function HomePage() {
   const preIntentBusy = upload.state.uploadId === null
     && ["validating", "hashing", "creating_intent"].includes(upload.state.phase);
   const uploadLocked = preIntentBusy || batchBusy || batchFinished;
+  const showSelection = selectedFiles.length > 0 && (upload.batch.phase === "idle" || upload.batch.phase === "error");
+  const showUploadQueue = showSelection || upload.batch.items.length > 0;
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [jobsError, setJobsError] = useState<string | null>(null);
   const [hideRecentJobs, setHideRecentJobs] = useState(false);
@@ -61,13 +65,21 @@ export function HomePage() {
   }, [uploadLocked]);
 
   const applySelection = (files: readonly File[]) => {
-    if (files.length > MAX_BATCH_FILES) {
-      setSelectedFiles([]);
-      setSelectionError(`Choose no more than ${MAX_BATCH_FILES} files in one batch.`);
+    if (uploadLocked || files.length === 0) return;
+    if (selectedFiles.length + files.length > MAX_BATCH_FILES) {
+      const remaining = MAX_BATCH_FILES - selectedFiles.length;
+      setSelectionError(`Choose no more than ${MAX_BATCH_FILES} files in one batch.${selectedFiles.length > 0 ? ` Your ${selectedFiles.length} selected files are still here; ${remaining === 0 ? "remove one before adding another" : `add up to ${remaining} more`}.` : ""}`);
       return;
     }
     setSelectionError(null);
-    setSelectedFiles([...files]);
+    setSelectedFiles((current) => [...current, ...files]);
+  };
+
+  const changeSelection = (files: File[]) => {
+    if (uploadLocked) return;
+    setSelectedFiles(files);
+    setSelectionError(null);
+    if (files.length === 0) inputRef.current?.focus();
   };
 
   const fileDrag = (event: DragEvent<HTMLElement>) => event.dataTransfer.types.includes("Files");
@@ -98,9 +110,10 @@ export function HomePage() {
           <p className="eyebrow">Your workspace</p>
           <h2>Welcome to Mr. Lister.</h2>
           <p>Sign in to create your next listing or pick up where you left off.</p>
-          <button className="button button--primary" type="button" onClick={() => { void auth.startSignIn(location.pathname); }}>
+          <button className="button button--primary" type="button" onClick={() => { startSignIn(location.pathname); }}>
             Sign in securely
           </button>
+          {signInError !== null && <p className="alert alert--error" role="alert">{signInError}</p>}
           <p className="signin-note">Have an invitation to try Mr. Lister? Use the account provided with your invitation.</p>
           <p className="muted">Your drafts stay private until you approve and confirm publication.</p>
         </div>
@@ -121,7 +134,7 @@ export function HomePage() {
       </div>
       <form className="upload-form" aria-labelledby="upload-heading" onSubmit={(event) => {
         event.preventDefault();
-        if (selectedFiles.length === 0 || selectedFiles.length > MAX_BATCH_FILES) return;
+        if (uploadLocked || selectedFiles.length === 0 || selectedFiles.length > MAX_BATCH_FILES) return;
         setSelectionError(null);
         void upload.beginBatch(selectedFiles);
       }}>
@@ -182,30 +195,16 @@ export function HomePage() {
                 disabled={uploadLocked}
                 onChange={(event) => {
                   const files = [...(event.currentTarget.files ?? [])];
+                  event.currentTarget.value = "";
                   applySelection(files);
-                  if (files.length > MAX_BATCH_FILES) event.currentTarget.value = "";
                 }}
               />
             </label>
             {selectionError !== null && <p className="alert alert--error" role="alert">{selectionError}</p>}
-            {selectedFiles.length > 0 && (upload.batch.phase === "idle" || upload.batch.phase === "error") && (
-              <SelectedArtworkList files={selectedFiles} onChange={setSelectedFiles} />
-            )}
             <details className="upload-requirements">
               <summary>File requirements</summary>
               <p className="format-note">Original files stay on your device. PNG bytes are preserved; compatible SVG and JPEG files are converted to PNG in your browser before upload. Proportions and backgrounds are preserved. SVG files must be self-contained, with no linked assets, text, filters, or animation.</p>
             </details>
-            {upload.batch.items.length > 0 && (
-              <BatchProgress
-                items={upload.batch.items}
-                message={upload.batch.message}
-                onReset={() => {
-                  upload.reset();
-                  setSelectedFiles([]);
-                  if (inputRef.current !== null) inputRef.current.value = "";
-                }}
-              />
-            )}
           </section>
           <aside className="panel upload-guide" aria-labelledby="next-heading">
             <h2 id="next-heading">From design to storefront.</h2>
@@ -215,31 +214,56 @@ export function HomePage() {
               <li><span>03</span><strong>Publish</strong><small>You choose when it goes live.</small></li>
             </ol>
           </aside>
-        </div>
-        <div className="upload-actionbar">
-          <div>
-            <strong>{batchBusy
-              ? "Preparing your artwork"
-              : batchFinished
-                ? "Your upload results are ready"
-                : selectedFiles.length === 0
-                  ? "Your next listing starts here"
-                  : `${selectedFiles.length} artwork ${selectedFiles.length === 1 ? "file" : "files"} selected`}
-            </strong>
-            <small>Nothing publishes until you approve and confirm.</small>
-            {upload.batch.phase === "running" && <p className="loading-line" role="status" aria-live="polite">{upload.batch.message}</p>}
+          {showUploadQueue && (
+            <div className="upload-selection-column">
+              {showSelection && (
+                <SelectedArtworkList
+                  files={selectedFiles}
+                  onChange={changeSelection}
+                  onAdd={() => { if (!uploadLocked) inputRef.current?.click(); }}
+                  disabled={uploadLocked}
+                />
+              )}
+              {upload.batch.items.length > 0 && (
+                <BatchProgress
+                  items={upload.batch.items}
+                  message={upload.batch.message}
+                  onReset={() => {
+                    upload.reset();
+                    setSelectedFiles([]);
+                    setSelectionError(null);
+                    if (inputRef.current !== null) inputRef.current.value = "";
+                    inputRef.current?.focus();
+                  }}
+                />
+              )}
+            </div>
+          )}
+          <div className={showUploadQueue ? "upload-actionbar upload-actionbar--selected" : "upload-actionbar"}>
+            <div>
+              <strong>{batchBusy
+                ? "Preparing your artwork"
+                : batchFinished
+                  ? "Your upload results are ready"
+                  : selectedFiles.length === 0
+                    ? "Your next listing starts here"
+                    : `${selectedFiles.length} artwork ${selectedFiles.length === 1 ? "file" : "files"} selected`}
+              </strong>
+              <small>Nothing publishes until you approve and confirm.</small>
+              {upload.batch.phase === "running" && <p className="loading-line" role="status" aria-live="polite">{upload.batch.message}</p>}
+            </div>
+            <button className="button button--primary" type="submit" disabled={uploadLocked || selectedFiles.length === 0}>
+              {batchBusy
+                ? "Uploading artwork…"
+                : batchFinished
+                  ? "Uploads processed"
+                  : selectedFiles.length === 0
+                    ? "Choose artwork to continue"
+                    : selectedFiles.length === 1
+                      ? "Prepare 1 listing"
+                      : `Prepare ${selectedFiles.length} listings`}
+            </button>
           </div>
-          <button className="button button--primary" type="submit" disabled={uploadLocked || selectedFiles.length === 0}>
-            {batchBusy
-              ? "Uploading artwork…"
-              : batchFinished
-                ? "Uploads processed"
-                : selectedFiles.length === 0
-                  ? "Choose artwork to continue"
-                  : selectedFiles.length === 1
-                    ? "Prepare 1 listing"
-                    : `Prepare ${selectedFiles.length} listings`}
-          </button>
         </div>
       </form>
       <section className="recent-panel" aria-labelledby="recent-heading">
@@ -289,8 +313,23 @@ export function HomePage() {
   );
 }
 
-function SelectedArtworkList({ files, onChange }: { files: File[]; onChange: (files: File[]) => void }) {
+function SelectedArtworkList({ files, onChange, onAdd, disabled }: {
+  files: File[];
+  onChange: (files: File[]) => void;
+  onAdd: () => void;
+  disabled: boolean;
+}) {
+  const list = useRef<HTMLOListElement>(null);
+  const removedIndex = useRef<number | null>(null);
+  useEffect(() => {
+    if (removedIndex.current === null) return;
+    const controls = list.current?.querySelectorAll<HTMLButtonElement>(".file-remove");
+    controls?.[Math.min(removedIndex.current, files.length - 1)]?.focus();
+    removedIndex.current = null;
+  }, [files]);
+
   const move = (index: number, offset: -1 | 1) => {
+    if (disabled) return;
     const destination = index + offset;
     if (destination < 0 || destination >= files.length) return;
     const next = [...files];
@@ -305,9 +344,12 @@ function SelectedArtworkList({ files, onChange }: { files: File[]; onChange: (fi
     <section className="selection-panel" aria-labelledby="selection-heading">
       <div className="section-heading-row section-heading-row--compact">
         <h2 id="selection-heading">Submission order</h2>
-        <span className="count-chip">{files.length}/{MAX_BATCH_FILES}</span>
+        <div className="section-heading-actions">
+          <button className="button button--quiet" type="button" disabled={disabled || files.length >= MAX_BATCH_FILES} onClick={onAdd}>Add more artwork</button>
+          <span className="count-chip">{files.length}/{MAX_BATCH_FILES}</span>
+        </div>
       </div>
-      <ol className="selection-list">
+      <ol ref={list} className="selection-list">
         {files.map((file, index) => (
           <li key={`${file.name}:${file.size}:${file.lastModified}:${index}`}>
             <span className="queue-number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
@@ -316,8 +358,12 @@ function SelectedArtworkList({ files, onChange }: { files: File[]; onChange: (fi
               <small>{formatBytes(file.size)} · {sourceFormatDescription(file)}</small>
             </span>
             <span className="queue-order-controls">
-              <button className="button button--quiet" type="button" disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Move ${file.name} earlier`}>↑</button>
-              <button className="button button--quiet" type="button" disabled={index === files.length - 1} onClick={() => move(index, 1)} aria-label={`Move ${file.name} later`}>↓</button>
+              <button className="button button--quiet" type="button" disabled={disabled || index === 0} onClick={() => move(index, -1)} aria-label={`Move ${file.name} earlier`}>↑</button>
+              <button className="button button--quiet" type="button" disabled={disabled || index === files.length - 1} onClick={() => move(index, 1)} aria-label={`Move ${file.name} later`}>↓</button>
+              <button className="button button--quiet file-remove" type="button" disabled={disabled} onClick={() => {
+                removedIndex.current = index;
+                onChange(files.filter((_file, fileIndex) => fileIndex !== index));
+              }} aria-label={`Remove ${file.name}`}>Remove</button>
             </span>
           </li>
         ))}

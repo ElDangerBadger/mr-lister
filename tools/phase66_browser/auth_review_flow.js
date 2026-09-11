@@ -7,9 +7,18 @@ async page => {
 
   await page.goto(`${publicOrigin}${protectedPath}`);
   await page.getByRole("heading", { name: "Restore your seller session." }).waitFor();
+  const firstPopupOpened = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Continue securely" }).click();
-  await page.waitForURL(`${cognitoOrigin}/oauth2/authorize**`);
-  const authorization = await page.evaluate(() => ({
+  const cancelledPopup = await firstPopupOpened;
+  await cancelledPopup.waitForURL(`${cognitoOrigin}/oauth2/authorize**`);
+  check(page.url() === `${publicOrigin}${protectedPath}`, "popup sign-in navigated away from the seller page");
+  await cancelledPopup.close();
+  await page.getByRole("button", { name: "Try popup again", exact: true }).waitFor();
+  const popupOpened = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Try popup again", exact: true }).click();
+  const signInPopup = await popupOpened;
+  await signInPopup.waitForURL(`${cognitoOrigin}/oauth2/authorize**`);
+  const authorization = await signInPopup.evaluate(() => ({
     state: new URL(location.href).searchParams.get("state"),
     challengeMethod: new URL(location.href).searchParams.get("code_challenge_method"),
     redirectUri: new URL(location.href).searchParams.get("redirect_uri"),
@@ -19,7 +28,9 @@ async page => {
   check(authorization.challengeMethod === "S256", "PKCE is not S256");
   check(authorization.redirectUri === `${publicOrigin}/auth/callback`, "redirect URI drifted");
 
-  await page.goto(`${publicOrigin}/auth/callback?code=one-use&state=${encodeURIComponent(state)}`);
+  const popupClosed = signInPopup.waitForEvent("close");
+  await signInPopup.getByRole("button", { name: "Complete fixture sign-in", exact: true }).click();
+  await popupClosed;
   await page.waitForURL(`${publicOrigin}${protectedPath}`);
   await page.waitForFunction(() => (
     document.querySelector("#listing-title")?.value === "Moonlit botanical moth shirt"
@@ -164,9 +175,11 @@ async page => {
   check(commerceControls === 0, "a commerce action is exposed");
 
   const recoveryTab = await page.context().newPage();
+  await recoveryTab.addInitScript(() => { window.open = () => null; });
   await recoveryTab.goto(`${publicOrigin}${protectedPath}`);
   await recoveryTab.getByRole("heading", { name: "Restore your seller session." }).waitFor();
   await recoveryTab.getByRole("button", { name: "Continue securely" }).click();
+  await recoveryTab.getByRole("button", { name: "Continue in this tab", exact: true }).click();
   await recoveryTab.waitForURL(`${cognitoOrigin}/oauth2/authorize**`);
   const recoveryState = await recoveryTab.evaluate(() => new URL(location.href).searchParams.get("state"));
   check(recoveryState !== null, "the recovery tab omitted OAuth state");
@@ -182,6 +195,8 @@ async page => {
 
   return {
     authRouteRecovery: "passed",
+    popupSignInAndClosedWindowRecovery: "passed",
+    blockedPopupFullPageFallback: "passed",
     brandArtworkLoaded: "passed",
     artworkGrantAndCredentialBoundary: "passed",
     workflowSteps: "passed",
