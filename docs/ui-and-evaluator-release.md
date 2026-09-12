@@ -6,11 +6,12 @@ original page layout; the seller identified that mismatch during live testing.
 The corrected composition and Light / Dark / Auto display control were subsequently
 approved, frozen and deployed. Popup sign-in and upload selection polish are now
 deployed as well, and the hosted login and MFA screens use the matching icon and
-colors. Automatic ready-listing navigation, Dashboard/Upload links and the batch
-switcher are now deployed too. The latest release evidence appears below; isolated
+colors. Automatic navigation now opens the first verified upload while listing
+preparation continues, with a shimmer and elapsed time. Dashboard/Upload links and
+the batch switcher are deployed too. The latest release evidence appears below; isolated
 judge access remains a separate, deferred release step.
 
-## Earlier workspace opening and preparation activity — awaiting release
+## Earlier workspace opening and preparation activity — deployed September 11, 2026
 
 The seller requested earlier entry after timing a live submission at 2 minutes
 14.3 seconds. Automatic navigation now opens the first verified upload, when its
@@ -46,7 +47,9 @@ to readiness in approximately 18 seconds instead of holding it indefinitely. Its
 clock and source preview demonstrate the interface; it does not contact a store
 or represent measured production performance.
 
-Validation: all 317 web tests, lint, typecheck, and the production build pass.
+Validation: final integrated CI passes all 320 web tests, 4,223 Python tests,
+lint, typecheck, contract drift, infrastructure validation, and both builds.
+The 11 live AWS tests are deliberately skipped in CI.
 The fresh-build Chromium, Firefox, and WebKit gate passes at
 `output/playwright/phase66/20260912T053312Z/browser-gate.json`, attestation eligible,
 with bundle digest
@@ -57,16 +60,46 @@ manual cancellation, continuing batch uploads, sibling navigation, and unsaved
 edit protection. All simulated provider-transport attempt counts are zero.
 
 The seller approved deployment and integration of all reviewed Pass B rounds into
-`main`. The integration is a fast-forward from `9509d2d`, preserving the pre-Pass-B
-checkpoint in history. The deployment record below identifies the previous live
-release until the new deployment is verified.
+`main`. All 14 commits through `bb4c905ebc0b378ed8d6d4ba5b8a9308534a2c9d` are pushed
+to `origin/main`. The integration fast-forwarded from `9509d2d`, preserving the
+pre-Pass-B checkpoint in history without a rewrite or force push.
+
+The initial integrated check exposed two outdated test assumptions: jsdom's queued
+storage events were counted as leaked popup timers, and the earlier storage rule
+did not allow the approved display preference. Test-only corrections retain the
+authentication checks, verify no late timeout or duplicate close, and permit only
+the display key with light/dark/auto values. The production code and browser-gated
+bundle are unchanged by these corrections. The final
+[CI run](https://github.com/ElDangerBadger/mr-lister/actions/runs/34676931544)
+passes both jobs for the exact deployed source commit.
+
+Deployment from `main` was publicly verified at
+`2026-09-12T06:09:25.927412+00:00` (September 11 locally):
+
+- All five versioned files pass checksum, size, headers, metadata, and current-version
+  readback. The public root, index, JavaScript, CSS, icon, favicon, and runtime config
+  match the release manifest.
+- The live browser reload renders the signed-out landing page and decoded branding
+  image using `index-sOPxt2Je.js` and `index-CVmwvNN9.css`.
+- Deployed index VersionId: `H_p3l8dD3kL0aMxAxpA5sn2Pcgoanofg`.
+- Completed CloudFront invalidation: `I611U4NWX6BECEETPCECXLJ5UH`.
+- Rollback index VersionId: `eJ6dQ2V6bY9IPmCG4WwqOfQ.iYmTj07P`.
+- Runtime configuration remains at VersionId `IdRmSDEqfGAjcfmiYHvjrUJ2SQ6s5wqx`.
+  Backend stack/template and Lambda configuration digests remain unchanged.
+- No live upload, approval, or publication was created during deployment verification.
+  Authenticated early navigation and preparation behavior are covered by the passing
+  three-engine matrix and the seller's local acceptance check.
+
+Private release, CI, rollback, browser readback, and public verification records are
+retained under `.mr_lister_private/early-open-main-20260912-r3/web/`. Page-load warm-up
+remains the next investigation; this release does not add a warm-up request.
 
 ## Navigation deployed — September 11, 2026
 
 The seller approved the revised flow after testing the local sample. It was deployed
 from `630a63003d1105ad13dc87d93ab7b8d8f392af0b` on `pass-b-ui-evaluator` and publicly
-verified at `2026-09-12T01:03:34.923453+00:00` (September 11 locally). `main` remains
-at the pre-Pass-B checkpoint `9509d2d`. The hosted-login branding is unaffected.
+verified at `2026-09-12T01:03:34.923453+00:00` (September 11 locally). At that deployment,
+`main` was at the pre-Pass-B checkpoint `9509d2d`. The hosted-login branding was unaffected.
 
 The sample deliberately reuses fixed front/back shirt mockups for its simulated
 listings. That temporary sample lives outside the repository and production bundle;
