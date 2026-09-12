@@ -180,14 +180,15 @@ describe("popup callback relay", () => {
     expect(window.location.search).not.toBe("");
   });
 
-  it("uses the ownership marker if navigation reset the name, scrubs the query and closes only for an exact acknowledgement", () => {
+  it("uses the ownership marker if navigation reset the name, scrubs the query and closes only for an exact acknowledgement", async () => {
     vi.useFakeTimers();
     const opener = fakePopup();
     vi.stubGlobal("opener", opener.handle);
     const close = vi.spyOn(window, "close").mockImplementation(() => undefined);
+    const onFailure = vi.fn();
     window.sessionStorage.setItem(markerKey, `mr-lister-signin-${"a".repeat(22)}`);
     window.history.replaceState(null, "", "/auth/callback?code=one-use&state=callback-state");
-    expect(relayPopupCallback(window.location.search)).toBe(true);
+    expect(relayPopupCallback(window.location.search, onFailure)).toBe(true);
     expect(window.location.search).toBe("");
     expect(window.sessionStorage.length).toBe(0);
     expect(opener.popup.postMessage).toHaveBeenCalledWith({
@@ -200,7 +201,13 @@ describe("popup callback relay", () => {
     expect(close).not.toHaveBeenCalled();
     window.dispatchEvent(new MessageEvent("message", { data, origin: window.location.origin, source: opener.handle }));
     expect(close).toHaveBeenCalledOnce();
+    // jsdom queues zero-delay storage events when the ownership marker is set and removed.
+    await vi.advanceTimersByTimeAsync(0);
     expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(10_000);
+    window.dispatchEvent(new MessageEvent("message", { data, origin: window.location.origin, source: opener.handle }));
+    expect(onFailure).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
   });
 
   it("scrubs the callback and reports a lost opener without exchanging in the popup", () => {
