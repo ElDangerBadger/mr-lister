@@ -86,13 +86,14 @@ def test_checked_in_browser_artifacts_are_an_exact_deterministic_export(tmp_path
     assert {path.name: path.read_text(encoding="utf-8") for path in written} == expected
 
 
-def test_browser_source_has_no_commerce_or_durable_client_storage_capability() -> None:
+def test_browser_source_has_no_commerce_or_durable_seller_storage_capability() -> None:
     source_root = Path("web/src")
-    source = "\n".join(
-        path.read_text(encoding="utf-8")
+    sources = {
+        path.relative_to(source_root).as_posix(): path.read_text(encoding="utf-8")
         for path in sorted(source_root.rglob("*"))
         if path.suffix in {".ts", ".tsx"}
-    )
+    }
+    source = "\n".join(sources.values())
     transport = (source_root / "api" / "client.ts").read_text(encoding="utf-8").casefold()
 
     assert all(
@@ -111,8 +112,22 @@ def test_browser_source_has_no_commerce_or_durable_client_storage_capability() -
             "dangerouslySetInnerHTML",
             "document.cookie",
             "indexedDB",
-            "localStorage",
             "navigator.serviceWorker",
             "window.eval",
         )
     )
+
+    # The approved display preference is the sole durable-storage exception.
+    # Keep this at individual call sites: excluding whole theme files would also
+    # permit them to persist seller data. Behavioral web tests constrain the key
+    # and values to mr-lister-display-theme and light/dark/auto.
+    display_storage_calls = {
+        "theme.ts": "window.localStorage.getItem(THEME_STORAGE_KEY)",
+        "components/ThemeControl.tsx": "window.localStorage.setItem(THEME_STORAGE_KEY, value)",
+    }
+    for path, contents in sources.items():
+        permitted_call = display_storage_calls.get(path)
+        if permitted_call is not None:
+            assert contents.count(permitted_call) == 1, path
+            contents = contents.replace(permitted_call, "")
+        assert "localStorage" not in contents, path
