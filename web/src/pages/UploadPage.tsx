@@ -1,8 +1,10 @@
 import { useEffect, useId, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useAppDependencies } from "../app-context";
 import type { UploadRecovery } from "../contracts";
 import { WorkflowSteps } from "../components/WorkflowSteps";
+import { BatchNavigator } from "../navigation/BatchWorkspace";
+import { WorkspaceLink } from "../navigation/WorkspaceNavigation";
 import { useUpload } from "../upload/upload-context";
 
 const cancellable = new Set(["validating", "hashing", "creating_intent", "uploading", "finalizing"]);
@@ -39,34 +41,34 @@ export function UploadPage() {
 
   if (!validUploadId) {
     return (
-      <section className="page narrow-page"><WorkflowSteps current="Upload" />
+      <section className="page narrow-page"><WorkflowSteps current="Upload" /><BatchNavigator />
         <p className="eyebrow">Invalid upload route</p>
         <h1>This private upload cannot be opened.</h1>
-        <p><Link className="button" to="/">Return to uploads</Link></p>
+        <p><WorkspaceLink className="button" to="/">Return to uploads</WorkspaceLink></p>
       </section>
     );
   }
 
   if (!active && recovery === null) {
     return (
-      <section className="page narrow-page"><WorkflowSteps current="Upload" />
+      <section className="page narrow-page"><WorkflowSteps current="Upload" /><BatchNavigator />
         <p className="eyebrow">Upload recovery</p>
         <h1>Resume this private upload.</h1>
         {recoveryError === null ? <p role="status">Checking the owner-scoped upload record…</p> : <div className="alert alert--error" role="alert">{recoveryError}</div>}
-        {recoveryError !== null && <p><Link className="button" to="/">Return to uploads</Link></p>}
+        {recoveryError !== null && <p><WorkspaceLink className="button" to="/">Return to uploads</WorkspaceLink></p>}
       </section>
     );
   }
 
   if (!active && recovery !== null) {
     if (recovery.status === "completed") {
-      return <section className="page narrow-page"><WorkflowSteps current="Upload" /><p className="eyebrow">Upload recovered</p><h1>Artwork verification is complete.</h1><p><Link className="button button--primary" to={`/jobs/${recovery.job_id}`}>Open seller review</Link></p></section>;
+      return <section className="page narrow-page"><WorkflowSteps current="Upload" /><BatchNavigator /><p className="eyebrow">Upload recovered</p><h1>Artwork verification is complete.</h1><p><WorkspaceLink className="button button--primary" to={`/jobs/${recovery.job_id}`}>Open seller review</WorkspaceLink></p></section>;
     }
     if (recovery.status !== "open") {
-      return <section className="page narrow-page"><WorkflowSteps current="Upload" /><p className="eyebrow">Upload {recovery.status}</p><h1>This upload cannot be resumed.</h1><p><Link className="button" to="/">Start a new upload</Link></p></section>;
+      return <section className="page narrow-page"><WorkflowSteps current="Upload" /><BatchNavigator /><p className="eyebrow">Upload {recovery.status}</p><h1>This upload cannot be resumed.</h1><p><WorkspaceLink className="button" to="/">Start a new upload</WorkspaceLink></p></section>;
     }
     return (
-      <section className="page narrow-page"><WorkflowSteps current="Upload" />
+      <section className="page narrow-page"><WorkflowSteps current="Upload" /><BatchNavigator />
         <p className="eyebrow">Upload recovery</p>
         <h1>Re-select {recovery.filename}.</h1>
         <div className="alert alert--info" role="note">For your privacy, the browser did not retain the file. Mr. Lister will accept only the exact reserved PNG.</div>
@@ -77,7 +79,7 @@ export function UploadPage() {
         }}>
           <label htmlFor={fileId}>Original PNG file</label>
           <input id={fileId} name="artwork" type="file" accept="image/png,.png" required />
-          <div className="form-actions"><button className="button button--primary" type="submit">Verify and resume</button><Link className="button" to="/">Start over</Link></div>
+          <div className="form-actions"><button className="button button--primary" type="submit">Verify and resume</button><WorkspaceLink className="button" to="/">Start over</WorkspaceLink></div>
         </form> : <div className="alert alert--info" role="status">The prior short-lived authorization is still active but is never stored. Completion was checked first; reload after {recovery.authorization_expires_at === null ? "it expires" : new Date(recovery.authorization_expires_at).toLocaleTimeString()} to re-select the file safely.</div>}
       </section>
     );
@@ -85,6 +87,8 @@ export function UploadPage() {
 
   return (
     <section className="page narrow-page" aria-labelledby="upload-progress-heading">
+      <WorkflowSteps current="Upload" />
+      <BatchNavigator />
       <p className="eyebrow">Private upload</p>
       <h1 id="upload-progress-heading">{upload.state.filename}</h1>
       <div className="progress-card">
@@ -97,7 +101,7 @@ export function UploadPage() {
         <button className="button button--danger" type="button" onClick={() => { void upload.cancel(); }}>Cancel upload</button>
       )}
       {upload.state.phase === "complete" && upload.state.jobId !== null && (
-        <Link className="button button--primary" to={`/jobs/${upload.state.jobId}`}>Follow preparation</Link>
+        <WorkspaceLink className="button button--primary" to={`/jobs/${upload.state.jobId}`}>Follow preparation</WorkspaceLink>
       )}
       {["error", "expired", "cancelled"].includes(upload.state.phase) && (
         <div className="form-actions">

@@ -42,7 +42,7 @@ describe("accessible application states", () => {
       etag: null,
     });
     const result = renderApp("/", true, { listJobs });
-    await screen.findByRole("link", { name: /Open preparation/u });
+    await screen.findByRole("link", { name: /Open listing:/u });
     await expectNoViolations(result);
 
     await user.click(screen.getByRole("button", { name: "Clear recent list" }));

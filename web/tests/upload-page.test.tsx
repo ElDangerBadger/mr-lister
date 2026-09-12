@@ -126,15 +126,15 @@ describe("upload route authority", () => {
       <MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>,
     );
 
-    expect(await screen.findAllByRole("link", { name: /Open preparation/u })).toHaveLength(2);
+    expect(await screen.findAllByRole("link", { name: /Open listing:/u })).toHaveLength(2);
     await user.click(screen.getByRole("button", { name: "Clear recent list" }));
 
     expect(screen.getByText("Recent list cleared for now.")).toBeVisible();
-    expect(screen.queryByRole("link", { name: /Open preparation/u })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Open listing:/u })).not.toBeInTheDocument();
     expect(screen.getByText(/publication records, and audit history are preserved/u)).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Show recent list" }));
-    expect(await screen.findAllByRole("link", { name: /Open preparation/u })).toHaveLength(2);
+    expect(await screen.findAllByRole("link", { name: /Open listing:/u })).toHaveLength(2);
     expect(listJobs).toHaveBeenCalledTimes(1);
   });
 

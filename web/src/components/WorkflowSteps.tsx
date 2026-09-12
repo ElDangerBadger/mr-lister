@@ -1,3 +1,5 @@
+import { WorkspaceLink } from "../navigation/WorkspaceNavigation";
+
 export function WorkflowSteps({ current }: { current: "Upload" | "Review" | "Publish" }) {
   const steps = ["Upload", "Review", "Publish"] as const;
   const descriptions = ["Add your artwork", "Make it yours", "Go live on Etsy"];
@@ -7,8 +9,13 @@ export function WorkflowSteps({ current }: { current: "Upload" | "Review" | "Pub
       <ol>
         {steps.map((step, position) => (
           <li key={step} className={position < index ? "workflow-done" : position === index ? "workflow-current" : ""} aria-current={position === index ? "step" : undefined}>
-            <span className="workflow-number" aria-hidden="true">{position < index ? "✓" : position + 1}</span>
-            <span className="workflow-label"><strong>{step}</strong><small>{descriptions[position]}</small></span>
+            {step === "Upload" ? <WorkspaceLink className="workflow-link" to="/" aria-label="Upload artwork">
+              <span className="workflow-number" aria-hidden="true">{position < index ? "✓" : position + 1}</span>
+              <span className="workflow-label"><strong>{step}</strong><small>{descriptions[position]}</small></span>
+            </WorkspaceLink> : <>
+              <span className="workflow-number" aria-hidden="true">{position < index ? "✓" : position + 1}</span>
+              <span className="workflow-label"><strong>{step}</strong><small>{descriptions[position]}</small></span>
+            </>}
             {position < index && <span className="visually-hidden"> complete</span>}
           </li>
         ))}

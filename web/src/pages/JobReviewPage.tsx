@@ -9,6 +9,8 @@ import { WorkflowSteps } from "../components/WorkflowSteps";
 import { PreparationProgress } from "../components/PreparationProgress";
 import { ActivityLog } from "../components/ActivityLog";
 import { PublicationWorkspace } from "../publication/PublicationWorkspace";
+import { BatchNavigator } from "../navigation/BatchWorkspace";
+import { useNavigationProtection } from "../navigation/WorkspaceNavigation";
 
 const POLLING_STATES = new Set([
   "preparing", "synchronizing", "refreshing_estimate", "reconciling", "cancelling",
@@ -28,6 +30,7 @@ export function JobReviewPage() {
   const [loadedPreviewKey, setLoadedPreviewKey] = useState<string | null>(null);
   const [loadedMockupSetKey, setLoadedMockupSetKey] = useState<string | null>(null);
   const [listingEditBarrier, setListingEditBarrier] = useState<ListingEditBarrier>("none");
+  useNavigationProtection(listingEditBarrier);
   const [editActionsTarget, setEditActionsTarget] = useState<HTMLDivElement | null>(null);
   const lastStage = useRef<string | null>(null);
   const requestSequence = useRef(0);
@@ -210,11 +213,13 @@ export function JobReviewPage() {
   }, [refreshProgress, review]);
 
   if (loading && review === null) {
-    return <section className="page narrow-page"><h1>Preparing your review…</h1><p role="status">Loading the authoritative seller view.</p></section>;
+    return <section className="page narrow-page"><WorkflowSteps current="Review" /><BatchNavigator /><h1>Preparing your review…</h1><p role="status">Loading the authoritative seller view.</p></section>;
   }
   if (review === null) {
     return (
       <section className="page narrow-page">
+        <WorkflowSteps current="Review" />
+        <BatchNavigator />
         <p className="eyebrow">Review unavailable</p>
         <h1>We could not open this preparation.</h1>
         {error !== null && <ErrorNotice {...error} />}
@@ -226,6 +231,7 @@ export function JobReviewPage() {
   return (
     <div className="page review-page">
       <WorkflowSteps current={review.display_state === "approved" && listingEditBarrier === "none" ? "Publish" : "Review"} />
+      <BatchNavigator currentReview={review} />
       <div className="review-title-row">
         <div>
           <p className="eyebrow">Your listing workspace</p>
@@ -301,11 +307,11 @@ export function JobReviewPage() {
             <>
               <PublicationWorkspace jobId={jobId} approvedReview={review} api={publicationApi} />
               <details className="approved-listing-details"><summary>View the approved listing</summary>
-                <ListingEditor review={review} reload={load} onEditBarrierChange={setListingEditBarrier} actionsTarget={null} />
+                <ListingEditor key={review.job_id} review={review} reload={load} onEditBarrierChange={setListingEditBarrier} actionsTarget={null} />
               </details>
             </>
           ) : (
-            <ListingEditor review={review} reload={load} onEditBarrierChange={setListingEditBarrier} actionsTarget={editActionsTarget} />
+            <ListingEditor key={review.job_id} review={review} reload={load} onEditBarrierChange={setListingEditBarrier} actionsTarget={editActionsTarget} />
           )}
         </div>
       </div>

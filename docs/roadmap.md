@@ -92,6 +92,29 @@ seller job that reaches human review and guarded publication.
 
 ## Outside the hackathon vertical slice
 
+### Watched artwork folder — future phase
+
+A small desktop companion could watch a folder selected by the seller and submit finished
+artwork to the existing private preparation workflow. The seller could add another design
+while earlier listings are being built, then review the resulting queue in Mr. Lister.
+Every item would stop at review; approval and publication would remain explicit user actions.
+
+This requires a desktop component: an ordinary browser tab cannot reliably watch a folder
+continuously after it is closed. Before implementation, define how the companion obtains a
+seller session, binds the folder to the intended account/store, and pauses when sign-in expires.
+Use the existing upload API rather than storing Printify credentials on the desktop.
+
+The companion would wait for each file to finish being written, maintain a durable queue across
+restarts, limit concurrent preparation, and distinguish a retried delivery from an intentional
+resubmission of the same artwork. Invalid files and interrupted uploads would have visible
+recovery controls. Preserve the existing file limits and artwork conversion/integrity rules.
+Removing a local file would not delete an existing listing.
+
+This is a recorded product direction, not part of the current navigation update. Google/Apple
+login and self-service store connections also remain deferred.
+
+### Other deferred capabilities
+
 - durable bulk-job orchestration beyond the bounded in-browser multi-file submission;
 - multiple product profiles or stores;
 - Shopify and other marketplace adapters;

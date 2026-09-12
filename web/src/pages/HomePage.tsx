@@ -1,10 +1,12 @@
 import { useEffect, useId, useRef, useState, type DragEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAppDependencies } from "../app-context";
 import { useSessionStatus } from "../auth/use-session";
 import { useSignIn } from "../auth/sign-in";
 import type { JobSummary } from "../contracts";
 import { WorkflowSteps } from "../components/WorkflowSteps";
+import { batchItemStatus, jobProgressLabel, useBatchWorkspace } from "../navigation/BatchWorkspace";
+import { WorkspaceLink } from "../navigation/WorkspaceNavigation";
 import {
   MAX_BATCH_FILES,
   type BatchUploadItemState,
@@ -22,6 +24,7 @@ export function HomePage() {
   const { startSignIn, error: signInError } = useSignIn();
   const navigate = useNavigate();
   const upload = useUpload();
+  const workspace = useBatchWorkspace();
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
@@ -43,12 +46,15 @@ export function HomePage() {
     if (status !== "authenticated") return;
     let active = true;
     void api.listJobs().then((response) => {
-      if (active) setJobs(response.value.jobs);
+      if (active) {
+        setJobs(response.value.jobs);
+        setJobsError(null);
+      }
     }).catch((error: unknown) => {
       if (active) setJobsError(error instanceof Error ? error.message : "Recent work is unavailable.");
     });
     return () => { active = false; };
-  }, [api, status]);
+  }, [api, status, batchFinished]);
 
   useEffect(() => {
     if (upload.batch.phase === "idle"
@@ -244,12 +250,15 @@ export function HomePage() {
               <strong>{batchBusy
                 ? "Preparing your artwork"
                 : batchFinished
-                  ? "Your upload results are ready"
+                  ? "Follow your listings"
                   : selectedFiles.length === 0
                     ? "Your next listing starts here"
                     : `${selectedFiles.length} artwork ${selectedFiles.length === 1 ? "file" : "files"} selected`}
               </strong>
               <small>Nothing publishes until you approve and confirm.</small>
+              {workspace.autoOpenPending && <p className="loading-line" role="status">{upload.batch.items.length === 1
+                ? "Your listing will open automatically when it’s ready."
+                : "Your first ready listing will open automatically. The rest will stay together in your batch."}</p>}
               {upload.batch.phase === "running" && <p className="loading-line" role="status" aria-live="polite">{upload.batch.message}</p>}
             </div>
             <button className="button button--primary" type="submit" disabled={uploadLocked || selectedFiles.length === 0}>
@@ -270,7 +279,7 @@ export function HomePage() {
         <div className="section-heading-row">
           <div>
             <p className="eyebrow">Your workspace</p>
-            <h2 id="recent-heading">Recent preparations</h2>
+            <h2 id="recent-heading">Your listings</h2>
           </div>
           <div className="section-heading-actions">
             <span className="count-chip">{visibleJobs.length}</span>
@@ -289,7 +298,7 @@ export function HomePage() {
         {jobsError !== null && <p className="alert alert--error" role="alert">{jobsError}</p>}
         {visibleJobs.length === 0 && jobsError === null ? (
           <div className="empty-state">
-            <p>{hideRecentJobs ? "Recent list cleared for now." : "No preparations yet."}</p>
+            <p>{hideRecentJobs ? "Recent list cleared for now." : "No listings yet."}</p>
             <small>
               {hideRecentJobs
                 ? "This only hides the current view. Jobs, provider products, publication records, and audit history are preserved."
@@ -300,10 +309,12 @@ export function HomePage() {
           <ul className="job-list">
             {visibleJobs.map((job) => (
               <li key={job.job_id}>
-                <Link to={`/jobs/${job.job_id}`}>
-                  <span><strong>Open preparation</strong><small>{job.job_id} · Updated {formatDate(job.updated_at)}</small></span>
+                <WorkspaceLink to={`/jobs/${job.job_id}`} aria-label={`Open listing: ${workspace.filenameByJob[job.job_id] ?? job.job_id}`}>
+                  <span className="job-list-label"><strong>{workspace.filenameByJob[job.job_id] ?? `Listing ${job.job_id.slice(-8)}`}</strong><small>Updated {formatDate(job.updated_at)}</small></span>
+                  <span className="job-list-status">{(workspace.progressByJob[job.job_id]?.record_version ?? -1) >= job.record_version
+                    ? jobProgressLabel(workspace.progressByJob[job.job_id]!) : jobStateLabel(job.state)}</span>
                   <span aria-hidden="true">→</span>
-                </Link>
+                </WorkspaceLink>
               </li>
             ))}
           </ul>
@@ -408,6 +419,9 @@ function BatchProgress({
 }
 
 function BatchProgressItem({ item }: { item: BatchUploadItemState }) {
+  const { progressByJob, progressErrorByJob } = useBatchWorkspace();
+  const progress = item.jobId === null ? undefined : progressByJob[item.jobId];
+  const progressError = item.jobId === null ? undefined : progressErrorByJob[item.jobId];
   const failed = item.phase === "error" || item.phase === "expired";
   return (
     <li className={failed ? "upload-queue-item upload-queue-item--error" : "upload-queue-item"}>
@@ -415,29 +429,24 @@ function BatchProgressItem({ item }: { item: BatchUploadItemState }) {
       <span className="queue-file">
         <strong>{item.filename}</strong>
         {item.preparedFilename !== null && item.preparedFilename !== item.filename && <small>{item.preparedFilename} · converted locally</small>}
-        <small>{item.message}</small>
+        <small>{item.phase === "complete" ? progressError ?? "Your artwork is uploaded. Open the listing at any time to follow its progress." : item.message}</small>
         {item.requestId !== null && <small>Support reference: {item.requestId}</small>}
       </span>
-      <span className={`queue-status queue-status--${item.phase}`}>{batchPhaseLabel(item.phase)}</span>
+      <span className={`queue-status queue-status--${item.phase}`}>{batchItemStatus(item, progress)}</span>
       {item.phase === "uploading" && <progress max="100" value={item.progress} aria-label={`${item.filename} upload progress`}>{item.progress}%</progress>}
-      {item.phase === "complete" && item.jobId !== null && <Link className="button button--quiet queue-link" to={`/jobs/${item.jobId}`}>Open listing</Link>}
-      {failed && item.sourceFormat === "png" && item.uploadId !== null && <Link className="button button--quiet queue-link" to={`/uploads/${item.uploadId}`}>Recover upload</Link>}
+      {item.phase === "complete" && item.jobId !== null && <WorkspaceLink className="button button--quiet queue-link" to={`/jobs/${item.jobId}`}>Open listing</WorkspaceLink>}
+      {failed && item.sourceFormat === "png" && item.uploadId !== null && <WorkspaceLink className="button button--quiet queue-link" to={`/uploads/${item.uploadId}`}>Recover upload</WorkspaceLink>}
     </li>
   );
 }
 
-function batchPhaseLabel(phase: BatchUploadItemState["phase"]): string {
+function jobStateLabel(state: JobSummary["state"]): string {
   return {
-    queued: "Queued",
-    validating: "Checking",
-    hashing: "Fingerprinting",
-    creating_intent: "Reserving",
-    uploading: "Uploading",
-    finalizing: "Verifying",
-    complete: "Started",
-    expired: "Expired",
-    error: "Needs attention",
-  }[phase];
+    intake_validated: "Preparing listing", analyzing_artwork: "Preparing listing", listing_drafted: "Preparing listing",
+    needs_revision: "Ready to edit", product_draft_syncing: "Preparing product", awaiting_approval: "Ready for review",
+    pricing_refreshing: "Updating estimate", reconciliation_required: "Checking product", failed_retryable: "Needs attention",
+    failed_terminal: "Preparation stopped", cancel_requested: "Cancelling", cancelled: "Cancelled", approved: "Review approved",
+  }[state];
 }
 
 function formatDate(value: string): string {

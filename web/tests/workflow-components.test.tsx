@@ -1,4 +1,5 @@
 import { StrictMode } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
@@ -70,13 +71,14 @@ describe("session-observed activity", () => {
 
 describe("accessible workflow and preparation status", () => {
   it("distinguishes the seller's current step from previously completed steps", () => {
-    const { container, rerender } = render(<WorkflowSteps current="Review" />);
+    const { container, rerender } = render(<MemoryRouter><WorkflowSteps current="Review" /></MemoryRouter>);
     const navigation = screen.getByRole("navigation", { name: "Listing workflow" });
     expect(within(navigation).getAllByRole("listitem")).toHaveLength(3);
     expect(container.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
     expect(container.querySelector('[aria-current="step"]')).toHaveTextContent("Review");
     expect(within(navigation).getByText("complete")).toBeInTheDocument();
-    rerender(<WorkflowSteps current="Publish" />);
+    expect(within(navigation).getByRole("link", { name: "Upload artwork" })).toHaveAttribute("href", "/");
+    rerender(<MemoryRouter><WorkflowSteps current="Publish" /></MemoryRouter>);
     expect(container.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
     expect(container.querySelector('[aria-current="step"]')).toHaveTextContent("Publish");
     expect(within(navigation).getAllByText("complete")).toHaveLength(2);

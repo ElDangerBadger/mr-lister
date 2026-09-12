@@ -576,6 +576,24 @@ describe("authoritative seller review", () => {
     expect(document.title).toBe("Uploads | Mr. Lister");
   });
 
+  it.each(["Dashboard", "Upload artwork"])("protects edits when using %s, then returns to the upload workspace", async (linkName) => {
+    const review = readyReview();
+    const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
+    const reviseListing = vi.fn();
+    render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { listJobs, reviseListing })} /></MemoryRouter>);
+    const title = await screen.findByRole("textbox", { name: /^Title/u });
+    fireEvent.change(title, { target: { value: "My unsaved listing title" } });
+    await userEvent.click(screen.getByRole("link", { name: linkName }));
+    expect(screen.getByRole("dialog", { name: "Leave your unsaved changes?" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Stay here" }));
+    expect(title).toHaveValue("My unsaved listing title");
+    await userEvent.click(screen.getByRole("link", { name: linkName }));
+    await userEvent.click(screen.getByRole("button", { name: "Leave without saving" }));
+    expect(await screen.findByRole("heading", { name: "Let’s start with your artwork." })).toBeVisible();
+    expect(reviseListing).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("fails closed while a same-route job identifier changes", async () => {
     const first = readyReview();
     const second = sellerReviewSchema.parse({ ...first, job_id: "job_second", listing: { ...first.listing, title: "Second listing" } });

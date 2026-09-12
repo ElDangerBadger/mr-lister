@@ -9,6 +9,52 @@ deployed as well, and the hosted login and MFA screens use the matching icon and
 colors. The latest release evidence appears below; isolated
 judge access remains a separate, deferred release step.
 
+## Approved navigation release — September 11, 2026
+
+The seller approved the revised flow after testing the local sample and authorized
+deployment. The reviewed changes are being checkpointed on `pass-b-ui-evaluator` for
+a static frontend release. `main` remains at the pre-Pass-B checkpoint `9509d2d`.
+The hosted-login branding release below is unaffected. Live cutover and verification
+evidence will be recorded after deployment.
+
+The sample deliberately reuses fixed front/back shirt mockups for its simulated
+listings. That temporary sample lives outside the repository and production bundle;
+the live application continues to use each listing's returned provider mockups.
+
+- A new submission made from Upload arms one automatic transition. Completed artwork
+  transfer starts status checks; only `ready_for_review` or `needs_revision` opens
+  the first ready listing. Failed items do not prevent a ready sibling from opening.
+- Leaving Upload manually cancels that automatic transition for the batch. Returning
+  home or another listing becoming ready never moves the user away from their work.
+- Dashboard, the brand, and the Upload milestone return to the start page without
+  aborting the active upload batch. The compact batch menu provides filenames,
+  preparation statuses, recovery links and previous/next listing navigation.
+- New workspace links confirm leaving unsaved review edits and block departure while
+  a save is being reconciled. Closing/reloading the tab uses the browser's unsaved-work
+  warning. Browser Back/Forward and the existing explicit sign-out control are outside
+  this link guard; no router/history interception was added.
+- Batch grouping and filenames remain session memory. Refreshing still recovers jobs
+  from the existing owner-scoped recent-list endpoint; it does not persist selected
+  files or create a new backend batch record. Older jobs use a short listing reference
+  because the summary endpoint does not provide titles or filenames.
+- Background status checks pause while hidden/offline, back off on errors, and stop
+  continuously checking completed/attention states. Review updates keep cached batch
+  status current without treating approval as confirmed publication.
+
+The web check passes all 302 tests, lint, typecheck and the production build. The
+fresh-build Chromium, Firefox and WebKit gate passes at
+`output/playwright/phase66/20260912T004337Z/browser-gate.json`, with attestation eligible
+and bundle SHA-256
+`57c3928d65c5845ec0a5e001d3d5cb1efe87b3f564f7d3dbd4c98d4669123eaa`.
+The retained synthetic multi-upload flow confirms ready-only automatic navigation,
+one transition per batch, manual navigation cancelling it, sibling access, draft
+isolation, edit confirmation/focus restoration and mobile layout. Each engine makes
+three synthetic uploads and zero provider transport attempts. The WebKit check caught
+and verified a fix for Safari not focusing clicked anchors: the confirmation records
+the clicked link explicitly, so Escape restores focus to that control.
+The [watched artwork folder direction](roadmap.md#watched-artwork-folder--future-phase)
+is recorded for a later phase; no folder watcher is part of this change.
+
 ## Implemented
 
 - The supplied Mr. Lister artwork replaces the initials in the header. The landing

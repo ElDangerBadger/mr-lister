@@ -2,7 +2,7 @@
 
 This harness runs the exact `web/dist` production bundle through Playwright CLI without adding
 `@playwright/test` to the application. A local Python standard-library server owns deterministic
-API state, authority headers, delayed responses, and static files. Four compact CLI flow files
+API state, authority headers, delayed responses, and static files. Five compact CLI flow files
 exercise browser behavior; a generic context route only maps production-like HTTPS origins to the
 loopback server.
 
@@ -10,6 +10,12 @@ Upload-selection coverage sets local PNG fixtures on the multiple-file input and
 append, remove, ordering, limits, and desktop/mobile geometry without submitting uploads.
 Native file-chooser activation is checked separately in Safari; CLI chooser dialogs require
 their own interactive upload command and cannot remain open inside an attested flow.
+
+Workspace-navigation coverage adds three synthetic uploads through locally fulfilled routes.
+It holds preparation status before marking reviews ready, verifies one automatic handoff per
+batch, and checks sibling links, manual-navigation cancellation, unsaved-edit confirmation,
+draft isolation, and narrow-screen navigation. The fake upload origin accepts bytes only inside
+the intercepted browser fixture; it does not call S3, AWS, or a connected store.
 
 Run all three engines from the repository root:
 

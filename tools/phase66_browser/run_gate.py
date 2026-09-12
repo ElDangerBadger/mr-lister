@@ -28,6 +28,7 @@ ENGINE_MAP = {"chromium": "chrome", "firefox": "firefox", "webkit": "webkit"}
 FLOW_FILES = (
     "auth_review_flow.js",
     "upload_selection_flow.js",
+    "workspace_navigation_flow.js",
     "route_polling_flow.js",
     "accessibility_flow.js",
 )
