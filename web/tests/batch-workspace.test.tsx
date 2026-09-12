@@ -25,17 +25,18 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); });
 
 describe("batch listing navigation", () => {
-  it("waits for authoritative readiness, then opens the listing only once", async () => {
+  it("opens after upload verification without waiting for listing readiness, only once", async () => {
     const getJob = vi.fn().mockResolvedValue(progress("job_one", "preparing"));
     const harness = mount(getJob);
     upload.batch = batch([item("one", "uploading")], "running");
     harness.refresh();
     expect(screen.getByTestId("auto-open")).toHaveTextContent("true");
+    expect(screen.getByTestId("route")).toHaveTextContent(/^\/$/u);
     expect(getJob).not.toHaveBeenCalled();
     upload.batch = batch([item("one", "complete")]);
     harness.refresh();
     await flush();
-    expect(screen.getByTestId("route")).toHaveTextContent(/^\/$/u);
+    expect(screen.getByTestId("route")).toHaveTextContent("/jobs/job_one");
     expect(screen.getByTestId("workspace")).toHaveTextContent("preparing");
     getJob.mockResolvedValue(progress("job_one", "ready_for_review", 2));
     await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
@@ -50,27 +51,32 @@ describe("batch listing navigation", () => {
     const waiting = deferred<DecodedResponse<JobProgress>>();
     const getJob = vi.fn().mockReturnValue(waiting.promise);
     const harness = mount(getJob);
-    upload.batch = batch([item("one", "complete")], "running");
+    upload.batch = batch([item("one", "uploading")], "running");
     harness.refresh();
     fireEvent.click(screen.getByText("Elsewhere"));
     fireEvent.click(screen.getByText("Home"));
+    upload.batch = batch([item("one", "complete")]);
+    harness.refresh();
     await act(async () => { waiting.resolve(progress("job_one", "ready_for_review")); await Promise.resolve(); });
     expect(screen.getByTestId("route")).toHaveTextContent(/^\/$/u);
     expect(screen.getByTestId("auto-open")).toHaveTextContent("false");
   });
 
-  it("opens the first ready job without switching when another listing becomes ready later", async () => {
+  it("opens the first verified upload while siblings upload, without switching later", async () => {
     const getJob = vi.fn().mockImplementation((jobId: string) => Promise.resolve(progress(jobId,
-      jobId === "job_two" ? "ready_for_review" : "preparing")));
+      "preparing")));
     const harness = mount(getJob);
-    upload.batch = batch([item("one", "complete"), item("two", "complete")], "running");
+    upload.batch = batch([item("one", "uploading"), item("two", "complete")], "running");
     harness.refresh();
     await flush();
     expect(screen.getByTestId("route")).toHaveTextContent("/jobs/job_two");
+    upload.batch = batch([item("one", "complete"), item("two", "complete")]);
+    harness.refresh();
+    await flush();
     getJob.mockImplementation((jobId: string) => Promise.resolve(progress(jobId, "ready_for_review", 2)));
     await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
     expect(screen.getByTestId("route")).toHaveTextContent("/jobs/job_two");
-    expect(getJob.mock.calls.filter(([jobId]) => jobId === "job_two")).toHaveLength(1);
+    expect(getJob.mock.calls.filter(([jobId]) => jobId === "job_two")).toHaveLength(3);
     expect(getJob.mock.calls.filter(([jobId]) => jobId === "job_one")).toHaveLength(2);
   });
 
@@ -91,13 +97,12 @@ describe("batch listing navigation", () => {
     expect(getJob).not.toHaveBeenCalledWith("job_one");
   });
 
-  it("ignores a stale readiness response after a new batch replaces it", async () => {
+  it("ignores stale progress after a new batch replaces a previously completed batch", async () => {
     const stale = deferred<DecodedResponse<JobProgress>>();
     const getJob = vi.fn().mockImplementation((jobId: string) => jobId === "job_one" ? stale.promise : Promise.resolve(progress(jobId, "preparing")));
+    upload.batch = batch([item("one", "complete")]);
     const harness = mount(getJob);
-    upload.batch = batch([item("one", "complete")], "running");
-    harness.refresh();
-    upload.batch = batch([item("two", "complete")], "running");
+    upload.batch = batch([item("two", "uploading")], "running");
     harness.refresh();
     await flush();
     await act(async () => { stale.resolve(progress("job_one", "ready_for_review")); await Promise.resolve(); });
@@ -141,10 +146,10 @@ describe("batch listing navigation", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(getJob).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("auto-open")).toHaveTextContent("false");
-    expect(screen.getByTestId("route")).toHaveTextContent(/^\/$/u);
+    expect(screen.getByTestId("route")).toHaveTextContent("/jobs/job_one");
   });
 
-  it("backs off temporary failures without calling a listing ready", async () => {
+  it("opens the uploaded workspace even while background status checks back off", async () => {
     const getJob = vi.fn().mockRejectedValueOnce(new ApiError(429, "THROTTLED", "Try later", "request", 10))
       .mockResolvedValue(progress("job_one", "ready_for_review"));
     const harness = mount(getJob);
@@ -154,7 +159,7 @@ describe("batch listing navigation", () => {
     expect(screen.getByTestId("workspace")).toHaveTextContent("Status is temporarily unavailable");
     await act(async () => { await vi.advanceTimersByTimeAsync(9_000); });
     expect(getJob).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("route")).toHaveTextContent(/^\/$/u);
+    expect(screen.getByTestId("route")).toHaveTextContent("/jobs/job_one");
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
     expect(screen.getByTestId("route")).toHaveTextContent("/jobs/job_one");
     expect(screen.getByTestId("workspace")).not.toHaveTextContent("Status is temporarily unavailable");
@@ -178,7 +183,20 @@ describe("batch listing navigation", () => {
     await act(async () => { pending.resolve(progress("job_one", "ready_for_review")); await Promise.resolve(); });
     expect(screen.getByTestId("workspace")).not.toHaveTextContent("one.png");
     expect(screen.getByTestId("workspace")).not.toHaveTextContent("ready_for_review");
+    expect(screen.getByTestId("route")).toHaveTextContent("/jobs/job_one");
+  });
+
+  it("stays on Home when every upload fails verification", async () => {
+    const getJob = vi.fn();
+    const harness = mount(getJob);
+    upload.batch = batch([item("one", "finalizing"), item("two", "uploading")], "running");
+    harness.refresh();
+    upload.batch = batch([item("one", "error"), item("two", "expired")]);
+    harness.refresh();
+    await flush();
     expect(screen.getByTestId("route")).toHaveTextContent(/^\/$/u);
+    expect(screen.getByTestId("auto-open")).toHaveTextContent("false");
+    expect(getJob).not.toHaveBeenCalled();
   });
 
   it("counts queued artwork in the batch and retains updated approval status after switching listings", async () => {

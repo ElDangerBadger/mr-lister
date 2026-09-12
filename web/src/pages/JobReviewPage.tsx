@@ -25,7 +25,7 @@ export function JobReviewPage() {
   const { api, publicationApi } = useAppDependencies();
   const [loadedReview, setReview] = useState<SellerReview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<{ message: string; requestId: string | null } | null>(null);
+  const [error, setError] = useState<{ message: string; requestId: string | null; retryable?: boolean } | null>(null);
   const [stageAnnouncement, setStageAnnouncement] = useState("");
   const [loadedPreviewKey, setLoadedPreviewKey] = useState<string | null>(null);
   const [loadedMockupSetKey, setLoadedMockupSetKey] = useState<string | null>(null);
@@ -35,6 +35,7 @@ export function JobReviewPage() {
   const lastStage = useRef<string | null>(null);
   const requestSequence = useRef(0);
   const nextPollDelay = useRef(3_000);
+  const initialLoadFailures = useRef(0);
   const reviewRef = useRef<SellerReview | null>(null);
   const lifecycle = useRef({ mounted: false, generation: 0 });
   const routeIdentity = useRef({ jobId, epoch: 0 });
@@ -54,6 +55,7 @@ export function JobReviewPage() {
 
   const review = loadedReview?.job_id === jobId ? loadedReview : null;
   reviewRef.current = review;
+  const retryInitialLoad = review === null && !loading && error?.retryable === true;
 
   useEffect(() => {
     lifecycle.current = { mounted: true, generation: lifecycle.current.generation + 1 };
@@ -85,6 +87,7 @@ export function JobReviewPage() {
           return response.value;
         });
         setError(null);
+        initialLoadFailures.current = 0;
       }
       nextPollDelay.current = 3_000;
       return meetsMinimum;
@@ -95,9 +98,12 @@ export function JobReviewPage() {
         || routeIdentity.current.jobId !== jobId
         || sequence !== requestSequence.current) return false;
       const requestId = reason instanceof ApiError || reason instanceof ContractError ? reason.requestId : null;
+      if (reviewRef.current === null) initialLoadFailures.current += 1;
       setError({
         message: reason instanceof Error ? reason.message : "The review is temporarily unavailable.",
         requestId: requestId === "unavailable" ? null : requestId,
+        retryable: initialLoadFailures.current < 3 && (reason instanceof TypeError
+          || (reason instanceof ApiError && (reason.status >= 500 || reason.status === 408 || reason.status === 429))),
       });
       const retryAfter = reason instanceof ApiError ? reason.retryAfterSeconds : null;
       nextPollDelay.current = retryAfter === null
@@ -158,6 +164,8 @@ export function JobReviewPage() {
     setLoading(true);
     setReview(null);
     setError(null);
+    initialLoadFailures.current = 0;
+    nextPollDelay.current = 3_000;
     lastStage.current = null;
     setLoadedPreviewKey(null);
     setLoadedMockupSetKey(null);
@@ -172,8 +180,9 @@ export function JobReviewPage() {
   }, [review]);
 
   useEffect(() => {
-    if (review === null) return;
-    const continuouslyPoll = POLLING_STATES.has(review.display_state);
+    if (review === null && !retryInitialLoad) return;
+    const continuouslyPoll = review === null || POLLING_STATES.has(review.display_state);
+    const refresh = () => review === null ? load() : refreshProgress();
     let active = true;
     let inFlight = false;
     let timeout: number | null = null;
@@ -182,7 +191,7 @@ export function JobReviewPage() {
         timeout = window.setTimeout(() => {
           if (!active || inFlight || !navigator.onLine || document.visibilityState !== "visible") return;
           inFlight = true;
-          void refreshProgress().finally(() => {
+          void refresh().finally(() => {
             inFlight = false;
             if (active) schedule();
           });
@@ -194,7 +203,7 @@ export function JobReviewPage() {
       if (timeout !== null) window.clearTimeout(timeout);
       timeout = null;
       inFlight = true;
-      void refreshProgress().finally(() => {
+      void refresh().finally(() => {
         inFlight = false;
         if (active) schedule();
       });
@@ -210,20 +219,21 @@ export function JobReviewPage() {
       window.removeEventListener("online", refreshOnFocus);
       document.removeEventListener("visibilitychange", refreshOnFocus);
     };
-  }, [refreshProgress, review]);
+  }, [load, refreshProgress, retryInitialLoad, review]);
 
   if (loading && review === null) {
-    return <section className="page narrow-page"><WorkflowSteps current="Review" /><BatchNavigator /><h1>Preparing your review…</h1><p role="status">Loading the authoritative seller view.</p></section>;
+    return <section className="page narrow-page"><WorkflowSteps current="Review" /><BatchNavigator /><h1>Opening your listing…</h1><p role="status">Your artwork is uploaded. Loading your preview and preparation progress.</p></section>;
   }
   if (review === null) {
     return (
       <section className="page narrow-page">
         <WorkflowSteps current="Review" />
         <BatchNavigator />
-        <p className="eyebrow">Review unavailable</p>
-        <h1>We could not open this preparation.</h1>
+        <p className="eyebrow">{retryInitialLoad ? "Your listing workspace" : "Review unavailable"}</p>
+        <h1>{retryInitialLoad ? "Opening your listing…" : "We could not open this preparation."}</h1>
         {error !== null && <ErrorNotice {...error} />}
-        <button className="button" type="button" onClick={() => { void load(); }}>Try again</button>
+        {retryInitialLoad ? <p role="status">Your listing is still opening. We’ll try again shortly.</p>
+          : <button className="button" type="button" onClick={() => { void load(); }}>Try again</button>}
       </section>
     );
   }

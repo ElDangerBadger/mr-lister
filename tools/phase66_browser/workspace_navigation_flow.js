@@ -13,6 +13,7 @@ async page => {
   const uploads = [];
   const readyJobs = new Set();
   const completeJobs = new Set();
+  const heldCompletions = new Map();
   const progressReads = new Map();
   const storageOrigin = "https://phase66-navigation.s3.us-west-2.amazonaws.com";
   let storageWrites = 0;
@@ -41,6 +42,10 @@ async page => {
     const ready = readyJobs.has(jobId);
     const value = clone(ready ? readyTemplate : pendingTemplate);
     value.job_id = jobId;
+    value.created_at = uploads.find(upload => upload.job_id === jobId).created_at;
+    value.updated_at = value.created_at;
+    // A verified upload has a pinned source preview before AI/product work runs.
+    value.preview = clone(readyTemplate.preview);
     if (value.preview.url !== null) value.preview.url = `${publicOrigin}/v1/jobs/${jobId}/artwork-preview`;
     if (ready) value.listing.title = `Prepared ${uploads.find(upload => upload.job_id === jobId).filename}`;
     // Mockups retain their known local fixture route. No real store is reachable.
@@ -52,7 +57,7 @@ async page => {
     if (pathname === "/v1/uploads" && request.method() === "POST") {
       const body = request.postDataJSON();
       const index = uploads.length + 1;
-      const upload = { ...body, upload_id: `upload_navigation_${index}`, job_id: `job_navigation_${index}` };
+      const upload = { ...body, upload_id: `upload_navigation_${index}`, job_id: `job_navigation_${index}`, created_at: new Date().toISOString() };
       uploads.push(upload);
       const now = Date.now();
       await json(route, {
@@ -75,6 +80,10 @@ async page => {
     }
     const upload = uploads.find(item => pathname === `/v1/uploads/${item.upload_id}/complete`);
     if (upload !== undefined && request.method() === "POST") {
+      if (upload.job_id === "job_navigation_1" || upload.job_id === "job_navigation_3") {
+        await new Promise(resolve => heldCompletions.set(upload.job_id, resolve));
+        heldCompletions.delete(upload.job_id);
+      }
       completeJobs.add(upload.job_id);
       await json(route, { upload: { upload_id: upload.upload_id, job_id: upload.job_id, status: "completed", record_version: 2 }, authorization: null });
       return;
@@ -132,23 +141,41 @@ async page => {
     await page.getByRole("heading", { name: "Let’s start with your artwork." }).waitFor();
     await choose(["moon-moth.png", "garden-fern.png"]);
     await page.getByRole("button", { name: "Prepare 2 listings", exact: true }).click();
+    await waitUntil(() => heldCompletions.has("job_navigation_1"));
+    check(publicPath(page.url()) === "/", "unverified artwork opened a listing");
+    heldCompletions.get("job_navigation_1")();
+    await page.waitForURL(`${publicOrigin}/jobs/job_navigation_1`, { timeout: 10000 });
     await waitUntil(() => completeJobs.size === 2 && (progressReads.get("job_navigation_1") ?? 0) > 0 && (progressReads.get("job_navigation_2") ?? 0) > 0);
-    check(publicPath(page.url()) === "/", "upload completion opened a listing before review readiness");
+    await page.getByRole("heading", { name: "Your listing is taking shape." }).waitFor();
+    await page.waitForFunction(() => {
+      const artwork = document.querySelector("img.artwork-preview");
+      return artwork?.complete && artwork.naturalWidth > 0;
+    });
+    check(readyJobs.size === 0, "artwork preview waited for AI or product completion");
+    await page.getByRole("timer", { name: "Elapsed time since submission" }).waitFor();
+    const elapsedBefore = await page.locator(".preparation-elapsed time").getAttribute("datetime");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    check(await page.locator(".preparation-activity-label").evaluate(element => getComputedStyle(element).animationName) === "preparation-shimmer", "active preparation has no shimmer");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    check(await page.locator(".preparation-activity-label").evaluate(element => getComputedStyle(element).animationName) === "none", "reduced motion did not stop the shimmer");
+    await page.emulateMedia({ reducedMotion: null });
+    await page.screenshot({ path: "workspace-navigation-preparing.png", fullPage: true });
     await page.waitForTimeout(3250);
-    check(publicPath(page.url()) === "/", "preparing status routed away from the upload dashboard");
-    readyJobs.add("job_navigation_2");
-    await page.waitForURL(`${publicOrigin}/jobs/job_navigation_2`, { timeout: 10000 });
-    await waitForTitle("Prepared garden-fern.png");
+    check(await page.locator(".preparation-elapsed time").getAttribute("datetime") !== elapsedBefore, "elapsed preparation counter did not advance");
+    check(publicPath(page.url()) === "/jobs/job_navigation_1", "background preparation changed the active listing");
+    readyJobs.add("job_navigation_1");
+    await waitForTitle("Prepared moon-moth.png");
+    check(await page.getByRole("timer").count() === 0, "completed preparation left a running timer");
     const batch = page.getByRole("navigation", { name: "Listings in this batch" });
     await batch.locator("summary").click();
-    check(await batch.getByRole("link", { name: "moon-moth.png", exact: true }).isVisible(), "the sibling listing is missing from the batch switcher");
-    check(await batch.getByRole("link", { name: "garden-fern.png", exact: true }).getAttribute("aria-current") === "page", "the current batch listing is not identified");
-    await page.locator("#listing-title").fill("An unsaved garden fern title");
+    check(await batch.getByRole("link", { name: "garden-fern.png", exact: true }).isVisible(), "the sibling listing is missing from the batch switcher");
+    check(await batch.getByRole("link", { name: "moon-moth.png", exact: true }).getAttribute("aria-current") === "page", "the current batch listing is not identified");
+    await page.locator("#listing-title").fill("An unsaved moon moth title");
     await page.locator('.action-panel[data-listing-barrier="unsaved"]').waitFor();
-    readyJobs.add("job_navigation_1");
+    readyJobs.add("job_navigation_2");
     await page.waitForTimeout(3250);
-    check(publicPath(page.url()) === "/jobs/job_navigation_2", "a later-ready sibling stole the active review");
-    check(await page.locator("#listing-title").inputValue() === "An unsaved garden fern title", "background readiness replaced unsaved edits");
+    check(publicPath(page.url()) === "/jobs/job_navigation_1", "a later-ready sibling stole the active review");
+    check(await page.locator("#listing-title").inputValue() === "An unsaved moon moth title", "background readiness replaced unsaved edits");
     await home().click();
     const leaveDialog = page.getByRole("dialog", { name: "Leave your unsaved changes?" });
     await leaveDialog.waitFor();
@@ -156,13 +183,13 @@ async page => {
     await page.keyboard.press("Escape");
     await leaveDialog.waitFor({ state: "hidden" });
     check(await home().evaluate(element => document.activeElement === element), "closing confirmation did not restore navigation focus");
-    check(await page.locator("#listing-title").inputValue() === "An unsaved garden fern title", "staying discarded the listing edits");
-    await batch.getByRole("link", { name: "moon-moth.png", exact: true }).click();
+    check(await page.locator("#listing-title").inputValue() === "An unsaved moon moth title", "staying discarded the listing edits");
+    await batch.getByRole("link", { name: "garden-fern.png", exact: true }).click();
     await leaveDialog.getByRole("button", { name: "Leave without saving" }).click();
-    await page.waitForURL(`${publicOrigin}/jobs/job_navigation_1`);
-    await waitForTitle("Prepared moon-moth.png");
-    await page.getByRole("link", { name: "Next listing: garden-fern.png", exact: true }).click();
+    await page.waitForURL(`${publicOrigin}/jobs/job_navigation_2`);
     await waitForTitle("Prepared garden-fern.png");
+    await page.getByRole("link", { name: "Previous listing: moon-moth.png", exact: true }).click();
+    await waitForTitle("Prepared moon-moth.png");
     await page.screenshot({ path: "workspace-navigation-desktop.png", fullPage: true });
     await page.setViewportSize({ width: 360, height: 780 });
     const mobile = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
@@ -179,10 +206,12 @@ async page => {
     // Explicitly leaving Home consumes automatic navigation for a new pending batch.
     await choose(["manual-navigation.png"]);
     await page.getByRole("button", { name: "Prepare 1 listing", exact: true }).click();
-    await waitUntil(() => completeJobs.has("job_navigation_3"));
+    await waitUntil(() => heldCompletions.has("job_navigation_3"));
     await page.locator('a[href="/jobs/job_route_b"]').first().click();
     await waitForTitle("Current route B artwork");
     await home().click();
+    heldCompletions.get("job_navigation_3")();
+    await waitUntil(() => completeJobs.has("job_navigation_3"));
     readyJobs.add("job_navigation_3");
     await page.waitForTimeout(3250);
     check(publicPath(page.url()) === "/", "a manually visited listing did not cancel the pending automatic hop");
@@ -194,7 +223,9 @@ async page => {
     await page.locator(`a[href="${originalPath}"]`).first().click();
     await page.waitForURL(`${publicOrigin}${originalPath}`);
     return {
-      uploadCompletionDoesNotNavigate: "passed", firstReadyListingAutoOpen: "passed",
+      unverifiedUploadDoesNotNavigate: "passed", verifiedUploadOpensWorkspace: "passed",
+      artworkPreviewBeforeListingReady: "passed",
+      preparationShimmerAndElapsedTime: "passed", reducedMotionActivity: "passed",
       oneAutomaticHopPerBatch: "passed", manualNavigationCancelsAutoOpen: "passed",
       batchSiblingNavigation: "passed", unsavedEditConfirmationAndFocus: "passed",
       isolatedListingDrafts: "passed", dashboardAndUploadLinks: "passed", mobileNavigationLayout: "passed",

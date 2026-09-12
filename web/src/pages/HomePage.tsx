@@ -257,8 +257,8 @@ export function HomePage() {
               </strong>
               <small>Nothing publishes until you approve and confirm.</small>
               {workspace.autoOpenPending && <p className="loading-line" role="status">{upload.batch.items.length === 1
-                ? "Your listing will open automatically when it’s ready."
-                : "Your first ready listing will open automatically. The rest will stay together in your batch."}</p>}
+                ? "Your listing will open after the artwork upload is verified. Preparation will continue there."
+                : "Your first uploaded listing will open automatically. The rest will stay together in your batch."}</p>}
               {upload.batch.phase === "running" && <p className="loading-line" role="status" aria-live="polite">{upload.batch.message}</p>}
             </div>
             <button className="button button--primary" type="submit" disabled={uploadLocked || selectedFiles.length === 0}>

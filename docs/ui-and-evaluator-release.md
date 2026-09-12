@@ -10,6 +10,57 @@ colors. Automatic ready-listing navigation, Dashboard/Upload links and the batch
 switcher are now deployed too. The latest release evidence appears below; isolated
 judge access remains a separate, deferred release step.
 
+## Earlier workspace opening and preparation activity — awaiting release
+
+The seller requested earlier entry after timing a live submission at 2 minutes
+14.3 seconds. Automatic navigation now opens the first verified upload, when its
+durable source artwork is available, instead of waiting for `ready_for_review`.
+The existing private preview loads in the workspace while AI copy, product
+mockups, and economics continue. This changes when the workspace opens; it does
+not claim to accelerate backend preparation. Uploads still require successful
+verification, and only one automatic transition is allowed per batch. Leaving
+Home deliberately cancels it; later items remain accessible without taking focus.
+
+An active preparation shimmer and elapsed-time indicator make ongoing work
+visible. Elapsed time uses the durable job creation timestamp, survives SPA
+navigation, and is labeled "Since submission" rather than an ETA or active model
+runtime. It excludes time before the backend created the job. The activity indicator stops
+for ready/attention/terminal states and respects reduced motion. Early local
+editing, exact-version saving, preview evidence, approval, and publication
+requirements retain their existing behavior.
+
+Transient failures on the first review read now retry automatically with bounded
+backoff, visibility/online awareness, and a manual recovery option. Permanent
+access/not-found failures do not retry in the background.
+
+Read-only timing diagnosis for the seller's reported run found validated text at
+78.281 seconds, product synchronization at 103.465 seconds, and economics/Save
+readiness at 113.976 seconds after backend upload acceptance. The first artwork
+inspection call took 47.150 seconds and a bounded repair call took 5.440 seconds;
+all 14 Printify requests succeeded. Those timestamps do not measure the seller's
+134.3-second stopwatch boundaries or establish a model cold start. Private evidence
+is retained under `.mr_lister_private/early-open-job-timing-20260912/`.
+
+The local visual sample now advances its preparing scenario through early editing
+to readiness in approximately 18 seconds instead of holding it indefinitely. Its
+clock and source preview demonstrate the interface; it does not contact a store
+or represent measured production performance.
+
+Validation: all 317 web tests, lint, typecheck, and the production build pass.
+The fresh-build Chromium, Firefox, and WebKit gate passes at
+`output/playwright/phase66/20260912T053312Z/browser-gate.json`, attestation eligible,
+with bundle digest
+`5089103ccd324674111340112b993a7d027a45eb664c4aac7b7b7095bd9a49be`.
+Each engine verifies a decoded source image while listing preparation is still
+pending, shimmer/elapsed time and reduced-motion behavior, one automatic handoff,
+manual cancellation, continuing batch uploads, sibling navigation, and unsaved
+edit protection. All simulated provider-transport attempt counts are zero.
+
+The seller approved deployment and integration of all reviewed Pass B rounds into
+`main`. The integration is a fast-forward from `9509d2d`, preserving the pre-Pass-B
+checkpoint in history. The deployment record below identifies the previous live
+release until the new deployment is verified.
+
 ## Navigation deployed — September 11, 2026
 
 The seller approved the revised flow after testing the local sample. It was deployed

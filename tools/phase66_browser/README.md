@@ -12,8 +12,9 @@ Native file-chooser activation is checked separately in Safari; CLI chooser dial
 their own interactive upload command and cannot remain open inside an attested flow.
 
 Workspace-navigation coverage adds three synthetic uploads through locally fulfilled routes.
-It holds preparation status before marking reviews ready, verifies one automatic handoff per
-batch, and checks sibling links, manual-navigation cancellation, unsaved-edit confirmation,
+It holds upload verification before releasing the first handoff, then proves the original
+artwork is visible while AI/product preparation is still pending. It verifies one automatic
+handoff per batch and checks sibling links, manual-navigation cancellation, unsaved-edit confirmation,
 draft isolation, and narrow-screen navigation. The fake upload origin accepts bytes only inside
 the intercepted browser fixture; it does not call S3, AWS, or a connected store.
 

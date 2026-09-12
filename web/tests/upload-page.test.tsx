@@ -355,7 +355,8 @@ describe("upload route authority", () => {
     const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
     const createUpload = vi.fn((file: File, sha256: string) => Promise.resolve(openUploadResponse(file, sha256)));
     const completeUpload = vi.fn().mockResolvedValue(completedUploadResponse("upload_art", "job_art"));
-    const { api, auth } = dependencies({ listJobs, createUpload, completeUpload });
+    const getReview = vi.fn().mockImplementation(() => new Promise<never>(() => undefined));
+    const { api, auth } = dependencies({ listJobs, createUpload, completeUpload, getReview });
     render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
     const dropField = screen.getByText(/Drag and drop PNG, SVG, or JPEG artwork/u).closest("label");
     if (dropField === null) throw new Error("Drop field is missing");
@@ -374,6 +375,8 @@ describe("upload route authority", () => {
     expect(screen.getByText(/Unsupported file · this item will be rejected/u)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Prepare 2 listings" })).toBeEnabled();
     submitBatchForm(2);
+    await waitFor(() => expect(getReview).toHaveBeenCalledWith("job_art"));
+    await userEvent.setup().click(screen.getByRole("link", { name: "Dashboard" }));
     expect(await screen.findByText(
       "1 of 2 artwork files started preparation; 1 need attention.",
     )).toBeInTheDocument();
@@ -432,18 +435,21 @@ describe("upload route authority", () => {
     const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
     const createUpload = vi.fn((file: File, sha256: string) => Promise.resolve(openUploadResponse(file, sha256)));
     const completeUpload = vi.fn().mockResolvedValue(completedUploadResponse("upload_art", "job_art"));
-    const { api, auth } = dependencies({ listJobs, createUpload, completeUpload });
+    const getReview = vi.fn().mockImplementation(() => new Promise<never>(() => undefined));
+    const { api, auth } = dependencies({ listJobs, createUpload, completeUpload, getReview });
     render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
     const user = userEvent.setup();
     const input = screen.getByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u);
 
     await user.upload(input, makePng());
     submitBatchForm();
+    await waitFor(() => expect(getReview).toHaveBeenCalledWith("job_art"));
+    await user.click(screen.getByRole("link", { name: "Dashboard" }));
     expect(await screen.findByRole("button", { name: "Uploads processed" })).toBeDisabled();
-    expect(input).toBeDisabled();
+    expect(screen.getByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u)).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "Choose another batch" }));
-    expect(input).toBeEnabled();
+    expect(screen.getByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u)).toBeEnabled();
     expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
   });
 

@@ -5,7 +5,7 @@ import { MemoryRouter, useNavigate } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import browserFixtures from "../../contracts/browser/phase6.5.fixtures.json";
 import phase7Fixtures from "../../contracts/publication/phase7.0.1.browser.fixtures.json";
-import type { ApiPort } from "../src/api/client";
+import { ApiError, type ApiPort } from "../src/api/client";
 import { AppRoutes } from "../src/App";
 import { MemoryAuthSession, type AuthCoordinator } from "../src/auth/session";
 import { sellerReviewSchema, type SellerReview } from "../src/contracts";
@@ -37,6 +37,127 @@ describe("authoritative seller review", () => {
     const review = sellerReviewSchema.parse(browserFixtures.seller_review_pending);
     render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review)} /></MemoryRouter>);
     expect(await screen.findByText("Validation: Pending")).toBeInTheDocument();
+  });
+
+  it("automatically recovers a transient first review read into the preparing workspace", async () => {
+    vi.useFakeTimers();
+    try {
+      const review = sellerReviewSchema.parse(browserFixtures.seller_review_pending);
+      const getReview = vi.fn()
+        .mockRejectedValueOnce(new ApiError(503, "UNAVAILABLE", "Preparation is starting.", "request-starting", null))
+        .mockResolvedValue(reviewResponse(review, "request-preparing"));
+      const getJob = vi.fn().mockResolvedValue(progressResponse(review));
+      render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview, getJob })} /></MemoryRouter>);
+      await act(async () => { await Promise.resolve(); });
+      expect(screen.getByRole("heading", { name: "Opening your listing…" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_999); });
+      expect(getReview).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(getReview).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole("heading", { name: "Your listing is taking shape." })).toBeInTheDocument();
+      expect(getJob).not.toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+      expect(getJob).toHaveBeenCalledTimes(1);
+      expect(getReview).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([401, 403, 404])("does not automatically retry an initial %s review response", async (status) => {
+    vi.useFakeTimers();
+    try {
+      const review = sellerReviewSchema.parse(browserFixtures.seller_review_pending);
+      const getReview = vi.fn()
+        .mockRejectedValueOnce(new ApiError(status, "UNAVAILABLE", "This review is unavailable.", "request-unavailable", null))
+        .mockResolvedValue(reviewResponse(review, "request-preparing"));
+      render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview })} /></MemoryRouter>);
+      await act(async () => { await Promise.resolve(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      fireEvent.focus(window);
+      expect(getReview).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+      await act(async () => { await Promise.resolve(); });
+      expect(getReview).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole("heading", { name: "Your listing is taking shape." })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds initial transient retries and removes their timer when leaving the listing", async () => {
+    vi.useFakeTimers();
+    try {
+      const review = sellerReviewSchema.parse(browserFixtures.seller_review_pending);
+      const getReview = vi.fn().mockRejectedValue(new TypeError("The connection was interrupted."));
+      const { unmount } = render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview })} /></MemoryRouter>);
+      await act(async () => { await Promise.resolve(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+      expect(getReview).toHaveBeenCalledTimes(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+      expect(getReview).toHaveBeenCalledTimes(3);
+      expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      fireEvent.focus(window);
+      expect(getReview).toHaveBeenCalledTimes(3);
+      unmount();
+
+      getReview.mockClear();
+      render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview })} /></MemoryRouter>);
+      await act(async () => { await Promise.resolve(); });
+      fireEvent.click(screen.getByRole("link", { name: "Dashboard" }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(getReview).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("heading", { name: "Let’s start with your artwork." })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("pauses initial retry while hidden or offline and ignores a pending retry after sign-out", async () => {
+    vi.useFakeTimers();
+    const visibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    const online = Object.getOwnPropertyDescriptor(navigator, "onLine");
+    try {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+      const review = sellerReviewSchema.parse(browserFixtures.seller_review_pending);
+      let resolveRetry!: (value: ReturnType<typeof reviewResponse>) => void;
+      const pending = new Promise<ReturnType<typeof reviewResponse>>((resolve) => { resolveRetry = resolve; });
+      const getReview = vi.fn()
+        .mockRejectedValueOnce(new ApiError(503, "UNAVAILABLE", "Preparation is starting.", "request-starting", null))
+        .mockReturnValue(pending);
+      const app = dependencies(review, { getReview });
+      render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={app} /></MemoryRouter>);
+      await act(async () => { await Promise.resolve(); });
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+      fireEvent(document, new Event("visibilitychange"));
+      await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+      expect(getReview).toHaveBeenCalledTimes(1);
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+      fireEvent(document, new Event("visibilitychange"));
+      expect(getReview).toHaveBeenCalledTimes(1);
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+      fireEvent(window, new Event("online"));
+      fireEvent.focus(window);
+      fireEvent(window, new Event("online"));
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(getReview).toHaveBeenCalledTimes(2);
+      act(() => { app.auth.session.clear(); });
+      await act(async () => { resolveRetry(reviewResponse(review, "request-late")); await pending; });
+      expect(screen.getByRole("heading", { name: "Restore your seller session." })).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Your listing is taking shape." })).not.toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(getReview).toHaveBeenCalledTimes(2);
+    } finally {
+      if (visibility === undefined) Reflect.deleteProperty(document, "visibilityState");
+      else Object.defineProperty(document, "visibilityState", visibility);
+      if (online === undefined) Reflect.deleteProperty(navigator, "onLine");
+      else Object.defineProperty(navigator, "onLine", online);
+      vi.useRealTimers();
+    }
   });
 
   it("renders the complete ready review without dropping approval evidence", async () => {
@@ -612,7 +733,7 @@ describe("authoritative seller review", () => {
     await screen.findByDisplayValue(first.listing.title ?? "");
     await user.click(screen.getByRole("button", { name: "Open second route" }));
     expect(screen.queryByDisplayValue(first.listing.title ?? "")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Preparing your review…" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Opening your listing…" })).toBeInTheDocument();
     resolveSecond?.({ value: second, requestId: "request-second", etag: `"${second.review_authority_etag ?? ""}"` });
     expect(await screen.findByDisplayValue("Second listing")).toBeInTheDocument();
   });

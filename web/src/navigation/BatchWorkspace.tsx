@@ -10,7 +10,6 @@ import { WorkspaceLink } from "./WorkspaceNavigation";
 const PREPARING_STATES = new Set<JobProgress["display_state"]>([
   "preparing", "synchronizing", "refreshing_estimate", "reconciling", "cancelling",
 ]);
-const READY_STATES = new Set<JobProgress["display_state"]>(["ready_for_review", "needs_revision"]);
 
 interface BatchWorkspaceValue {
   items: readonly BatchUploadItemState[];
@@ -181,26 +180,22 @@ export function BatchWorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (status !== "authenticated" || location.pathname !== "/"
       || autoOpen.current.batchKey !== batchKey || !autoOpen.current.eligible) return;
-    const ready = batch.items.find((item) => {
-      if (item.phase !== "complete" || item.jobId === null) return false;
-      const progress = progressByJob[item.jobId];
-      return progress !== undefined && READY_STATES.has(progress.display_state);
-    });
-    if (ready?.jobId !== null && ready?.jobId !== undefined) {
+    // Completed upload confirms the durable source artwork. The review page can
+    // show its private preview while listing, mockup, and pricing work continues.
+    const uploaded = batch.items.find((item) => item.phase === "complete" && item.jobId !== null);
+    if (uploaded?.jobId !== null && uploaded?.jobId !== undefined) {
       autoOpen.current.eligible = false;
       setAutoOpenPending(false);
-      void navigate(`/jobs/${ready.jobId}`);
+      void navigate(`/jobs/${uploaded.jobId}`);
       return;
     }
     const finishedWithoutReview = batch.phase !== "running" && batch.items.length > 0
-      && batch.items.every((item) => item.phase === "error" || item.phase === "expired"
-        || (item.phase === "complete" && item.jobId !== null && progressByJob[item.jobId] !== undefined
-          && !PREPARING_STATES.has(progressByJob[item.jobId]!.display_state)));
+      && batch.items.every((item) => item.phase === "error" || item.phase === "expired");
     if (finishedWithoutReview) {
       autoOpen.current.eligible = false;
       setAutoOpenPending(false);
     }
-  }, [batch.items, batch.phase, batchKey, location.pathname, navigate, progressByJob, status]);
+  }, [batch.items, batch.phase, batchKey, location.pathname, navigate, status]);
 
   return <BatchWorkspaceContext.Provider value={status === "authenticated"
     ? { items: batch.items, progressByJob, filenameByJob, progressErrorByJob, autoOpenPending, updateFromReview }

@@ -336,11 +336,22 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
 .milestone { min-width: 0; padding-top: 9px; border-top: 3px solid var(--line); color: var(--muted); font-size: 11px; }
 .milestone strong { display: block; margin-top: 2px; color: var(--ink); font-size: 12px; font-weight: 500; }
 .milestone--done { border-top-color: var(--green-dark); }
-.milestone--current { border-top-style: dashed; border-top-color: var(--green-dark); }
+.milestone--current { position: relative; border-top-style: dashed; border-top-color: var(--green-dark); }
+.milestone--current::before { content: ""; position: absolute; inset: -3px 0 auto; height: 3px; background: linear-gradient(100deg, transparent 30%, var(--paper) 50%, transparent 70%); background-size: 250% 100%; animation: preparation-shimmer 2.8s ease-in-out infinite; }
 .preparation-hint { display: flex; gap: 11px; margin: 20px 0 0; padding: 13px 15px; border: 1px solid var(--line); border-radius: 10px; background: var(--green-pale); color: var(--muted); font-size: 12px; }
 .preparation-hint-icon { flex-shrink: 0; color: var(--green-dark); font-size: 21px; line-height: 1; padding-top: 2px; }
+.preparation-hint-copy { flex: 1; min-width: 0; }
+.preparation-hint-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 2px 15px; margin-bottom: 2px; }
 .preparation-hint p { margin: 0; }
-.preparation-hint strong { display: block; margin-bottom: 2px; color: var(--ink); font-size: 13px; font-weight: 600; }
+.preparation-hint strong { display: block; color: var(--ink); font-size: 13px; font-weight: 600; }
+.preparation-elapsed { white-space: nowrap; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .preparation-hint .preparation-activity-label { background: linear-gradient(100deg, var(--ink) 30%, var(--green-dark) 50%, var(--ink) 70%); background-size: 250% 100%; background-clip: text; -webkit-background-clip: text; color: transparent; animation: preparation-shimmer 2.8s ease-in-out infinite; }
+}
+@keyframes preparation-shimmer {
+  0% { background-position: 100% 0; }
+  70%, 100% { background-position: 0 0; }
+}
 .artwork-panel, .listing-panel { padding: 0; overflow: hidden; }
 .artwork-panel > .section-heading-row, .listing-panel > .section-heading-row { padding: 17px 18px; margin: 0; border-bottom: 1px solid var(--line); }
 .section-heading-row h2 { font-size: 13px; font-weight: 600; letter-spacing: 0; line-height: 1.5; }
@@ -582,6 +593,8 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+  .milestone--current::before { display: none; }
+  .preparation-hint .preparation-activity-label { animation: none; background: none; color: var(--ink); }
 }
 
 @media (forced-colors: active) {
@@ -590,4 +603,6 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
   .session-dot { border: 1px solid CanvasText; }
   .workflow .workflow-current { border-bottom-color: Highlight; }
   .milestone--done, .milestone--current { border-top-color: Highlight; }
+  .milestone--current::before { display: none; }
+  .preparation-hint .preparation-activity-label { animation: none; background: none; color: CanvasText; }
 }
