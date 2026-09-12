@@ -6,16 +6,16 @@ original page layout; the seller identified that mismatch during live testing.
 The corrected composition and Light / Dark / Auto display control were subsequently
 approved, frozen and deployed. Popup sign-in and upload selection polish are now
 deployed as well, and the hosted login and MFA screens use the matching icon and
-colors. The latest release evidence appears below; isolated
+colors. Automatic ready-listing navigation, Dashboard/Upload links and the batch
+switcher are now deployed too. The latest release evidence appears below; isolated
 judge access remains a separate, deferred release step.
 
-## Approved navigation release — September 11, 2026
+## Navigation deployed — September 11, 2026
 
-The seller approved the revised flow after testing the local sample and authorized
-deployment. The reviewed changes are being checkpointed on `pass-b-ui-evaluator` for
-a static frontend release. `main` remains at the pre-Pass-B checkpoint `9509d2d`.
-The hosted-login branding release below is unaffected. Live cutover and verification
-evidence will be recorded after deployment.
+The seller approved the revised flow after testing the local sample. It was deployed
+from `630a63003d1105ad13dc87d93ab7b8d8f392af0b` on `pass-b-ui-evaluator` and publicly
+verified at `2026-09-12T01:03:34.923453+00:00` (September 11 locally). `main` remains
+at the pre-Pass-B checkpoint `9509d2d`. The hosted-login branding is unaffected.
 
 The sample deliberately reuses fixed front/back shirt mockups for its simulated
 listings. That temporary sample lives outside the repository and production bundle;
@@ -54,6 +54,24 @@ and verified a fix for Safari not focusing clicked anchors: the confirmation rec
 the clicked link explicitly, so Escape restores focus to that control.
 The [watched artwork folder direction](roadmap.md#watched-artwork-folder--future-phase)
 is recorded for a later phase; no folder watcher is part of this change.
+
+Deployment verification:
+
+- All five versioned objects pass checksum, size, headers, metadata and current-version
+  readback. The public root, index, JavaScript, CSS, icon, favicon and runtime config
+  match the sealed release. The browser loads `index-DsoBZzOM.js` and
+  `index-Bb_UPQsO.css`, renders the landing page and branding, and reports no errors.
+- Deployed index VersionId: `eJ6dQ2V6bY9IPmCG4WwqOfQ.iYmTj07P`.
+- Completed CloudFront invalidation: `I9KK24JTN66LFRJUHCSG1WWQL0`.
+- Rollback index VersionId: `hbOMBh2oxfCXwLGqQqLXqsHCWFySHy_0`.
+- Runtime configuration remains at VersionId `IdRmSDEqfGAjcfmiYHvjrUJ2SQ6s5wqx`.
+  Backend stack/template and Lambda configuration digests remain unchanged.
+- The 17 focused release/trace tests pass. No live upload, approval or publication
+  was created during deployment verification; authenticated navigation is covered by
+  the passing browser matrix and the seller's local acceptance check.
+
+Private release, predecessor and verification records are retained under
+`.mr_lister_private/pass-b-navigation-20260911/web/`.
 
 ## Implemented
 
