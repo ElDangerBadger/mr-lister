@@ -1,0 +1,101 @@
+.logo-customizable {
+  max-width: 34%;
+  max-height: 30%;
+  background-color: #ffffff;
+}
+.banner-customizable {
+  padding: 20px 0px 8px 0px;
+  background-color: #ffffff;
+}
+.label-customizable {
+  font-weight: 600;
+  color: #172d25;
+}
+.textDescription-customizable {
+  padding-top: 4px;
+  padding-bottom: 16px;
+  display: block;
+  font-size: 16px;
+  color: #172d25;
+}
+.idpDescription-customizable {
+  padding-top: 8px;
+  padding-bottom: 12px;
+  display: block;
+  font-size: 14px;
+  color: #61716a;
+}
+.legalText-customizable {
+  color: #61716a;
+  font-size: 12px;
+}
+.submitButton-customizable {
+  font-size: 14px;
+  font-weight: bold;
+  margin: 24px 0px 10px 0px;
+  height: 46px;
+  width: 100%;
+  color: #ffffff;
+  background-color: #17634d;
+  border-color: #17634d;
+  text-align: center;
+}
+.submitButton-customizable:hover {
+  color: #ffffff;
+  background-color: #14634c;
+  border-color: #14634c;
+}
+.errorMessage-customizable {
+  padding: 12px;
+  font-size: 14px;
+  width: 100%;
+  background: #fbe7e4;
+  border: 1px solid #a12d33;
+  color: #a12d33;
+  box-sizing: border-box;
+}
+.inputField-customizable {
+  width: 100%;
+  height: 44px;
+  color: #172d25;
+  background-color: #ffffff;
+  border: 1px solid #87988e;
+  border-radius: 8px;
+}
+.inputField-customizable:focus {
+  border-color: #17634d;
+  outline: 0;
+}
+.idpButton-customizable {
+  height: 44px;
+  width: 100%;
+  text-align: center;
+  margin-bottom: 15px;
+  color: #172d25;
+  background-color: #eef4f0;
+  border-color: #dfe7e1;
+}
+.idpButton-customizable:hover {
+  color: #172d25;
+  background-color: #dfe7e1;
+}
+.socialButton-customizable {
+  border-radius: 8px;
+  height: 44px;
+  margin-bottom: 15px;
+  padding: 1px;
+  text-align: left;
+  width: 100%;
+}
+.redirect-customizable {
+  text-align: left;
+}
+.passwordCheck-notValid-customizable {
+  color: #a12d33;
+}
+.passwordCheck-valid-customizable {
+  color: #17634d;
+}
+.background-customizable {
+  background-color: #ffffff;
+}

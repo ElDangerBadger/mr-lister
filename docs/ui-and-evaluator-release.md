@@ -422,3 +422,25 @@ Cancel returned to the original landing page. Login/MFA completion remains a sel
 acceptance check: no credentials were entered and no new live upload, approval, or
 publication was performed during this deployment. Google/Apple login and dedicated
 judge account/shop provisioning remain deferred.
+
+### Hosted sign-in branding candidate — 2026-09-11
+
+After using the live popup, the seller requested that Cognito's default login and
+MFA styling better match the application. A client-specific classic branding
+candidate is prepared in `infra/phase6/hosted-ui/`: the existing icon, matching
+green buttons and text/error colors, larger rounded inputs, and banner spacing.
+This changes appearance only and is separate from the already-deployed popup flow.
+
+The public provider stylesheet confirms that its gray page background, square card,
+and base font cannot be changed through the supported classic selectors. Those
+limits are documented with the candidate. A modern managed-login migration is not
+part of this change. No live branding mutation has occurred: the AWS login grant
+expired during the initial read-only domain check and a seller refresh is pending.
+The file-based style preview was blocked by browser URL policy and is not visual
+verification evidence. Live login and MFA appearance still require verification.
+
+The seller subsequently refreshed the AWS bootstrap session and authorized applying
+the prepared treatment. The active domain is confirmed to use classic branding,
+with no existing client or default customization. The candidate is checkpointed
+before application; only the seller client receives the logo/CSS override. Live
+readback and visual results will be recorded below after application.
