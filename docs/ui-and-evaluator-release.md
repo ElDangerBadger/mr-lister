@@ -5,7 +5,8 @@ React application and API clients. The first static release retained too much of
 original page layout; the seller identified that mismatch during live testing.
 The corrected composition and Light / Dark / Auto display control were subsequently
 approved, frozen and deployed. Popup sign-in and upload selection polish are now
-deployed as well. The latest release evidence appears below; isolated
+deployed as well, and the hosted login and MFA screens use the matching icon and
+colors. The latest release evidence appears below; isolated
 judge access remains a separate, deferred release step.
 
 ## Implemented
@@ -444,3 +445,32 @@ the prepared treatment. The active domain is confirmed to use classic branding,
 with no existing client or default customization. The candidate is checkpointed
 before application; only the seller client receives the logo/CSS override. Live
 readback and visual results will be recorded below after application.
+
+### Hosted login branding applied and verified
+
+The client-specific classic branding was applied from checkpoint
+`dfc0bb6cdbdf52702dca99f49294d129807a9412` on `pass-b-ui-evaluator`. Cognito returned
+CSS version `20260912000809`; readback verification completed at
+`2026-09-12T00:08:40.033390+00:00` (September 11 in the seller's local time).
+
+- CSS SHA-256: `bc3f86390b5371c89532c819e165cae6ec91c8353111a38a33c3ee7fe8651e94`.
+- Logo SHA-256: `098511c47a4d952458fc9c38b100beeb5496d71b1fe51ef9c673dfb5b3f703fb`.
+- Cognito's CSS readback and public logo bytes match those exact files.
+- Only the deployed seller app client received an override. Pool-wide default
+  branding remains empty, matching the predecessor.
+- User pool, app client, domain, and MFA configuration match the captured pre-change
+  state after excluding creation/modification timestamps and dynamic user count.
+  TOTP MFA remains required. No tier or domain-version change was made.
+
+The live email/password page shows the existing Mr. Lister artwork, dark green
+labels, larger rounded inputs, and green Sign in button. Native Safari also displayed
+the real MFA challenge with the same icon, rounded code field, and green button.
+The gray provider background and square outer frame remain as documented classic
+branding limits. These observations used the real deployed HTTPS pages, not the
+previously blocked local preview. No credentials or MFA code were entered by the
+agent, and successful MFA completion is not claimed by this visual check.
+
+Private before/apply/verification records and the unbranded predecessor settings are
+retained in `.mr_lister_private/cognito-branding-20260911/`. The existing React
+frontend release remains `624d959`; no frontend or application backend deployment
+was required for this cosmetic hosted-page change. `main` remains at `9509d2d`.
