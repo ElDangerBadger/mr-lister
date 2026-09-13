@@ -23,6 +23,9 @@ artwork is visible while AI/product preparation is still pending. It verifies on
 handoff per batch and checks sibling links, manual-navigation cancellation, unsaved-edit confirmation,
 draft isolation, and narrow-screen navigation. The fake upload origin accepts bytes only inside
 the intercepted browser fixture; it does not call S3, AWS, or a connected store.
+It also verifies the animated mockup milestone during an unconfirmed provider request, reduced
+motion, and disabled save/approval controls. Returning from a fully prepared batch starts a fresh
+upload selection while retaining listing links; background completion alone keeps the queue visible.
 
 Run all three engines from the repository root:
 

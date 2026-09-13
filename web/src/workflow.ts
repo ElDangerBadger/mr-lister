@@ -6,9 +6,17 @@ export interface PreparationMilestone {
   state: "done" | "current" | "pending";
 }
 
-export function preparationMilestones(review: SellerReview): PreparationMilestone[] {
-  const active = !review.provider_outcome_unconfirmed
+export function isPreparationActive(review: SellerReview): boolean {
+  // A normal Printify upload/write is unconfirmed until its response arrives.
+  // Ambiguous outcomes move to reconciliation, which remains inactive here.
+  const productRequest = review.display_state === "synchronizing" && review.stage === "product_sync";
+  return review.failure === null
+    && (!review.provider_outcome_unconfirmed || productRequest)
     && ["preparing", "synchronizing", "refreshing_estimate"].includes(review.display_state);
+}
+
+export function preparationMilestones(review: SellerReview): PreparationMilestone[] {
+  const active = isPreparationActive(review);
   const listing = review.listing.readiness === "ready";
   const mockups = review.mockups.readiness === "ready"
     && review.synchronization.readiness === "ready"

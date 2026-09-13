@@ -59,15 +59,30 @@ describe("truthful preparation milestones", () => {
     expect(stateFor(stale, "costs")).not.toBe("done");
   });
 
-  it("marks the actual product preparation step current", () => {
+  it.each([false, true])("keeps product preparation current while its provider response is unconfirmed: %s", (unconfirmed) => {
     const review = readyReview();
     const pending = pendingReview();
     const syncing = sellerReviewSchema.parse({
       ...review, display_state: "synchronizing", stage: "product_sync",
+      provider_outcome_unconfirmed: unconfirmed,
       synchronization: pending.synchronization, mockups: pending.mockups, economics: pending.economics,
     });
     expect(preparationMilestones(syncing).filter(({ state }) => state === "current").map(({ id }) => id)).toEqual(["mockups"]);
     expect(stateFor(syncing, "costs")).toBe("pending");
+  });
+
+  it("does not extend in-flight product activity to reconciliation or mismatched stages", () => {
+    const review = pendingReview();
+    for (const [displayState, stage] of [
+      ["reconciling", "provider_reconciliation"],
+      ["synchronizing", "provider_reconciliation"],
+      ["preparing", "artwork_review"],
+    ]) {
+      const uncertain = sellerReviewSchema.parse({
+        ...review, display_state: displayState, stage, provider_outcome_unconfirmed: true,
+      });
+      expect(preparationMilestones(uncertain).some(({ state }) => state === "current")).toBe(false);
+    }
   });
 
   it("marks cost calculation current only while that work is active", () => {

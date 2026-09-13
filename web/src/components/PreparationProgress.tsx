@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import type { SellerReview } from "../contracts";
-import { preparationMilestones } from "../workflow";
+import { isPreparationActive, preparationMilestones } from "../workflow";
 
 export function PreparationProgress({ review }: { review: SellerReview }) {
-  const preparing = !review.provider_outcome_unconfirmed
-    && ["preparing", "synchronizing", "refreshing_estimate"].includes(review.display_state);
+  const preparing = isPreparationActive(review);
   const [longWait, setLongWait] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

@@ -27,15 +27,17 @@ describe("preparation activity and elapsed time", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Writing and checking your listing");
     expect(screen.getByRole("timer")).toHaveTextContent("Since submission 0:20");
 
-    const syncing = { ...writing, display_state: "synchronizing" as const, stage: "product_sync" as const };
+    const syncing = { ...writing, display_state: "synchronizing" as const, stage: "product_sync" as const, provider_outcome_unconfirmed: true };
     rerender(<PreparationProgress review={syncing} />);
     expect(screen.getByRole("status")).toHaveTextContent("Preparing your product previews");
     expect(container.querySelector('[aria-current="step"]')).toHaveTextContent("Mockups prepared");
+    expect(container.querySelector(".milestone--current")).toHaveTextContent("In progress");
+    expect(screen.getByRole("timer")).toHaveTextContent("Since submission 0:20");
     unmount();
     expect(vi.getTimerCount()).toBe(0);
     await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
 
-    const refreshing = { ...syncing, display_state: "refreshing_estimate" as const, stage: "economics_refresh" as const };
+    const refreshing = { ...syncing, display_state: "refreshing_estimate" as const, stage: "economics_refresh" as const, provider_outcome_unconfirmed: false };
     const remounted = render(<PreparationProgress review={refreshing} />);
     expect(screen.getByRole("status")).toHaveTextContent("Checking costs and shipping");
     expect(screen.getByRole("timer")).toHaveTextContent("Since submission 0:35");

@@ -10,6 +10,9 @@ import { WorkspaceLink } from "./WorkspaceNavigation";
 const PREPARING_STATES = new Set<JobProgress["display_state"]>([
   "preparing", "synchronizing", "refreshing_estimate", "reconciling", "cancelling",
 ]);
+const PREPARED_STATES = new Set<JobProgress["display_state"]>([
+  "needs_revision", "ready_for_review", "approved",
+]);
 
 interface BatchWorkspaceValue {
   items: readonly BatchUploadItemState[];
@@ -29,7 +32,8 @@ const EMPTY_WORKSPACE: BatchWorkspaceValue = {
 export function BatchWorkspaceProvider({ children }: { children: ReactNode }) {
   const { api, auth } = useAppDependencies();
   const status = useSessionStatus(auth.session);
-  const { batch } = useUpload();
+  const upload = useUpload();
+  const { batch } = upload;
   const location = useLocation();
   const navigate = useNavigate();
   const [progressByJob, setProgressByJob] = useState<Record<string, JobProgress>>({});
@@ -37,6 +41,7 @@ export function BatchWorkspaceProvider({ children }: { children: ReactNode }) {
   const [progressErrorByJob, setProgressErrorByJob] = useState<Record<string, string>>({});
   const [autoOpenPending, setAutoOpenPending] = useState(false);
   const autoOpen = useRef({ batchKey: "", eligible: false });
+  const previousPath = useRef(location.pathname);
   const progressRef = useRef(progressByJob);
   const sessionRef = useRef(status);
   const requests = useRef(new Map<string, symbol>());
@@ -102,6 +107,25 @@ export function BatchWorkspaceProvider({ children }: { children: ReactNode }) {
       return next;
     });
   }, [batch.items, status]);
+
+  useEffect(() => {
+    const returningHome = previousPath.current !== "/" && location.pathname === "/";
+    previousPath.current = location.pathname;
+    if (!returningHome || status !== "authenticated" || batch.phase !== "complete"
+      || batch.items.length === 0 || !["idle", "complete"].includes(upload.state.phase)) return;
+    const prepared = batch.items.every((item) => {
+      const progress = item.jobId === null ? undefined : progressByJob[item.jobId];
+      return item.phase === "complete" && progress !== undefined
+        && PREPARED_STATES.has(progress.display_state)
+        && !progress.provider_outcome_unconfirmed && progress.failure === null
+        && progressErrorByJob[progress.job_id] === undefined;
+    });
+    // Returning to Upload starts a fresh selection after a successful batch.
+    // Keep active/recoverable work, and never dismiss a queue as it finishes
+    // in the background while the seller is already on this page. The cached
+    // job names and statuses remain available in Your listings after reset.
+    if (prepared) upload.reset();
+  }, [batch.items, batch.phase, location.pathname, progressByJob, progressErrorByJob, status, upload]);
 
   useEffect(() => {
     if (status !== "authenticated") return;

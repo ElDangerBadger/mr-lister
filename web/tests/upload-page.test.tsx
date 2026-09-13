@@ -6,7 +6,7 @@ import browserFixtures from "../../contracts/browser/phase6.5.fixtures.json";
 import type { ApiPort } from "../src/api/client";
 import { AppRoutes } from "../src/App";
 import { MemoryAuthSession, type AuthCoordinator } from "../src/auth/session";
-import { uploadRecoverySchema } from "../src/contracts";
+import { sellerReviewSchema, uploadRecoverySchema } from "../src/contracts";
 
 const directUpload = vi.hoisted(() => ({
   uploadToAuthorizedS3: vi.fn(),
@@ -108,6 +108,43 @@ describe("upload route authority", () => {
     expect(await screen.findByRole("button", { name: "Uploading artwork…" })).toBeDisabled();
     expect(input).toBeDisabled();
     await waitFor(() => expect(createUpload).toHaveBeenCalledTimes(1));
+  });
+
+  it.each(["Dashboard", "Upload artwork"])("returns through %s to an empty, enabled upload form and keeps the prepared listing accessible", async (linkName) => {
+    const review = sellerReviewSchema.parse({
+      ...browserFixtures.seller_review_pending,
+      job_id: "job_art", display_state: "ready_for_review", stage: "human_review",
+    });
+    const listJobs = vi.fn().mockResolvedValue({
+      value: { jobs: [recentJob("job_art", "2026-09-04T12:00:00Z")], next_cursor: null }, requestId: "request-jobs", etag: null,
+    });
+    const createUpload = vi.fn((file: File, sha256: string) => Promise.resolve(openUploadResponse(file, sha256)));
+    let finish!: (response: ReturnType<typeof completedUploadResponse>) => void;
+    const completeUpload = vi.fn().mockReturnValue(new Promise<ReturnType<typeof completedUploadResponse>>((resolve) => { finish = resolve; }));
+    const getReview = vi.fn().mockResolvedValue({ value: review, requestId: "request-review", etag: null });
+    const getJob = vi.fn().mockResolvedValue({ value: review, requestId: "request-job", etag: null });
+    const { api, auth } = dependencies({ listJobs, createUpload, completeUpload, getReview, getJob });
+    render(<MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
+    const user = userEvent.setup();
+    await user.upload(screen.getByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u), makePng("finished.png"));
+    submitBatchForm();
+    await waitFor(() => expect(completeUpload).toHaveBeenCalledTimes(1));
+    await act(async () => { finish(completedUploadResponse("upload_art", "job_art")); await Promise.resolve(); });
+    expect(await screen.findByRole("navigation", { name: "Listings in this batch" })).toBeInTheDocument();
+    await waitFor(() => expect(getReview).toHaveBeenCalledWith("job_art"));
+
+    await user.click(screen.getByRole("link", { name: linkName }));
+
+    const input = await screen.findByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u);
+    await waitFor(() => expect(input).toBeEnabled());
+    expect(screen.queryByRole("button", { name: "Choose another batch" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Uploads processed" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Open listing: finished.png" })).toHaveAttribute("href", "/jobs/job_art");
+    await user.upload(input, makePng("next.png", 2));
+    expect(screen.getByRole("button", { name: "Prepare 1 listing" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Remove finished.png" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove next.png" })).toBeInTheDocument();
+    expect(createUpload).toHaveBeenCalledTimes(1);
   });
 
   it("clears and restores the current recent list without deleting authoritative work", async () => {
@@ -431,7 +468,7 @@ describe("upload route authority", () => {
     expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
   });
 
-  it("locks a completed batch until the seller explicitly starts another", async () => {
+  it("keeps the batch available while staying on Home until the seller explicitly starts another", async () => {
     const listJobs = vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
     const createUpload = vi.fn((file: File, sha256: string) => Promise.resolve(openUploadResponse(file, sha256)));
     const completeUpload = vi.fn().mockResolvedValue(completedUploadResponse("upload_art", "job_art"));

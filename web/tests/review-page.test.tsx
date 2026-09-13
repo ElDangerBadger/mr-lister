@@ -281,11 +281,19 @@ describe("authoritative seller review", () => {
   });
 
   it("allows first-view local edits during an active provider write without enabling save or approval", async () => {
-    const review = preparingReview("synchronizing", "product_sync", 7, true);
+    const pending = sellerReviewSchema.parse(browserFixtures.seller_review_pending);
+    const review = { ...preparingReview("synchronizing", "product_sync", 7, true),
+      synchronization: pending.synchronization, mockups: pending.mockups, economics: pending.economics };
     const reviseListing = vi.fn();
     const milestone = vi.spyOn(latency, "recordBrowserLatencyMilestone");
     render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { reviseListing })} /></MemoryRouter>);
     const title = await screen.findByRole("textbox", { name: /^Title/u });
+    const milestones = screen.getByRole("region", { name: "Preparation milestones" });
+    expect(within(milestones).getByText("Mockups prepared").closest("li")).toHaveClass("milestone--current");
+    expect(within(milestones).getByText("In progress")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Make it yours." })).toBeVisible();
+    expect(screen.getByRole("timer")).toBeVisible();
+    expect(screen.queryByText(/The Printify outcome is not confirmed/u)).not.toBeInTheDocument();
     for (const input of screen.getAllByRole("textbox")) expect(input).not.toHaveAttribute("readonly");
     fireEvent.change(title, { target: { value: "Early title during provider write" } });
     expect(title).toHaveValue("Early title during provider write");

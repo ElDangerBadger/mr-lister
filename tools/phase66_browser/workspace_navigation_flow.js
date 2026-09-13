@@ -12,6 +12,7 @@ async page => {
   const image = await (await page.request.get(`${fixtureOrigin}/phase66/upload-selection.png`)).body();
   const uploads = [];
   const readyJobs = new Set();
+  const synchronizingJobs = new Set();
   const completeJobs = new Set();
   const heldCompletions = new Map();
   const progressReads = new Map();
@@ -40,14 +41,25 @@ async page => {
   });
   const projection = jobId => {
     const ready = readyJobs.has(jobId);
-    const value = clone(ready ? readyTemplate : pendingTemplate);
+    const synchronizing = !ready && synchronizingJobs.has(jobId);
+    const value = clone(ready || synchronizing ? readyTemplate : pendingTemplate);
     value.job_id = jobId;
     value.created_at = uploads.find(upload => upload.job_id === jobId).created_at;
     value.updated_at = value.created_at;
     // A verified upload has a pinned source preview before AI/product work runs.
     value.preview = clone(readyTemplate.preview);
     if (value.preview.url !== null) value.preview.url = `${publicOrigin}/v1/jobs/${jobId}/artwork-preview`;
-    if (ready) value.listing.title = `Prepared ${uploads.find(upload => upload.job_id === jobId).filename}`;
+    if (ready || synchronizing) value.listing.title = `Prepared ${uploads.find(upload => upload.job_id === jobId).filename}`;
+    if (synchronizing) {
+      value.display_state = "synchronizing";
+      value.stage = "product_sync";
+      value.provider_outcome_unconfirmed = true;
+      value.synchronization = clone(pendingTemplate.synchronization);
+      value.mockups = clone(pendingTemplate.mockups);
+      value.economics = clone(pendingTemplate.economics);
+      value.actions = clone(pendingTemplate.actions);
+    }
+    if (ready) value.record_version += 1;
     // Mockups retain their known local fixture route. No real store is reachable.
     return value;
   };
@@ -132,6 +144,27 @@ async page => {
   const waitForTitle = title => page.waitForFunction(expected => document.querySelector("#listing-title")?.value === expected, title);
   const home = () => page.getByRole("link", { name: "Dashboard", exact: true });
   const choose = names => page.locator('input[type="file"][name="artwork"]').setInputFiles(names.map(name => ({ name, mimeType: "image/png", buffer: image })));
+  const recentTemplate = await (await page.request.get(`${fixtureOrigin}/v1/jobs`, { headers: fixtureHeaders })).json();
+  // Keep interception narrow: a predicate installs a page-wide pattern that
+  // WebKit can remove while the context proxy is still fulfilling image reads.
+  const recentJobsPattern = `${publicOrigin}/v1/jobs?**`;
+  const recentJobsRoute = async route => {
+    if (route.request().method() !== "GET") {
+      unexpectedWrites += 1;
+      await route.abort("blockedbyclient");
+      return;
+    }
+    await json(route, { ...recentTemplate, jobs: [
+      ...uploads.filter(upload => completeJobs.has(upload.job_id)).map(upload => {
+        const progress = projection(upload.job_id);
+        return { job_id: upload.job_id, state: readyJobs.has(upload.job_id) ? "awaiting_approval" : synchronizingJobs.has(upload.job_id) ? "product_draft_syncing" : "analyzing_artwork",
+          record_version: progress.record_version, review_version: progress.review_version,
+          created_at: upload.created_at, updated_at: upload.created_at };
+      }),
+      ...recentTemplate.jobs,
+    ] });
+  };
+  await page.route(recentJobsPattern, recentJobsRoute);
   await page.route(`${publicOrigin}/v1/uploads**`, uploadRoute);
   await page.route(`${publicOrigin}/v1/jobs/job_navigation_**`, jobRoute);
   await page.route(`${storageOrigin}/**`, storageRoute);
@@ -163,8 +196,30 @@ async page => {
     await page.waitForTimeout(3250);
     check(await page.locator(".preparation-elapsed time").getAttribute("datetime") !== elapsedBefore, "elapsed preparation counter did not advance");
     check(publicPath(page.url()) === "/jobs/job_navigation_1", "background preparation changed the active listing");
+    synchronizingJobs.add("job_navigation_1");
+    await page.locator('.milestone--current').filter({ hasText: "Mockups prepared" }).waitFor();
+    const mockupMilestone = page.locator('.milestone--current').filter({ hasText: "Mockups prepared" });
+    check((await mockupMilestone.textContent()).includes("In progress"), "an in-flight provider request reverted mockup preparation to Waiting");
+    check(await page.getByRole("timer").isVisible(), "the elapsed timer disappeared during normal provider work");
+    check(await page.getByText(/The Printify outcome is not confirmed/u).count() === 0, "normal provider work showed a reconciliation warning");
+    const saveDuringPreparation = page.getByRole("button", { name: "Save listing revision", exact: true });
+    check(await saveDuringPreparation.count() === 0 || await saveDuringPreparation.isDisabled(), "activity enabled saving before preparation finished");
+    const approveDuringPreparation = page.getByRole("button", { name: "Approve draft", exact: true });
+    check(await approveDuringPreparation.count() === 0 || await approveDuringPreparation.isDisabled(), "activity enabled approval before preparation finished");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    const line = await mockupMilestone.evaluate(element => {
+      const style = getComputedStyle(element, "::before");
+      return { animation: style.animationName, display: style.display, height: style.height, position: style.backgroundPosition };
+    });
+    check(line.animation === "preparation-shimmer" && line.display !== "none" && line.height === "3px", "the active mockup line is not animated and visible");
+    await page.waitForTimeout(1100);
+    check(await mockupMilestone.evaluate(element => getComputedStyle(element, "::before").backgroundPosition) !== line.position, "the mockup line animation did not advance");
+    await page.screenshot({ path: "workspace-mockups-in-progress.png", fullPage: true });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    check(await mockupMilestone.evaluate(element => getComputedStyle(element, "::before").display) === "none", "reduced motion did not stop the mockup line");
+    await page.emulateMedia({ reducedMotion: null });
     readyJobs.add("job_navigation_1");
-    await waitForTitle("Prepared moon-moth.png");
+    await page.getByRole("timer").waitFor({ state: "hidden" });
     check(await page.getByRole("timer").count() === 0, "completed preparation left a running timer");
     const batch = page.getByRole("navigation", { name: "Listings in this batch" });
     await batch.locator("summary").click();
@@ -201,7 +256,10 @@ async page => {
     await page.waitForURL(`${publicOrigin}/`);
     await page.waitForTimeout(3250);
     check(publicPath(page.url()) === "/", "returning to Upload replayed the automatic navigation");
-    await page.getByRole("button", { name: "Choose another batch", exact: true }).click();
+    check(await page.locator('input[type="file"][name="artwork"]').isEnabled(), "a prepared batch kept the Upload picker locked");
+    check(await page.getByRole("button", { name: "Choose another batch", exact: true }).count() === 0, "returning to Upload required a manual batch reset");
+    check(await page.getByRole("link", { name: "Open listing: moon-moth.png", exact: true }).isVisible(), "the first completed listing disappeared from Your listings");
+    check(await page.getByRole("link", { name: "Open listing: garden-fern.png", exact: true }).isVisible(), "the second completed listing disappeared from Your listings");
 
     // Explicitly leaving Home consumes automatic navigation for a new pending batch.
     await choose(["manual-navigation.png"]);
@@ -215,18 +273,33 @@ async page => {
     readyJobs.add("job_navigation_3");
     await page.waitForTimeout(3250);
     check(publicPath(page.url()) === "/", "a manually visited listing did not cancel the pending automatic hop");
-    await page.getByRole("button", { name: "Choose another batch", exact: true }).click();
+    check(await page.getByRole("button", { name: "Choose another batch", exact: true }).isVisible(), "background preparation cleared the queue while already on Home");
+    await page.getByRole("link", { name: "Open listing", exact: true }).click();
+    await waitForTitle("Prepared manual-navigation.png");
+    await home().click();
+    await page.waitForURL(`${publicOrigin}/`);
+    await page.waitForFunction(() => document.querySelector('input[type="file"][name="artwork"]')?.disabled === false);
+    check(await page.locator('input[type="file"][name="artwork"]').isEnabled(), "Dashboard did not start a fresh selection after preparation");
+    check(await page.getByRole("button", { name: "Choose another batch", exact: true }).count() === 0, "returning through Dashboard required a manual batch reset");
+    await page.getByRole("link", { name: "Open listing: manual-navigation.png", exact: true }).waitFor();
     const state = await (await page.request.get(`${fixtureOrigin}/__fixture__/state`)).json();
     check(storageWrites === 3 && completeJobs.size === 3, "the local upload/verification lifecycle was incomplete");
     check(credentialsAbsent, "seller credentials reached the synthetic upload origin");
     check(unexpectedWrites === 0 && state.provider_transport_attempts === 0, "navigation attempted a store/provider mutation");
     await page.locator(`a[href="${originalPath}"]`).first().click();
     await page.waitForURL(`${publicOrigin}${originalPath}`);
+    await page.waitForFunction(() => {
+      const artwork = document.querySelector("img.artwork-preview");
+      return artwork?.complete && artwork.naturalWidth > 0;
+    });
     return {
       unverifiedUploadDoesNotNavigate: "passed", verifiedUploadOpensWorkspace: "passed",
       artworkPreviewBeforeListingReady: "passed",
       preparationShimmerAndElapsedTime: "passed", reducedMotionActivity: "passed",
+      unconfirmedProductRequestKeepsAnimatedMilestone: "passed",
       oneAutomaticHopPerBatch: "passed", manualNavigationCancelsAutoOpen: "passed",
+      preparedBatchStartsFreshOnReturn: "passed", completedListingsRemainAccessible: "passed",
+      backgroundBatchRemainsVisible: "passed",
       batchSiblingNavigation: "passed", unsavedEditConfirmationAndFocus: "passed",
       isolatedListingDrafts: "passed", dashboardAndUploadLinks: "passed", mobileNavigationLayout: "passed",
       syntheticUploads: storageWrites, providerTransportAttempts: state.provider_transport_attempts,
@@ -236,5 +309,6 @@ async page => {
     await page.unroute(`${publicOrigin}/v1/uploads**`, uploadRoute);
     await page.unroute(`${publicOrigin}/v1/jobs/job_navigation_**`, jobRoute);
     await page.unroute(`${storageOrigin}/**`, storageRoute);
+    await page.unroute(recentJobsPattern, recentJobsRoute);
   }
 }

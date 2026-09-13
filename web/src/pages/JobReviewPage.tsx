@@ -7,6 +7,7 @@ import { sellerActions, type SellerAction, type SellerReview } from "../contract
 import { recordBrowserLatencyMilestone } from "../observability/latency";
 import { WorkflowSteps } from "../components/WorkflowSteps";
 import { PreparationProgress } from "../components/PreparationProgress";
+import { isPreparationActive } from "../workflow";
 import { ActivityLog } from "../components/ActivityLog";
 import { PublicationWorkspace } from "../publication/PublicationWorkspace";
 import { BatchNavigator } from "../navigation/BatchWorkspace";
@@ -238,6 +239,7 @@ export function JobReviewPage() {
     );
   }
 
+  const providerNeedsAttention = review.provider_outcome_unconfirmed && !isPreparationActive(review);
   return (
     <div className="page review-page">
       <WorkflowSteps current={review.display_state === "approved" && listingEditBarrier === "none" ? "Publish" : "Review"} />
@@ -245,7 +247,7 @@ export function JobReviewPage() {
       <div className="review-title-row">
         <div>
           <p className="eyebrow">Your listing workspace</p>
-          <h1>{review.display_state === "approved" && listingEditBarrier === "none" ? "Your review is approved." : review.display_state === "cancelled" ? "This preparation was cancelled." : review.failure !== null || review.provider_outcome_unconfirmed ? "Your preparation needs attention." : review.listing.readiness === "ready" ? "Make it yours." : "Your listing is taking shape."}</h1>
+          <h1>{review.display_state === "approved" && listingEditBarrier === "none" ? "Your review is approved." : review.display_state === "cancelled" ? "This preparation was cancelled." : review.failure !== null || providerNeedsAttention ? "Your preparation needs attention." : review.listing.readiness === "ready" ? "Make it yours." : "Your listing is taking shape."}</h1>
           <p>{review.display_state === "approved" ? "Your saved listing is below. Publication availability and status appear here." : "Review your design, refine the details, and approve when it feels right."}</p>
         </div>
         <div className={`stage-badge stage-badge--${review.display_state}`}>{humanLabel(review.display_state)}</div>
@@ -253,7 +255,7 @@ export function JobReviewPage() {
       <p className="visually-hidden" aria-live="polite" aria-atomic="true">{stageAnnouncement}</p>
       {publicationApi === undefined && <p className="boundary-note">{review.authority_notice}</p>}
       {error !== null && <ErrorNotice {...error} />}
-      {review.provider_outcome_unconfirmed && (
+      {providerNeedsAttention && (
         <div className="alert alert--warning" role="alert">The Printify outcome is not confirmed. Actions are limited until reconciliation finishes.</div>
       )}
       {review.failure !== null && <FailureCard review={review} />}

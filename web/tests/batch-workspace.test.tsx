@@ -7,9 +7,11 @@ import { AppContext, type AppDependencies } from "../src/app-context";
 import { MemoryAuthSession } from "../src/auth/session";
 import { sellerReviewSchema, type JobProgress, type SellerReview } from "../src/contracts";
 import { BatchNavigator, BatchWorkspaceProvider, useBatchWorkspace } from "../src/navigation/BatchWorkspace";
-import type { BatchUploadItemState, UploadBatchState } from "../src/upload/upload-context";
+import type { BatchUploadItemState, UploadBatchState, UploadState } from "../src/upload/upload-context";
 
-const upload = vi.hoisted((): { batch: UploadBatchState } => ({ batch: { phase: "idle", items: [], message: "" } }));
+const upload = vi.hoisted((): { batch: UploadBatchState; state: Pick<UploadState, "phase">; reset: ReturnType<typeof vi.fn> } => ({
+  batch: { phase: "idle", items: [], message: "" }, state: { phase: "idle" }, reset: vi.fn(),
+}));
 vi.mock("../src/upload/upload-context", () => ({ useUpload: () => upload }));
 vi.mock("../src/navigation/WorkspaceNavigation", async () => {
   const { Link } = await import("react-router-dom");
@@ -19,12 +21,85 @@ vi.mock("../src/navigation/WorkspaceNavigation", async () => {
 beforeEach(() => {
   vi.useFakeTimers();
   upload.batch = { phase: "idle", items: [], message: "" };
+  upload.state = { phase: "idle" };
+  upload.reset.mockReset();
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
 });
 afterEach(() => { vi.useRealTimers(); });
 
 describe("batch listing navigation", () => {
+  it("starts a fresh upload on return after every listing is prepared, retaining recent labels", async () => {
+    upload.batch = batch([item("one", "complete"), item("two", "complete")]);
+    const getJob = vi.fn().mockImplementation((jobId: string) => Promise.resolve(progress(jobId,
+      jobId === "job_one" ? "approved" : "needs_revision")));
+    const harness = mount(getJob, "/jobs/job_one");
+    await flush();
+    expect(upload.reset).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("Home"));
+
+    expect(upload.reset).toHaveBeenCalledTimes(1);
+    upload.batch = batch([], "idle");
+    harness.refresh();
+    expect(screen.getByTestId("workspace")).toHaveTextContent('"filenameByJob":{"job_one":"one.png","job_two":"two.png"}');
+    expect(screen.getByTestId("workspace")).toHaveTextContent('"display_state":"approved"');
+    expect(upload.reset).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["preparing", "synchronizing", "refreshing_estimate", "reconciling", "retryable_failure", "terminal_failure", "cancelled"] as const)(
+    "retains the batch when a sibling is still %s on return", async (state) => {
+      upload.batch = batch([item("one", "complete"), item("two", "complete")]);
+      mount(vi.fn().mockImplementation((jobId: string) => Promise.resolve(progress(jobId,
+        jobId === "job_one" ? "ready_for_review" : state))), "/jobs/job_one");
+      await flush();
+      fireEvent.click(screen.getByText("Home"));
+      expect(upload.reset).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["uploading", "error", "expired"] as const)("retains %s siblings and their recovery context on return", async (phase) => {
+    upload.batch = batch([item("one", "complete"), item("two", phase)], phase === "uploading" ? "running" : "complete");
+    mount(vi.fn().mockResolvedValue(progress("job_one", "ready_for_review")), "/jobs/job_one");
+    await flush();
+    fireEvent.click(screen.getByText("Home"));
+    expect(upload.reset).not.toHaveBeenCalled();
+  });
+
+  it("keeps unknown progress and does not clear when it finishes in the background on Home", async () => {
+    const response = deferred<DecodedResponse<JobProgress>>();
+    upload.batch = batch([item("one", "complete")]);
+    mount(vi.fn().mockReturnValue(response.promise), "/jobs/job_one");
+    fireEvent.click(screen.getByText("Home"));
+    expect(upload.reset).not.toHaveBeenCalled();
+    await act(async () => { response.resolve(progress("job_one", "ready_for_review")); await Promise.resolve(); });
+    expect(upload.reset).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Elsewhere"));
+    fireEvent.click(screen.getByText("Home"));
+    expect(upload.reset).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains a separate retryable upload while returning from prepared listings", async () => {
+    upload.state = { phase: "error" };
+    upload.batch = batch([item("one", "complete")]);
+    mount(vi.fn().mockResolvedValue(progress("job_one", "ready_for_review")), "/jobs/job_one");
+    await flush();
+    fireEvent.click(screen.getByText("Home"));
+    expect(upload.reset).not.toHaveBeenCalled();
+  });
+
+  it.each(["provider uncertainty", "failure"])("retains a contradictory prepared readback with %s", async (issue) => {
+    upload.batch = batch([item("one", "complete")]);
+    const response = progress("job_one", "ready_for_review");
+    if (issue === "provider uncertainty") response.value.provider_outcome_unconfirmed = true;
+    else response.value.failure = { contract_version: response.value.contract_version, code: "PROVIDER_UNAVAILABLE",
+      message: "Check the prepared product.", stage: "product_sync", retryable: true, recovery: null };
+    mount(vi.fn().mockResolvedValue(response), "/jobs/job_one");
+    await flush();
+    fireEvent.click(screen.getByText("Home"));
+    expect(upload.reset).not.toHaveBeenCalled();
+  });
+
   it("opens after upload verification without waiting for listing readiness, only once", async () => {
     const getJob = vi.fn().mockResolvedValue(progress("job_one", "preparing"));
     const harness = mount(getJob);
