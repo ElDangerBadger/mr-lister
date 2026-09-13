@@ -11,6 +11,56 @@ preparation continues, with a shimmer and elapsed time. Dashboard/Upload links a
 the batch switcher are deployed too. The latest release evidence appears below; isolated
 judge access remains a separate, deferred release step.
 
+## Preparation progress and fresh uploads — deployed September 13, 2026
+
+Normal Printify uploads and product writes now keep the mockup milestone marked
+"In progress," with its shimmer and elapsed-time indicator. These requests carry
+an unconfirmed-outcome flag until their response arrives; the UI previously treated
+that flag as a pause even during ordinary product synchronization. The shared
+activity rule now recognizes that active stage. Actual reconciliation, failures,
+and cancelled work remain inactive, and saving/approval requirements are unchanged.
+
+Returning to Upload or Dashboard after every listing in a batch is prepared now
+opens a fresh artwork selection automatically. Completed listings remain accessible
+under "Your listings." Active, mixed, failed, uncertain, or unreadable batches stay
+available for recovery. A batch finishing while the seller is already on Home does
+not disappear. This resets browser-local upload state without deleting provider work.
+
+The seller approved committing, pushing, and merging the landing page and both
+fixes into `main`. That integration fast-forwarded from `17e4e0a` to deployed source
+`7a8ea965c9a18b4e087d2e5eaccbc7fc575c91eb`, preserving the existing history.
+[CI for that exact source](https://github.com/ElDangerBadger/mr-lister/actions/runs/34738809519)
+passes both jobs. Local validation also passes 348 web tests, 4,245 Python tests
+(11 live AWS tests skipped), lint, typecheck, and the production build.
+
+The fresh-build Chromium, Firefox, and WebKit gate passes at
+`output/playwright/phase66/20260913T044323Z/browser-gate.json`, with attestation
+eligible and bundle digest
+`d9bce9343c93e39cce1323eddc0f6596bf0668fda996f5da5458ad12f09ec6e2`.
+It verifies the animated milestone during an unconfirmed product request,
+reduced-motion behavior, fresh selection on return through both navigation links,
+retained listing links, and background-batch retention alongside the existing flows.
+
+Deployment was publicly verified at `2026-09-13T14:31:22.597927+00:00`:
+
+- All eight versioned files pass checksum, size, headers, metadata, and current-version
+  checks. Public root/index, JavaScript, CSS, both images, both fonts, favicon, and
+  runtime configuration match the manifest.
+- The live page loads `index-DeN_byIw.js` and `index-CL5R4bbz.css`, renders the
+  landing page, decodes both branding images, and reports no browser errors.
+- Release-manifest bundle SHA-256:
+  `cf0f5a439fa08e132186e2e4de3f4c27a3cdd90fa8f4db715eed1a8a9bab198b`.
+- Deployed index VersionId: `QJXCF4uTBf.sEG3B0UUov.isGFLNZz.W`.
+- Completed CloudFront invalidation: `IBAXQ37XAN9OJJSIPMY04M3Q3K`.
+- Rollback index VersionId: `h2RLJnsurW2jfkH7I2dYb.0tVJnkXJPj`.
+- Runtime configuration remains at `IdRmSDEqfGAjcfmiYHvjrUJ2SQ6s5wqx`; backend
+  stack/template and Lambda configuration digests remain unchanged.
+
+Private release, rollback, CI, browser, and public verification evidence is retained
+under `.mr_lister_private/preparation-queue-polish-20260913/web/`. Verification did
+not create a live upload, approval, or publication; authenticated workflow behavior
+is covered by the passing three-engine gate.
+
 ## Official Sites landing integration — deployed September 12, 2026
 
 The approved Sites landing page is now the anonymous home page at
@@ -31,9 +81,10 @@ The build now checks those notices. No production dependency or infrastructure
 change was required.
 
 The seller requested a dedicated `ui-update-new-landing-page` branch. Implementation
-commit `89fcf363ab24d36fc6ebe37adb9d43352c10bbdc` is pushed to that branch and is the
-deployed source. `main` remains at `17e4e0af50d5dd2ea477101c11aaa0d277892c2a`;
-this release does not merge the branch into `main`.
+commit `89fcf363ab24d36fc6ebe37adb9d43352c10bbdc` was pushed to that branch and was
+the initial landing release source. At that deployment, `main` remained at
+`17e4e0af50d5dd2ea477101c11aaa0d277892c2a`. The later approved integration into
+`main` and current deployment are recorded above.
 
 Local validation passes 329 web tests, lint, typecheck, the production build,
 and 67 targeted Python release/browser/distribution-boundary tests. Ruff also
