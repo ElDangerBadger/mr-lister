@@ -45,9 +45,11 @@ Browser checks exercise the compiled application with local fixture responses. T
 editing, cent precision, authoritative saves, theme variants, and mobile layout. Backend tests
 exercise provider payloads/readback and publication safeguards with simulated transports.
 The deployed handlers passed read-only health, authentication, ownership and pricing-projection
-checks, with the existing job partition unchanged. A fresh signed-in price save and provider
-round trip remain the live follow-up. No real Printify/Etsy product was changed or published
-during deployment.
+checks, with the existing job partition unchanged. A subsequent signed-in Safari test verified
+two saves on one fresh Printify draft: $32.50 for 29 variants, Black/S at $35.01, and free shipping
+off followed by on. Both choices survived reload; exact provider GETs confirmed the prices and
+shipping flags on the same product. The draft remains unapproved and unpublished. See
+[live-test receipts and remaining limits](listing-pricing-release-state.md#live-verification-and-limits).
 
 ## Local verification — September 13, 2026
 

@@ -86,15 +86,32 @@ exercise an interactive seller sign-in.
 - The entire existing job partition was identical before and after the checks.
 - The public `https://massskutiny.com/v1/jobs` route also returned 401 without authentication.
 
-These checks verify deployed handler initialization, ownership-bound reads, and pricing projection.
-They do **not** verify a fresh price-save/Printify round trip or an interactive seller login.
-No listing was edited or published during deployment. A fresh signed-in save, including variant
-pricing and both shipping choices, remains the live functional follow-up; simulated provider
-save/readback and publication checks passed before release.
+These administrative checks verify deployed handler initialization, ownership-bound reads, and
+pricing projection. A subsequent signed-in Safari test created one fresh draft and verified
+price saves and both shipping choices against that same Printify product:
+
+| Saved choice | Current review | Exact provider readback (UTC) |
+| --- | --- | --- |
+| Free shipping off | 2 | `2026-09-13T19:15:12.724180+00:00` |
+| Free shipping on | 3 | `2026-09-13T19:17:09.058783+00:00` |
+
+Both saves synchronized all 30 enabled variants: Black/S was **$35.01**, and the other 29 were
+**$32.50**. Printify returned the exact reviewed prices and explicit
+`sales_channel_properties.free_shipping=false`, then `true`. The owner, shop, product identity,
+current review and synchronization fingerprints were checked; each readback left the job
+partition unchanged. Both saved choices survived a Safari reload and session restoration,
+with the editor reporting **Saved · all checks complete**.
+
+The new test draft remains unapproved and unpublished, with free shipping on and the saved
+prices retained. Both provider reads found an unlocked draft with no external listing linkage.
+No approval or publication action was taken. This verifies the live save/Printify round trip;
+actual Etsy checkout shipping charges and live publication remain unverified. Publication
+safeguards passed simulated provider checks before release.
 
 ## Rollback constraints and evidence
 
-Once a pricing revision is saved, older strict backend readers cannot necessarily parse it.
+Pricing revisions now exist in deployed state; older strict backend readers cannot necessarily
+parse them.
 Prefer a forward fix or a rollback that retains the new pricing readers. Never remove pricing
 from fingerprinted persisted records. The preserved `main` checkpoint is not a blanket safe
 backend rollback after new pricing data exists. The old web client also cannot parse the new
@@ -106,4 +123,8 @@ Private receipts are under `.mr_lister_private/pricing-shipping-20260913/`, incl
 `phase6-consumers-verified.json`, `phase6-writers-verified.json`, `runtime-verified.json`,
 `phase6-role-contracted.json`, `phase6-transition-removed.json`,
 `readonly-smoke/verification.json`, and `public-api-auth-verification.json`.
+The signed-in test evidence is under `.mr_lister_private/pricing-shipping-live-test-20260913/`:
+`shipping-off-provider-verification.json`, `shipping-on-provider-verification.json`,
+`ui-shipping-off.json`, and `ui-shipping-on.json`. The UI receipts reference screenshots retained
+in the current Codex task's CUA captures; there are no separate screenshot files in this directory.
 Raw AWS snapshots, owner metadata, and rollback objects remain private and are not committed.
