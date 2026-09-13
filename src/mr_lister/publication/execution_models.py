@@ -725,6 +725,9 @@ class PublicationProviderAuthority(PublicationModel):
         max_length=20,
     )
     expected_sales_channel: Literal["etsy"] = "etsy"
+    expected_free_shipping: StrictBool | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     publication_body_fingerprint: Fingerprint
     pricing_fresh_until: UtcDateTime
     reconstructed_at: UtcDateTime

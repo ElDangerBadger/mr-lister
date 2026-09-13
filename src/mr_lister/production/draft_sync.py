@@ -24,6 +24,11 @@ from mr_lister.contracts import ListingIntelligence, ProductProfile
 from mr_lister.contracts.presentation import ProductMockupEvidence
 from mr_lister.control.fingerprints import canonical_fingerprint
 from mr_lister.control.models import PHASE6_MAX_SOURCE_ARTWORK_BYTES
+from mr_lister.control.pricing import (
+    ReviewPricing,
+    effective_review_pricing,
+    retail_price_for_variant,
+)
 from mr_lister.control.source_artwork import (
     SourceArtworkPlacementError,
     source_artwork_placement_scale,
@@ -80,6 +85,10 @@ class DraftPrintArea(_DraftModel):
     placeholders: tuple[DraftPlaceholder, ...] = Field(min_length=1)
 
 
+class DraftSalesChannelProperties(_DraftModel):
+    free_shipping: bool = Field(strict=True)
+
+
 class CanonicalPrintifyDraft(_DraftModel):
     """Complete desired provider payload plus a non-provider correlation authority."""
 
@@ -91,6 +100,9 @@ class CanonicalPrintifyDraft(_DraftModel):
     print_provider_id: int = Field(gt=0)
     variants: tuple[DraftVariant, ...] = Field(min_length=1)
     print_areas: tuple[DraftPrintArea, ...] = Field(min_length=1)
+    sales_channel_properties: DraftSalesChannelProperties | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def correlation_and_variant_coverage_are_complete(self) -> CanonicalPrintifyDraft:
@@ -126,11 +138,18 @@ class CanonicalPrintifyDraft(_DraftModel):
     def provider_update_payload(self) -> dict[str, Any]:
         """Return the seller-editable listing fields for a partial product update."""
 
-        return {
+        payload = {
             "title": self.title,
             "description": self.description,
             "tags": list(self.tags),
         }
+        if self.sales_channel_properties is not None:
+            # Keep the stable Etsy-safe SKU aliases while updating reviewed prices.
+            payload["variants"] = self.provider_create_payload()["variants"]
+            payload["sales_channel_properties"] = self.sales_channel_properties.model_dump(
+                mode="json"
+            )
+        return payload
 
     @property
     def payload_fingerprint(self) -> str:
@@ -1164,6 +1183,8 @@ class PrintifyDraftSynchronizer:
 
     @classmethod
     def _contains_canonical(cls, actual: Any, expected: Any) -> bool:
+        if isinstance(expected, bool):
+            return type(actual) is bool and actual is expected
         if isinstance(expected, dict):
             return isinstance(actual, dict) and all(
                 key in actual and cls._contains_canonical(actual[key], value)
@@ -1279,6 +1300,7 @@ def build_canonical_draft(
     image_id: str,
     artwork_width: int | None = None,
     artwork_height: int | None = None,
+    pricing: ReviewPricing | None = None,
 ) -> CanonicalPrintifyDraft:
     """Build a width-calibrated draft while preserving the source aspect ratio."""
 
@@ -1300,10 +1322,17 @@ def build_canonical_draft(
     )
 
     token = job_correlation_token(job_id)
+    effective_pricing = effective_review_pricing(pricing, profile) if pricing is not None else None
     variants = tuple(
         DraftVariant(
             id=variant.variant_id,
-            price=variant.retail_price_cents,
+            price=(
+                variant.retail_price_cents
+                if effective_pricing is None
+                else retail_price_for_variant(
+                    effective_pricing, color=variant.color, size=variant.size
+                )
+            ),
             is_enabled=True,
             sku=f"{token}-{variant.variant_id}",
         )
@@ -1363,4 +1392,9 @@ def build_canonical_draft(
         print_provider_id=profile.print_provider_id,
         variants=variants,
         print_areas=print_areas,
+        sales_channel_properties=(
+            None
+            if effective_pricing is None
+            else DraftSalesChannelProperties(free_shipping=effective_pricing.free_shipping)
+        ),
     )

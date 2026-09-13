@@ -24,6 +24,7 @@ from mr_lister.control.models import (
     ReconciliationOutcome,
     SafeId,
 )
+from mr_lister.control.pricing import ReviewPricing
 
 
 class WorkerCommand(ControlModel):
@@ -41,6 +42,7 @@ class RecordPreparedReviewCommand(WorkerCommand):
     artwork_analysis: ArtworkAnalysis
     listing: ListingIntelligence
     product_profile_fingerprint: Fingerprint
+    pricing: ReviewPricing | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class CompletePreparationWithAgentDecisionCommand(WorkerCommand):

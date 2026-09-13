@@ -771,15 +771,17 @@ def test_shop_response_is_strict_and_duplicate_identity_fails_closed(shops: Any)
         boundary.preflight_shop(call_claim=claim, fresh_grant=_fresh(claim))
 
 
-def _preflight_product(payload: dict[str, Any]) -> PrintifyProductObservation:
-    authority = _authority()
+def _preflight_product(
+    payload: dict[str, Any], authority: PublicationProviderAuthority | None = None
+) -> PrintifyProductObservation:
+    authority = authority or _authority()
     claim = _claim(
         authority,
         kind=PublicationCallKind.PRODUCT_GET,
         purpose=PublicationCallPurpose.PRODUCT_PREFLIGHT,
         suffix="product",
     )
-    boundary, _transport, _audit = _boundary([_json_response(200, payload)])
+    boundary, _transport, _audit = _boundary([_json_response(200, payload)], authority=authority)
     return boundary.preflight_exact_product(call_claim=claim, fresh_grant=_fresh(claim))
 
 
@@ -794,6 +796,32 @@ def test_product_preflight_reconstructs_complete_canonical_authority() -> None:
     assert not observation.is_locked
     assert observation.visible
     assert observation.external_evidence is ExternalEvidenceState.ABSENT
+
+
+@pytest.mark.parametrize("free_shipping", [True, False])
+def test_product_preflight_binds_explicit_shipping_and_preserves_legacy_hash(free_shipping) -> None:
+    legacy = _authority()
+    assert "expected_free_shipping" not in legacy.model_dump(mode="json")
+    payload = _product(external=[])
+    payload["sales_channel_properties"] = {"free_shipping": free_shipping, "unrelated": "ignored"}
+    assert _preflight_product(payload).preflight_satisfied
+    canonical = {
+        **_canonical_payload(),
+        "sales_channel_properties": {"free_shipping": free_shipping},
+    }
+    authority = _authority(
+        expected_free_shipping=free_shipping,
+        product_payload_fingerprint=canonical_fingerprint(canonical),
+    )
+    assert authority.fingerprint != legacy.fingerprint
+    assert _preflight_product(payload, authority).preflight_satisfied
+    payload["sales_channel_properties"]["free_shipping"] = not free_shipping
+    with pytest.raises(PublicationProviderPreflightError, match="failed publication preflight"):
+        _preflight_product(payload, authority)
+    for invalid in [{}, {"free_shipping": None}, {"free_shipping": int(free_shipping)}]:
+        payload["sales_channel_properties"] = invalid
+        with pytest.raises(PublicationProviderResponseError, match="invalid"):
+            _preflight_product(payload, authority)
 
 
 def test_product_preflight_normalizes_exact_twenty_character_provider_sku() -> None:

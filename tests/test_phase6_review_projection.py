@@ -29,6 +29,7 @@ from mr_lister.control.models import (
     WorkRequestStatus,
     WorkType,
 )
+from mr_lister.control.pricing import ReviewPricing, retail_price_for_variant
 from mr_lister.control.projection import (
     PreviewGrant,
     ReviewProjectionUnavailableError,
@@ -216,7 +217,9 @@ def _shipping_resource(variant_id: int, amount: int) -> dict[str, object]:
     }
 
 
-def _fixture(*, printify_shop_id: int | None = 42) -> tuple[FakeProjectionStore, FakePreviewIssuer]:
+def _fixture(
+    *, printify_shop_id: int | None = 42, review_pricing: ReviewPricing | None = None
+) -> tuple[FakeProjectionStore, FakePreviewIssuer]:
     variant_rows: list[ProductVariantEvidence] = []
     variant_id = 10_000
     group_by_size = {
@@ -230,7 +233,11 @@ def _fixture(*, printify_shop_id: int | None = 42) -> tuple[FakeProjectionStore,
                     color=color,
                     size=size,
                     placement_group_id=group_by_size[size],
-                    retail_price_cents=PROFILE.retail_price_cents,
+                    retail_price_cents=(
+                        retail_price_for_variant(review_pricing, color=color, size=size)
+                        if review_pricing is not None
+                        else PROFILE.retail_price_cents
+                    ),
                     production_cost_cents=1100 + (variant_id % 7),
                 )
             )
@@ -290,6 +297,7 @@ def _fixture(*, printify_shop_id: int | None = 42) -> tuple[FakeProjectionStore,
         product_costs=product_costs,
         shipping=shipping,
         calculated_at=NOW,
+        free_shipping=review_pricing.free_shipping if review_pricing is not None else None,
     )
     pricing = PricingSnapshot(
         snapshot_id="pricing_projection",
@@ -314,6 +322,7 @@ def _fixture(*, printify_shop_id: int | None = 42) -> tuple[FakeProjectionStore,
         validation_passed=True,
         artwork_analysis_fingerprint="2" * 64,
         product_profile_fingerprint=PROFILE_FP,
+        pricing=review_pricing,
         created_at=NOW - timedelta(minutes=15),
     )
     source_material = _source_material()
@@ -493,6 +502,7 @@ def test_complete_projection_joins_one_safe_human_review() -> None:
     )
     assert result.product_policy.retail_price_cents == 2999
     assert result.product_policy.buyer_shipping_cents == 0
+    assert result.product_policy.pricing_saved is False
     assert len(result.mockups.items) == 2
     assert result.economics.readiness is EconomicsReadiness.READY
     assert len(result.economics.variants) == 30

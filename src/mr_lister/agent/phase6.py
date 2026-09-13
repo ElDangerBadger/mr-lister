@@ -62,6 +62,7 @@ from mr_lister.control.models import (
     WorkRequestStatus,
     WorkType,
 )
+from mr_lister.control.pricing import ReviewPricing
 from mr_lister.control.worker_commands import (
     BeginPreparationCommand,
     CompletePreparationWithAgentDecisionCommand,
@@ -215,6 +216,7 @@ class PreparedReviewObservation(ControlModel):
     artwork_analysis: ArtworkAnalysis
     listing: ListingIntelligence
     product_profile_fingerprint: Fingerprint
+    pricing: ReviewPricing | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class PreparedReviewProducer(Protocol):
@@ -302,6 +304,7 @@ class WorkerControlPreparationAdapter:
                 artwork_analysis=observation.artwork_analysis,
                 listing=observation.listing,
                 product_profile_fingerprint=observation.product_profile_fingerprint,
+                pricing=observation.pricing,
             )
         )
         job = self._store.get_job(command.job_id)

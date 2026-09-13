@@ -127,13 +127,14 @@ def resolved() -> PrintifyResolvedProfile:
     )
 
 
-def canonical_draft(listing, *, job_id: str = "job_phase6_sync"):
+def canonical_draft(listing, *, job_id: str = "job_phase6_sync", pricing=None):
     return build_canonical_draft(
         job_id=job_id,
         listing=listing,
         profile=profile(),
         resolved=resolved(),
         image_id="image_1",
+        pricing=pricing,
     )
 
 
@@ -219,6 +220,86 @@ def test_canonical_payload_reuses_phase5_contracts_and_embeds_job_token(listing)
     assert draft.provider_payload()["variants"][0]["sku"] == draft.variants[0].sku
     assert set(create_payload) == set(draft.provider_payload())
     assert len(draft.payload_fingerprint) == 64
+
+
+@pytest.mark.parametrize("free_shipping", [True, False])
+def test_reviewed_prices_and_shipping_update_same_product_and_require_exact_readback(
+    listing, free_shipping
+) -> None:
+    from mr_lister.control.pricing import ReviewPricing, VariantPrice
+
+    prior = canonical_draft(listing)
+    pricing = ReviewPricing(
+        retail_price_cents=3499,
+        variant_prices=(VariantPrice(color="Black", size="S", retail_price_cents=3999),),
+        free_shipping=free_shipping,
+    )
+    target = canonical_draft(listing, pricing=pricing)
+    assert prior.payload_fingerprint == canonical_draft(listing, pricing=None).payload_fingerprint
+    assert "sales_channel_properties" not in prior.provider_payload()
+    assert target.provider_payload()["variants"][0]["price"] == 3999
+    assert target.provider_payload()["sales_channel_properties"] == {"free_shipping": free_shipping}
+    sync, transport, _client = synchronizer(
+        [
+            ExpectedRequest(
+                "GET",
+                "/v1/shops/42/products/product_1.json",
+                payload=provider_created_product(prior),
+            ),
+            ExpectedRequest(
+                "PUT",
+                "/v1/shops/42/products/product_1.json",
+                payload=provider_created_product(target),
+            ),
+            ExpectedRequest(
+                "GET",
+                "/v1/shops/42/products/product_1.json",
+                payload=provider_created_product(target),
+            ),
+        ]
+    )
+    evidence = sync.synchronize(
+        job_id="job_phase6_sync", draft=target, product_id="product_1", prior_draft=prior
+    )
+    update = json.loads(transport.calls[1]["body"])
+    assert update["variants"][0]["price"] == 3999
+    assert len(update["variants"][0]["sku"]) == 20
+    assert update["sales_channel_properties"] == {"free_shipping": free_shipping}
+    assert "print_areas" not in update
+    assert evidence.variants[0].retail_price_cents == 3999
+
+
+@pytest.mark.parametrize(
+    "drift", ["none", "price", "shipping", "missing_shipping", "numeric_shipping"]
+)
+def test_reconciliation_binds_reviewed_prices_and_shipping(listing, drift) -> None:
+    from mr_lister.control.pricing import ReviewPricing
+
+    prior = canonical_draft(listing)
+    target = canonical_draft(
+        listing, pricing=ReviewPricing(retail_price_cents=3499, free_shipping=False)
+    )
+    product = provider_created_product(target)
+    if drift == "price":
+        product["variants"][0]["price"] += 1
+    elif drift == "shipping":
+        product["sales_channel_properties"]["free_shipping"] = True
+    elif drift == "missing_shipping":
+        del product["sales_channel_properties"]
+    elif drift == "numeric_shipping":
+        product["sales_channel_properties"]["free_shipping"] = 0
+    sync, transport, _client = synchronizer(
+        [ExpectedRequest("GET", "/v1/shops/42/products/product_1.json", payload=product)]
+    )
+    result = sync.reconcile_update(
+        job_id="job_phase6_sync", product_id="product_1", target_draft=target, prior_draft=prior
+    )
+    assert result.outcome is (
+        UpdateReconciliationOutcome.APPLIED
+        if drift == "none"
+        else UpdateReconciliationOutcome.CONFLICT
+    )
+    assert [call["method"] for call in transport.calls] == ["GET"]
 
 
 def test_partial_update_payload_contains_only_seller_editable_listing_fields(listing) -> None:

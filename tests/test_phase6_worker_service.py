@@ -41,6 +41,7 @@ from mr_lister.control.models import (
     WorkRequestStatus,
     WorkType,
 )
+from mr_lister.control.pricing import ReviewPricing
 from mr_lister.control.service import SellerControlService
 from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.control.store import (
@@ -347,6 +348,7 @@ def _agent_decision(next_action: str = "human_review") -> PreparationDecision:
 def _prepare_to_product_sync(
     *,
     job_id: str = "job_phase62_worker",
+    pricing: ReviewPricing | None = None,
 ) -> tuple[InMemorySellerControlStore, MutableClock, WorkerControlService, WorkRequest]:
     store, clock, worker, prepare_work = _seed_preparation(job_id=job_id)
     started = worker.begin_preparation(
@@ -365,6 +367,7 @@ def _prepare_to_product_sync(
             artwork_analysis=_analysis(),
             listing=_listing(),
             product_profile_fingerprint=PROFILE_FP,
+            pricing=pricing,
         )
     )
     routed = worker.complete_preparation_with_agent_decision(
@@ -1387,6 +1390,53 @@ def test_pricing_success_rejects_forged_sync_variant_or_retail_evidence(
     assert unchanged.pricing_snapshot_id is None
 
 
+@pytest.mark.parametrize(
+    ("review_free_shipping", "estimate_free_shipping", "accepted"),
+    [(None, False, False), (False, True, False), (False, False, True), (True, True, True)],
+)
+def test_pricing_settlement_binds_the_persisted_review_shipping_choice(
+    review_free_shipping, estimate_free_shipping, accepted
+) -> None:
+    from mr_lister.control.fingerprints import review_content_fingerprint
+
+    pricing = (
+        None
+        if review_free_shipping is None
+        else ReviewPricing(retail_price_cents=2999, free_shipping=review_free_shipping)
+    )
+    store, clock, worker, _sync_work = _prepare_to_product_sync(pricing=pricing)
+    review = store.get_review("job_phase62_worker", 1)
+    assert review.pricing == pricing
+    assert review.fingerprint == review_content_fingerprint(review)
+    claimed, active, attempt_id = _begin_create(store, clock, worker)
+    worker.record_product_sync_success(
+        RecordProductSyncSuccessCommand(
+            job_id=claimed.job_id,
+            work_request_id=active.work_request_id,
+            expected_record_version=claimed.record_version,
+            attempt_id=attempt_id,
+            observation=_observation(),
+        )
+    )
+    pricing_job = store.get_job(claimed.job_id)
+    pricing_work = _activate(store, pricing_job, clock=clock)
+    estimate = _estimate_for_current_sync(
+        store, pricing_job, calculated_at=clock.value, free_shipping=estimate_free_shipping
+    )
+    command = RecordPricingSuccessCommand(
+        job_id=pricing_job.job_id,
+        work_request_id=pricing_work.work_request_id,
+        expected_record_version=pricing_job.record_version,
+        estimate=estimate,
+    )
+    if accepted:
+        assert worker.record_pricing_success(command).state is ControlJobState.AWAITING_APPROVAL
+    else:
+        with pytest.raises(InvalidControlStateError, match="reviewed commercial settings"):
+            worker.record_pricing_success(command)
+        assert store.get_job(pricing_job.job_id) == pricing_job
+
+
 def test_pricing_success_honors_cancellation_but_keeps_completed_evidence() -> None:
     store, clock, worker, _sync_work = _prepare_to_product_sync()
     claimed, active, attempt_id = _begin_create(store, clock, worker)
@@ -1671,6 +1721,7 @@ def _estimate_for_current_sync(
     product_sync_fingerprint: str | None = None,
     retail_overrides: dict[int, int] | None = None,
     production_overrides: dict[int, int] | None = None,
+    free_shipping: bool | None = None,
 ) -> EtsyUsStandardEstimate:
     sync = store.get_product_sync(job.job_id, job.product_sync_id or "")
     synchronized = {item.variant_id: item for item in sync.variants}
@@ -1723,6 +1774,7 @@ def _estimate_for_current_sync(
         product_costs=costs,
         shipping=shipping,
         calculated_at=calculated_at,
+        free_shipping=free_shipping,
     )
 
 

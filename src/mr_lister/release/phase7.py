@@ -141,6 +141,7 @@ GUARD_SOURCE_PATHS = (
     "mr_lister/control/economics.py",
     "mr_lister/control/fingerprints.py",
     "mr_lister/control/models.py",
+    "mr_lister/control/pricing.py",
     "mr_lister/publication/__init__.py",
     "mr_lister/publication/contract.py",
     "mr_lister/publication/errors.py",

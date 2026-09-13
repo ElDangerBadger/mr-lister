@@ -14,6 +14,7 @@ import {
   type SellerReview,
   type UploadResponse,
   type UploadRecovery,
+  type ListingPricing,
 } from "../contracts";
 import type { AuthSession } from "../auth/session";
 
@@ -32,6 +33,7 @@ export interface ListingDraft {
   title: string;
   description: string;
   tags: string[];
+  pricing?: ListingPricing;
 }
 
 export interface ApiPort {

@@ -55,7 +55,7 @@ export function LandingPage() {
           <button className="landing-primary-button" type="button" onClick={() => { startSignIn("/"); }}>
             Open seller workspace <ArrowIcon />
           </button>
-          <p className="landing-signin-note">Sign in with the account from your invitation.</p>
+          <p className="landing-signin-note">Sign in to your Mr. Lister account.</p>
           {error !== null && <p className="landing-signin-error" role="alert">{error}</p>}
         </section>
       </section>

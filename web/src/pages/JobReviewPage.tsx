@@ -12,6 +12,7 @@ import { ActivityLog } from "../components/ActivityLog";
 import { PublicationWorkspace } from "../publication/PublicationWorkspace";
 import { BatchNavigator } from "../navigation/BatchWorkspace";
 import { useNavigationProtection } from "../navigation/WorkspaceNavigation";
+import { ListingPricingFields, pricingMatches, pricingRequest, validatePricing, type PricingFormDraft } from "../components/ListingPricingFields";
 
 const POLLING_STATES = new Set([
   "preparing", "synchronizing", "refreshing_estimate", "reconciling", "cancelling",
@@ -20,6 +21,7 @@ const POLLING_STATES = new Set([
 type SaveState = "pristine" | "dirty" | "saving" | "saved" | "conflict" | "error";
 type ListingEditBarrier = "none" | "unsaved" | "saving" | "reconciling";
 interface ReviewMinimum { recordVersion: number; reviewVersion: number }
+type ListingFormDraft = Omit<ListingDraft, "pricing"> & { pricing?: PricingFormDraft };
 
 export function JobReviewPage() {
   const { jobId = "" } = useParams();
@@ -281,16 +283,16 @@ export function JobReviewPage() {
         </section>
 
         <details className="panel product-details"><summary>Product &amp; pricing <span>{review.product_policy.product_name}</span></summary>
-          <EconomicsTable review={review} />
+          <EconomicsTable review={review} hasUnsavedChanges={listingEditBarrier !== "none"} />
           <div aria-labelledby="product-heading">
-          <SectionHeader eyebrow="Fixed production policy" heading="Printify draft configuration" id="product-heading" readiness={review.synchronization.readiness} />
+          <SectionHeader eyebrow="Production details" heading="Printify draft configuration" id="product-heading" readiness={review.synchronization.readiness} />
           <dl className="fact-grid">
             <Fact label="Product" value={review.product_policy.product_name} />
             <Fact label="Provider" value={review.product_policy.provider_name} />
             <Fact label="Colors" value={review.product_policy.colors.join(", ")} />
             <Fact label="Sizes" value={review.product_policy.sizes.join(", ")} />
-            <Fact label="Retail price" value={money(review.product_policy.retail_price_cents)} />
-            <Fact label="Buyer shipping" value={money(review.product_policy.buyer_shipping_cents)} />
+            <Fact label="Item price" value={money(review.product_policy.pricing?.retail_price_cents ?? review.product_policy.retail_price_cents)} />
+            <Fact label="Shipping" value={review.product_policy.pricing === undefined ? money(review.product_policy.buyer_shipping_cents) : review.product_policy.pricing.free_shipping ? "Free shipping" : "Printify standard shipping"} />
             <Fact label="Print placements" value={`${review.product_policy.placements.length} fixed placement${review.product_policy.placements.length === 1 ? "" : "s"}`} />
             <Fact label="Printify product ID" value={review.synchronization.product_id ?? "Pending"} />
             <Fact label="Synchronized review" value={review.synchronization.review_version === null ? "Pending" : String(review.synchronization.review_version)} />
@@ -446,7 +448,9 @@ function ListingEditor({ review, reload, onEditBarrierChange, actionsTarget }: {
   actionsTarget: HTMLDivElement | null;
 }) {
   const { api } = useAppDependencies();
-  const [draft, setDraft] = useState<ListingDraft | null>(null);
+  const [draft, setDraft] = useState<ListingFormDraft | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const [saveState, setSaveState] = useState<SaveState>("pristine");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
@@ -477,6 +481,13 @@ function ListingEditor({ review, reload, onEditBarrierChange, actionsTarget }: {
     if (review.listing.readiness !== "ready") return;
     if (saveState === "saved") {
       if (acceptedMinimum.current !== null && !meetsMinimum(review, acceptedMinimum.current)) return;
+      if (draftRef.current !== null && !authoritativeListingMatchesDraft(review, draftRef.current)) {
+        acceptedMinimum.current = null;
+        startedEditingEarly.current = false;
+        setSaveState("conflict");
+        setMessage("The latest review differs from your saved revision. Your edits are preserved; review the current listing before discarding or reapplying them.");
+        return;
+      }
       acceptedMinimum.current = null;
       editAuthority.current = null;
       startedEditingEarly.current = false;
@@ -545,7 +556,7 @@ function ListingEditor({ review, reload, onEditBarrierChange, actionsTarget }: {
     );
   }
 
-  const change = (next: ListingDraft) => {
+  const change = (next: ListingFormDraft) => {
     if (!locallyEditable || saveState === "saving" || saveState === "saved") return;
     if (editAuthority.current === null) {
       editAuthority.current = review;
@@ -595,6 +606,7 @@ function ListingEditor({ review, reload, onEditBarrierChange, actionsTarget }: {
       title: draft.title.trim(),
       description: draft.description.trim(),
       tags: draft.tags.map((tag) => tag.trim()),
+      ...(draft.pricing === undefined ? {} : { pricing: pricingRequest(draft.pricing)! }),
     };
     const authority = `${authorityReview.record_version}:${authorityReview.review_version}:${authorityReview.review_authority_etag ?? "none"}:${JSON.stringify(normalizedDraft)}`;
     if (saveKey.current?.authority !== authority) saveKey.current = { authority, value: newIdempotencyKey("revise-listing") };
@@ -674,8 +686,8 @@ function ListingEditor({ review, reload, onEditBarrierChange, actionsTarget }: {
         <div id="listing-errors" ref={validationSummary} className="validation-summary" role="alert" tabIndex={-1}>
           <h3>Review these listing details</h3>
           <ul>
-            {Object.entries(errors).map(([path, text]) => <li key={path}><a href={`#${fieldId(path)}`}>{text}</a></li>)}
-            {mergedIssues.map((issue) => <li key={`${issue.code}:${issue.path}`}><a href={`#${fieldId(issue.path)}`}>{issue.message}</a></li>)}
+            {Object.entries(errors).map(([path, text]) => <li key={path}><a href={`#${fieldId(path, draft, review)}`}>{text}</a></li>)}
+            {mergedIssues.map((issue) => <li key={`${issue.code}:${issue.path}`}><a href={`#${fieldId(issue.path, draft, review)}`}>{issue.message}</a></li>)}
           </ul>
         </div>
       )}
@@ -707,6 +719,16 @@ function ListingEditor({ review, reload, onEditBarrierChange, actionsTarget }: {
             })}
           </div>
         </fieldset>
+        <ListingPricingFields
+          review={review}
+          draft={draft.pricing}
+          disabled={!locallyEditable || saveState === "saving" || saveState === "saved"}
+          errors={fieldErrors}
+          onChange={(pricing) => {
+            setErrors((current) => Object.fromEntries(Object.entries(current).filter(([path]) => !path.startsWith("pricing"))));
+            change({ ...draft, pricing });
+          }}
+        />
         {actionsTarget === null ? editActions : createPortal(editActions, actionsTarget)}
         {!capability.enabled && <p className="capability-message">{capability.message}</p>}
       </form>
@@ -947,12 +969,13 @@ function MockupGallery({ review, onAvailable, onUnavailable }: {
   );
 }
 
-function EconomicsTable({ review }: { review: SellerReview }) {
+function EconomicsTable({ review, hasUnsavedChanges }: { review: SellerReview; hasUnsavedChanges: boolean }) {
   const economics = review.economics;
   const displayable = economics.readiness === "ready" || economics.readiness === "stale";
   return (
     <section className="panel economics-panel" aria-labelledby="economics-heading">
       <SectionHeader eyebrow="Review estimate" heading="Estimated proceeds" id="economics-heading" readiness={economics.readiness} />
+      {hasUnsavedChanges && <p className="boundary-note">These estimates reflect the saved review. Save your changes to refresh pricing and shipping estimates.</p>}
       {!displayable || economics.minimum_cents === null || economics.maximum_cents === null ? <p>Estimated proceeds are {humanLabel(economics.readiness).toLocaleLowerCase()}; no monetary estimate is presented.</p> : (
         <>
           <p className="economics-range"><strong>{money(economics.minimum_cents)}–{money(economics.maximum_cents)}</strong><span>estimated per item across {economics.variants.length} variants</span></p>
@@ -1030,8 +1053,8 @@ function listingEditBarrierMessage(barrier: ListingEditBarrier): string {
   return "Save or discard listing edits before approval or refreshing the estimate.";
 }
 
-function validateDraft(draft: ListingDraft): Record<string, string> {
-  const errors: Record<string, string> = {};
+function validateDraft(draft: ListingFormDraft): Record<string, string> {
+  const errors: Record<string, string> = draft.pricing === undefined ? {} : validatePricing(draft.pricing);
   if (draft.title.trim().length === 0) errors.title = "Enter a listing title.";
   if (draft.title.length > 140) errors.title = "Keep the title to 140 characters or fewer.";
   if (draft.description.trim().length === 0) errors.description = "Enter a listing description.";
@@ -1049,7 +1072,15 @@ function validateDraft(draft: ListingDraft): Record<string, string> {
   return errors;
 }
 
-function fieldId(path: string): string {
+function fieldId(path: string, draft: ListingFormDraft, review: SellerReview): string {
+  const variantMatch = /pricing\.variants\[(\d+)\]/u.exec(path);
+  const variant = variantMatch?.[1] === undefined ? undefined : draft.pricing?.variants[Number(variantMatch[1])];
+  if (variant !== undefined) {
+    const colorIndex = review.product_policy.colors.indexOf(variant.color);
+    const sizeIndex = review.product_policy.sizes.indexOf(variant.size);
+    if (colorIndex >= 0 && sizeIndex >= 0) return `listing-variant-price-${colorIndex * review.product_policy.sizes.length + sizeIndex}`;
+  }
+  if (path.includes("pricing")) return "listing-item-price";
   if (path === "title" || path.endsWith(".title")) return "listing-title";
   if (path === "description" || path.endsWith(".description")) return "listing-description";
   const match = /tags\[(\d+)\]/u.exec(path);
@@ -1057,6 +1088,9 @@ function fieldId(path: string): string {
 }
 
 function normalizeApiPath(path: string): string {
+  if (path.endsWith("pricing.retail_price_cents")) return "pricing.price";
+  const variantPrice = /pricing\.variant_prices\[(\d+)\](?:\.retail_price_cents)?$/u.exec(path);
+  if (variantPrice?.[1] !== undefined) return `pricing.variants[${variantPrice[1]}]`;
   if (path.endsWith(".title")) return "title";
   if (path.endsWith(".description")) return "description";
   const tag = /tags\[(\d+)\]/u.exec(path);
@@ -1130,13 +1164,14 @@ function isUnchangedPreparationProgress(previous: SellerReview, current: SellerR
     && JSON.stringify(previous.listing) === JSON.stringify(current.listing);
 }
 
-function authoritativeListingMatchesDraft(review: SellerReview, draft: ListingDraft): boolean {
+function authoritativeListingMatchesDraft(review: SellerReview, draft: ListingFormDraft): boolean {
   if (review.listing.readiness !== "ready" || review.listing.title === null || review.listing.description === null) return false;
   const normalizedTags = draft.tags.map((tag) => tag.trim());
   return review.listing.title === draft.title.trim()
     && review.listing.description === draft.description.trim()
     && review.listing.tags.length === normalizedTags.length
-    && review.listing.tags.every((tag, index) => tag === normalizedTags[index]);
+    && review.listing.tags.every((tag, index) => tag === normalizedTags[index])
+    && (draft.pricing === undefined || pricingMatches(review.product_policy.pricing, draft.pricing));
 }
 
 function previewEvidenceKey(review: SellerReview): string {

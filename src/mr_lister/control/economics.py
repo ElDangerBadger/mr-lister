@@ -85,7 +85,7 @@ class VariantProceedsEvidence(_EconomicsModel):
     variant_id: int = Field(gt=0, strict=True)
     currency: Literal["USD"] = "USD"
     retail_price_cents: int = Field(gt=0, strict=True)
-    buyer_shipping_cents: Literal[0] = 0
+    buyer_shipping_cents: int = Field(default=0, ge=0, strict=True)
     production_cost_cents: int = Field(ge=0, strict=True)
     production_shipping_cents: int = Field(ge=0, strict=True)
     shipping_plan_id: str = Field(min_length=1, max_length=128)

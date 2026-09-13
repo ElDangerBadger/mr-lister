@@ -21,6 +21,7 @@ from mr_lister.control.fingerprints import (
 )
 from mr_lister.control.fingerprints import (
     product_sync_record_fingerprint,
+    review_content_fingerprint,
     review_etag,
 )
 from mr_lister.control.models import (
@@ -34,6 +35,7 @@ from mr_lister.control.models import (
     ReviewDecisionRecord,
     SourceArtifactRecord,
 )
+from mr_lister.control.pricing import retail_price_for_variant
 from mr_lister.publication.contract import (
     PHASE7_PUBLICATION_CONTRACT_VERSION,
     PublicationActivationPhaseName,
@@ -91,25 +93,7 @@ class PublicationProfileAuthority(Protocol):
 
 
 def _review_content_fingerprint(review: ReviewContent) -> str:
-    return control_fingerprint(
-        {
-            "contract_version": review.contract_version,
-            "job_id": review.job_id,
-            "review_version": review.review_version,
-            "actor": review.actor.value,
-            "title": review.title,
-            "description": review.description,
-            "tags": review.tags,
-            "audience": review.audience,
-            "title_rationale": review.title_rationale,
-            "tag_rationale": review.tag_rationale,
-            "validation_passed": review.validation_passed,
-            "validation_issue_codes": review.validation_issue_codes,
-            "artwork_analysis_fingerprint": review.artwork_analysis_fingerprint,
-            "product_profile_fingerprint": review.product_profile_fingerprint,
-            "created_at": review.created_at.isoformat(),
-        }
-    )
+    return review_content_fingerprint(review)
 
 
 def _source_artifact_fingerprint(source: SourceArtifactRecord) -> str:
@@ -261,6 +245,23 @@ def validate_publication_guard_source_authority(
         raise ValueError("Publication guard source authority is invalid")
     estimate_by_id = {variant.variant_id: variant for variant in evidence.estimate.variants}
     sync_by_id = {variant.variant_id: variant for variant in sync.variants}
+    if any(
+        variant.buyer_shipping_cents
+        != (
+            variant.production_shipping_cents
+            if review.pricing is not None and not review.pricing.free_shipping
+            else 0
+        )
+        for variant in evidence.estimate.variants
+    ) or (
+        review.pricing is not None
+        and any(
+            variant.retail_price_cents
+            != retail_price_for_variant(review.pricing, color=variant.color, size=variant.size)
+            for variant in sync.variants
+        )
+    ):
+        raise ValueError("Publication guard source authority is invalid")
     if set(estimate_by_id) != set(sync_by_id) or any(
         estimate_by_id[variant_id].retail_price_cents != sync_by_id[variant_id].retail_price_cents
         or estimate_by_id[variant_id].production_cost_cents

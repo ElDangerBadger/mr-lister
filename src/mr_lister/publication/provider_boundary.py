@@ -549,6 +549,10 @@ class CanonicalReadPrintArea(_ProviderModel):
         return self
 
 
+class CanonicalReadSalesChannelProperties(_ProviderModel):
+    free_shipping: StrictBool
+
+
 class CanonicalProductReadback(_ProviderModel):
     title: Annotated[str, StringConstraints(min_length=1, max_length=512)]
     description: Annotated[str, StringConstraints(min_length=1, max_length=250_000)]
@@ -560,6 +564,9 @@ class CanonicalProductReadback(_ProviderModel):
     print_provider_id: StrictInt = Field(gt=0)
     variants: tuple[CanonicalReadVariant, ...] = Field(min_length=1, max_length=100)
     print_areas: tuple[CanonicalReadPrintArea, ...] = Field(min_length=1, max_length=100)
+    sales_channel_properties: CanonicalReadSalesChannelProperties | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def canonical_collections_are_unique(self) -> CanonicalProductReadback:
@@ -1052,6 +1059,7 @@ class PrintifyPublicationBoundary:
                 payload,
                 expected_variant_ids=expected_variant_ids,
                 job_id=self._authority.job_id,
+                include_shipping=self._authority.expected_free_shipping is not None,
             )
             economics = _variant_economics(
                 payload,
@@ -1068,6 +1076,14 @@ class PrintifyPublicationBoundary:
         canonical_match = (
             canonical_payload_fingerprint == self._authority.product_payload_fingerprint
             and provider_skus_match
+            and (
+                self._authority.expected_free_shipping is None
+                or (
+                    canonical.sales_channel_properties is not None
+                    and canonical.sales_channel_properties.free_shipping
+                    is self._authority.expected_free_shipping
+                )
+            )
         )
         economics_match = economics == self._authority.expected_variant_economics
         placement_match = placement_ids == {self._authority.printify_image_id}
@@ -1611,6 +1627,7 @@ def _canonical_product_readback(
     *,
     expected_variant_ids: tuple[int, ...],
     job_id: str,
+    include_shipping: bool = False,
 ) -> tuple[CanonicalProductReadback, bool]:
     variant_rows, disabled_extra_ids = _inert_catalog_variant_rows(
         payload,
@@ -1723,6 +1740,13 @@ def _canonical_product_readback(
             print_provider_id=payload.get("print_provider_id"),
             variants=tuple(variants),
             print_areas=tuple(print_areas),
+            sales_channel_properties=(
+                CanonicalReadSalesChannelProperties(
+                    free_shipping=payload["sales_channel_properties"]["free_shipping"]
+                )
+                if include_shipping
+                else None
+            ),
         ),
         provider_skus_match,
     )

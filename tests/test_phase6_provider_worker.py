@@ -320,6 +320,7 @@ class FakeSynchronizer:
     def __init__(self) -> None:
         self.mutations: list[str | None] = []
         self.drafts: list[object] = []
+        self.prior_drafts: list[object] = []
         self.raise_unknown = False
         self.unexpected_error: Exception | None = None
         self.create_result: CreateReconciliationResult | None = None
@@ -334,6 +335,7 @@ class FakeSynchronizer:
             assert prior_draft is not None
         self.mutations.append(product_id)
         self.drafts.append(draft)
+        self.prior_drafts.append(prior_draft)
         if self.unexpected_error is not None:
             raise self.unexpected_error
         if self.raise_unknown:
@@ -728,7 +730,7 @@ def _evidence(*, draft, product_id: str) -> DraftSynchronizationEvidence:
         variants=(
             DraftVariantEconomics(
                 variant_id=1000,
-                retail_price_cents=2999,
+                retail_price_cents=draft.variants[0].price,
                 production_cost_cents=1100,
             ),
         ),
@@ -839,6 +841,62 @@ def test_economics_refresh_uses_exact_product_get_and_v2_shipping_without_mutati
     assert estimate.variants[0].production_shipping_cents == 399
     assert estimate.variants[0].estimated_proceeds_cents == 1095
     assert estimate.product_sync_fingerprint == sync_record.fingerprint
+
+
+def test_economics_refresh_uses_review_price_and_buyer_paid_standard_shipping() -> None:
+    from mr_lister.control.pricing import ReviewPricing
+
+    pricing = ReviewPricing(retail_price_cents=3499, free_shipping=False)
+    review = _review(1).model_copy(update={"pricing": pricing})
+    draft = build_canonical_draft(
+        job_id=JOB_ID,
+        listing=_listing(review),
+        profile=_profile(),
+        resolved=_resolved(),
+        image_id="image_old",
+        pricing=pricing,
+    )
+    sync_record, _old_payload = _prior_sync()
+    sync_record = sync_record.model_copy(
+        update={
+            "payload_fingerprint": draft.payload_fingerprint,
+            "variants": (sync_record.variants[0].model_copy(update={"retail_price_cents": 3499}),),
+        }
+    )
+    sync_record = sync_record.model_copy(
+        update={"fingerprint": product_sync_record_fingerprint(sync_record)}
+    )
+    worker, store, control, resources = _worker(
+        job=_job(
+            state=ControlJobState.PRICING_REFRESHING,
+            work_id=ECONOMICS_WORK_ID,
+            product_id=sync_record.product_id,
+            prior_payload_fingerprint=draft.payload_fingerprint,
+            product_sync_id=sync_record.sync_id,
+            product_sync_fingerprint=sync_record.fingerprint,
+            synchronized_review_version=1,
+        ),
+        work=_work(
+            work_type=WorkType.REFRESH_ECONOMICS, work_id=ECONOMICS_WORK_ID, review_version=1
+        ),
+        synchronizer=FakeSynchronizer(),
+    )
+    store.reviews[1] = review
+    store.syncs[sync_record.sync_id] = sync_record
+    resources.product_costs_override = ProductCostEvidence(
+        product_sync_fingerprint=sync_record.fingerprint,
+        observed_at=NOW,
+        variants=(
+            ProductVariantCostEvidence(
+                variant_id=1000, retail_price_cents=3499, production_cost_cents=1175
+            ),
+        ),
+    )
+    worker.run_economics_refresh(job_id=JOB_ID, work_request_id=ECONOMICS_WORK_ID)
+    variant = control.pricing_successes[0].estimate.variants[0]
+    assert variant.retail_price_cents == 3499
+    assert variant.buyer_shipping_cents == variant.production_shipping_cents == 399
+    assert variant.estimated_proceeds_cents == 1909
 
 
 def test_economics_refresh_rejects_product_get_variant_drift_before_shipping() -> None:
@@ -1339,6 +1397,35 @@ def test_update_uses_only_the_application_owned_product_identity() -> None:
     assert sync.mutations == ["product_1"]
     assert control.successes[0].observation.product_id == "product_1"
     assert control.successes[0].observation.printify_shop_id == 42
+
+
+def test_price_and_shipping_revision_reproduces_legacy_prior_and_observes_new_target() -> None:
+    from mr_lister.control.pricing import ReviewPricing
+
+    prior_sync, prior_fingerprint = _prior_sync()
+    synchronizer = FakeSynchronizer()
+    worker, store, control, _resources = _worker(
+        job=_job(
+            review_version=2,
+            product_id="product_1",
+            prior_payload_fingerprint=prior_fingerprint,
+            product_sync_id=prior_sync.sync_id,
+            product_sync_fingerprint=prior_sync.fingerprint,
+            synchronized_review_version=1,
+        ),
+        work=_work(work_type=WorkType.SYNCHRONIZE_PRODUCT, work_id=SYNC_WORK_ID, review_version=2),
+        synchronizer=synchronizer,
+    )
+    store.reviews[2] = store.reviews[2].model_copy(
+        update={"pricing": ReviewPricing(retail_price_cents=3499, free_shipping=False)}
+    )
+    store.syncs[prior_sync.sync_id] = prior_sync
+    worker.run_product_sync(job_id=JOB_ID, work_request_id=SYNC_WORK_ID)
+    assert synchronizer.prior_drafts[0].payload_fingerprint == prior_fingerprint
+    assert synchronizer.prior_drafts[0].sales_channel_properties is None
+    assert synchronizer.drafts[0].sales_channel_properties.free_shipping is False
+    assert control.successes[0].observation.variants[0].retail_price_cents == 3499
+    assert _profile().retail_price_cents == 2999
 
 
 def test_update_ignores_completed_create_attempt_from_prior_review() -> None:

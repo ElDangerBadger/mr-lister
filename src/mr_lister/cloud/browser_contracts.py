@@ -19,6 +19,7 @@ from mr_lister.control.models import (
     PHASE6_MAX_SOURCE_ARTWORK_BYTES,
     ControlJobState,
 )
+from mr_lister.control.pricing import ReviewPricing
 from mr_lister.control.projection_models import (
     ActionReason,
     ArtworkInterpretation,
@@ -85,6 +86,7 @@ class ListingRequest(BrowserContractModel):
     title: Title
     description: Description
     tags: list[Tag] = Field(min_length=13, max_length=13)
+    pricing: ReviewPricing | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ReviewAuthorityRequest(BrowserContractModel):
@@ -343,6 +345,7 @@ def browser_contract_fixtures() -> dict[str, Any]:
             ),
             retail_price_cents=2_999,
             buyer_shipping_cents=0,
+            pricing=ReviewPricing(retail_price_cents=2_999, free_shipping=True),
         ),
         synchronization=ProductSynchronizationProjection(readiness=pending),
         mockups=MockupSetProjection(readiness=pending),

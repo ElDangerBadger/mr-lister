@@ -164,6 +164,12 @@
           "y": 0.0
         }
       ],
+      "pricing": {
+        "free_shipping": true,
+        "retail_price_cents": 2999,
+        "variant_prices": []
+      },
+      "pricing_saved": false,
       "product_name": "Gildan 64000",
       "provider_name": "SwiftPOD",
       "retail_price_cents": 2999,

@@ -5,6 +5,14 @@ This is the current React application served at [massskutiny.com](https://masssk
 client. The workflow is Upload → Review → Publish, with explicit seller approval and a separate
 publication confirmation. It has no order, fulfillment, delete, or unpublish capability.
 
+The review editor includes USD pricing and shipping for the individual listing. The item price
+is the fallback for all variants; **Apply to all variants** clears custom prices. Each color/size
+can have a custom price or reset to the item price. Free shipping uses the seller-funded estimate;
+turning it off uses Printify standard shipping, with estimated buyer shipping clearly identified
+as the provider's first-item US rate. Save the listing revision to synchronize the draft and
+refresh estimates before approval. Existing listings with only historical defaults are labeled
+until pricing is explicitly saved. These controls require the corresponding backend release.
+
 The browser accepts an ordered, memory-only queue of up to five PNG, compatible self-contained
 SVG, or JPEG files. Each file creates an independent job; submission order does not imply
 preparation completion order. SVG and JPEG convert locally to proportional PNG. PNG bytes,

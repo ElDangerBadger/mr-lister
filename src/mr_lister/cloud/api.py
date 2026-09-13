@@ -489,6 +489,7 @@ class SellerCommandApiAdapter(_ProtectedApiAdapter):
                         title=body.listing.title,
                         description=body.listing.description,
                         tags=tuple(body.listing.tags),
+                        pricing=body.listing.pricing,
                     ),
                 )
             )

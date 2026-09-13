@@ -15,6 +15,7 @@ from mr_lister.control.errors import ControlError, NotFoundError
 from mr_lister.control.fingerprints import (
     canonical_fingerprint,
     product_sync_record_fingerprint,
+    review_content_fingerprint,
     review_etag,
 )
 from mr_lister.control.models import (
@@ -32,6 +33,11 @@ from mr_lister.control.models import (
     WorkRequest,
     WorkRequestStatus,
     WorkType,
+)
+from mr_lister.control.pricing import (
+    ReviewPricing,
+    effective_review_pricing,
+    retail_price_for_variant,
 )
 from mr_lister.control.projection_models import (
     ActionReason,
@@ -198,25 +204,7 @@ _FAILURE_MESSAGES: dict[str, str] = {
 def _review_content_fingerprint(review: ReviewContent) -> str:
     """Rebuild the exact immutable material used when the review was created."""
 
-    return canonical_fingerprint(
-        {
-            "contract_version": review.contract_version,
-            "job_id": review.job_id,
-            "review_version": review.review_version,
-            "actor": review.actor.value,
-            "title": review.title,
-            "description": review.description,
-            "tags": review.tags,
-            "audience": review.audience,
-            "title_rationale": review.title_rationale,
-            "tag_rationale": review.tag_rationale,
-            "validation_passed": review.validation_passed,
-            "validation_issue_codes": review.validation_issue_codes,
-            "artwork_analysis_fingerprint": review.artwork_analysis_fingerprint,
-            "product_profile_fingerprint": review.product_profile_fingerprint,
-            "created_at": review.created_at.isoformat(),
-        }
-    )
+    return review_content_fingerprint(review)
 
 
 def _product_sync_fingerprint(sync: ProductSyncRecord) -> str:
@@ -309,7 +297,7 @@ class SellerReviewProjectionService:
             artwork=analysis,
             listing=listing,
             validation=validation,
-            product_policy=self._product_policy(exact_profile),
+            product_policy=self._product_policy(exact_profile, review),
             synchronization=self._synchronization(job, sync),
             mockups=mockups,
             economics=economics,
@@ -634,7 +622,21 @@ class SellerReviewProjectionService:
             raise ReviewProjectionUnavailableError(
                 "The consolidated review is temporarily unavailable"
             )
-        self._validate_sync_policy(sync, profile)
+        sync_review = (
+            review
+            if sync.review_version == review.review_version
+            else self._store.get_review(job.job_id, sync.review_version)
+        )
+        if (
+            sync_review.job_id != job.job_id
+            or sync_review.review_version != sync.review_version
+            or sync_review.product_profile_fingerprint != review.product_profile_fingerprint
+            or sync_review.fingerprint != _review_content_fingerprint(sync_review)
+        ):
+            raise ReviewProjectionUnavailableError(
+                "The consolidated review is temporarily unavailable"
+            )
+        self._validate_sync_policy(sync, profile, self._pricing_settings(sync_review, profile))
         if (
             job.state
             in {
@@ -650,7 +652,9 @@ class SellerReviewProjectionService:
         return sync
 
     @staticmethod
-    def _validate_sync_policy(sync: ProductSyncRecord, profile: ProductProfile) -> None:
+    def _validate_sync_policy(
+        sync: ProductSyncRecord, profile: ProductProfile, pricing: ReviewPricing
+    ) -> None:
         group_by_size = {
             size: group.group_id for group in profile.placement_groups for size in group.sizes
         }
@@ -661,7 +665,8 @@ class SellerReviewProjectionService:
             or len(sync.variants) != len(expected_pairs)
             or any(
                 variant.placement_group_id != group_by_size.get(variant.size)
-                or variant.retail_price_cents != profile.retail_price_cents
+                or variant.retail_price_cents
+                != retail_price_for_variant(pricing, color=variant.color, size=variant.size)
                 for variant in sync.variants
             )
         ):
@@ -739,6 +744,7 @@ class SellerReviewProjectionService:
                 "The consolidated review is temporarily unavailable"
             )
         rows: list[VariantEconomicsProjection] = []
+        settings = self._pricing_settings(review, profile)
         for color in profile.colors:
             for size in profile.sizes:
                 variants = [
@@ -753,7 +759,8 @@ class SellerReviewProjectionService:
                 if (
                     estimate.retail_price_cents != sync_variant.retail_price_cents
                     or estimate.production_cost_cents != sync_variant.production_cost_cents
-                    or estimate.buyer_shipping_cents != profile.buyer_shipping_cents
+                    or estimate.buyer_shipping_cents
+                    != (0 if settings.free_shipping else estimate.production_shipping_cents)
                 ):
                     raise ReviewProjectionUnavailableError(
                         "The consolidated review is temporarily unavailable"
@@ -790,7 +797,14 @@ class SellerReviewProjectionService:
                 fee_policy_verified_on=evidence.estimate.policy.verified_on,
                 assumptions=(
                     "USD integer-cent estimate for a US seller and US buyer destination.",
-                    "Buyer shipping is zero; seller-funded shipping is deducted.",
+                    (
+                        "Buyer shipping is zero; seller-funded shipping is deducted."
+                        if settings.free_shipping
+                        else (
+                            "Buyer shipping is estimated at the provider's first-item standard "
+                            "US shipping cost; the storefront charge may differ."
+                        )
+                    ),
                     (
                         "Marketplace fees are estimates and exclude taxes, ads, refunds, "
                         "and currency conversion."
@@ -997,8 +1011,20 @@ class SellerReviewProjectionService:
         return ActionReason.AVAILABLE
 
     @staticmethod
-    def _product_policy(exact: ExactReviewProductProfile) -> ProductPolicyProjection:
+    def _pricing_settings(review: ReviewContent | None, profile: ProductProfile) -> ReviewPricing:
+        try:
+            return effective_review_pricing(review.pricing if review else None, profile)
+        except ValueError:
+            raise ReviewProjectionUnavailableError(
+                "The consolidated review is temporarily unavailable"
+            ) from None
+
+    @classmethod
+    def _product_policy(
+        cls, exact: ExactReviewProductProfile, review: ReviewContent | None
+    ) -> ProductPolicyProjection:
         profile = exact.profile
+        pricing = cls._pricing_settings(review, profile)
         return ProductPolicyProjection(
             product_name=exact.product_name,
             provider_name=exact.provider_name,
@@ -1017,8 +1043,10 @@ class SellerReviewProjectionService:
                 )
                 for group in profile.placement_groups
             ),
-            retail_price_cents=profile.retail_price_cents,
+            retail_price_cents=pricing.retail_price_cents,
             buyer_shipping_cents=profile.buyer_shipping_cents,
+            pricing=pricing,
+            pricing_saved=review is not None and review.pricing is not None,
         )
 
     @staticmethod

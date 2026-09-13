@@ -49,6 +49,7 @@ from mr_lister.control.models import (
     WorkRequestStatus,
     WorkType,
 )
+from mr_lister.control.pricing import retail_price_for_variant
 from mr_lister.control.store import CommandCommit, SellerControlStore
 from mr_lister.control.worker_commands import (
     BeginPreparationCommand,
@@ -172,6 +173,10 @@ class WorkerControlService:
             "product_profile_fingerprint": source.product_profile_fingerprint,
             "created_at": review_created_at.isoformat(),
         }
+        # A resumed checkpoint retains its original commercial choices and fingerprint.
+        pricing = persisted_review.pricing if persisted_review is not None else command.pricing
+        if pricing is not None:
+            review_material["pricing"] = pricing.model_dump(mode="json")
         review_fingerprint = canonical_fingerprint(review_material)
         analysis = ArtworkAnalysisRecord(
             analysis_id=analysis_id,
@@ -824,6 +829,26 @@ class WorkerControlService:
             raise InvalidControlStateError("Pricing evidence changed product sync authority")
 
         actual_by_variant = {item.variant_id: item for item in command.estimate.variants}
+        review = self.store.get_review(current.job_id, current.review_version)
+        if any(
+            item.buyer_shipping_cents
+            != (
+                item.production_shipping_cents
+                if review.pricing is not None and not review.pricing.free_shipping
+                else 0
+            )
+            for item in command.estimate.variants
+        ) or (
+            review.pricing is not None
+            and any(
+                item.retail_price_cents
+                != retail_price_for_variant(review.pricing, color=item.color, size=item.size)
+                for item in sync.variants
+            )
+        ):
+            raise InvalidControlStateError(
+                "Pricing evidence changed the reviewed commercial settings"
+            )
         observed_costs = ProductCostEvidence(
             product_sync_fingerprint=sync.fingerprint,
             observed_at=command.estimate.product_cost_observed_at,
