@@ -11,6 +11,62 @@ preparation continues, with a shimmer and elapsed time. Dashboard/Upload links a
 the batch switcher are deployed too. The latest release evidence appears below; isolated
 judge access remains a separate, deferred release step.
 
+## Official Sites landing integration — deployed September 12, 2026
+
+The approved Sites landing page is now the anonymous home page at
+[massskutiny.com](https://massskutiny.com/), integrated into the existing React
+application. Its reference is Sites commit
+`206bf59826cfc706ed024f1ae26b59a0b867c7c4`, published at
+[Mr. Lister Studio](https://mr-lister-studio.el-danger-badger.chatgpt.site/).
+The existing authenticated home remains the upload workspace, and protected listing
+and upload links retain their session-restoration flow.
+
+The landing page preserves the approved composition, copy, responsive layout,
+Lora/DM Sans typography, and separate light/dark artwork. Its header sign-in and
+both seller-workspace buttons use the existing Cognito popup flow and fallback.
+The shared Light / Dark / Auto control retains its preference through sign-in,
+navigation, and sign-out; Auto responds to system theme changes. The two fonts
+are served locally, with complete OFL notices retained in the compiled stylesheet.
+The build now checks those notices. No production dependency or infrastructure
+change was required.
+
+The seller requested a dedicated `ui-update-new-landing-page` branch. Implementation
+commit `89fcf363ab24d36fc6ebe37adb9d43352c10bbdc` is pushed to that branch and is the
+deployed source. `main` remains at `17e4e0af50d5dd2ea477101c11aaa0d277892c2a`;
+this release does not merge the branch into `main`.
+
+Local validation passes 329 web tests, lint, typecheck, the production build,
+and 67 targeted Python release/browser/distribution-boundary tests. Ruff also
+passes for the changed Python files. The fresh-build Chromium, Firefox, and WebKit
+matrix passes at `output/playwright/phase66/20260913T040755Z/browser-gate.json`,
+with attestation eligible and bundle digest
+`5fd9cfbca2f0c415d31e1f75e09f87b7bade29db25cb39911468164537172c3c`.
+It covers anonymous API isolation, decoded theme-specific artwork, mobile reflow,
+popup login/logout, preference persistence, and the existing upload, review,
+navigation, accessibility, and browser-restart scenarios.
+
+Deployment was publicly verified at `2026-09-13T04:15:53.747494+00:00`
+(September 12 locally):
+
+- All eight versioned files pass checksum, size, headers, metadata, and current-version
+  readback. Public root/index, JavaScript, CSS, both images, both fonts, favicon,
+  and runtime configuration match the release manifest.
+- The live page loads `index-DmW3npaO.js` and `index-CL5R4bbz.css`, renders the new
+  landing composition, decodes both artwork variants, and supports Light/Dark/Auto
+  without browser errors.
+- Release-manifest bundle SHA-256:
+  `9cf61e16091bd6a7fbaa32f788a29797e4c4d38692750e45547cc6eef8b9df50`.
+- Deployed index VersionId: `h2RLJnsurW2jfkH7I2dYb.0tVJnkXJPj`.
+- Completed CloudFront invalidation: `I2RHZGZULL3SIBDUIP9YHFE0BP`.
+- Rollback index VersionId: `H_p3l8dD3kL0aMxAxpA5sn2Pcgoanofg`.
+- Runtime configuration remains at `IdRmSDEqfGAjcfmiYHvjrUJ2SQ6s5wqx`; backend
+  stack/template and Lambda configuration digests remain unchanged.
+
+Private release, rollback, browser, and public verification evidence is retained
+under `.mr_lister_private/new-landing-20260912/web/`. No live upload, approval, or
+publication was created during verification. Page-load model warm-up, social
+login, self-service store connections, and dedicated judge access remain deferred.
+
 ## Earlier workspace opening and preparation activity — deployed September 11, 2026
 
 The seller requested earlier entry after timing a live submission at 2 minutes
