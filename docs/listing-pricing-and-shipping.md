@@ -1,6 +1,7 @@
 # Editable listing prices and shipping
 
-Status: implemented locally on `codex/listing-pricing-shipping`; not deployed.
+Status: deployed from `d8111804` on `codex/listing-pricing-shipping`, September 13, 2026.
+See [verified release state and live-check limits](listing-pricing-release-state.md).
 
 Sellers can change the USD item price, apply that price to every variant, override individual
 color/size prices, reset an override, and choose free shipping in the existing review editor.
@@ -43,8 +44,10 @@ explicit source allowlist. The frontend can read older responses without pricing
 Browser checks exercise the compiled application with local fixture responses. They cover
 editing, cent precision, authoritative saves, theme variants, and mobile layout. Backend tests
 exercise provider payloads/readback and publication safeguards with simulated transports.
-No real Printify/Etsy product was changed or published to validate this feature yet; live
-verification remains part of the subsequent deployment.
+The deployed handlers passed read-only health, authentication, ownership and pricing-projection
+checks, with the existing job partition unchanged. A fresh signed-in price save and provider
+round trip remain the live follow-up. No real Printify/Etsy product was changed or published
+during deployment.
 
 ## Local verification — September 13, 2026
 

@@ -2,6 +2,11 @@
 
 ## Status
 
+The backend/web component tuples below are historical predecessors of the
+[September 13 pricing and shipping release](listing-pricing-release-state.md). That release
+preserves the SEO behavior, Safari correction, accepted memory settings, and store binding.
+
+
 User authorized commit, push, merge to main, and deployment to `https://massskutiny.com`.
 **DEPLOYED AND READBACK VERIFIED** on 2026-09-08. Source promotion, local verification,
 push, merge to main and AWS deployment are complete. Subsequent seller live testing reached
