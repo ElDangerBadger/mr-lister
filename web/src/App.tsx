@@ -14,13 +14,15 @@ import mrListerIcon from "./assets/mr-lister-icon.png";
 import { ThemeControl } from "./components/ThemeControl";
 import { WorkspaceLink, WorkspaceNavigationProvider } from "./navigation/WorkspaceNavigation";
 import { BatchWorkspaceProvider } from "./navigation/BatchWorkspace";
+import { JudgeModeBanner } from "./components/JudgeModeBanner";
 import "./styles.css";
 import "./landing-fonts.css";
 import "./landing.css";
+import "./judge-access.css";
 
 export function App({ dependencies }: { dependencies: AppDependencies }) {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={dependencies.judgeAccess === undefined ? "/" : "/judge"}>
       <AppRoutes dependencies={dependencies} />
     </BrowserRouter>
   );
@@ -29,7 +31,8 @@ export function App({ dependencies }: { dependencies: AppDependencies }) {
 export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
   const status = useSessionStatus(dependencies.auth.session);
   const location = useLocation();
-  const landing = status === "anonymous" && location.pathname === "/";
+  const judgeMode = dependencies.judgeAccess !== undefined;
+  const landing = !judgeMode && status === "anonymous" && location.pathname === "/";
   return (
     <AppContext.Provider value={dependencies}>
       <SignInProvider>
@@ -37,7 +40,7 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
       <UploadProvider api={dependencies.api}>
       <BatchWorkspaceProvider>
         <div className={landing ? "app-shell app-shell--landing" : "app-shell"}>
-          <RouteFocusManager status={status} />
+          <RouteFocusManager status={status} judgeMode={judgeMode} />
           <a className="skip-link" href="#main-content">Skip to main content</a>
           {landing ? <LandingHeader /> : <header className="site-header">
             <div className="site-header-inner">
@@ -55,6 +58,7 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
               </div>
             </div>
           </header>}
+          <JudgeModeBanner authenticated={status === "authenticated"} />
           <main id="main-content" tabIndex={-1}>
             <Routes>
               <Route path="/" element={<HomePage />} />
@@ -76,18 +80,19 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
   );
 }
 
-function RouteFocusManager({ status }: { status: "anonymous" | "authenticated" }) {
+function RouteFocusManager({ status, judgeMode }: { status: "anonymous" | "authenticated"; judgeMode: boolean }) {
   const location = useLocation();
   const mounted = useRef(false);
   useEffect(() => {
-    document.title = routeTitle(location.pathname, status);
+    document.title = judgeMode && location.pathname === "/" && status === "anonymous"
+      ? "Judge access | Mr. Lister" : routeTitle(location.pathname, status);
     if (!mounted.current) {
       mounted.current = true;
       return;
     }
     const timeout = window.setTimeout(() => document.getElementById("main-content")?.focus(), 0);
     return () => window.clearTimeout(timeout);
-  }, [location.pathname, status]);
+  }, [location.pathname, status, judgeMode]);
   return null;
 }
 

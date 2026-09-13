@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefAttributes } from "react";
-import { Link, useLinkClickHandler, useLocation, type LinkProps, type To } from "react-router-dom";
+import { Link, useHref, useLinkClickHandler, useLocation, type LinkProps, type To } from "react-router-dom";
 
 export type NavigationProtectionReason = "unsaved" | "saving" | "reconciling" | "none";
 
@@ -152,14 +152,16 @@ export function WorkspaceLink(props: LinkProps & RefAttributes<HTMLAnchorElement
   const { target, ...routerOptions } = props;
   const routerClick = useLinkClickHandler<HTMLAnchorElement>(routerDestination(props.to), { ...routerOptions, ...(target === undefined ? {} : { target }) });
   const location = useLocation();
+  const currentHref = useHref({ pathname: location.pathname, search: location.search, hash: location.hash });
   return <Link {...props} reloadDocument={props.reloadDocument || (props.download !== undefined && props.download !== false)} onClick={(event) => {
     props.onClick?.(event);
     if (event.defaultPrevented || context === null || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
       || (props.target !== undefined && props.target !== "_self") || event.currentTarget.hasAttribute("download")) return;
     const trigger = event.currentTarget;
     const destination = new URL(trigger.href, window.location.href);
+    const current = new URL(currentHref, window.location.href);
     const sameOrigin = destination.origin === window.location.origin;
-    if (!props.reloadDocument && sameOrigin && `${destination.pathname}${destination.search}${destination.hash}` === `${location.pathname}${location.search}${location.hash}`) return;
+    if (!props.reloadDocument && sameOrigin && destination.href === current.href) return;
     event.preventDefault();
     context.requestNavigation(() => {
       if (props.reloadDocument || !sameOrigin) {

@@ -37,11 +37,11 @@ function fakePopup() {
   return { popup, stored, handle: popup as unknown as Window };
 }
 
-async function authorizedPopup(fetcher = vi.fn<typeof fetch>().mockResolvedValue(tokenResponse())) {
+async function authorizedPopup(fetcher = vi.fn<typeof fetch>().mockResolvedValue(tokenResponse()), runtimeConfig = config) {
   const fake = fakePopup();
   const open = vi.spyOn(window, "open").mockReturnValue(fake.handle);
   const session = new MemoryAuthSession();
-  const coordinator = new OAuthCoordinator(config, session, window.sessionStorage, fetcher, vi.fn());
+  const coordinator = new OAuthCoordinator(runtimeConfig, session, window.sessionStorage, fetcher, vi.fn());
   const pending = coordinator.startPopupSignIn("/jobs/job_popup");
   // Attach rejection handling while tests exercise cancellation and timeouts.
   const outcome = pending.catch((reason: unknown) => reason);
@@ -63,6 +63,27 @@ afterEach(() => {
 });
 
 describe("popup sign-in", () => {
+  it("uses judge federation and its callback while retaining the original judge workspace", async () => {
+    window.history.replaceState(null, "", "/judge/jobs/job_popup");
+    const judgeConfig: RuntimeConfig = {
+      ...config,
+      redirect_uri: `${window.location.origin}/judge/auth/callback`,
+      judge_access: {
+        identity_provider: "MrListerJudge",
+        upstream_logout_url: "https://judges.auth.us-west-2.amazoncognito.com/logout",
+        upstream_client_id: "judgeclient",
+      },
+    };
+    const auth = await authorizedPopup(undefined, judgeConfig);
+    expect(auth.target.searchParams.get("identity_provider")).toBe("MrListerJudge");
+    expect(auth.target.searchParams.get("redirect_uri")).toBe(judgeConfig.redirect_uri);
+    auth.send({ type: callbackType, search: `?code=one-use&state=${auth.state}` });
+    await expect(auth.pending).resolves.toBe("/jobs/job_popup");
+    expect(auth.session.getAccessToken()).toBe("popup-access-secret");
+    expect(window.location.pathname).toBe("/judge/jobs/job_popup");
+    expect((auth.fetcher.mock.calls[0]?.[1]?.body as URLSearchParams).get("redirect_uri")).toBe(judgeConfig.redirect_uri);
+  });
+
   it("opens during the click, keeps PKCE out of storage, and authenticates the original page without changing its URL", async () => {
     window.history.replaceState(null, "", "/jobs/job_popup");
     const auth = await authorizedPopup();
@@ -180,15 +201,16 @@ describe("popup callback relay", () => {
     expect(window.location.search).not.toBe("");
   });
 
-  it("uses the ownership marker if navigation reset the name, scrubs the query and closes only for an exact acknowledgement", async () => {
+  it.each(["/auth/callback", "/judge/auth/callback"])("relays %s using its ownership marker and closes only for an exact acknowledgement", async (callbackPath) => {
     vi.useFakeTimers();
     const opener = fakePopup();
     vi.stubGlobal("opener", opener.handle);
     const close = vi.spyOn(window, "close").mockImplementation(() => undefined);
     const onFailure = vi.fn();
     window.sessionStorage.setItem(markerKey, `mr-lister-signin-${"a".repeat(22)}`);
-    window.history.replaceState(null, "", "/auth/callback?code=one-use&state=callback-state");
+    window.history.replaceState(null, "", `${callbackPath}?code=one-use&state=callback-state`);
     expect(relayPopupCallback(window.location.search, onFailure)).toBe(true);
+    expect(window.location.pathname).toBe(callbackPath);
     expect(window.location.search).toBe("");
     expect(window.sessionStorage.length).toBe(0);
     expect(opener.popup.postMessage).toHaveBeenCalledWith({

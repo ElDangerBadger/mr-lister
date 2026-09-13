@@ -469,9 +469,15 @@ const runtimeConfigBaseSchema = z.strictObject({
   client_id: z.string().min(1).max(256),
   redirect_uri: z.string().url(),
   scopes: z.tuple([z.literal("openid"), z.literal("mr-lister-api/seller")]),
+  judge_access: z.strictObject({
+    identity_provider: z.literal("MrListerJudge"),
+    upstream_logout_url: httpsUrl,
+    upstream_client_id: z.string().regex(/^[A-Za-z0-9]{1,128}$/u),
+    prepared_job_id: publicId.optional(),
+  }).optional(),
 });
 
-export function runtimeConfigSchemaForOrigin(applicationOrigin: string) {
+export function runtimeConfigSchemaForOrigin(applicationOrigin: string, workspaceBasePath: "" | "/judge" = "") {
   return runtimeConfigBaseSchema.superRefine((value, context) => {
     const endpoints = [
       ["cognito_authorize_url", value.cognito_authorize_url, "/oauth2/authorize"],
@@ -496,12 +502,23 @@ export function runtimeConfigSchemaForOrigin(applicationOrigin: string) {
     });
     const redirect = new URL(value.redirect_uri);
     if (redirect.origin !== new URL(applicationOrigin).origin
-      || redirect.pathname !== "/auth/callback"
+      || redirect.pathname !== `${workspaceBasePath}/auth/callback`
       || redirect.search !== ""
       || redirect.hash !== ""
       || redirect.username !== ""
       || redirect.password !== "") {
       context.addIssue({ code: "custom", path: ["redirect_uri"], message: "OAuth redirect does not match this application" });
+    }
+    if ((workspaceBasePath === "/judge") !== (value.judge_access !== undefined)) {
+      context.addIssue({ code: "custom", path: ["judge_access"], message: "Judge configuration must match the judge workspace" });
+    }
+    if (value.judge_access !== undefined) {
+      const upstream = new URL(value.judge_access.upstream_logout_url);
+      if (value.judge_access.upstream_logout_url !== `${upstream.origin}/logout`
+        || !cognitoHostname.test(upstream.hostname) || upstream.origin === cognitoOrigin
+        || upstream.port !== "") {
+        context.addIssue({ code: "custom", path: ["judge_access", "upstream_logout_url"], message: "Judge sign-out authority is invalid" });
+      }
     }
   });
 }

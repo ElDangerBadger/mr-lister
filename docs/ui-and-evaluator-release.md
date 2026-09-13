@@ -8,8 +8,10 @@ approved, frozen and deployed. Popup sign-in and upload selection polish are now
 deployed as well, and the hosted login and MFA screens use the matching icon and
 colors. Automatic navigation now opens the first verified upload while listing
 preparation continues, with a shimmer and elapsed time. Dashboard/Upload links and
-the batch switcher are deployed too. The latest release evidence appears below; isolated
-judge access remains a separate, deferred release step.
+the batch switcher are deployed too. The latest UI release evidence appears below.
+The approved dedicated judge login now follows the shared live-store plan in
+[`judge-demo-access.md`](judge-demo-access.md); older isolated evaluator proposals
+below remain historical and do not define the current judge permissions.
 
 ## Preparation progress and fresh uploads — deployed September 13, 2026
 

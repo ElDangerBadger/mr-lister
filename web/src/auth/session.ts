@@ -181,6 +181,7 @@ export class OAuthCoordinator implements AuthCoordinator {
     target.searchParams.set("client_id", this.config.client_id);
     target.searchParams.set("redirect_uri", this.config.redirect_uri);
     target.searchParams.set("scope", this.config.scopes.join(" "));
+    target.searchParams.set("identity_provider", this.config.judge_access?.identity_provider ?? "COGNITO");
     target.searchParams.set("state", transaction.stored.state);
     target.searchParams.set("code_challenge_method", "S256");
     target.searchParams.set("code_challenge", transaction.challenge);
@@ -249,6 +250,7 @@ export class OAuthCoordinator implements AuthCoordinator {
       target.searchParams.set("client_id", this.config.client_id);
       target.searchParams.set("redirect_uri", this.config.redirect_uri);
       target.searchParams.set("scope", this.config.scopes.join(" "));
+      target.searchParams.set("identity_provider", this.config.judge_access?.identity_provider ?? "COGNITO");
       target.searchParams.set("state", transaction.stored.state);
       target.searchParams.set("code_challenge_method", "S256");
       target.searchParams.set("code_challenge", transaction.challenge);
@@ -308,7 +310,7 @@ export class OAuthCoordinator implements AuthCoordinator {
 
   async completeSignIn(callbackSearch: string): Promise<string> {
     const parameters = new URLSearchParams(callbackSearch);
-    window.history.replaceState(null, "", "/auth/callback");
+    window.history.replaceState(null, "", new URL(this.config.redirect_uri).pathname);
     const generation = this.signInGeneration;
     try {
       const code = authorizationCode(parameters);
@@ -330,7 +332,7 @@ export class OAuthCoordinator implements AuthCoordinator {
     this.session.clear();
     const target = new URL(this.config.cognito_logout_url);
     target.searchParams.set("client_id", this.config.client_id);
-    target.searchParams.set("logout_uri", new URL("/", this.config.redirect_uri).href);
+    target.searchParams.set("logout_uri", new URL(this.config.judge_access === undefined ? "/" : "/judge/signout", this.config.redirect_uri).href);
     this.navigateTo(target);
   }
 
@@ -383,7 +385,8 @@ export function relayPopupCallback(callbackSearch: string, onFailure?: (error: A
   let marker: string | null = null;
   try { marker = window.sessionStorage.getItem(POPUP_MARKER_KEY); } catch { /* A valid window name still identifies the popup. */ }
   if (!ownedName(window.name) && !ownedName(marker)) return false;
-  window.history.replaceState(null, "", "/auth/callback");
+  const callbackPath = window.location.pathname === "/judge/auth/callback" ? "/judge/auth/callback" : "/auth/callback";
+  window.history.replaceState(null, "", callbackPath);
   window.name = "";
   try {
     window.sessionStorage.removeItem(POPUP_MARKER_KEY);

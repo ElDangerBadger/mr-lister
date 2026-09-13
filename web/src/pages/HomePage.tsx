@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAppDependencies } from "../app-context";
 import { useSessionStatus } from "../auth/use-session";
 import { LandingPage } from "./LandingPage";
+import { JudgeAccessPage } from "./JudgeAccessPage";
 import type { JobSummary } from "../contracts";
 import { WorkflowSteps } from "../components/WorkflowSteps";
 import { batchItemStatus, jobProgressLabel, useBatchWorkspace } from "../navigation/BatchWorkspace";
@@ -18,7 +19,7 @@ import {
 } from "../upload/direct-upload";
 
 export function HomePage() {
-  const { api, auth } = useAppDependencies();
+  const { api, auth, judgeAccess } = useAppDependencies();
   const status = useSessionStatus(auth.session);
   const navigate = useNavigate();
   const upload = useUpload();
@@ -97,7 +98,7 @@ export function HomePage() {
     setHideRecentJobs(false);
   };
 
-  if (status === "anonymous") return <LandingPage />;
+  if (status === "anonymous") return judgeAccess === undefined ? <LandingPage /> : <JudgeAccessPage />;
 
   return (
     <div className="page upload-page">

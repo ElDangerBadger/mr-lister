@@ -257,10 +257,11 @@ def test_source_is_deterministic_full_production_closure_and_topology_bound(
     assert (first / SOURCE_MANIFEST_FILENAME).read_bytes() == (
         second / SOURCE_MANIFEST_FILENAME
     ).read_bytes()
-    # Shared review pricing adds one module to the closed production source dependency tree.
+    # Shared review pricing and pure credential validation add two modules to this closure.
     # The frozen publication topology and external dependency closure remain unchanged.
-    assert len(closure) == 77
+    assert len(closure) == 78
     assert "mr_lister.control.pricing" in closure
+    assert "mr_lister.cloud.printify_secret_contract" in closure
     assert manifest["files"] == inventory(first, excluded=frozenset({SOURCE_MANIFEST_FILENAME}))
     assert manifest["third_party_import_roots"] == list(PRODUCTION_THIRD_PARTY_IMPORT_ROOTS)
     assert manifest["topology"]["production_disabled_template_sha256"] == (

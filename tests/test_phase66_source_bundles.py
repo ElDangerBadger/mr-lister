@@ -84,10 +84,12 @@ def test_existing_or_wrongly_named_destination_is_never_overwritten(tmp_path: Pa
 
 
 def test_lambda_bundle_excludes_agentcore_and_legacy_broad_surfaces(tmp_path: Path) -> None:
-    lambda_root, _agentcore = build_source_bundles(_destination(tmp_path, "lambda-surface"))
+    lambda_root, agentcore_root = build_source_bundles(_destination(tmp_path, "lambda-surface"))
 
     assert (lambda_root / "phase6_lambda.py").is_file()
     assert (lambda_root / "mr_lister/cloud/evaluator_publication.py").is_file()
+    assert (lambda_root / "mr_lister/cloud/printify_secret_contract.py").is_file()
+    assert not (agentcore_root / "mr_lister/cloud/printify_secret_contract.py").exists()
     assert not (lambda_root / "mr_lister/publication").exists()
     assert (lambda_root / "mr_lister/cloud/phase6_entrypoints.py").is_file()
     assert (lambda_root / "mr_lister/cloud/phase6_retention_entrypoint.py").is_file()

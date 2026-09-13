@@ -150,6 +150,29 @@ describe("workspace navigation protection", () => {
     await userEvent.click(screen.getByRole("link", { name: "Dashboard" }));
     expect(screen.getByTestId("location")).toHaveTextContent("/?from=review#uploads");
   });
+
+  it("recognizes the current judge page while guarding departure beneath the router basename", async () => {
+    render(<MemoryRouter basename="/judge" initialEntries={["/judge/jobs/one"]}><WorkspaceNavigationProvider>
+      <Workspace initialReason="unsaved" />
+    </WorkspaceNavigationProvider></MemoryRouter>);
+    const title = screen.getByRole("textbox", { name: "Listing title" });
+    await userEvent.type(title, "Keep my judge review edits");
+    expect(screen.getByRole("link", { name: "Current listing" })).toHaveAttribute("href", "/judge/jobs/one");
+    await userEvent.click(screen.getByRole("link", { name: "Current listing" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(title).toHaveValue("Keep my judge review edits");
+    expect(screen.getByTestId("location")).toHaveTextContent(/^\/jobs\/one$/u);
+    const dashboard = screen.getByRole("link", { name: "Dashboard" });
+    expect(dashboard).toHaveAttribute("href", "/judge?from=review#uploads");
+    await userEvent.click(dashboard);
+    expect(screen.getByRole("dialog", { name: "Leave your unsaved changes?" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Stay here" }));
+    expect(title).toHaveValue("Keep my judge review edits");
+    await userEvent.click(dashboard);
+    await userEvent.click(screen.getByRole("button", { name: "Leave without saving" }));
+    expect(screen.getByTestId("location")).toHaveTextContent(/^\/\?from=review#uploads$/u);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });
 
 function renderWorkspace(reason: NavigationProtectionReason) {

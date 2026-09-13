@@ -7,6 +7,8 @@ export interface AppDependencies {
   api: ApiPort;
   auth: AuthCoordinator;
   publicationApi?: PublicationApiPort;
+  /** Public presentation settings only; every API request still uses the authenticated owner. */
+  judgeAccess?: { preparedJobId?: string };
 }
 
 export const AppContext = createContext<AppDependencies | null>(null);

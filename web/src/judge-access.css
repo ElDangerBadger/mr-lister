@@ -1,0 +1,51 @@
+.judge-banner { background: var(--green-pale); border-bottom: 1px solid var(--line); }
+.judge-banner-inner { width: min(100% - var(--page-gutter) * 2, var(--page-width)); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 13px 0; }
+.judge-banner-copy { min-width: 0; }
+.judge-banner-copy strong { display: block; margin-bottom: 2px; color: var(--green-dark); font-size: 12px; font-weight: 650; }
+.judge-banner-copy p { margin: 0; max-width: 75ch; color: var(--ink); font-size: 12px; }
+.judge-resources { display: flex; flex-shrink: 0; flex-direction: column; align-items: flex-start; gap: 6px; font-size: 12px; }
+.judge-resources a { padding: 2px 0; }
+
+.judge-access-page { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); align-items: start; gap: clamp(32px, 6vw, 84px); padding-top: clamp(36px, 5vw, 64px); padding-bottom: 56px; }
+.judge-access-intro { padding-top: 22px; min-width: 0; }
+.judge-access-intro > .eyebrow { color: var(--green-dark); }
+.judge-access-intro h1 { margin: 12px 0 20px; max-width: 12ch; font-size: clamp(36px, 4.4vw, 52px); line-height: 1.08; letter-spacing: -1.8px; }
+.judge-access-lede { max-width: 34ch; margin-bottom: 22px; color: var(--muted); font-size: 18px; line-height: 1.65; }
+.judge-access-sign-in-note, .judge-access-example-note { max-width: 45ch; color: var(--muted); font-size: 12px; }
+.judge-access-sign-in-note { margin-bottom: 12px; }
+.judge-access-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.judge-access-actions .button { gap: 16px; min-height: 46px; padding: 13px 18px; }
+.judge-access-actions .button span { font-size: 16px; line-height: 1; }
+.judge-access-example-note { margin-top: 12px; }
+.judge-journey { display: grid; gap: 20px; margin: 32px 0 0; padding: 28px 0 0; border-top: 1px solid var(--line); list-style: none; }
+.judge-journey li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; }
+.judge-journey li > span { display: grid; align-content: center; justify-content: center; align-self: start; min-height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--green-dark); font-size: 11px; font-weight: 600; }
+.judge-journey h2 { margin: 1px 0 3px; font-size: 14px; }
+.judge-journey p { max-width: 39ch; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.judge-sample-card { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); }
+.judge-sample-preview { position: relative; padding: 22px; background: var(--artwork-canvas); }
+.judge-sample-preview img { width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; border-radius: 6px; }
+.judge-sample-label { position: absolute; top: 34px; left: 34px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 20px; background: var(--paper); color: var(--ink); font-size: 10px; }
+.judge-sample-copy { padding: 24px; }
+.judge-sample-copy h2 { margin: 6px 0 10px; font-size: 22px; }
+.judge-sample-copy p:not(.eyebrow) { color: var(--muted); font-size: 12px; line-height: 1.65; }
+.judge-sample-copy .button { gap: 9px; min-height: 44px; width: 100%; margin-top: 4px; }
+.judge-sample-copy .judge-sample-meta { margin: 10px 0 0; text-align: center; font-size: 10px; }
+
+@media (max-width: 760px) {
+  .judge-banner-inner { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .judge-resources { flex-direction: row; flex-wrap: wrap; column-gap: 20px; }
+  .judge-access-page { grid-template-columns: minmax(0, 1fr); gap: 32px; padding-top: 22px; }
+  .judge-access-intro { padding-top: 0; }
+  .judge-access-intro h1 { max-width: 16ch; }
+  .judge-access-lede { max-width: 40ch; }
+  .judge-journey p { max-width: none; }
+  .judge-sample-card { max-width: 480px; width: 100%; }
+}
+
+@media (max-width: 420px) {
+  .judge-access-actions { align-items: stretch; flex-direction: column; }
+  .judge-sample-preview { padding: 16px; }
+  .judge-sample-label { top: 26px; left: 26px; }
+  .judge-sample-copy { padding: 20px; }
+}
