@@ -136,7 +136,6 @@ code { padding: 0.1em 0.3em; border-radius: 0.25rem; background: rgb(0 0 0 / 7%)
 main { min-height: calc(100vh - 150px); overflow-x: clip; }
 .page { width: min(100% - var(--page-gutter) * 2, var(--page-width)); margin: 0 auto; padding: 27px 0 32px; }
 .narrow-page { width: min(100% - 2rem, 46rem); }
-.landing-page { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(18rem, 0.65fr); gap: clamp(2rem, 7vw, 7rem); align-items: center; min-height: 70vh; }
 .lede { max-width: 52ch; color: var(--muted); font-size: 1.15rem; }
 .eyebrow { margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; }
 
@@ -472,13 +471,6 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
 .recent-panel .empty-state { min-height: 0; align-items: start; justify-items: start; border: 0; text-align: left; font-size: 12px; }
 .recent-panel .empty-state p { font-weight: 400; }
 .recent-panel .job-list { margin: 0; font-size: 12px; }
-.landing-page { padding-top: 60px; padding-bottom: 60px; }
-.landing-page h1 { font-size: clamp(32px, 4vw, 48px); font-weight: 500; }
-.landing-page .lede { font-size: 15px; }
-.signin-panel { padding: 26px; }
-.signin-panel .button { width: 100%; margin: 14px 0; }
-.signin-note { padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
-.signin-panel > p:last-child { margin-bottom: 0; }
 
 /* Keep artwork and logo pixels untouched while adapting the surrounding workspace. */
 :root[data-theme="dark"] code { background: rgb(255 255 255 / 8%); }
@@ -523,11 +515,10 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
   .artwork-preview, .preview-placeholder { padding: 20px; }
   .review-page > .action-panel { align-items: flex-start; }
   .decision-controls { margin-left: auto; }
-  .upload-grid, .landing-page { grid-template-columns: 1fr; }
+  .upload-grid { grid-template-columns: 1fr; }
   .upload-actionbar--selected { grid-column: 1; }
   .upload-guide .process-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .upload-guide .process-list li { margin: 0; }
-  .landing-page { min-height: 0; gap: 30px; padding-top: 35px; }
 }
 
 @media (max-width: 560px) {

@@ -31,6 +31,15 @@ if (missingPhase7Markers.length > 0) {
   throw new Error(`Production build is missing the enabled Phase 7 seller surface: ${missingPhase7Markers.join(", ")}`);
 }
 
+const compiledStyles = await Promise.all(files.filter((file) => file.endsWith(".css"))
+  .map((file) => readFile(new URL(file, root), "utf8")));
+for (const font of ["lora", "dm-sans"]) {
+  const license = await readFile(new URL(`../src/assets/fonts/${font}-OFL.txt`, import.meta.url), "utf8");
+  if (!compiledStyles.some((css) => css.includes(license.trim()))) {
+    throw new Error(`Production build is missing the ${font} font license notice`);
+  }
+}
+
 async function walk(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const paths = await Promise.all(entries.map(async (entry) => {

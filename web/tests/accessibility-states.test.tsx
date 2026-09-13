@@ -10,6 +10,14 @@ import { MemoryAuthSession, type AuthCoordinator } from "../src/auth/session";
 import { sellerReviewSchema, type SellerReview } from "../src/contracts";
 
 describe("accessible application states", () => {
+  it("covers the public landing page and its shared display menu", async () => {
+    const result = renderApp("/", false);
+    await screen.findByRole("heading", { level: 1, name: /Your artwork\.\s*Your next listing\s*\./u });
+    await expectNoViolations(result);
+    await userEvent.click(screen.getByRole("button", { name: /^Display theme:/u }));
+    await expectNoViolations(result);
+  });
+
   it("covers the signed-out protected-route restoration state", async () => {
     const result = renderApp("/jobs/job_browser_fixture", false);
     await screen.findByRole("heading", { name: "Restore your seller session." });

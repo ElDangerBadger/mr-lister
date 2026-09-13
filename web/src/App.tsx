@@ -5,6 +5,7 @@ import { useSessionStatus } from "./auth/use-session";
 import { SignInProvider, useSignIn } from "./auth/sign-in";
 import { AuthCallbackPage } from "./pages/AuthCallbackPage";
 import { HomePage } from "./pages/HomePage";
+import { LandingFooter, LandingHeader } from "./pages/LandingPage";
 import { JobReviewPage } from "./pages/JobReviewPage";
 import { UploadPage } from "./pages/UploadPage";
 import { UploadProvider } from "./upload/upload-context";
@@ -14,6 +15,8 @@ import { ThemeControl } from "./components/ThemeControl";
 import { WorkspaceLink, WorkspaceNavigationProvider } from "./navigation/WorkspaceNavigation";
 import { BatchWorkspaceProvider } from "./navigation/BatchWorkspace";
 import "./styles.css";
+import "./landing-fonts.css";
+import "./landing.css";
 
 export function App({ dependencies }: { dependencies: AppDependencies }) {
   return (
@@ -25,16 +28,18 @@ export function App({ dependencies }: { dependencies: AppDependencies }) {
 
 export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
   const status = useSessionStatus(dependencies.auth.session);
+  const location = useLocation();
+  const landing = status === "anonymous" && location.pathname === "/";
   return (
     <AppContext.Provider value={dependencies}>
       <SignInProvider>
       <WorkspaceNavigationProvider>
       <UploadProvider api={dependencies.api}>
       <BatchWorkspaceProvider>
-        <div className="app-shell">
-          <RouteFocusManager />
+        <div className={landing ? "app-shell app-shell--landing" : "app-shell"}>
+          <RouteFocusManager status={status} />
           <a className="skip-link" href="#main-content">Skip to main content</a>
-          <header className="site-header">
+          {landing ? <LandingHeader /> : <header className="site-header">
             <div className="site-header-inner">
               <WorkspaceLink className="brand" to="/" aria-label="Mr. Lister seller review home">
                 <img className="brand-icon" src={mrListerIcon} alt="" width="56" height="56" />
@@ -49,7 +54,7 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
                 <SessionControls status={status} dependencies={dependencies} />
               </div>
             </div>
-          </header>
+          </header>}
           <main id="main-content" tabIndex={-1}>
             <Routes>
               <Route path="/" element={<HomePage />} />
@@ -59,9 +64,9 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
               <Route path="*" element={<NotFound />} />
             </Routes>
           </main>
-          <footer>
+          {landing ? <LandingFooter /> : <footer>
             Made for your next great listing. You review, approve, and confirm before anything is published.
-          </footer>
+          </footer>}
         </div>
       </BatchWorkspaceProvider>
       </UploadProvider>
@@ -71,23 +76,23 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
   );
 }
 
-function RouteFocusManager() {
+function RouteFocusManager({ status }: { status: "anonymous" | "authenticated" }) {
   const location = useLocation();
   const mounted = useRef(false);
   useEffect(() => {
-    document.title = routeTitle(location.pathname);
+    document.title = routeTitle(location.pathname, status);
     if (!mounted.current) {
       mounted.current = true;
       return;
     }
     const timeout = window.setTimeout(() => document.getElementById("main-content")?.focus(), 0);
     return () => window.clearTimeout(timeout);
-  }, [location.pathname]);
+  }, [location.pathname, status]);
   return null;
 }
 
-function routeTitle(pathname: string): string {
-  if (pathname === "/") return "Uploads | Mr. Lister";
+function routeTitle(pathname: string, status: "anonymous" | "authenticated"): string {
+  if (pathname === "/") return status === "anonymous" ? "Mr. Lister — Your next listing, made simpler." : "Uploads | Mr. Lister";
   if (pathname === "/auth/callback") return "Secure sign-in | Mr. Lister";
   if (pathname.startsWith("/jobs/")) return "Seller review | Mr. Lister";
   if (pathname.startsWith("/uploads/")) return "Private upload | Mr. Lister";

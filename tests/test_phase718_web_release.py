@@ -37,6 +37,14 @@ SOURCE_COMMIT = "a" * 40
 CSS_KEY = "assets/index-NewCss01.css"
 JS_KEY = "assets/index-NewJs001.js"
 ICON_KEY = "assets/mr-lister-icon-NewIcon1.png"
+DARK_ICON_KEY = "assets/mr-lister-dark-DarkIcon.png"
+LORA_FONT_KEY = "assets/lora-latin-wght-normal-LoraFont.woff2"
+DM_SANS_FONT_KEY = "assets/dm-sans-latin-wght-normal-DmSans01.woff2"
+LANDING_ASSET_SOURCES = {
+    DARK_ICON_KEY: "mr-lister-dark.png",
+    LORA_FONT_KEY: "fonts/lora-latin-wght-normal.woff2",
+    DM_SANS_FONT_KEY: "fonts/dm-sans-latin-wght-normal.woff2",
+}
 OLD_CSS_KEY = "assets/index-OldCss01.css"
 OLD_JS_KEY = "assets/index-OldJs001.js"
 RUNTIME = b'{"client_id":"seller-client","scopes":["openid"]}\n'
@@ -195,6 +203,101 @@ def test_approved_icon_does_not_open_the_release_asset_allowlist(
 
     with pytest.raises(Phase718WebReleaseError):
         _release(fixture)
+
+
+def test_landing_release_binds_approved_images_and_local_fonts_before_index(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    landing_assets = _add_approved_landing_assets(fixture)
+
+    release_path, release = _release(fixture)
+    _, loaded = load_phase718_web_release_manifest(
+        release_path, repository_root=fixture["repository"]
+    )
+
+    assert loaded == release
+    assert release["file_count"] == 8
+    assert release["upload_order"] == [
+        CSS_KEY,
+        JS_KEY,
+        *sorted([ICON_KEY, *LANDING_ASSET_SOURCES]),
+        "favicon.svg",
+        "index.html",
+    ]
+    for record in release["objects"]:
+        if record["key"] not in landing_assets:
+            continue
+        raw = landing_assets[record["key"]]
+        assert record["sha256"] == sha256(raw).hexdigest()
+        assert record["size_bytes"] == len(raw)
+        assert record["content_type"] == (
+            "font/woff2" if record["key"].endswith(".woff2") else "image/png"
+        )
+        assert record["cache_control"] == "public, max-age=31536000, immutable"
+    assert release["runtime_config"]["preserve_existing"] is True
+    assert "runtime-config.json" not in release["upload_order"]
+
+
+@pytest.mark.parametrize("key", LANDING_ASSET_SOURCES)
+@pytest.mark.parametrize("drift", ["wrong_bytes", "missing", "unreferenced", "duplicate"])
+def test_landing_asset_approval_requires_exact_bytes_and_references(
+    tmp_path: Path, key: str, drift: str
+) -> None:
+    fixture = _fixture(tmp_path)
+    landing_assets = _add_approved_landing_assets(fixture)
+    dist = fixture["dist"]
+    if drift == "wrong_bytes":
+        dist.joinpath(key).write_bytes(landing_assets[key] + b"changed")
+    elif drift == "missing":
+        dist.joinpath(key).unlink()
+    elif drift == "unreferenced":
+        source = dist / (CSS_KEY if key.endswith(".woff2") else JS_KEY)
+        source.write_bytes(source.read_bytes().replace(f"/{key}".encode(), b""))
+    elif drift == "duplicate":
+        duplicate = f"{key.rsplit('-', 1)[0]}-Other001{Path(key).suffix}"
+        dist.joinpath(duplicate).write_bytes(landing_assets[key])
+
+    with pytest.raises(Phase718WebReleaseError):
+        _release(fixture)
+
+
+@pytest.mark.parametrize("filename", ["other-font-NewFont1.woff2", "other-image-NewIcon1.png"])
+def test_landing_release_does_not_allow_other_font_or_image_names(
+    tmp_path: Path, filename: str
+) -> None:
+    fixture = _fixture(tmp_path)
+    landing_assets = _add_approved_landing_assets(fixture)
+    source = LORA_FONT_KEY if filename.endswith(".woff2") else DARK_ICON_KEY
+    fixture["dist"].joinpath(f"assets/{filename}").write_bytes(landing_assets[source])
+
+    with pytest.raises(Phase718WebReleaseError):
+        _release(fixture)
+
+
+@pytest.mark.parametrize("key", [ICON_KEY, *LANDING_ASSET_SOURCES])
+def test_landing_release_requires_the_complete_reviewed_asset_group(
+    tmp_path: Path, key: str
+) -> None:
+    fixture = _fixture(tmp_path)
+    _add_approved_landing_assets(fixture)
+    fixture["dist"].joinpath(key).unlink()
+    source = fixture["dist"] / (CSS_KEY if key.endswith(".woff2") else JS_KEY)
+    source.write_bytes(source.read_bytes().replace(f"/{key}".encode(), b""))
+
+    with pytest.raises(Phase718WebReleaseError):
+        _release(fixture)
+
+
+@pytest.mark.parametrize("key", LANDING_ASSET_SOURCES)
+def test_landing_manifest_revalidates_current_source_bytes(tmp_path: Path, key: str) -> None:
+    fixture = _fixture(tmp_path)
+    landing_assets = _add_approved_landing_assets(fixture)
+    release_path, _ = _release(fixture)
+    fixture["dist"].joinpath(key).write_bytes(landing_assets[key] + b"changed")
+
+    with pytest.raises(Phase718WebReleaseError):
+        load_phase718_web_release_manifest(release_path, repository_root=fixture["repository"])
 
 
 def test_live_readback_and_rollback_bind_exact_object_versions(tmp_path: Path) -> None:
@@ -585,6 +688,26 @@ def _add_approved_icon(fixture: dict[str, Any]) -> bytes:
         DIST_FILES[JS_KEY] + f'const icon="/{ICON_KEY}";\n'.encode()
     )
     return icon
+
+
+def _add_approved_landing_assets(fixture: dict[str, Any]) -> dict[str, bytes]:
+    _add_approved_icon(fixture)
+    sources = Path(__file__).resolve().parents[1] / "web/src/assets"
+    assets: dict[str, bytes] = {}
+    for key, source in LANDING_ASSET_SOURCES.items():
+        raw = (sources / source).read_bytes()
+        assets[key] = raw
+        fixture["dist"].joinpath(key).write_bytes(raw)
+    javascript = fixture["dist"] / JS_KEY
+    javascript.write_bytes(javascript.read_bytes() + f'const dark="/{DARK_ICON_KEY}";\n'.encode())
+    fixture["dist"].joinpath(CSS_KEY).write_bytes(
+        DIST_FILES[CSS_KEY]
+        + f'@font-face{{font-family:Lora;src:url("/{LORA_FONT_KEY}") format("woff2")}}\n'.encode()
+        + (
+            f'@font-face{{font-family:"DM Sans";src:url("/{DM_SANS_FONT_KEY}") format("woff2")}}\n'
+        ).encode()
+    )
+    return assets
 
 
 def _enabled_descriptor() -> dict[str, object]:

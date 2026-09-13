@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { StrictMode } from "react";
@@ -104,13 +104,14 @@ describe("sign-in popup UI", () => {
   });
 
   it.each([
-    { route: "/", label: "Sign in securely" },
-    { route: "/", label: "Sign in" },
-    { route: "/jobs/job_current", label: "Continue securely" },
-  ])("wires $label to the shared popup flow", async ({ route, label }) => {
+    { route: "/", label: "Open seller workspace", landmark: "main" },
+    { route: "/", label: "Open seller workspace", landmark: "contentinfo" },
+    { route: "/", label: "Sign in", landmark: "banner" },
+    { route: "/jobs/job_current", label: "Continue securely", landmark: "main" },
+  ])("wires $landmark $label to the shared popup flow", async ({ route, label, landmark }) => {
     const auth = coordinator();
     render(<MemoryRouter initialEntries={[route]}><AppRoutes dependencies={{ api: api(), auth }} /></MemoryRouter>);
-    await userEvent.click(screen.getByRole("button", { name: label }));
+    await userEvent.click(within(screen.getByRole(landmark)).getByRole("button", { name: label }));
     expect(auth.startPopupSignIn).toHaveBeenCalledWith(route);
     expect(screen.getByRole("dialog")).toBeVisible();
   });

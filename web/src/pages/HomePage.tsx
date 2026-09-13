@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState, type DragEvent } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAppDependencies } from "../app-context";
 import { useSessionStatus } from "../auth/use-session";
-import { useSignIn } from "../auth/sign-in";
+import { LandingPage } from "./LandingPage";
 import type { JobSummary } from "../contracts";
 import { WorkflowSteps } from "../components/WorkflowSteps";
 import { batchItemStatus, jobProgressLabel, useBatchWorkspace } from "../navigation/BatchWorkspace";
@@ -20,8 +20,6 @@ import {
 export function HomePage() {
   const { api, auth } = useAppDependencies();
   const status = useSessionStatus(auth.session);
-  const location = useLocation();
-  const { startSignIn, error: signInError } = useSignIn();
   const navigate = useNavigate();
   const upload = useUpload();
   const workspace = useBatchWorkspace();
@@ -99,33 +97,7 @@ export function HomePage() {
     setHideRecentJobs(false);
   };
 
-  if (status === "anonymous") {
-    return (
-      <section className="page landing-page">
-        <div>
-          <p className="eyebrow">From artwork to storefront</p>
-          <h1>Your artwork.<br />Your next listing.</h1>
-          <p className="lede">Turn a design into a listing you’re proud to publish. Mr. Lister prepares the copy, product mockups, and estimated proceeds. You make the final call.</p>
-          <ol className="process-list" aria-label="How Mr. Lister works">
-            <li><span>01</span><strong>Upload your artwork</strong><small>Start with a design you love.</small></li>
-            <li><span>02</span><strong>Review and make it yours</strong><small>Edit the words. Check the product and costs.</small></li>
-            <li><span>03</span><strong>Publish with confidence</strong><small>Confirm the exact listing before it goes to your store.</small></li>
-          </ol>
-        </div>
-        <div className="panel signin-panel">
-          <p className="eyebrow">Your workspace</p>
-          <h2>Welcome to Mr. Lister.</h2>
-          <p>Sign in to create your next listing or pick up where you left off.</p>
-          <button className="button button--primary" type="button" onClick={() => { startSignIn(location.pathname); }}>
-            Sign in securely
-          </button>
-          {signInError !== null && <p className="alert alert--error" role="alert">{signInError}</p>}
-          <p className="signin-note">Have an invitation to try Mr. Lister? Use the account provided with your invitation.</p>
-          <p className="muted">Your drafts stay private until you approve and confirm publication.</p>
-        </div>
-      </section>
-    );
-  }
+  if (status === "anonymous") return <LandingPage />;
 
   return (
     <div className="page upload-page">

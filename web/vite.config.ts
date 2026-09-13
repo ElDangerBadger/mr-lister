@@ -4,6 +4,8 @@ import { productionDependencyBoundary } from "./scripts/production-boundary";
 
 export default defineConfig({
   plugins: [react(), productionDependencyBoundary()],
+  // Keep the bundled fonts' license notices with the deployed stylesheet.
+  esbuild: { legalComments: "inline" },
   build: {
     target: "es2022",
     sourcemap: false,
