@@ -6,6 +6,7 @@ import { LandingPage } from "./LandingPage";
 import { JudgeAccessPage } from "./JudgeAccessPage";
 import type { JobSummary } from "../contracts";
 import { WorkflowSteps } from "../components/WorkflowSteps";
+import { ActivityStatus } from "../components/ActivityStatus";
 import { batchItemStatus, jobProgressLabel, useBatchWorkspace } from "../navigation/BatchWorkspace";
 import { WorkspaceLink } from "../navigation/WorkspaceNavigation";
 import {
@@ -396,6 +397,8 @@ function BatchProgressItem({ item }: { item: BatchUploadItemState }) {
   const progress = item.jobId === null ? undefined : progressByJob[item.jobId];
   const progressError = item.jobId === null ? undefined : progressErrorByJob[item.jobId];
   const failed = item.phase === "error" || item.phase === "expired";
+  const active = ["validating", "hashing", "creating_intent", "uploading", "finalizing"].includes(item.phase);
+  const status = batchItemStatus(item, progress);
   return (
     <li className={failed ? "upload-queue-item upload-queue-item--error" : "upload-queue-item"}>
       <span className="queue-number" aria-hidden="true">{String(item.position).padStart(2, "0")}</span>
@@ -405,7 +408,7 @@ function BatchProgressItem({ item }: { item: BatchUploadItemState }) {
         <small>{item.phase === "complete" ? progressError ?? "Your artwork is uploaded. Open the listing at any time to follow its progress." : item.message}</small>
         {item.requestId !== null && <small>Support reference: {item.requestId}</small>}
       </span>
-      <span className={`queue-status queue-status--${item.phase}`}>{batchItemStatus(item, progress)}</span>
+      <span className={`queue-status queue-status--${item.phase}`}>{active ? <ActivityStatus>{status}</ActivityStatus> : status}</span>
       {item.phase === "uploading" && <progress max="100" value={item.progress} aria-label={`${item.filename} upload progress`}>{item.progress}%</progress>}
       {item.phase === "complete" && item.jobId !== null && <WorkspaceLink className="button button--quiet queue-link" to={`/jobs/${item.jobId}`}>Open listing</WorkspaceLink>}
       {failed && item.sourceFormat === "png" && item.uploadId !== null && <WorkspaceLink className="button button--quiet queue-link" to={`/uploads/${item.uploadId}`}>Recover upload</WorkspaceLink>}

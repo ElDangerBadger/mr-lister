@@ -258,7 +258,7 @@ export class BrowserApiClient implements ApiPort {
       if (renewed !== null) response = await perform(renewed);
     }
     if (!response.ok) await throwApiError(response);
-    const requestId = response.headers.get("X-Request-Id") ?? "unavailable";
+    const requestId = responseRequestId(response);
     const text = await response.text();
     if (text.length > 2 * 1024 * 1024) throw new ContractError(requestId);
     let decoded: unknown;
@@ -279,7 +279,7 @@ export function newIdempotencyKey(operation: string): string {
 }
 
 async function throwApiError(response: Response): Promise<never> {
-  const headerRequestId = response.headers.get("X-Request-Id") ?? "unavailable";
+  const headerRequestId = responseRequestId(response);
   const retry = response.headers.get("Retry-After");
   const retryAfterSeconds = retry !== null && /^\d{1,4}$/u.test(retry) ? Number(retry) : null;
   let candidate: unknown;
@@ -290,7 +290,14 @@ async function throwApiError(response: Response): Promise<never> {
     candidate = null;
   }
   const parsed = errorEnvelopeSchema.safeParse(candidate);
-  if (!parsed.success) throw new ApiError(response.status, "UNEXPECTED_RESPONSE", "The seller API returned an unexpected response.", headerRequestId, retryAfterSeconds);
+  if (!parsed.success) {
+    const message = response.status >= 500
+      ? "We couldn't confirm the server's response. Check the current status before trying again."
+      : response.status === 429
+        ? "The service is busy. Wait a moment, then check the current status."
+        : "The seller API returned an unexpected response.";
+    throw new ApiError(response.status, "UNEXPECTED_RESPONSE", message, headerRequestId, retryAfterSeconds);
+  }
   throw new ApiError(
     response.status,
     parsed.data.error.code,
@@ -299,6 +306,15 @@ async function throwApiError(response: Response): Promise<never> {
     retryAfterSeconds,
     parsed.data.error.fields ?? [],
   );
+}
+
+function responseRequestId(response: Response): string {
+  // Gateway failures can occur before the application creates its error envelope.
+  for (const header of ["X-Request-Id", "X-Amzn-RequestId", "X-Amz-Apigw-Id"]) {
+    const value = response.headers.get(header);
+    if (value !== null && /^[A-Za-z0-9._:+/=-]{1,128}$/u.test(value)) return value;
+  }
+  return "unavailable";
 }
 
 function requiredReviewFingerprint(review: SellerReview): string {

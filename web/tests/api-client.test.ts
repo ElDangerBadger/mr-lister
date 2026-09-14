@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import browserFixtures from "../../contracts/browser/phase6.5.fixtures.json";
-import { BrowserApiClient, ContractError } from "../src/api/client";
+import { ApiError, BrowserApiClient, ContractError } from "../src/api/client";
 import { MemoryAuthSession } from "../src/auth/session";
 import { sellerReviewSchema } from "../src/contracts";
 
@@ -130,6 +130,33 @@ describe("BrowserApiClient", () => {
   it("rejects a recovery projection for a different upload route", async () => {
     const client = jsonClient(browserFixtures.upload_recovery);
     await expect(client.getUpload("upload_other")).rejects.toBeInstanceOf(ContractError);
+  });
+
+  it.each([500, 502, 503, 504])("keeps a gateway support reference without replaying a failed completion (%s)", async (status) => {
+    const session = new MemoryAuthSession();
+    session.set("access", 3600, "refresh");
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response('{"message":"Internal Server Error"}', {
+      status, headers: { "X-Amzn-RequestId": "Dq-WejzgPHcESpg=" },
+    }));
+    const result = new BrowserApiClient(session, fetcher).completeUpload("upload_1", "web:complete:stable");
+    await expect(result).rejects.toBeInstanceOf(ApiError);
+    await expect(result).rejects.toMatchObject({
+      status, requestId: "Dq-WejzgPHcESpg=",
+      message: "We couldn't confirm the server's response. Check the current status before trying again.",
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores invalid request IDs and raw error bodies, preserving rate-limit guidance", async () => {
+    const session = new MemoryAuthSession();
+    session.set("access", 3600, "refresh");
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response("<html>internal details</html>", {
+      status: 429, headers: { "X-Request-Id": "x".repeat(129), "X-Amzn-RequestId": "invalid id", "X-Amz-Apigw-Id": "gateway-123=", "Retry-After": "3" },
+    }));
+    await expect(new BrowserApiClient(session, fetcher).listJobs()).rejects.toMatchObject({
+      requestId: "gateway-123=", retryAfterSeconds: 3,
+      message: "The service is busy. Wait a moment, then check the current status.",
+    });
   });
 
   it("rejects method-incoherent upload mutation receipts", async () => {

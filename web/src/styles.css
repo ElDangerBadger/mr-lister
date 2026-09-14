@@ -344,9 +344,14 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
 .preparation-hint p { margin: 0; }
 .preparation-hint strong { display: block; color: var(--ink); font-size: 13px; font-weight: 600; }
 .preparation-elapsed { white-space: nowrap; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.activity-status { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; }
+.activity-status-dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: activity-pulse 1.6s ease-in-out infinite; }
+.activity-status-label { min-width: 0; }
 @supports (background-clip: text) or (-webkit-background-clip: text) {
   .preparation-hint .preparation-activity-label { background: linear-gradient(100deg, var(--ink) 30%, var(--green-dark) 50%, var(--ink) 70%); background-size: 250% 100%; background-clip: text; -webkit-background-clip: text; color: transparent; animation: preparation-shimmer 2.8s ease-in-out infinite; }
+  .activity-status-label { background: linear-gradient(100deg, var(--ink) 30%, var(--green-dark) 50%, var(--ink) 70%); background-size: 250% 100%; background-clip: text; -webkit-background-clip: text; color: transparent; animation: preparation-shimmer 2.8s ease-in-out infinite; }
 }
+@keyframes activity-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes preparation-shimmer {
   0% { background-position: 100% 0; }
   70%, 100% { background-position: 0 0; }
@@ -617,6 +622,8 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
   .milestone--current::before { display: none; }
   .preparation-hint .preparation-activity-label { animation: none; background: none; color: var(--ink); }
+  .activity-status-dot { animation: none; }
+  .activity-status-label { animation: none; background: none; color: inherit; }
 }
 
 @media (forced-colors: active) {
@@ -629,4 +636,6 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
   .milestone--done, .milestone--current { border-top-color: Highlight; }
   .milestone--current::before { display: none; }
   .preparation-hint .preparation-activity-label { animation: none; background: none; color: CanvasText; }
+  .activity-status-dot { animation: none; background: CanvasText; }
+  .activity-status-label { animation: none; background: none; color: CanvasText; }
 }

@@ -14,6 +14,19 @@ import type { PublicationApiPort } from "../src/publication/api-client";
 import { sellerPublicationProjectionSchema } from "../src/publication/contracts";
 
 describe("authoritative seller review", () => {
+  it("shows accessible activity while the first review loads and removes it when loading settles", async () => {
+    const review = readyReview();
+    let finish!: (response: ReturnType<typeof reviewResponse>) => void;
+    const getReview = vi.fn().mockReturnValue(new Promise<ReturnType<typeof reviewResponse>>((resolve) => { finish = resolve; }));
+    const { container } = render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview })} /></MemoryRouter>);
+    const activity = screen.getByText("Your artwork is uploaded. Loading your preview and preparation progress.").closest(".activity-status");
+    expect(activity).toHaveAttribute("role", "status");
+    expect(activity).toHaveAttribute("aria-live", "polite");
+    await act(async () => { finish(reviewResponse(review, "request-ready")); await Promise.resolve(); });
+    expect(await screen.findByRole("heading", { name: "Make it yours." })).toBeVisible();
+    expect(container.querySelector(".activity-status")).toBeNull();
+  });
+
   it("keeps the seller boundary visible and preparation evidence accessible with 13 labeled tags", async () => {
     const review = readyReview();
     render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review)} /></MemoryRouter>);
@@ -50,12 +63,14 @@ describe("authoritative seller review", () => {
       render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview, getJob })} /></MemoryRouter>);
       await act(async () => { await Promise.resolve(); });
       expect(screen.getByRole("heading", { name: "Opening your listing…" })).toBeInTheDocument();
+      expect(screen.getByText("Your listing is still opening. We’ll try again shortly.").closest(".activity-status")).toHaveAttribute("role", "status");
       expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
       await act(async () => { await vi.advanceTimersByTimeAsync(5_999); });
       expect(getReview).toHaveBeenCalledTimes(1);
       await act(async () => { await vi.advanceTimersByTimeAsync(1); });
       expect(getReview).toHaveBeenCalledTimes(2);
       expect(screen.getByRole("heading", { name: "Your listing is taking shape." })).toBeInTheDocument();
+      expect(screen.queryByText("Your listing is still opening. We’ll try again shortly.")).not.toBeInTheDocument();
       expect(getJob).not.toHaveBeenCalled();
       await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
       expect(getJob).toHaveBeenCalledTimes(1);

@@ -1451,7 +1451,7 @@
         "CodeUri": "lambda/",
         "Handler": "phase6_lambda.upload_api_handler",
         "Role": {"Fn::GetAtt": ["UploadApiFunctionRole", "Arn"]},
-        "MemorySize": 512,
+        "MemorySize": 1024,
         "Timeout": 30,
         "Environment": {
           "Variables": {

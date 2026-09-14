@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
+from struct import pack
+from zlib import compress, compressobj, crc32
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageFile
 from pydantic import ValidationError
 
 from mr_lister.control.fingerprints import canonical_fingerprint
@@ -155,6 +157,104 @@ def test_phase6_verifier_rejects_fully_transparent_artwork() -> None:
             filename="art.png",
             content_type="image/png",
             content=_png(alpha=(0, 0, 0, 0)),
+        )
+
+
+@pytest.mark.parametrize("mode", ("RGBA", "LA", "RGB", "L", "P"))
+def test_phase6_alpha_scan_preserves_transparency_across_tile_boundaries(mode: str) -> None:
+    size = (513, 514)
+    first, last = {
+        "RGBA": ((24, 72, 108, 32), (24, 72, 108, 192)),
+        "LA": ((80, 32), (80, 192)),
+        "RGB": ((24, 72, 108), (32, 80, 116)),
+        "L": (80, 96),
+        "P": (0, 1),
+    }[mode]
+    with Image.new(mode, size, first) as image:
+        image.putpixel((size[0] - 1, size[1] - 1), last)
+        options: dict[str, object] = {}
+        if mode == "P":
+            image.putpalette([24, 72, 108, 32, 80, 116] + [0] * 762)
+            options["transparency"] = bytes([32, 192])
+        elif mode in {"RGB", "L"}:
+            options["transparency"] = first
+        output = BytesIO()
+        image.save(output, format="PNG", **options)
+    content = output.getvalue()
+    verified = verify_phase6_source_artwork(
+        filename="Capybara_manual.png", content_type="image/png", content=content
+    )
+
+    assert (verified.width, verified.height) == size
+    expected = (0, 255) if mode in {"RGB", "L"} else (32, 192)
+    assert (verified.alpha_minimum, verified.alpha_maximum) == expected
+    assert verified.artwork.content_sha256 == sha256(content).hexdigest()
+
+
+def _png_chunk(kind: bytes, body: bytes) -> bytes:
+    return pack(">I", len(body)) + kind + body + pack(">I", crc32(kind + body))
+
+
+def _large_rgba_png(width: int, height: int) -> bytes:
+    # Generate compressed scanlines without allocating a full decoded test image.
+    compressor = compressobj()
+    row = b"\0" + bytes((24, 72, 108, 32)) * width
+    blocks = [compressor.compress(row) for _ in range(height - 1)]
+    blocks.append(compressor.compress(row[:-1] + b"\xc0"))
+    blocks.append(compressor.flush())
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+        + _png_chunk(b"IDAT", b"".join(blocks))
+        + _png_chunk(b"IEND", b"")
+    )
+
+
+def test_high_resolution_png_decodes_once_without_full_size_rgba_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = _large_rgba_png(8000, 8000)
+    assert len(content) < PHASE6_MAX_SOURCE_ARTWORK_BYTES
+    decode_sizes: list[tuple[int, int]] = []
+    original_load, original_convert = ImageFile.ImageFile.load, Image.Image.convert
+
+    def track_decode(image, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if image.tile:
+            decode_sizes.append(image.size)
+        return original_load(image, *args, **kwargs)
+
+    def bounded_convert(image, *args, **kwargs):  # type: ignore[no-untyped-def]
+        assert image.width <= 512 and image.height <= 512, (
+            "Full-image conversion exceeds the temporary memory budget"
+        )
+        return original_convert(image, *args, **kwargs)
+
+    monkeypatch.setattr(ImageFile.ImageFile, "load", track_decode)
+    monkeypatch.setattr(Image.Image, "convert", bounded_convert)
+    verified = verify_phase6_source_artwork(
+        filename="Capybara_manual.png",
+        content_type="image/png",
+        content=content,
+        expected_sha256=sha256(content).hexdigest(),
+        expected_size_bytes=len(content),
+    )
+
+    assert decode_sizes == [(8000, 8000)]
+    assert (verified.width, verified.height) == (8000, 8000)
+    assert (verified.alpha_minimum, verified.alpha_maximum) == (32, 192)
+    assert verified.artwork.content_sha256 == sha256(content).hexdigest()
+
+
+def test_png_with_valid_chunk_checksums_still_requires_complete_pixel_decode() -> None:
+    content = (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", pack(">IIBBBBB", 100, 100, 8, 6, 0, 0, 0))
+        + _png_chunk(b"IDAT", compress(b"\0\xff\xff\xff\xff"))
+        + _png_chunk(b"IEND", b"")
+    )
+    with pytest.raises(Phase6SourceArtworkError):
+        verify_phase6_source_artwork(
+            filename="incomplete.png", content_type="image/png", content=content
         )
 
 

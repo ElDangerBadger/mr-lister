@@ -369,6 +369,8 @@ def test_functions_have_distinct_explicit_roles_and_scaffold_gate() -> None:
     assert functions["PreparationDispatchFunction"]["Properties"]["Timeout"] == 600
     assert functions["ProviderDraftFunction"]["Properties"]["Timeout"] == 600
     assert functions["SettlementFunction"]["Properties"]["Timeout"] == 120
+    assert functions["UploadApiFunction"]["Properties"]["MemorySize"] == 1024
+    assert functions["UploadApiFunction"]["Properties"]["Timeout"] == 30
     assert functions["ReviewQueryApiFunction"]["Properties"]["MemorySize"] == 512
     assert functions["ReviewQueryApiFunction"]["Properties"]["Timeout"] == 30
     assert functions["SellerCommandApiFunction"]["Properties"]["MemorySize"] == 512

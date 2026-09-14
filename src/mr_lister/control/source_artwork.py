@@ -10,10 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
-from io import BytesIO
 from pathlib import PurePath
-
-from PIL import Image, UnidentifiedImageError
 
 from mr_lister.contracts import ProductProfile
 from mr_lister.control.fingerprints import canonical_fingerprint
@@ -24,7 +21,7 @@ from mr_lister.control.models import (
 )
 from mr_lister.workflow.errors import InvalidArtworkError
 from mr_lister.workflow.models import ArtworkInput
-from mr_lister.workflow.validation import MAX_ARTWORK_PIXELS, validate_artwork
+from mr_lister.workflow.validation import validate_artwork_evidence
 
 PHASE6_MIN_SOURCE_ARTWORK_BYTES = 1
 PHASE6_MAX_SOURCE_DIMENSION = 20_000
@@ -212,7 +209,7 @@ def verify_phase6_source_artwork(
         raise Phase6SourceArtworkError("Source artwork content type must be image/png")
 
     try:
-        artwork = validate_artwork(
+        verified = validate_artwork_evidence(
             filename=filename,
             content_type=content_type,
             content=content,
@@ -220,30 +217,7 @@ def verify_phase6_source_artwork(
     except InvalidArtworkError:
         raise Phase6SourceArtworkError("Source artwork PNG is invalid") from None
 
-    try:
-        with Image.open(BytesIO(content)) as image:
-            image.load()
-            if image.format != "PNG":
-                raise Phase6SourceArtworkError("Source artwork PNG is invalid")
-            width, height = image.size
-            if (
-                width < 1
-                or height < 1
-                or width > PHASE6_MAX_SOURCE_DIMENSION
-                or height > PHASE6_MAX_SOURCE_DIMENSION
-                or width * height > MAX_ARTWORK_PIXELS
-            ):
-                raise Phase6SourceArtworkError(
-                    "Source artwork must be a PNG within the Phase 6 dimensions"
-                )
-            alpha_minimum, alpha_maximum = image.convert("RGBA").getchannel("A").getextrema()
-    except Phase6SourceArtworkError:
-        raise
-    except (OSError, SyntaxError, UnidentifiedImageError, ValueError):
-        raise Phase6SourceArtworkError("Source artwork PNG is invalid") from None
-
-    if alpha_maximum == 0:
-        raise Phase6SourceArtworkError("Source artwork must contain visible pixels")
+    artwork = verified.artwork
     if (
         artwork.content_sha256 != content_sha256
         or artwork.size_bytes != size_bytes
@@ -252,10 +226,10 @@ def verify_phase6_source_artwork(
         raise Phase6SourceArtworkError("Source artwork integrity verification failed")
     return VerifiedSourceArtwork(
         artwork=artwork,
-        width=width,
-        height=height,
-        alpha_minimum=alpha_minimum,
-        alpha_maximum=alpha_maximum,
+        width=verified.width,
+        height=verified.height,
+        alpha_minimum=verified.alpha_minimum,
+        alpha_maximum=verified.alpha_maximum,
     )
 
 
