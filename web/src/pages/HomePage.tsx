@@ -186,14 +186,6 @@ export function HomePage() {
               <p className="format-note">Original files stay on your device. PNG bytes are preserved; compatible SVG and JPEG files are converted to PNG in your browser before upload. Proportions and backgrounds are preserved. SVG files must be self-contained, with no linked assets, text, filters, or animation.</p>
             </details>
           </section>
-          <aside className="panel upload-guide" aria-labelledby="next-heading">
-            <h2 id="next-heading">From design to storefront.</h2>
-            <ol className="process-list">
-              <li><span>01</span><strong>Upload</strong><small>Add your finished artwork.</small></li>
-              <li><span>02</span><strong>Review</strong><small>Edit the copy and check your product.</small></li>
-              <li><span>03</span><strong>Publish</strong><small>You choose when it goes live.</small></li>
-            </ol>
-          </aside>
           {showUploadQueue && (
             <div className="upload-selection-column">
               {showSelection && (
@@ -219,7 +211,7 @@ export function HomePage() {
               )}
             </div>
           )}
-          <div className={showUploadQueue ? "upload-actionbar upload-actionbar--selected" : "upload-actionbar"}>
+          {showUploadQueue && <div className="upload-actionbar upload-actionbar--selected">
             <div>
               <strong>{batchBusy
                 ? "Preparing your artwork"
@@ -240,13 +232,17 @@ export function HomePage() {
                 ? "Uploading artwork…"
                 : batchFinished
                   ? "Uploads processed"
-                  : selectedFiles.length === 0
-                    ? "Choose artwork to continue"
-                    : selectedFiles.length === 1
-                      ? "Prepare 1 listing"
-                      : `Prepare ${selectedFiles.length} listings`}
+                  : "Submit"}
             </button>
-          </div>
+          </div>}
+          <aside className="panel upload-guide" aria-labelledby="next-heading">
+            <h2 id="next-heading">From design to storefront.</h2>
+            <ol className="process-list">
+              <li><span>01</span><strong>Upload</strong><small>Add your finished artwork.</small></li>
+              <li><span>02</span><strong>Review</strong><small>Edit the copy and check your product.</small></li>
+              <li><span>03</span><strong>Publish</strong><small>You choose when it goes live.</small></li>
+            </ol>
+          </aside>
         </div>
       </form>
       <section className="recent-panel" aria-labelledby="recent-heading">

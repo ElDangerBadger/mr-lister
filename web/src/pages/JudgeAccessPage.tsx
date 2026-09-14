@@ -53,7 +53,7 @@ export function JudgeAccessPage() {
           <div>
             <p className="eyebrow">Your starting point</p>
             <h2 id="judge-sample-heading">A design to try.</h2>
-            <p>Download the sample, enter your workspace, and add it to the upload area. Preparation begins when you choose Prepare 1 listing.</p>
+            <p>Download the sample, enter your workspace, and add it to the upload area. Preparation begins when you choose Submit.</p>
           </div>
           <a className="button" href={sampleArtwork} download="mr-lister-sample-artwork.png">
             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3" /></svg>

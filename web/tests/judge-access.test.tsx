@@ -97,7 +97,7 @@ describe("judge access in the existing application", () => {
     expect(within(resources).getByRole("link", { name: "Review prepared example" })).toHaveAttribute("href", "/judge/jobs/job_prepared_example");
     expect(within(resources).getByRole("link", { name: "Download sample artwork" })).toHaveAttribute("download", "mr-lister-sample-artwork.png");
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/judge");
-    expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Submit" })).not.toBeInTheDocument();
     expect(setup.api.createUpload).not.toHaveBeenCalled();
     expect(setup.api.runAction).not.toHaveBeenCalled();
     expect(setup.auth.startPopupSignIn).not.toHaveBeenCalled();

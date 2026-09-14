@@ -101,7 +101,7 @@ describe("upload route authority", () => {
     const user = userEvent.setup();
     const input = screen.getByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u);
     await user.upload(input, makePng());
-    const submit = screen.getByRole("button", { name: "Prepare 1 listing" });
+    const submit = screen.getByRole("button", { name: "Submit" });
     const form = submit.closest("form");
     if (form === null) throw new Error("Upload form is missing");
     fireEvent.submit(form);
@@ -141,7 +141,7 @@ describe("upload route authority", () => {
     expect(screen.queryByRole("button", { name: "Uploads processed" })).not.toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "Open listing: finished.png" })).toHaveAttribute("href", "/jobs/job_art");
     await user.upload(input, makePng("next.png", 2));
-    expect(screen.getByRole("button", { name: "Prepare 1 listing" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Remove finished.png" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove next.png" })).toBeInTheDocument();
     expect(createUpload).toHaveBeenCalledTimes(1);
@@ -188,7 +188,7 @@ describe("upload route authority", () => {
     expect(selectedNames(result.container)).toEqual(["first.png", "second.png"]);
     await user.click(screen.getByRole("button", { name: "Move second.png earlier" }));
     expect(selectedNames(result.container)).toEqual(["second.png", "first.png"]);
-    expect(screen.getByRole("button", { name: "Prepare 2 listings" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
   });
 
   it("adds more artwork from the picker without replacing the seller's existing order", async () => {
@@ -207,7 +207,7 @@ describe("upload route authority", () => {
     await user.upload(input, [makePng("third.png", 3), makePng("fourth.png", 4)]);
 
     expect(selectedNames(result.container)).toEqual(["second.png", "first.png", "third.png", "fourth.png"]);
-    expect(screen.getByRole("button", { name: "Prepare 4 listings" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
   });
 
   it("appends dropped artwork to the existing selection in drop order", async () => {
@@ -230,7 +230,7 @@ describe("upload route authority", () => {
     });
 
     expect(selectedNames(result.container)).toEqual(["first.png", "second.png", "third.png"]);
-    expect(screen.getByRole("button", { name: "Prepare 3 listings" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
   });
 
   it("retains the selection after a cancelled or empty picker selection", async () => {
@@ -244,7 +244,7 @@ describe("upload route authority", () => {
     fireEvent.change(input, { target: { files: [] } });
 
     expect(selectedNames(result.container)).toEqual(["first.png", "second.png"]);
-    expect(screen.getByRole("button", { name: "Prepare 2 listings" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
   });
 
   it.each(["picker", "drop"] as const)("rejects an over-cap %s addition without losing any existing artwork", async (method) => {
@@ -266,7 +266,7 @@ describe("upload route authority", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("Choose no more than 5 files");
     expect(selectedNames(result.container)).toEqual(["first.png", "second.png"]);
-    expect(screen.getByRole("button", { name: "Prepare 2 listings" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
     await user.upload(input, incoming.slice(0, 3));
     expect(selectedNames(result.container)).toEqual(["first.png", "second.png", "added-1.png", "added-2.png", "added-3.png"]);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -287,12 +287,12 @@ describe("upload route authority", () => {
     await user.click(screen.getByRole("button", { name: "Remove art.png" }));
     expect(selectedNames(result.container)).toEqual([]);
     expect(screen.queryByRole("heading", { name: "Submission order" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Submit" })).not.toBeInTheDocument();
     expect(input).toHaveFocus();
     await user.upload(input, file);
 
     expect(selectedNames(result.container)).toEqual(["art.png"]);
-    expect(screen.getByRole("button", { name: "Prepare 1 listing" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
   });
 
   it("keeps repeated file selections as separate entries instead of silently deduplicating them", async () => {
@@ -308,7 +308,7 @@ describe("upload route authority", () => {
 
     expect(selectedNames(result.container)).toEqual(["art.png", "art.png"]);
     expect(screen.getAllByRole("button", { name: "Remove art.png" })).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Prepare 2 listings" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
   });
 
   it("submits only the remaining artwork in the seller's final order", async () => {
@@ -346,7 +346,7 @@ describe("upload route authority", () => {
 
     expect(dropField).toHaveAttribute("data-drag-active", "false");
     expect(selectedNames(result.container)).toEqual(["first.png", "second.png"]);
-    expect(screen.getByRole("button", { name: "Prepare 2 listings" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
     expect(screen.getByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u)).toHaveAttribute("type", "file");
   });
 
@@ -375,7 +375,7 @@ describe("upload route authority", () => {
     if (dropField === null) throw new Error("Drop field is missing");
 
     fireEvent.drop(dropField, { dataTransfer: { types: ["text/plain"], files: [], dropEffect: "none" } });
-    expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Submit" })).not.toBeInTheDocument();
     fireEvent.drop(dropField, {
       dataTransfer: {
         types: ["Files"],
@@ -385,7 +385,7 @@ describe("upload route authority", () => {
     });
 
     expect(screen.getByRole("alert")).toHaveTextContent("Choose no more than 5 files");
-    expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Submit" })).not.toBeInTheDocument();
   });
 
   it("keeps unsupported dropped files isolated for per-file batch feedback", async () => {
@@ -410,7 +410,7 @@ describe("upload route authority", () => {
     });
 
     expect(screen.getByText(/Unsupported file · this item will be rejected/u)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Prepare 2 listings" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
     submitBatchForm(2);
     await waitFor(() => expect(getReview).toHaveBeenCalledWith("job_art"));
     await userEvent.setup().click(screen.getByRole("link", { name: "Dashboard" }));
@@ -422,7 +422,7 @@ describe("upload route authority", () => {
     const reset = screen.getByRole("button", { name: "Choose another batch" });
     expect(reset).toBeEnabled();
     await userEvent.setup().click(reset);
-    expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Submit" })).not.toBeInTheDocument();
     expect(screen.getByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u)).toBeEnabled();
   });
 
@@ -465,7 +465,7 @@ describe("upload route authority", () => {
     );
 
     expect(screen.getByRole("alert")).toHaveTextContent("Choose no more than 5 files");
-    expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Submit" })).not.toBeInTheDocument();
   });
 
   it("keeps the batch available while staying on Home until the seller explicitly starts another", async () => {
@@ -487,7 +487,7 @@ describe("upload route authority", () => {
 
     await user.click(screen.getByRole("button", { name: "Choose another batch" }));
     expect(screen.getByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u)).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Choose artwork to continue" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Submit" })).not.toBeInTheDocument();
   });
 
   it("links a failed PNG item to the existing upload recovery route", async () => {
@@ -586,9 +586,8 @@ function selectedNames(container: HTMLElement): string[] {
 }
 
 function submitBatchForm(fileCount = 1): void {
-  const submit = screen.getByRole("button", {
-    name: fileCount === 1 ? "Prepare 1 listing" : `Prepare ${fileCount} listings`,
-  });
+  expect(screen.getByText(`${fileCount} artwork ${fileCount === 1 ? "file" : "files"} selected`, { exact: true })).toBeInTheDocument();
+  const submit = screen.getByRole("button", { name: "Submit" });
   const form = submit.closest("form");
   if (form === null) throw new Error("Upload form is missing");
   fireEvent.submit(form);
