@@ -7,7 +7,8 @@ Publishing is a real store action, clearly stated in the interface. This is not 
 historical evaluator policy that denied publication.
 
 Implementation branch: `codex/judge-demo-access`, based on the tested pricing and
-shipping release. Deployed application source: `de50940`; `main` is unchanged.
+shipping release. Judge access shipped from `de50940`; the upload-verification
+function and shared website now use `70b9314`. `main` is unchanged.
 The dedicated account and expiring store grant are provisioned. Credentials and
 operator receipts remain in private files excluded from Git.
 
@@ -18,6 +19,37 @@ intended shop. Judge reads of a known seller job were denied. The judge page lin
 to the prepared example, which remains unapproved and unpublished. Publication,
 reverse access using a live seller session, and the seller's MFA sign-in were not
 retested in this acceptance run; seller MFA configuration remains **ON**.
+
+## Upload reliability correction — September 13, 2026
+
+The judge and normal routes shared the latest website build when a 7487 × 7487 PNG
+failed upload completion. The separate UploadApi Lambda still had 512 MB, despite
+the earlier 1024 MB setting for preparation and provider workers. Its failure log
+confirmed `Runtime.OutOfMemory`; this was not stale judge UI or an account error.
+
+Upload verification now decodes the PNG once and scans transparency in bounded
+tiles, avoiding additional full-resolution copies. Original bytes, checksum,
+dimensions, integrity checks, and the existing pixel limit are preserved. UploadApi
+is deployed at **1024 MB**, with its existing 30-second timeout. All other nine
+Phase6 functions, AgentCore v7, authentication, store grants, and both public runtime
+configuration objects retain their previous bindings.
+
+The shared UI now shows activity during validation, hashing, upload reservation,
+transfer, final verification, and initial review loading. Motion stops on completion
+or failure and respects reduced-motion settings. Gateway failures retain a bounded
+AWS support reference and instruct users to check status before retrying.
+
+Validation passed 410 web tests and 103 focused backend/infrastructure tests, plus
+Chromium and WebKit activity checks for both normal and judge routes. Public index,
+JavaScript, and CSS checksums match the deployed release on both routes.
+
+The original failed upload was recovered with one completion request (`202 Accepted`)
+and no repeated file transfer. Live verification took 2.444 seconds and peaked at
+401 MB of the allocated 1024 MB. Subsequent read-only judge sign-in confirmed the
+same job ready for review, its full-resolution original image and all five mockups
+decoded, and approval enabled. No approval or publication was performed. Preparation
+finished before that fresh sign-in, so live motion was not observed in this recovery;
+the compiled Chromium/WebKit checks provide the animation evidence.
 
 ## Login and workspace
 
