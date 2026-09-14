@@ -83,7 +83,7 @@ export function SignInProvider({ children }: { children: ReactNode }) {
           if (!mounted.current || generation.current !== operation) return;
           ownsPopup.current = false;
           setState(null);
-          await navigate(destination, { replace: true });
+          if (destination !== null) await navigate(destination, { replace: true });
         }).catch((reason: unknown) => { fail(operation, returnPath, reason); });
       } else {
         auth.cancelPopupSignIn?.();

@@ -70,6 +70,18 @@ configuration contains public OAuth identifiers only. Its fixed callback and
 two-stage logout remain inside the approved application and Cognito origins. No
 password, broker secret, or Printify token belongs in public files.
 
+The primary Cognito login also exposes a `MrListerJudge` provider button beside the
+normal credential form. Selecting it preserves the original OAuth callback, which
+may be `/auth/callback` when sign-in began on the main site. After that code exchange,
+the browser recognizes the issuer-derived judge group as a presentation hint,
+loads the strict `/judge/runtime-config.json`, and switches the router and logout
+configuration to the judge workspace while retaining the same memory-only session.
+The companion must match the original OAuth client, endpoints, and scopes. It does
+not grant permissions; API token validation and owner checks remain authoritative.
+Both popup and same-tab completion handle this transition before authenticated
+pages request private data. Cancellation, timeout, or an invalid companion must
+leave the session unauthenticated.
+
 See the [judge directory deployment procedure](../infra/phase6/judge-access/README.md).
 `tools/prepare_judge_application_update.py` prepares the bounded existing-client and
 CloudFront route changes from a fresh live template; it preserves seller MFA,

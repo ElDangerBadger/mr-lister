@@ -29,7 +29,7 @@ export function AuthCallbackPage() {
     }
     void auth.completeSignIn(location.search).then(async (returnPath) => {
       if (!mounted.current) return;
-      await navigate(returnPath, { replace: true });
+      if (returnPath !== null) await navigate(returnPath, { replace: true });
     }).catch((reason: unknown) => {
       if (mounted.current) setError(signInErrorMessage(reason));
     });

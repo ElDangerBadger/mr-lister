@@ -1,7 +1,9 @@
 import { runtimeConfigSchemaForOrigin, type RuntimeConfig } from "./contracts";
 
-export async function loadRuntimeConfig(fetcher: typeof fetch = window.fetch.bind(window)): Promise<RuntimeConfig> {
-  const basePath = workspaceBasePath(window.location.pathname);
+export async function loadRuntimeConfig(
+  fetcher: typeof fetch = window.fetch.bind(window),
+  basePath: "" | "/judge" = workspaceBasePath(window.location.pathname),
+): Promise<RuntimeConfig> {
   const response = await fetcher(`${basePath}/runtime-config.json`, {
     cache: "no-store",
     credentials: "omit",

@@ -1,10 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserApiClient } from "./api/client";
-import { App } from "./App";
-import { OAuthCoordinator } from "./auth/session";
+import { mountApplication } from "./bootstrap";
 import { judgeSignOutTarget, loadRuntimeConfig } from "./runtime";
-import { BrowserPublicationApiClient } from "./publication/api-client";
 import { initializeTheme } from "./theme";
 import "./styles.css";
 
@@ -20,13 +17,7 @@ void loadRuntimeConfig().then((config) => {
     window.location.replace(signOutTarget);
     return;
   }
-  const auth = new OAuthCoordinator(config);
-  const api = new BrowserApiClient(auth.session);
-  const publicationApi = new BrowserPublicationApiClient(auth.session);
-  const judgeAccess = config.judge_access === undefined ? undefined : {
-    ...(config.judge_access.prepared_job_id === undefined ? {} : { preparedJobId: config.judge_access.prepared_job_id }),
-  };
-  root.render(<StrictMode><App dependencies={{ auth, api, publicationApi, ...(judgeAccess === undefined ? {} : { judgeAccess }) }} /></StrictMode>);
+  mountApplication(root, config);
 }).catch(() => {
   root.render(
     <StrictMode>
