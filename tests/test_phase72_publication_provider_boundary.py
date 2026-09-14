@@ -1006,7 +1006,8 @@ def test_absent_documented_or_legacy_empty_external_is_only_not_yet_proven(exter
     assert observation.safe_listing_url is None
 
 
-def test_single_documented_numeric_external_reference_derives_only_the_safe_etsy_link() -> None:
+@pytest.mark.parametrize("object_form", [False, True])
+def test_single_numeric_external_reference_derives_only_the_safe_etsy_link(object_form) -> None:
     authority = _authority()
     claim = _claim(
         authority,
@@ -1015,19 +1016,17 @@ def test_single_documented_numeric_external_reference_derives_only_the_safe_etsy
         suffix="verify",
     )
     malicious_handle = "javascript:alert(document.cookie)"
+    reference = {
+        "id": "123456789",
+        "handle": malicious_handle,
+        "shipping_template_id": "provider-value",
+        "type": 4,
+    }
     boundary, _transport, _audit = _boundary(
         [
             _json_response(
                 200,
-                _product(
-                    external=[
-                        {
-                            "id": "123456789",
-                            "handle": malicious_handle,
-                            "shipping_template_id": "provider-value",
-                        }
-                    ]
-                ),
+                _product(external=reference if object_form else [reference]),
             )
         ]
     )
@@ -1041,7 +1040,8 @@ def test_single_documented_numeric_external_reference_derives_only_the_safe_etsy
     assert malicious_handle not in observation.model_dump_json()
 
 
-def test_external_proof_observed_at_fixed_deadline_is_never_positive() -> None:
+@pytest.mark.parametrize("object_form", [False, True])
+def test_external_proof_observed_at_fixed_deadline_is_never_positive(object_form) -> None:
     authority = _authority()
     claim = _claim(
         authority,
@@ -1050,8 +1050,9 @@ def test_external_proof_observed_at_fixed_deadline_is_never_positive() -> None:
         suffix="verify",
     )
     times = iter((DEADLINE - timedelta(microseconds=1), DEADLINE))
+    reference = {"id": "123456789"}
     boundary, transport, _audit = _boundary(
-        [_json_response(200, _product(external=[{"id": "123456789"}]))],
+        [_json_response(200, _product(external=reference if object_form else [reference]))],
         clock=lambda: next(times),
     )
 
@@ -1074,8 +1075,9 @@ def test_sanitized_product_fingerprint_never_binds_untrusted_external_handle() -
             purpose=PublicationCallPurpose.VERIFICATION,
             suffix=suffix,
         )
+        reference = {"id": "123456789", "handle": handle}
         boundary, _transport, _audit = _boundary(
-            [_json_response(200, _product(external=[{"id": "123456789", "handle": handle}]))]
+            [_json_response(200, _product(external=reference if suffix == "a" else [reference]))]
         )
         observations.append(
             boundary.poll_exact_product(call_claim=claim, fresh_grant=_fresh(claim))
@@ -1090,15 +1092,26 @@ def test_sanitized_product_fingerprint_never_binds_untrusted_external_handle() -
 @pytest.mark.parametrize(
     "external",
     [
-        {"id": "123456789", "handle": "/listing"},
+        {"handle": "https://www.etsy.com/listing/123456789"},
+        {"id": None},
+        {"id": True},
+        {"id": 123},
+        {"id": "0"},
+        {"id": "0123"},
+        {"id": "123\n"},
+        {"id": "12345678901234"},
+        {"id": "not-a-number", "handle": "https://www.etsy.com/listing/123456789"},
         [{"id": "123"}, {"id": "456"}],
+        [{"id": "123"}, {"id": "123"}],
         [{"id": "abc"}],
         [{"id": 123}],
         [{}],
+        [[{"id": "123"}]],
+        None,
         "123",
     ],
 )
-def test_nonempty_dict_multiple_or_malformed_external_never_proves_success(external: Any) -> None:
+def test_multiple_or_malformed_external_never_proves_success(external: Any) -> None:
     authority = _authority()
     claim = _claim(
         authority,
@@ -1106,7 +1119,8 @@ def test_nonempty_dict_multiple_or_malformed_external_never_proves_success(exter
         purpose=PublicationCallPurpose.RECONCILIATION,
         suffix="reconcile",
     )
-    boundary, _transport, _audit = _boundary([_json_response(200, _product(external=external))])
+    payload = {**_product(), "external": external}
+    boundary, _transport, _audit = _boundary([_json_response(200, payload)])
 
     observation = boundary.poll_exact_product(call_claim=claim, fresh_grant=_fresh(claim))
 

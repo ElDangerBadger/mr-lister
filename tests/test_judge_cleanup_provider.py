@@ -148,8 +148,16 @@ def setup_provider(evidence, responses, *, active=True):
     return provider, resolver, transport
 
 
-def test_real_canonical_provider_validation_and_exact_get_delete_get(evidence):
+@pytest.mark.parametrize("object_form", [False, True])
+def test_real_canonical_provider_validation_and_exact_get_delete_get(evidence, object_form):
     payload, evidence = product_and_evidence(evidence)
+    if object_form:
+        payload["external"] = {
+            **payload["external"][0],
+            "handle": "javascript:untrusted()",
+            "shipping_template_id": "provider-value",
+            "type": 4,
+        }
     provider, resolver, transport = setup_provider(evidence, [(200, payload), (200, {}), (404, {})])
     assert provider.present(evidence)
     provider.delete(evidence)
@@ -171,6 +179,7 @@ def test_real_canonical_provider_validation_and_exact_get_delete_get(evidence):
     resolver.resolve.assert_not_called()
 
 
+@pytest.mark.parametrize("object_form", [False, True])
 @pytest.mark.parametrize(
     "change",
     [
@@ -188,7 +197,9 @@ def test_real_canonical_provider_validation_and_exact_get_delete_get(evidence):
         "malformed_external",
     ],
 )
-def test_changed_provider_identity_or_publication_content_blocks_cleanup(evidence, change):
+def test_changed_provider_identity_or_publication_content_blocks_cleanup(
+    evidence, change, object_form
+):
     payload, evidence = product_and_evidence(evidence)
     if change == "shop":
         payload["shop_id"] += 1
@@ -211,7 +222,9 @@ def test_changed_provider_identity_or_publication_content_blocks_cleanup(evidenc
     elif change == "mockup":
         payload["images"][0]["src"] = "https://images.printify.com/other.jpg"
     elif change == "malformed_external":
-        payload["external"] = {"id": "123456789"}
+        payload["external"] = [{"id": None, "handle": "https://www.etsy.com/listing/123456789"}]
+    if object_form:
+        payload["external"] = payload["external"][0]
     provider, resolver, transport = setup_provider(evidence, [(200, payload)])
     if change == "owner":
         resolver.resolve_primary.return_value = resolver.resolve_primary.return_value.model_copy(
