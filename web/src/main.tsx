@@ -3,8 +3,10 @@ import { createRoot } from "react-dom/client";
 import { mountApplication } from "./bootstrap";
 import { judgeSignOutTarget, loadRuntimeConfig } from "./runtime";
 import { initializeTheme } from "./theme";
+import { captureJudgeInvitation } from "./auth/judge-session";
 import "./styles.css";
 
+const judgeInvitation = captureJudgeInvitation();
 initializeTheme();
 
 const rootNode = document.getElementById("root");
@@ -17,7 +19,7 @@ void loadRuntimeConfig().then((config) => {
     window.location.replace(signOutTarget);
     return;
   }
-  mountApplication(root, config);
+  mountApplication(root, config, judgeInvitation);
 }).catch(() => {
   root.render(
     <StrictMode>

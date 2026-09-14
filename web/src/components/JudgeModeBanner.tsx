@@ -12,6 +12,7 @@ export function JudgeModeBanner({ authenticated }: { authenticated: boolean }) {
         <div className="judge-banner-copy">
           <strong>Judge walkthrough</strong>
           <p>This walkthrough uses the connected live store. Publishing creates a real Etsy listing after your final confirmation.</p>
+          {judgeAccess.cleanupAfterMinutes === 30 && <p>Demo listings are scheduled for removal 30 minutes after live publication.</p>}
         </div>
         {authenticated && <nav className="judge-resources" aria-label="Judge resources">
           <a href={sampleArtwork} download="mr-lister-sample-artwork.png">Download sample artwork</a>

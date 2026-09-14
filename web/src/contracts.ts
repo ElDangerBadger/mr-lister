@@ -474,6 +474,8 @@ const runtimeConfigBaseSchema = z.strictObject({
     upstream_logout_url: httpsUrl,
     upstream_client_id: z.string().regex(/^[A-Za-z0-9]{1,128}$/u),
     prepared_job_id: publicId.optional(),
+    session_entry: z.literal(true).optional(),
+    cleanup_after_minutes: z.literal(30).optional(),
   }).optional(),
 });
 

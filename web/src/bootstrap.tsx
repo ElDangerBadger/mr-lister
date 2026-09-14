@@ -4,13 +4,16 @@ import type { Root } from "react-dom/client";
 import { BrowserApiClient } from "./api/client";
 import { App } from "./App";
 import { OAuthCoordinator } from "./auth/session";
+import { captureJudgeInvitation, JudgeSessionCoordinator, type JudgeInvitation } from "./auth/judge-session";
 import { judgeWorkspacePath, resolveJudgeWorkspace } from "./auth/workspace";
 import type { RuntimeConfig } from "./contracts";
 import { BrowserPublicationApiClient } from "./publication/api-client";
 
 /** Keep one in-memory session while selecting the authenticated workspace. */
-export function mountApplication(root: Root, config: RuntimeConfig): void {
-  const auth = new OAuthCoordinator(config, undefined, undefined, undefined, undefined, {
+export function mountApplication(root: Root, config: RuntimeConfig, invitation: JudgeInvitation = captureJudgeInvitation()): void {
+  const auth = config.judge_access?.session_entry === true
+    ? new JudgeSessionCoordinator(invitation)
+    : new OAuthCoordinator(config, undefined, undefined, undefined, undefined, {
     resolveWorkspace: resolveJudgeWorkspace,
     activateWorkspace: (next, returnPath) => {
       window.history.replaceState(null, "", judgeWorkspacePath(returnPath));
@@ -23,8 +26,10 @@ export function mountApplication(root: Root, config: RuntimeConfig): void {
   function renderApplication(runtime: RuntimeConfig) {
     const judgeAccess = runtime.judge_access === undefined ? undefined : {
       ...(runtime.judge_access.prepared_job_id === undefined ? {} : { preparedJobId: runtime.judge_access.prepared_job_id }),
+      ...(runtime.judge_access.cleanup_after_minutes === undefined ? {} : { cleanupAfterMinutes: runtime.judge_access.cleanup_after_minutes }),
     };
     root.render(<StrictMode><App key={judgeAccess === undefined ? "seller" : "judge"} dependencies={{ auth, api, publicationApi, ...(judgeAccess === undefined ? {} : { judgeAccess }) }} /></StrictMode>);
   }
   renderApplication(config);
+  if (auth instanceof JudgeSessionCoordinator) void auth.restore();
 }

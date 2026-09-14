@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
-import { AppContext, type AppDependencies } from "./app-context";
+import { BrowserRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { AppContext, useAppDependencies, type AppDependencies } from "./app-context";
 import { useSessionStatus } from "./auth/use-session";
 import { SignInProvider, useSignIn } from "./auth/sign-in";
 import { AuthCallbackPage } from "./pages/AuthCallbackPage";
@@ -15,6 +15,8 @@ import { ThemeControl } from "./components/ThemeControl";
 import { WorkspaceLink, WorkspaceNavigationProvider } from "./navigation/WorkspaceNavigation";
 import { BatchWorkspaceProvider } from "./navigation/BatchWorkspace";
 import { JudgeModeBanner } from "./components/JudgeModeBanner";
+import { JudgeSessionCoordinator } from "./auth/judge-session";
+import { JudgeSessionEntry } from "./auth/JudgeSessionEntry";
 import "./styles.css";
 import "./landing-fonts.css";
 import "./landing.css";
@@ -108,13 +110,15 @@ function SessionControls({ status, dependencies }: { status: "anonymous" | "auth
   const upload = useUpload();
   const location = useLocation();
   const { startSignIn } = useSignIn();
+  const navigate = useNavigate();
+  const linkEntry = dependencies.auth instanceof JudgeSessionCoordinator;
   return (
     <div className="session-controls">
       <span className={`session-dot session-dot--${status}`} aria-hidden="true" />
       <span>{status === "authenticated" ? "Signed in" : "Signed out"}</span>
-      {status === "anonymous" && <button className="button button--quiet" type="button" onClick={() => { startSignIn(location.pathname); }}>Sign in</button>}
+      {status === "anonymous" && !linkEntry && <button className="button button--quiet" type="button" onClick={() => { startSignIn(location.pathname); }}>Sign in</button>}
       {status === "authenticated" && (
-        <button className="button button--quiet" type="button" onClick={() => { upload.reset(); dependencies.auth.signOut(); }}>
+        <button className="button button--quiet" type="button" onClick={() => { upload.reset(); dependencies.auth.signOut(); if (linkEntry) void navigate("/", { replace: true }); }}>
           Sign out
         </button>
       )}
@@ -125,7 +129,13 @@ function SessionControls({ status, dependencies }: { status: "anonymous" | "auth
 function RequireSession({ status, children }: { status: "anonymous" | "authenticated"; children: React.ReactNode }) {
   const { startSignIn } = useSignIn();
   const location = useLocation();
+  const { auth } = useAppDependencies();
   if (status === "authenticated") return children;
+  if (auth instanceof JudgeSessionCoordinator) return <section className="page narrow-page">
+    <p className="eyebrow">Judge workspace</p>
+    <h1>Continue your listing journey.</h1>
+    <JudgeSessionEntry auth={auth} returnPath={location.pathname} />
+  </section>;
   return (
     <section className="page narrow-page">
       <p className="eyebrow">Secure session</p>
