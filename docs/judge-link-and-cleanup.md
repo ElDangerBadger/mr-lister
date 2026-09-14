@@ -1,16 +1,23 @@
 # Judge project link and automatic product cleanup
 
-Status: local implementation and browser checks passed. This document is not a deployment receipt.
-The existing credentialed judge site remains the live entry until the release is verified.
+Status on 2026-09-14: live judge entry, the redesigned UI, and the Printify
+publication-parser correction are deployed and verified. Judge entry through the
+project link establishes the existing dedicated identity; normal owner login remains
+available. Publication verification accepts Printify's single external-reference
+object and its single-entry array form while retaining the same exact-product checks.
 
-Local validation completed on 2026-09-14: 231 focused backend tests, frontend lint,
-type checking and production build, 492 frontend tests before the final optional
-cleanup-notice flag, and 45 focused frontend tests after that flag. An isolated
-WebKit check of the compiled bundle passed entry, early fragment removal, no
-pre-click redemption, judge routing, Light / Dark / Auto, real HTTPS cookie restore,
-and sign-out followed by reload with a leftover cookie. It used local fixtures only;
-there were no live seller writes. Live session issuance and Printify-to-Etsy cleanup
-acceptance remain outstanding.
+Controlled live cleanup acceptance **passed**. The server deleted exactly one
+explicitly selected judge product after its fixed 30-minute deadline, with no
+reported failures. Exact Printify absence and the same Etsy listing's unavailable
+page were independently verified against retained before/after evidence. The second
+confirmed judge publication was registered without deletion and retained its original
+30-minute deadline, September 14 at 3:07:37 PM PDT.
+
+The one-minute cleanup schedule is **enabled and verified**. The judge runtime's
+30-minute removal notice is published and visible; the normal site's runtime
+configuration is unchanged. Older requests whose outcome is unknown, unpublished
+drafts and primary-owner jobs remain excluded. Activation does not restart existing
+deadlines. Deployment and acceptance receipts are retained privately outside Git.
 
 ## Experience
 
