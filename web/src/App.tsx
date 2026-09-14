@@ -10,7 +10,7 @@ import { JobReviewPage } from "./pages/JobReviewPage";
 import { UploadPage } from "./pages/UploadPage";
 import { UploadProvider } from "./upload/upload-context";
 import { useUpload } from "./upload/upload-context";
-import mrListerIcon from "./assets/mr-lister-icon.png";
+import mrListerBanner from "./assets/mr-lister-dark.png";
 import { ThemeControl } from "./components/ThemeControl";
 import { WorkspaceLink, WorkspaceNavigationProvider } from "./navigation/WorkspaceNavigation";
 import { BatchWorkspaceProvider } from "./navigation/BatchWorkspace";
@@ -45,7 +45,7 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
           {landing ? <LandingHeader /> : <header className="site-header">
             <div className="site-header-inner">
               <WorkspaceLink className="brand" to="/" aria-label="Mr. Lister seller review home">
-                <img className="brand-icon" src={mrListerIcon} alt="" width="56" height="56" />
+                <img className="brand-icon" src={mrListerBanner} alt="" width="64" height="64" />
                 <span>Mr. Lister</span>
               </WorkspaceLink>
               <div className="header-controls">

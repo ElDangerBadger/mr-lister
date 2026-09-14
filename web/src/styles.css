@@ -105,14 +105,14 @@ code { padding: 0.1em 0.3em; border-radius: 0.25rem; background: rgb(0 0 0 / 7%)
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 80px;
-  padding: 12px var(--page-gutter);
+  min-height: 92px;
+  padding: 13.8px var(--page-gutter);
   background: var(--paper);
   border-bottom: 1px solid var(--line);
 }
 .site-header-inner { width: min(100%, var(--page-width)); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 15px; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-size: 19px; letter-spacing: -0.6px; font-weight: 650; text-decoration: none; }
-.brand-icon { width: 56px; height: 56px; object-fit: contain; flex-shrink: 0; }
+.brand-icon { width: 64.4px; height: 64.4px; object-fit: contain; flex-shrink: 0; }
 .header-controls { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
 .header-dashboard { display: inline-flex; align-items: center; gap: 7px; }
 .header-dashboard svg { flex-shrink: 0; }
@@ -545,7 +545,7 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
   .page { padding-top: 22px; }
   .workflow { margin-top: -22px; }
   .workflow ol { gap: 10px; }
-  .site-header { padding-top: 16px; padding-bottom: 16px; }
+  .site-header { padding-top: 18.4px; padding-bottom: 18.4px; }
   .review-grid { grid-template-columns: minmax(190px, 0.65fr) minmax(0, 1fr); gap: 16px; }
   .tag-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .artwork-preview, .preview-placeholder { padding: 20px; }
@@ -560,11 +560,11 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
 @media (max-width: 560px) {
   :root { --page-gutter: 16px; }
   .page { padding-top: 20px; }
-  .site-header { padding-top: 15px; padding-bottom: 15px; }
+  .site-header { padding-top: 17.25px; padding-bottom: 17.25px; }
   .site-header-inner { gap: 10px; }
   .header-controls { gap: 6px; }
   .brand { gap: 6px; font-size: 16px; }
-  .brand-icon { width: 44px; height: 44px; }
+  .brand-icon { width: 50.6px; height: 50.6px; }
   .header-dashboard { padding: 7px; }
   .header-dashboard > span { display: none; }
   .session-controls { font-size: 11px; gap: 5px; }
