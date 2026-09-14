@@ -7,8 +7,17 @@ Publishing is a real store action, clearly stated in the interface. This is not 
 historical evaluator policy that denied publication.
 
 Implementation branch: `codex/judge-demo-access`, based on the tested pricing and
-shipping release. `main` is unchanged. Live provisioning and end-to-end acceptance
-are pending; this document does not claim a working judge account yet.
+shipping release. Deployed application source: `de50940`; `main` is unchanged.
+The dedicated account and expiring store grant are provisioned. Credentials and
+operator receipts remain in private files excluded from Git.
+
+Live acceptance passed password-only sign-in, a fresh upload, a saved review, a
+fresh-session reopen, original artwork and five mockups, and both-stage logout.
+Direct Printify readback confirmed the saved draft, prices, and shipping in the
+intended shop. Judge reads of a known seller job were denied. The judge page links
+to the prepared example, which remains unapproved and unpublished. Publication,
+reverse access using a live seller session, and the seller's MFA sign-in were not
+retested in this acceptance run; seller MFA configuration remains **ON**.
 
 ## Login and workspace
 

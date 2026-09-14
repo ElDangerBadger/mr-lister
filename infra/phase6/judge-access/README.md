@@ -72,6 +72,10 @@ and may normalize case. [Attribute mapping](https://docs.aws.amazon.com/cognito/
 
 Manually add only that verified broker user to the primary `seller` group and provision its
 exact owner connection grant. Preserve the existing owner's identity, data, and connection.
+Live Cognito identity metadata can encode the primary marker as Boolean `true` or the
+exact string `"true"`; validate the provider and upstream subject independently. Cognito
+also creates a pool/provider-named group for the federated user. Preserve that exact
+expected group after confirming it has no IAM role, and reject unrelated groups.
 Obtain fresh primary tokens after group assignment. This judge is authorized for the full
 seller workflow, including publication through the normal approval and publication guards;
 do not attach the evaluator deny-publication policy. No group or provider authority comes
