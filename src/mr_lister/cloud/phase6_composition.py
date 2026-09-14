@@ -39,6 +39,7 @@ from mr_lister.cloud.preview import (
     ExactVersionArtworkPreviewService,
 )
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
+from mr_lister.control.judge_pricing import JudgePricingPolicy, load_judge_pricing_policy
 from mr_lister.control.projection import SellerReviewProjectionService
 from mr_lister.control.service import SellerControlService
 from mr_lister.control.upload_service import UploadIntakeService
@@ -115,6 +116,7 @@ class CommonApiConfiguration:
     state_table: str
     release_fingerprint: str
     claims_policy: SellerClaimsPolicy
+    judge_pricing_policy: JudgePricingPolicy | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,6 +298,7 @@ def compose_query_api_adapter(
         profiles=profiles,
         preview_issuer=preview_issuer,
         preview_origin=configuration.application_origin,
+        judge_pricing_policy=common.judge_pricing_policy,
     )
     previews = ExactVersionArtworkPreviewService(
         store=store,
@@ -327,7 +330,7 @@ def compose_command_api_adapter(
         required_methods=("get_item", "put_item", "transact_write_items"),
     )
     store = DynamoDBSellerControlStore(client=dynamodb, table_name=common.state_table)
-    commands = SellerControlService(store=store)
+    commands = SellerControlService(store=store, judge_pricing_policy=common.judge_pricing_policy)
     return SellerCommandApiAdapter(claims_policy=common.claims_policy, commands=commands)
 
 
@@ -528,6 +531,7 @@ def _common_configuration(environment: Mapping[str, object]) -> CommonApiConfigu
             required_scope=scope,
             required_group=group,
         ),
+        judge_pricing_policy=load_judge_pricing_policy(environment),
     )
 
 

@@ -22,6 +22,7 @@ from mr_lister.control.fingerprints import (
     command_request_fingerprint,
     product_sync_record_fingerprint,
 )
+from mr_lister.control.judge_pricing import JudgePricingPolicy
 from mr_lister.control.models import (
     AgentPreparationEvidence,
     ArtworkAnalysisRecord,
@@ -88,6 +89,7 @@ class WorkerControlService:
         clock: Callable[[], datetime] | None = None,
         reconciliation_window: timedelta = timedelta(minutes=15),
         reconciliation_delay: timedelta = timedelta(seconds=30),
+        judge_pricing_policy: JudgePricingPolicy | None = None,
     ) -> None:
         if reconciliation_window <= timedelta(0) or reconciliation_delay <= timedelta(0):
             raise ValueError("Reconciliation timing must be positive")
@@ -95,6 +97,7 @@ class WorkerControlService:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._reconciliation_window = reconciliation_window
         self._reconciliation_delay = reconciliation_delay
+        self._judge_pricing_policy = judge_pricing_policy
 
     def begin_preparation(self, command: BeginPreparationCommand) -> CommandResponse:
         current, work, replay = self._begin_worker_command("begin_preparation", command)
@@ -175,6 +178,8 @@ class WorkerControlService:
         }
         # A resumed checkpoint retains its original commercial choices and fingerprint.
         pricing = persisted_review.pricing if persisted_review is not None else command.pricing
+        if persisted_review is None and self._judge_pricing_policy is not None:
+            pricing = self._judge_pricing_policy.defaults_for(current.owner_id) or pricing
         if pricing is not None:
             review_material["pricing"] = pricing.model_dump(mode="json")
         review_fingerprint = canonical_fingerprint(review_material)

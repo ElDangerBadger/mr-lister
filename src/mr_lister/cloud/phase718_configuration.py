@@ -14,6 +14,7 @@ from mr_lister.cloud.phase7_configuration import (
     load_phase7_read_configuration,
     validate_phase7_read_configuration,
 )
+from mr_lister.control.judge_pricing import JudgePricingPolicy, load_judge_pricing_policy
 from mr_lister.publication.enabled_contract import (
     PHASE718_ENABLED_CONTRACT_VERSION,
     phase718_enabled_publication_contract,
@@ -52,6 +53,7 @@ class Phase718EnabledConfiguration:
     canary_evidence_fingerprint: str
     enablement_evidence_fingerprint: str
     activation: Phase718RuntimeActivation
+    judge_pricing_policy: JudgePricingPolicy | None = None
 
     @property
     def region(self) -> str:
@@ -129,6 +131,7 @@ def load_phase718_enabled_configuration(
                 "MR_LISTER_PHASE7_ENABLEMENT_EVIDENCE_FINGERPRINT",
             ),
             activation=Phase718RuntimeActivation(),
+            judge_pricing_policy=load_judge_pricing_policy(environment),
         )
         return validate_phase718_enabled_configuration(configured)
     except Exception:
@@ -166,6 +169,15 @@ def validate_phase718_enabled_configuration(
             canary_evidence_fingerprint=configuration.canary_evidence_fingerprint,
             enablement_evidence_fingerprint=configuration.enablement_evidence_fingerprint,
             activation=activation,
+            judge_pricing_policy=(
+                None
+                if configuration.judge_pricing_policy is None
+                else JudgePricingPolicy(
+                    owner_id=configuration.judge_pricing_policy.owner_id,
+                    default_price_cents=configuration.judge_pricing_policy.default_price_cents,
+                    minimum_price_cents=configuration.judge_pricing_policy.minimum_price_cents,
+                )
+            ),
         )
     except Exception:
         raise Phase718ConfigurationError(_GENERIC_ERROR) from None

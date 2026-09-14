@@ -24,6 +24,7 @@ from mr_lister.control.fingerprints import (
     review_content_fingerprint,
     review_etag,
 )
+from mr_lister.control.judge_pricing import JudgePricingPolicy, JudgePricingPolicyError
 from mr_lister.control.models import (
     ControlJobRecord,
     ControlJobState,
@@ -116,6 +117,7 @@ class PublicationRequestService:
         profile_eligibility: PublicationProfileEligibilityAuthority,
         release_manifest_fingerprint: str,
         clock: Callable[[], datetime] | None = None,
+        judge_pricing_policy: JudgePricingPolicy | None = None,
     ) -> None:
         if (
             fullmatch(r"[a-f0-9]{64}", release_manifest_fingerprint) is None
@@ -127,6 +129,7 @@ class PublicationRequestService:
         self._profile_eligibility = profile_eligibility
         self._release_manifest_fingerprint = release_manifest_fingerprint
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._judge_pricing_policy = judge_pricing_policy
 
     def request_publication(
         self,
@@ -157,6 +160,13 @@ class PublicationRequestService:
         current_etag = self._require_exact_phase6_authority(authority)
         self._require_command_review_and_approval(command, authority, current_etag)
         exact_profile = self._require_exact_profile(authority)
+        if self._judge_pricing_policy is not None:
+            try:
+                self._judge_pricing_policy.require_allowed(
+                    current.owner_id, authority.review.pricing
+                )
+            except JudgePricingPolicyError as error:
+                raise _authority_error(str(error)) from None
         now = self._now()
         self._require_temporal_authority(authority, now)
         transaction = self._build_transaction(

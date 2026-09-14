@@ -111,6 +111,7 @@ def compose_phase718_request_handler(
             exact.foundation.eligibility
         ),
         release_manifest_fingerprint=exact.application_release_fingerprint,
+        judge_pricing_policy=exact.judge_pricing_policy,
         clock=clock,
     )
     delegate = PublicationRequestApiAdapter(
