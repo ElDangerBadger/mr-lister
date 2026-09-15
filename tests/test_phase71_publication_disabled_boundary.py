@@ -156,6 +156,43 @@ PHASE718_ENABLED_CLOUD_FILES = {
 }
 PHASE718_ENABLED_ENTRYPOINT = ROOT / "src/mr_lister/cloud/phase718_entrypoints.py"
 
+# Judge cleanup reads the confirmed publication graph and reuses its pure product
+# parsers. It is a separate worker, not another Phase 6 publication entrypoint.
+# List imported symbols, not an exempt package: execution/mutation capabilities
+# must not enter these adapters alongside the permitted record/read dependencies.
+JUDGE_CLEANUP_PUBLICATION_IMPORTS = {
+    ROOT / "src/mr_lister/judge_cleanup/aws.py": {
+        "mr_lister.publication.execution_dynamodb": {"DynamoDBPublicationExecutionStore"},
+    },
+    ROOT / "src/mr_lister/judge_cleanup/models.py": {
+        "mr_lister.publication.contract": {"PublicationState"},
+        "mr_lister.publication.execution_models": {
+            "ExecutionPublicationAggregate",
+            "PublicationProductObservation",
+            "PublicationProviderAuthority",
+            "PublicationReadOutcome",
+            "PublicationResult",
+        },
+        "mr_lister.publication.models": {
+            "Fingerprint",
+            "OwnerId",
+            "PublicationSnapshot",
+            "SafeId",
+            "UtcDateTime",
+        },
+    },
+    ROOT / "src/mr_lister/judge_cleanup/provider.py": {
+        "mr_lister.publication.provider_boundary": {
+            "_canonical_product_readback",
+            "_decode_json",
+            "_external_evidence",
+            "_mockup_fingerprints",
+            "_placement_image_ids",
+            "canonical_fingerprint",
+        },
+    },
+}
+
 PHASE7_CLOUD_FILES = (
     PHASE74_CLOUD_FILES
     | PHASE75_OFFLINE_CLOUD_FILES
@@ -343,6 +380,7 @@ def test_active_seller_publication_browser_does_not_expand_the_phase6_boundary()
     }
     active_source = "\n".join(path.read_text(encoding="utf-8") for path in active_paths)
     main_source = (ROOT / "web/src/main.tsx").read_text(encoding="utf-8")
+    bootstrap_source = (ROOT / "web/src/bootstrap.tsx").read_text(encoding="utf-8")
 
     # The Phase 6 API port remains draft-only; Phase 7 is a separate versioned client.
     assert "/publish" not in phase6_client
@@ -352,7 +390,10 @@ def test_active_seller_publication_browser_does_not_expand_the_phase6_boundary()
     assert "`/v1/jobs/${safeId(review.job_id)}/publish`" in active_source
     assert "`/v1/jobs/${safeId(jobId)}/publication`" in active_source
     assert "publish_exact_approved_listing" in active_source
-    assert "BrowserPublicationApiClient" in main_source
+    assert 'import { mountApplication } from "./bootstrap"' in main_source
+    assert "mountApplication(root, config, judgeInvitation)" in main_source
+    assert "new BrowserApiClient(auth.session)" in bootstrap_source
+    assert "new BrowserPublicationApiClient(auth.session)" in bootstrap_source
     assert "offline/phase7" not in active_source
     assert "../offline" not in active_source
 
@@ -367,7 +408,7 @@ def test_active_seller_publication_browser_does_not_expand_the_phase6_boundary()
         "publish.json",
         "secretsmanager",
     ):
-        assert forbidden_capability not in active_source.casefold()
+        assert forbidden_capability not in (active_source + bootstrap_source).casefold()
     buttons = re.findall(r"<button\b.*?</button>", active_source, re.IGNORECASE | re.DOTALL)
     assert any("Publish exact approved listing" in button for button in buttons)
 
@@ -473,7 +514,9 @@ def test_phase7_offline_runtime_is_only_in_exact_inventory() -> None:
         *(
             path
             for path in (ROOT / "src" / "mr_lister").rglob("*.py")
-            if PUBLICATION_ROOT not in path.parents and path not in PHASE7_CLOUD_FILES
+            if PUBLICATION_ROOT not in path.parents
+            and path not in PHASE7_CLOUD_FILES
+            and path not in JUDGE_CLEANUP_PUBLICATION_IMPORTS
         ),
     ]
     for path in runtime_paths:
@@ -481,6 +524,27 @@ def test_phase7_offline_runtime_is_only_in_exact_inventory() -> None:
             module == "mr_lister.publication" or module.startswith("mr_lister.publication.")
             for module in _imports(path)
         ), path.relative_to(ROOT)
+
+    for path, expected_imports in JUDGE_CLEANUP_PUBLICATION_IMPORTS.items():
+        imported: dict[str, set[str]] = {}
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and (
+                    node.module == "mr_lister.publication"
+                    or node.module.startswith("mr_lister.publication.")
+                )
+            ):
+                assert all(alias.asname is None for alias in node.names)
+                imported.setdefault(node.module, set()).update(a.name for a in node.names)
+            elif isinstance(node, ast.Import):
+                assert not any(
+                    alias.name == "mr_lister.publication"
+                    or alias.name.startswith("mr_lister.publication.")
+                    for alias in node.names
+                ), path.relative_to(ROOT)
+        assert imported == expected_imports, path.relative_to(ROOT)
 
     publication_importing_cloud_files = {
         path
@@ -513,6 +577,24 @@ def test_phase7_offline_runtime_is_only_in_exact_inventory() -> None:
             for module in imports
             for forbidden in forbidden_phase74_imports
         ), path.relative_to(ROOT)
+
+
+def test_judge_cleanup_publication_adapter_only_loads_existing_authority() -> None:
+    from mr_lister.judge_cleanup.aws import DynamoCleanupSource
+
+    source = ast.parse(inspect.getsource(DynamoCleanupSource))
+    publication_attributes = {
+        node.attr
+        for node in ast.walk(source)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Attribute)
+        and isinstance(node.value.value, ast.Name)
+        and node.value.value.id == "self"
+        and node.value.attr == "publication"
+    }
+    # IAM separately grants this worker only read access to the application table;
+    # this assertion also fences the in-process adapter against publication writes.
+    assert publication_attributes == {"load_execution_authority"}
 
 
 def test_phase75_credential_modules_are_capability_narrow_and_only_enabled_after_release() -> None:

@@ -212,7 +212,7 @@ function coordinator(overrides: Partial<AuthCoordinator> = {}) {
 function api(): ApiPort {
   const unused = () => Promise.reject(new Error("Unexpected API call"));
   return {
-    listJobs: unused, getJob: unused, getUpload: unused, getReview: unused,
+    listJobs: unused, clearRecentJobs: unused, getJob: unused, getUpload: unused, getReview: unused,
     createUpload: unused, authorizeUpload: unused, completeUpload: unused,
     cancelUpload: unused, reviseListing: unused, runAction: unused, fetchArtwork: unused,
   };

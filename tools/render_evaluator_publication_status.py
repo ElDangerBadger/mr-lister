@@ -23,7 +23,9 @@ from typing import Any
 from tools.prepare_evaluator_deployment import EvaluatorPlanError, build_plan, read_json
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_TEMPLATE_SHA256 = "1f9772e04ace5a035febeea14b92417866326e5f07a0495a981648dac625fd09"
+# Reviewed source transitions add upload memory headroom and the authenticated recent-list
+# clear route. Exact predecessor/delta regressions preserve every other authority boundary.
+SOURCE_TEMPLATE_SHA256 = "85cc04b85015fd3c3b1bb4871aa19f0b56e6684a8860fd6c51d19a698f889623"
 POLICY_SETTING = "MR_LISTER_EVALUATOR_PUBLICATION_STATUS"
 EVENT_NAME = "EvaluatorPublicationStatus"
 

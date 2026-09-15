@@ -19,6 +19,8 @@ from pydantic import ValidationError
 from mr_lister.cloud.auth import AuthenticatedSeller, SellerClaimsPolicy, authenticate_seller
 from mr_lister.cloud.browser_contracts import (
     BrowserContractModel,
+    ClearRecentJobsRequest,
+    ClearRecentJobsResponse,
     CreateUploadRequest,
     JobPageProjection,
     JobProgressProjection,
@@ -52,6 +54,7 @@ from mr_lister.cloud.preview import (
     preview_grant_response,
     preview_redirect_response,
 )
+from mr_lister.cloud.workspace_history import WorkspaceHistoryPort
 from mr_lister.control.commands import (
     ApproveReviewCommand,
     CancelJobCommand,
@@ -88,6 +91,7 @@ _QUERY_ROUTES = frozenset(
 )
 _COMMAND_ROUTES = frozenset(
     {
+        "POST /v1/jobs/recent/clear",
         "PUT /v1/jobs/{job_id}/review/listing",
         "POST /v1/jobs/{job_id}/economics/refresh",
         "POST /v1/jobs/{job_id}/approve",
@@ -446,9 +450,11 @@ class SellerCommandApiAdapter(_ProtectedApiAdapter):
         *,
         claims_policy: SellerClaimsPolicy,
         commands: SellerCommandPort,
+        history: WorkspaceHistoryPort | None = None,
     ) -> None:
         super().__init__(claims_policy=claims_policy)
         self._commands = commands
+        self._history = history
 
     def _dispatch(
         self,
@@ -458,6 +464,15 @@ class SellerCommandApiAdapter(_ProtectedApiAdapter):
         request_id: str,
     ) -> dict[str, Any]:
         _require_no_query(event)
+        if route_key == "POST /v1/jobs/recent/clear":
+            _require_path(event, expected="/v1/jobs/recent/clear")
+            idempotency_key = parse_idempotency_key(_headers(event))
+            _parse_json_body(event, ClearRecentJobsRequest)
+            if self._history is None:
+                raise RouteNotFoundError
+            cutoff = self._history.clear(owner_id=seller.owner_id, idempotency_key=idempotency_key)
+            cleared = ClearRecentJobsResponse(cleared_before=cutoff)
+            return _json_response(200, cleared.model_dump(mode="json"), request_id=request_id)
         job_id = _resource_id(event, name="job_id")
         suffix = {
             "PUT /v1/jobs/{job_id}/review/listing": "/review/listing",

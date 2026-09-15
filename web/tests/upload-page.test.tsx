@@ -52,6 +52,7 @@ describe("upload route authority", () => {
     const never = () => Promise.reject(new Error("Unexpected test call"));
     const api: ApiPort = {
       listJobs: never,
+      clearRecentJobs: never,
       getJob: never,
       getUpload,
       getReview: never,
@@ -147,32 +148,42 @@ describe("upload route authority", () => {
     expect(createUpload).toHaveBeenCalledTimes(1);
   });
 
-  it("clears and restores the current recent list without deleting authoritative work", async () => {
+  it("clears account history through the API and keeps it cleared after a fresh sign-in", async () => {
     const user = userEvent.setup();
     const jobs = [
       recentJob("job_recent_one", "2026-09-04T12:00:00Z"),
       recentJob("job_recent_two", "2026-09-03T12:00:00Z"),
     ];
-    const listJobs = vi.fn().mockResolvedValue({
-      value: { jobs, next_cursor: null },
+    let serverCleared = false;
+    const listJobs = vi.fn().mockImplementation(() => Promise.resolve({
+      value: { jobs: serverCleared ? [] : jobs, next_cursor: null },
       requestId: "request-jobs",
       etag: null,
+    }));
+    const clearRecentJobs = vi.fn().mockImplementation(() => {
+      serverCleared = true;
+      return Promise.resolve({ value: { cleared_before: "2026-09-14T20:00:00Z" }, requestId: "request-clear", etag: null });
     });
-    const { api, auth } = dependencies({ listJobs });
-    render(
+    const { api, auth } = dependencies({ listJobs, clearRecentJobs });
+    const view = render(
       <MemoryRouter initialEntries={["/"]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>,
     );
 
     expect(await screen.findAllByRole("link", { name: /Open listing:/u })).toHaveLength(2);
     await user.click(screen.getByRole("button", { name: "Clear recent list" }));
 
-    expect(screen.getByText("Recent list cleared for now.")).toBeVisible();
+    expect(await screen.findByText("Recent list cleared. New uploads will appear here.")).toBeVisible();
     expect(screen.queryByRole("link", { name: /Open listing:/u })).not.toBeInTheDocument();
-    expect(screen.getByText(/publication records, and audit history are preserved/u)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Show recent list" })).not.toBeInTheDocument();
+    expect(clearRecentJobs).toHaveBeenCalledWith(expect.stringMatching(/^web:clear-recent:/u));
 
-    await user.click(screen.getByRole("button", { name: "Show recent list" }));
-    expect(await screen.findAllByRole("link", { name: /Open listing:/u })).toHaveLength(2);
-    expect(listJobs).toHaveBeenCalledTimes(1);
+    view.unmount();
+    const nextSession = dependencies({ listJobs, clearRecentJobs });
+    render(<MemoryRouter><AppRoutes dependencies={nextSession} /></MemoryRouter>);
+    expect(await screen.findByText("No listings yet.")).toBeVisible();
+    expect(screen.queryByRole("link", { name: /Open listing:/u })).not.toBeInTheDocument();
+    expect(listJobs).toHaveBeenCalledTimes(3);
+    expect(jobs).toHaveLength(2);
   });
 
   it("keeps a selected batch in an explicit seller-controlled order", async () => {
@@ -545,6 +556,7 @@ function dependencies(overrides: Partial<ApiPort>): { api: ApiPort; auth: AuthCo
   const never = () => Promise.reject(new Error("Unexpected test call"));
   const api: ApiPort = {
     listJobs: never,
+    clearRecentJobs: never,
     getJob: never,
     getUpload: never,
     getReview: never,

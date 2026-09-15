@@ -1397,7 +1397,7 @@ function dependencies(review: SellerReview, overrides: Partial<ApiPort> = {}): {
   session.set("test-token", 3600, "refresh-token");
   const never = () => Promise.reject(new Error("Unexpected test call"));
   const api: ApiPort = {
-    listJobs: never,
+    listJobs: never, clearRecentJobs: never,
     getJob: never,
     getUpload: never,
     getReview: vi.fn().mockResolvedValue({ value: review, requestId: "request-review", etag: `"${review.review_authority_etag ?? ""}"` }),

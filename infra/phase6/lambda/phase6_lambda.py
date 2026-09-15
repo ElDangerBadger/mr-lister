@@ -53,6 +53,7 @@ REVIEW_QUERY_API_ROUTE_KEYS = frozenset(
 
 SELLER_COMMAND_API_ROUTE_KEYS = frozenset(
     {
+        "POST /v1/jobs/recent/clear",
         "PUT /v1/jobs/{job_id}/review/listing",
         "POST /v1/jobs/{job_id}/economics/refresh",
         "POST /v1/jobs/{job_id}/approve",

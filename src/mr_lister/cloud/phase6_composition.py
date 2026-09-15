@@ -38,6 +38,7 @@ from mr_lister.cloud.preview import (
     AuthenticatedPreviewLinkIssuer,
     ExactVersionArtworkPreviewService,
 )
+from mr_lister.cloud.workspace_history import DynamoWorkspaceHistory, HistoryFilteredJobQuery
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
 from mr_lister.control.judge_pricing import JudgePricingPolicy, load_judge_pricing_policy
 from mr_lister.control.projection import SellerReviewProjectionService
@@ -73,6 +74,7 @@ QUERY_ROUTE_KEYS = frozenset(
 )
 COMMAND_ROUTE_KEYS = frozenset(
     {
+        "POST /v1/jobs/recent/clear",
         "PUT /v1/jobs/{job_id}/review/listing",
         "POST /v1/jobs/{job_id}/economics/refresh",
         "POST /v1/jobs/{job_id}/approve",
@@ -308,7 +310,10 @@ def compose_query_api_adapter(
     )
     return ReviewQueryApiAdapter(
         claims_policy=common.claims_policy,
-        store=store,
+        store=HistoryFilteredJobQuery(
+            store=store,
+            history=DynamoWorkspaceHistory(client=dynamodb, table_name=common.state_table),
+        ),
         reviews=reviews,
         previews=previews,
         evaluator_publication_status=configuration.evaluator_publication_status,
@@ -331,7 +336,11 @@ def compose_command_api_adapter(
     )
     store = DynamoDBSellerControlStore(client=dynamodb, table_name=common.state_table)
     commands = SellerControlService(store=store, judge_pricing_policy=common.judge_pricing_policy)
-    return SellerCommandApiAdapter(claims_policy=common.claims_policy, commands=commands)
+    return SellerCommandApiAdapter(
+        claims_policy=common.claims_policy,
+        commands=commands,
+        history=DynamoWorkspaceHistory(client=dynamodb, table_name=common.state_table),
+    )
 
 
 def build_upload_api_handler(

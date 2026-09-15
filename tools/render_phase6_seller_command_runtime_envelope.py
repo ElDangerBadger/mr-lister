@@ -1,7 +1,7 @@
 """Render the exact additive Phase 6 seller-command runtime-envelope correction.
 
-The deployed post-dispatch-filter template still lets the seller-command Lambda inherit the
-global 256 MB memory default.  The checked source template separately authorizes an explicit
+The historical post-dispatch-filter template lets the seller-command Lambda inherit the
+global 256 MB memory default.  Its archived source evidence separately authorizes an explicit
 512 MB value while retaining the existing 30-second timeout.  This local-only renderer changes
 only that one resource property, proves every other path is byte-equivalent after canonical
 serialization, and never contacts AWS or grants deployment authority.
@@ -31,7 +31,12 @@ DEFAULT_PREDECESSOR_PATH: Final = REPOSITORY_ROOT / (
     ".mr_lister_private/phase6-dispatch-filter-correction/"
     "template.dispatch-filter-correction.local.json"
 )
-DEFAULT_SOURCE_PATH: Final = REPOSITORY_ROOT / "infra/phase6/template.json"
+# Historical reconstruction is opt-in and requires separately retained private evidence.
+# Do not restore obsolete scaffolding to the current tree or reinterpret the moving template
+# as this sealed correction's authority. Its source/target fingerprints remain immutable.
+DEFAULT_SOURCE_PATH: Final = REPOSITORY_ROOT / (
+    ".mr_lister_private/phase6-seller-command-runtime-envelope/source-template.json"
+)
 DEFAULT_OUTPUT_PATH: Final = REPOSITORY_ROOT / (
     ".mr_lister_private/phase6-seller-command-runtime-envelope/"
     "template.seller-command-runtime-envelope.local.json"

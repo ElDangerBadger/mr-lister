@@ -61,7 +61,7 @@ function appDependencies(): AppDependencies {
   const session = new MemoryAuthSession();
   session.set("access", 3600, "refresh");
   return {
-    api: { listJobs: never, getJob: never, getUpload: never, getReview: never, createUpload: never, authorizeUpload: never, completeUpload: never, cancelUpload: never, reviseListing: never, runAction: never, fetchArtwork: never },
+    api: { listJobs: never, clearRecentJobs: never, getJob: never, getUpload: never, getReview: never, createUpload: never, authorizeUpload: never, completeUpload: never, cancelUpload: never, reviseListing: never, runAction: never, fetchArtwork: never },
     auth: { session, startSignIn: never, completeSignIn: never, signOut: vi.fn() },
   };
 }

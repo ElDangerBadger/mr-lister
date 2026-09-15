@@ -340,7 +340,7 @@ function mount(getJob: ApiPort["getJob"], initialPath = "/") {
   session.set("access", 3600, "refresh");
   const unexpected = () => Promise.reject(new Error("Unexpected API call"));
   const dependencies: AppDependencies = {
-    api: { getJob, listJobs: unexpected, getUpload: unexpected, getReview: unexpected,
+    api: { getJob, listJobs: unexpected, clearRecentJobs: unexpected, getUpload: unexpected, getReview: unexpected,
       createUpload: unexpected, authorizeUpload: unexpected, completeUpload: unexpected, cancelUpload: unexpected,
       reviseListing: unexpected, runAction: unexpected, fetchArtwork: unexpected },
     auth: { session, startSignIn: unexpected, completeSignIn: unexpected, signOut: () => { session.clear(); } },

@@ -110,6 +110,7 @@ _LAMBDA_CLOUD_FILES = (
     "phase6_retention_composition.py",
     "phase6_retention_entrypoint.py",
     "printify_secret_contract.py",
+    "workspace_history.py",
 )
 _LAMBDA_PRODUCTION_FILES = (
     "__init__.py",

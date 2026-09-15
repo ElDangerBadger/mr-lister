@@ -15,6 +15,55 @@ describe("BrowserApiClient", () => {
     headers: { "Content-Type": "image/png" },
   });
 
+  it("clears recent account history with no client-selected owner or cutoff", async () => {
+    const session = new MemoryAuthSession();
+    session.set("seller-token", 3600, "refresh-token");
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(
+      JSON.stringify(browserFixtures.clear_recent_jobs), { headers: { "X-Request-Id": "request-clear" } },
+    ));
+    const response = await new BrowserApiClient(session, fetcher).clearRecentJobs("web:clear:stable");
+    expect(response.value).toEqual(browserFixtures.clear_recent_jobs);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const [path, options] = fetcher.mock.calls[0]!;
+    expect(path).toBe("/v1/jobs/recent/clear");
+    expect(options).toMatchObject({ method: "POST", body: "{}", credentials: "omit", cache: "no-store", redirect: "error" });
+    expect(new Headers(options?.headers).get("Idempotency-Key")).toBe("web:clear:stable");
+    expect(new Headers(options?.headers).get("Authorization")).toBe("Bearer seller-token");
+  });
+
+  it("keeps the exact history-clear key and body during authentication renewal", async () => {
+    const session = new MemoryAuthSession();
+    session.set("expired-token", 3600, "refresh-token");
+    session.setRenewer(vi.fn().mockResolvedValue({ accessToken: "renewed-token", expiresInSeconds: 3600 }));
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("", { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(browserFixtures.clear_recent_jobs)));
+    await new BrowserApiClient(session, fetcher).clearRecentJobs("web:clear:stable");
+    expect(fetcher.mock.calls).toHaveLength(2);
+    for (const [path, options] of fetcher.mock.calls) {
+      expect(path).toBe("/v1/jobs/recent/clear");
+      expect(options?.body).toBe("{}");
+      expect(new Headers(options?.headers).get("Idempotency-Key")).toBe("web:clear:stable");
+    }
+  });
+
+  it.each([
+    {}, { cleared_before: "not-a-date" }, { cleared_before: "2026-09-14T20:00:00Z", owner_id: "unexpected" },
+  ])("rejects malformed history-clear acknowledgment: %j", async (body) => {
+    await expect(jsonClient(body).clearRecentJobs("web:clear:stable")).rejects.toBeInstanceOf(ContractError);
+  });
+
+  it("loads the next bounded history page with the server cursor", async () => {
+    const session = new MemoryAuthSession();
+    session.set("seller-token", 3600, "refresh-token");
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ jobs: [], next_cursor: null })));
+    const client = new BrowserApiClient(session, fetcher);
+    await client.listJobs("opaque_cursor-2");
+    expect(fetcher.mock.calls[0]?.[0]).toBe("/v1/jobs?limit=25&cursor=opaque_cursor-2");
+    expect(() => client.listJobs("bad&owner=other")).toThrow("Invalid history cursor");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("fetches an authenticated preview grant then downloads its pinned image without seller credentials", async () => {
     const session = new MemoryAuthSession();
     session.set("seller-token", 3600, "refresh-token");

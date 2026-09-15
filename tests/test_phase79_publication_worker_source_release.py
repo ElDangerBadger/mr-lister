@@ -35,10 +35,11 @@ from tools.build_phase79_worker_source_release import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE_PATH = (ROOT / "config/product_profiles/gildan_64000_swiftpod.json").resolve()
-# Reviewed commercial settings add control.pricing to the audited closure.
+# The 49-module closure is unchanged. Source artwork validation now decodes once
+# and bounds alpha-scan buffers; publication accepts numeric object-form references.
 # Double-built and verified locally; this is not a deployed-runtime release seal.
-EXPECTED_MANIFEST_FINGERPRINT = "9655ffc0d078976637cc9ae40eb7e9a72684026785aa05ef3a2fb765eac7423a"
-EXPECTED_ARCHIVE_FINGERPRINT = "f28a335168f717f4795a1dc23f43472f791e6dc2273d4a2c042c3f3e035be101"
+EXPECTED_MANIFEST_FINGERPRINT = "f1d9f9ed6438bbb3e8ff1400df7eac834a6bfe737a0788a5f88cb3fc7944cfc7"
+EXPECTED_ARCHIVE_FINGERPRINT = "30953c5c5790789db15c88c591d945c84d89d88cfd5e36a45e22047181e54196"
 CAPABILITY_FREE_INITIALIZERS = {
     "mr_lister/__init__.py",
     "mr_lister/cloud/__init__.py",

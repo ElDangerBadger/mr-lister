@@ -337,6 +337,10 @@ export const jobPageSchema = z.strictObject({
   next_cursor: z.string().regex(/^[A-Za-z0-9_-]{1,200}$/u).nullable(),
 });
 
+export const clearRecentJobsSchema = z.strictObject({
+  cleared_before: dateTime,
+});
+
 export const jobProgressSchema = z.strictObject({
   contract_version: contractVersion,
   job_id: publicId,
@@ -531,6 +535,7 @@ export type SellerReview = z.infer<typeof sellerReviewSchema>;
 export type SellerAction = (typeof sellerActions)[number];
 export type JobSummary = z.infer<typeof jobSummarySchema>;
 export type JobPage = z.infer<typeof jobPageSchema>;
+export type ClearRecentJobs = z.infer<typeof clearRecentJobsSchema>;
 export type JobProgress = z.infer<typeof jobProgressSchema>;
 export type UploadResponse = z.infer<typeof uploadResponseSchema>;
 export type UploadRecovery = z.infer<typeof uploadRecoverySchema>;

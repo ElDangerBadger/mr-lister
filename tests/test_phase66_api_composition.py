@@ -21,6 +21,7 @@ from mr_lister.cloud.preview import (
     AuthenticatedPreviewLinkIssuer,
     ExactVersionArtworkPreviewService,
 )
+from mr_lister.cloud.workspace_history import DynamoWorkspaceHistory, HistoryFilteredJobQuery
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
 from mr_lister.control.projection import SellerReviewProjectionService
 from mr_lister.control.service import SellerControlService
@@ -196,11 +197,14 @@ def test_query_composition_wires_only_owner_reads_projection_and_exact_preview()
     adapter = composition.compose_query_api_adapter(configuration, client_factory=factory)
 
     assert isinstance(adapter, ReviewQueryApiAdapter)
-    assert isinstance(adapter._store, DynamoDBSellerControlStore)
+    assert isinstance(adapter._store, HistoryFilteredJobQuery)
+    assert isinstance(adapter._store._store, DynamoDBSellerControlStore)
+    assert isinstance(adapter._store._history, DynamoWorkspaceHistory)
     assert isinstance(adapter._reviews, SellerReviewProjectionService)
     assert isinstance(adapter._reviews._preview_issuer, AuthenticatedPreviewLinkIssuer)
     assert isinstance(adapter._previews, ExactVersionArtworkPreviewService)
-    assert adapter._store._client is factory.dynamodb
+    assert adapter._store._store._client is factory.dynamodb
+    assert adapter._store._history._client is factory.dynamodb
     assert adapter._previews._presigner is factory.s3
     assert factory.calls == [("dynamodb", REGION), ("s3", REGION)]
     assert not factory.dynamodb.operations
@@ -217,6 +221,8 @@ def test_command_composition_constructs_no_s3_or_secret_dependency() -> None:
     assert isinstance(adapter._commands, SellerControlService)
     assert isinstance(adapter._commands.store, DynamoDBSellerControlStore)
     assert adapter._commands.store._client is factory.dynamodb
+    assert isinstance(adapter._history, DynamoWorkspaceHistory)
+    assert adapter._history._client is factory.dynamodb
     assert factory.calls == [("dynamodb", REGION)]
     assert not factory.dynamodb.operations
 

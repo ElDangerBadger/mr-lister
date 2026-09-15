@@ -92,7 +92,7 @@ describe("judge access in the existing application", () => {
     setup.session.set("test-session", 3600);
     renderJudge(setup);
     expect(screen.getByRole("heading", { name: "Let’s start with your artwork." })).toBeVisible();
-    await waitFor(() => expect(setup.api.listJobs).toHaveBeenCalledExactlyOnceWith());
+    await waitFor(() => expect(setup.api.listJobs).toHaveBeenCalledExactlyOnceWith(undefined));
     const resources = screen.getByRole("navigation", { name: "Judge resources" });
     expect(within(resources).getByRole("link", { name: "Review prepared example" })).toHaveAttribute("href", "/judge/jobs/job_prepared_example");
     expect(within(resources).getByRole("link", { name: "Download sample artwork" })).toHaveAttribute("download", "mr-lister-sample-artwork.png");
@@ -176,6 +176,7 @@ function dependencies(preparedJobId?: string) {
   const unused = () => vi.fn().mockRejectedValue(new Error("Unexpected private API call"));
   const api = {
     listJobs: vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "judge-jobs", etag: null }),
+    clearRecentJobs: unused(),
     getJob: unused(), getUpload: unused(), getReview: unused(), createUpload: unused(), authorizeUpload: unused(),
     completeUpload: unused(), cancelUpload: unused(), reviseListing: unused(), runAction: unused(), fetchArtwork: unused(),
   } satisfies ApiPort;

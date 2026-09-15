@@ -1561,6 +1561,10 @@
           }
         },
         "Events": {
+          "ClearRecentJobs": {
+            "Type": "HttpApi",
+            "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/jobs/recent/clear", "Method": "POST", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}
+          },
           "ReviseListing": {
             "Type": "HttpApi",
             "Properties": {"ApiId": {"Ref": "SellerHttpApi"}, "Path": "/v1/jobs/{job_id}/review/listing", "Method": "PUT", "PayloadFormatVersion": "2.0", "Auth": {"Authorizer": "SellerJwtAuthorizer", "AuthorizationScopes": ["mr-lister-api/seller"]}}

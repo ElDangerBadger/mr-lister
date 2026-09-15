@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   commandResponseSchema,
+  clearRecentJobsSchema,
   errorEnvelopeSchema,
   jobPageSchema,
   jobProgressSchema,
@@ -8,6 +9,7 @@ import {
   uploadResponseSchema,
   uploadRecoverySchema,
   type CommandResponse,
+  type ClearRecentJobs,
   type JobPage,
   type JobProgress,
   type SellerAction,
@@ -37,7 +39,8 @@ export interface ListingDraft {
 }
 
 export interface ApiPort {
-  listJobs(): Promise<DecodedResponse<JobPage>>;
+  listJobs(cursor?: string): Promise<DecodedResponse<JobPage>>;
+  clearRecentJobs(idempotencyKey: string): Promise<DecodedResponse<ClearRecentJobs>>;
   getJob(jobId: string): Promise<DecodedResponse<JobProgress>>;
   getUpload(uploadId: string): Promise<DecodedResponse<UploadRecovery>>;
   getReview(jobId: string): Promise<DecodedResponse<SellerReview>>;
@@ -81,8 +84,18 @@ export class BrowserApiClient implements ApiPort {
     private readonly fetcher: typeof fetch = window.fetch.bind(window),
   ) {}
 
-  listJobs(): Promise<DecodedResponse<JobPage>> {
-    return this.request("/v1/jobs?limit=25", { method: "GET" }, jobPageSchema);
+  listJobs(cursor?: string): Promise<DecodedResponse<JobPage>> {
+    if (cursor !== undefined && !/^[A-Za-z0-9_-]{1,200}$/u.test(cursor)) throw new Error("Invalid history cursor");
+    const query = cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+    return this.request(`/v1/jobs?limit=25${query}`, { method: "GET" }, jobPageSchema);
+  }
+
+  clearRecentJobs(idempotencyKey: string): Promise<DecodedResponse<ClearRecentJobs>> {
+    return this.request("/v1/jobs/recent/clear", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: "{}",
+    }, clearRecentJobsSchema);
   }
 
   getJob(jobId: string): Promise<DecodedResponse<JobProgress>> {

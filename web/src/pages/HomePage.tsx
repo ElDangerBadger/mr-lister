@@ -9,6 +9,7 @@ import { WorkflowSteps } from "../components/WorkflowSteps";
 import { ActivityStatus } from "../components/ActivityStatus";
 import { batchItemStatus, jobProgressLabel, useBatchWorkspace } from "../navigation/BatchWorkspace";
 import { WorkspaceLink } from "../navigation/WorkspaceNavigation";
+import { useRecentJobs } from "../navigation/use-recent-jobs";
 import {
   MAX_BATCH_FILES,
   type BatchUploadItemState,
@@ -38,23 +39,7 @@ export function HomePage() {
   const uploadLocked = preIntentBusy || batchBusy || batchFinished;
   const showSelection = selectedFiles.length > 0 && (upload.batch.phase === "idle" || upload.batch.phase === "error");
   const showUploadQueue = showSelection || upload.batch.items.length > 0;
-  const [jobs, setJobs] = useState<JobSummary[]>([]);
-  const [jobsError, setJobsError] = useState<string | null>(null);
-  const [hideRecentJobs, setHideRecentJobs] = useState(false);
-
-  useEffect(() => {
-    if (status !== "authenticated") return;
-    let active = true;
-    void api.listJobs().then((response) => {
-      if (active) {
-        setJobs(response.value.jobs);
-        setJobsError(null);
-      }
-    }).catch((error: unknown) => {
-      if (active) setJobsError(error instanceof Error ? error.message : "Recent work is unavailable.");
-    });
-    return () => { active = false; };
-  }, [api, status, batchFinished]);
+  const recent = useRecentJobs(api, auth.session, status, batchFinished);
 
   useEffect(() => {
     if (upload.batch.phase === "idle"
@@ -89,15 +74,6 @@ export function HomePage() {
   };
 
   const fileDrag = (event: DragEvent<HTMLElement>) => event.dataTransfer.types.includes("Files");
-  const visibleJobs = hideRecentJobs ? [] : jobs;
-
-  const clearRecentJobs = () => {
-    setHideRecentJobs(true);
-  };
-
-  const restoreRecentJobs = () => {
-    setHideRecentJobs(false);
-  };
 
   if (status === "anonymous") return judgeAccess === undefined ? <LandingPage /> : <JudgeAccessPage />;
 
@@ -252,32 +228,29 @@ export function HomePage() {
             <h2 id="recent-heading">Your listings</h2>
           </div>
           <div className="section-heading-actions">
-            <span className="count-chip">{visibleJobs.length}</span>
-            {visibleJobs.length > 0 && (
-              <button className="button button--quiet" type="button" onClick={clearRecentJobs}>
-                Clear recent list
-              </button>
-            )}
-            {hideRecentJobs && (
-              <button className="button button--quiet" type="button" onClick={restoreRecentJobs}>
-                Show recent list
+            <span className="count-chip">{recent.jobs.length}</span>
+            {(recent.jobs.length > 0 || recent.clearing || recent.clearError !== null) && (
+              <button className="button button--quiet" type="button" disabled={recent.clearing} onClick={() => { void recent.clear(); }}>
+                {recent.clearing ? "Clearing…" : recent.clearError !== null ? "Retry clearing list" : "Clear recent list"}
               </button>
             )}
           </div>
         </div>
-        {jobsError !== null && <p className="alert alert--error" role="alert">{jobsError}</p>}
-        {visibleJobs.length === 0 && jobsError === null ? (
+        {recent.clearError !== null && <p className="alert alert--error" role="alert">{recent.clearError}</p>}
+        {recent.error !== null && <div className="alert alert--error" role="alert">
+          <p>{recent.error}</p>
+          <button className="button button--quiet" type="button" disabled={recent.loading} onClick={() => { void recent.load(); }}>Retry loading listings</button>
+        </div>}
+        {recent.cleared && <p role="status">Recent list cleared. New uploads will appear here.</p>}
+        {recent.loading && <p role="status">Loading your listings…</p>}
+        {recent.jobs.length === 0 && recent.error === null && !recent.loading && !recent.cleared ? (
           <div className="empty-state">
-            <p>{hideRecentJobs ? "Recent list cleared for now." : "No listings yet."}</p>
-            <small>
-              {hideRecentJobs
-                ? "This only hides the current view. Jobs, provider products, publication records, and audit history are preserved."
-                : "Your first upload will appear here."}
-            </small>
+            <p>{recent.nextCursor === null ? "No listings yet." : "More history is available."}</p>
+            <small>{recent.nextCursor === null ? "Your first upload will appear here." : "Continue loading to find your remaining listings."}</small>
           </div>
         ) : (
           <ul className="job-list">
-            {visibleJobs.map((job) => (
+            {recent.jobs.map((job) => (
               <li key={job.job_id}>
                 <WorkspaceLink to={`/jobs/${job.job_id}`} aria-label={`Open listing: ${workspace.filenameByJob[job.job_id] ?? job.job_id}`}>
                   <span className="job-list-label"><strong>{workspace.filenameByJob[job.job_id] ?? `Listing ${job.job_id.slice(-8)}`}</strong><small>Updated {formatDate(job.updated_at)}</small></span>
@@ -289,6 +262,9 @@ export function HomePage() {
             ))}
           </ul>
         )}
+        {recent.nextCursor !== null && <button className="button button--quiet" type="button" disabled={recent.loading || recent.clearing} onClick={() => { void recent.load(recent.nextCursor ?? undefined); }}>
+          Load more listings
+        </button>}
       </section>
     </div>
   );

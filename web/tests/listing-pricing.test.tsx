@@ -486,6 +486,7 @@ function renderReview(review: SellerReview, overrides: Partial<ApiPort> = {}, ju
   const never = () => Promise.reject(new Error("Unexpected pricing test request"));
   const api: ApiPort = {
     listJobs: vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-pricing-jobs", etag: null }),
+    clearRecentJobs: never,
     getJob: vi.fn().mockResolvedValue(progressResponse(review)), getUpload: never,
     getReview: vi.fn().mockResolvedValue(reviewResponse(review)), createUpload: never, authorizeUpload: never,
     completeUpload: never, cancelUpload: never, reviseListing: never, runAction: never,

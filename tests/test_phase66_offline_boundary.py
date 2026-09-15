@@ -571,6 +571,29 @@ def test_phase66_owner_boundary_matrix_covers_every_protected_cloud_route() -> N
     covered = {route for route, _kind in _TARGETED_ROUTE_KINDS} | {
         "POST /v1/uploads",
         "GET /v1/jobs",
+        "POST /v1/jobs/recent/clear",
     }
 
     assert covered == PROTECTED_ROUTE_KEYS
+
+
+def test_history_clear_rejects_foreign_and_unknown_owner_targets_without_writes() -> None:
+    from tests.test_workspace_history import AtomicDynamo, clear_event, history
+
+    client = AtomicDynamo()
+    commands = _OwnerClosedCommands()
+    adapter = SellerCommandApiAdapter(
+        claims_policy=cloud_api.POLICY, commands=commands, history=history(client)
+    )
+
+    def request(owner_id: str) -> dict[str, object]:
+        import json
+
+        return adapter.handle(clear_event(body=json.dumps({"owner_id": owner_id})))
+
+    foreign = request(cloud_api.OTHER_OWNER)
+    unknown = request(_UNKNOWN_OWNER)
+    assert foreign == unknown
+    assert foreign["statusCode"] == 422
+    assert client.calls == []
+    assert commands.writes == []
