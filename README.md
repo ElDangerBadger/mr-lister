@@ -138,6 +138,9 @@ tracked. See
 
 ## Target submission architecture
 
+Download the [Mermaid architecture diagram](docs/architecture/Mr-Lister-Architecture.mmd)
+or the [simplified project file tree](docs/architecture/Mr-Lister-File-Tree.txt).
+
 ```mermaid
 flowchart TD
     U["Seller"] --> UI["Review interface"]

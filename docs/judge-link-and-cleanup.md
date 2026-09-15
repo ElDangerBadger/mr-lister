@@ -10,8 +10,12 @@ Controlled live cleanup acceptance **passed**. The server deleted exactly one
 explicitly selected judge product after its fixed 30-minute deadline, with no
 reported failures. Exact Printify absence and the same Etsy listing's unavailable
 page were independently verified against retained before/after evidence. The second
-confirmed judge publication was registered without deletion and retained its original
-30-minute deadline, September 14 at 3:07:37 PM PDT.
+confirmed judge publication retained its original 30-minute deadline, September 14
+at 3:07:37 PM PDT, and was automatically removed at 3:08:31 PM PDT on the scheduled
+worker's first eligible run. Its Etsy page was independently verified unavailable.
+The remaining historical test, excluded because its publication outcome was unknown,
+was removed through a separately approved exact-product cleanup. Its Printify absence
+and Etsy unavailability were verified without changing the historical job records.
 
 The one-minute cleanup schedule is **enabled and verified**. The judge runtime's
 30-minute removal notice is published and visible; the normal site's runtime

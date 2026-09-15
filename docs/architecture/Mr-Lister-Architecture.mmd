@@ -1,0 +1,77 @@
+flowchart LR
+    subgraph Experience["Mr. Lister · MassSkutiny"]
+        UI["React / TypeScript workspace<br/>Upload → Review → Approve → Publish"]
+        EDGE["CloudFront<br/>Private S3 web assets"]
+        AUTH["Amazon Cognito<br/>Seller login + MFA"]
+        JUDGE["Judge session broker · Lambda<br/>Invitation → dedicated judge identity"]
+        UI --- EDGE
+        AUTH -. "Access token" .-> UI
+        JUDGE -. "Judge session" .-> UI
+    end
+
+    subgraph AWS["AWS backend"]
+        API["API Gateway + Lambda<br/>Authentication, ownership, seller commands"]
+        S3[("Private S3<br/>Original artwork + artifacts")]
+        DB[("DynamoDB<br/>Jobs, reviews, approvals,<br/>publication evidence")]
+        DISPATCH["DynamoDB Streams<br/>Dispatcher Lambda"]
+        FLOW["Step Functions + Lambda<br/>Separate preparation and publication flows"]
+
+        subgraph AI["Amazon Bedrock AgentCore Runtime"]
+            STRANDS["Strands Agents SDK<br/>Bounded agent loop + job-scoped tool"]
+            MODELS["Amazon Bedrock<br/>Nova 2 Lite controller<br/>Gemma 3 27B artwork + listing intelligence"]
+            STRANDS <--> MODELS
+        end
+
+        DRAFT["Draft-sync Lambda<br/>Create once; saved edits update same product"]
+        PUBLISH["Publication Lambda<br/>Exact-version approval + explicit confirmation<br/>One publish request; GET verification"]
+        SECRETS[("Secrets Manager<br/>Provider + judge credentials")]
+        LOGS["CloudWatch<br/>Logs + alarms"]
+
+        API --> DB
+        DB --> DISPATCH --> FLOW
+        FLOW <--> STRANDS
+        S3 --> STRANDS
+        FLOW --> DRAFT
+        FLOW --> PUBLISH
+        SECRETS -.-> DRAFT
+        SECRETS -.-> PUBLISH
+        FLOW -.-> LOGS
+    end
+
+    UI -->|"Submit, save edits, approve, confirm publish"| API
+    API -. "Signed upload authorization" .-> UI
+    UI -->|"Direct artwork upload"| S3
+    API -. "Progress, previews, review, live listing status" .-> UI
+    SECRETS -.-> JUDGE
+    JUDGE -. "Cognito session exchange" .-> AUTH
+
+    subgraph Commerce["Connected live store"]
+        PRINTIFY["Printify<br/>Unpublished product, mockups,<br/>variants + pricing"]
+        ETSY["Etsy storefront<br/>Live listing"]
+    end
+
+    DRAFT <-->|"Prepare draft + synchronize saved changes"| PRINTIFY
+    PUBLISH -->|"Publish only after approval + confirmation"| PRINTIFY
+    PRINTIFY -->|"Connected sales-channel publication"| ETSY
+
+    subgraph Cleanup["Automatic judge cleanup"]
+        TIMER["EventBridge<br/>Every minute"]
+        CLEAN["Cleanup Lambda<br/>30 minutes after confirmed publication<br/>Exact judge-owned products only"]
+        TIMER --> CLEAN
+    end
+    DB -. "Verified publication evidence" .-> CLEAN
+    SECRETS -.-> CLEAN
+    CLEAN -->|"Delete exact eligible product;<br/>connected Etsy listing removal follows"| PRINTIFY
+
+    NOTE["Submit creates the Printify draft BEFORE approval.<br/>Approve records the exact reviewed version.<br/>Publish + confirm sends it to Etsy.<br/>Cleanup excludes owner listings and unpublished drafts."]
+
+    classDef app fill:#e8f2ec,stroke:#286b53,color:#183c31;
+    classDef ai fill:#eaf0fa,stroke:#5175a0,color:#203a5b;
+    classDef commerce fill:#fcf1dc,stroke:#a68043,color:#604824;
+    classDef store fill:#f3f6f2,stroke:#8da594,color:#233e2d;
+    classDef note fill:#fffdf4,stroke:#c4b986,color:#474132;
+    class UI,EDGE,AUTH,JUDGE,API,DISPATCH,FLOW,DRAFT,PUBLISH,TIMER,CLEAN app;
+    class STRANDS,MODELS ai;
+    class PRINTIFY,ETSY commerce;
+    class DB,S3,SECRETS,LOGS store;
+    class NOTE note;
