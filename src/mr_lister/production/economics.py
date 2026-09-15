@@ -55,8 +55,9 @@ def estimate_etsy_us_standard_proceeds(
     shipping: StandardUsShippingEvidence,
     calculated_at: datetime,
     buyer_shipping_cents: int = 0,
+    free_shipping: bool | None = None,
 ) -> EtsyUsStandardEstimate:
-    """Join exact variant sets and calculate the frozen US/USD estimate."""
+    """Estimate one US item; standard shipping is assumed charged to the buyer when off."""
 
     if not _is_aware(calculated_at):
         raise EconomicsEvidenceError("Calculation timestamp must be timezone-aware")
@@ -64,6 +65,8 @@ def estimate_etsy_us_standard_proceeds(
         raise EconomicsEvidenceError("Buyer shipping must be integer cents")
     if buyer_shipping_cents != 0:
         raise EconomicsEvidenceError("etsy-us-standard-v1 requires buyer-facing free shipping")
+    if free_shipping is not None and type(free_shipping) is not bool:
+        raise EconomicsEvidenceError("Free shipping must be a boolean")
     if product_costs.observed_at > calculated_at or shipping.observed_at > calculated_at:
         raise EconomicsEvidenceError("Provider evidence cannot come from the future")
 
@@ -86,7 +89,9 @@ def estimate_etsy_us_standard_proceeds(
     for variant_id in sorted(costs_by_id):
         cost = costs_by_id[variant_id]
         delivery = shipping_by_id[variant_id]
-        fee_basis_cents = cost.retail_price_cents + buyer_shipping_cents
+        # This is an estimate assumption, not observed Etsy checkout shipping revenue.
+        estimated_buyer_shipping = delivery.first_item_cents if free_shipping is False else 0
+        fee_basis_cents = cost.retail_price_cents + estimated_buyer_shipping
         transaction_fee = percentage_fee_half_up_cents(
             basis_cents=fee_basis_cents,
             basis_points=policy.transaction_fee_basis_points,
@@ -99,7 +104,7 @@ def estimate_etsy_us_standard_proceeds(
         marketplace_fees = policy.listing_fee_cents + transaction_fee + payment_fee
         proceeds = (
             cost.retail_price_cents
-            + buyer_shipping_cents
+            + estimated_buyer_shipping
             - cost.production_cost_cents
             - delivery.first_item_cents
             - marketplace_fees
@@ -108,6 +113,7 @@ def estimate_etsy_us_standard_proceeds(
             VariantProceedsEvidence(
                 variant_id=variant_id,
                 retail_price_cents=cost.retail_price_cents,
+                buyer_shipping_cents=estimated_buyer_shipping,
                 production_cost_cents=cost.production_cost_cents,
                 production_shipping_cents=delivery.first_item_cents,
                 shipping_plan_id=delivery.shipping_plan_id,

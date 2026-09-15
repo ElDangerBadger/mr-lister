@@ -19,6 +19,14 @@ def canonical_fingerprint(value: BaseModel | Mapping[str, Any]) -> str:
     return sha256(encoded).hexdigest()
 
 
+def review_content_fingerprint(review: BaseModel) -> str:
+    """Bind all immutable review fields while preserving legacy absent-pricing hashes."""
+
+    payload = review.model_dump(mode="json", exclude={"fingerprint"})
+    payload["created_at"] = review.created_at.isoformat()
+    return canonical_fingerprint(payload)
+
+
 _PRODUCT_SYNC_FINGERPRINT_FIELDS = frozenset(
     {
         "job_id",

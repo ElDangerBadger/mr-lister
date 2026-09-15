@@ -15,6 +15,7 @@ from mr_lister.control.fingerprints import (
     agent_preparation_evidence_fingerprint,
     publication_terminal_summary_fingerprint,
 )
+from mr_lister.control.pricing import ReviewPricing
 
 CONTROL_CONTRACT_VERSION = "2.0.0"
 ControlContractVersion = Literal["2.0.0"]
@@ -493,6 +494,8 @@ class ReviewContent(ControlModel):
     validation_issue_codes: tuple[StableCode, ...] = ()
     artwork_analysis_fingerprint: Fingerprint
     product_profile_fingerprint: Fingerprint
+    # Absence preserves historical review fingerprints and the pinned profile defaults.
+    pricing: ReviewPricing | None = Field(default=None, exclude_if=lambda value: value is None)
     created_at: datetime
 
     @model_validator(mode="after")

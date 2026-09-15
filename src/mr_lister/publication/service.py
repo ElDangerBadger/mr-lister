@@ -21,6 +21,7 @@ from mr_lister.control.fingerprints import (
 )
 from mr_lister.control.fingerprints import (
     product_sync_record_fingerprint,
+    review_content_fingerprint,
     review_etag,
 )
 from mr_lister.control.models import (
@@ -30,6 +31,7 @@ from mr_lister.control.models import (
     ProductSyncRecord,
     ReviewContent,
 )
+from mr_lister.control.pricing import effective_review_pricing, retail_price_for_variant
 from mr_lister.publication.commands import (
     PublicationCommandReceipt,
     PublicationCommandType,
@@ -371,6 +373,10 @@ class PublicationRequestService:
 
         estimate = authority.pricing_evidence.estimate
         sync = authority.product_sync
+        try:
+            pricing = effective_review_pricing(authority.review.pricing, profile)
+        except ValueError:
+            raise _authority_error("The reviewed pricing does not match the product") from None
         expected_variant_pairs = {
             (color, size) for color in profile.colors for size in profile.sizes
         }
@@ -382,11 +388,13 @@ class PublicationRequestService:
             estimate.blueprint_id != profile.blueprint_id
             or estimate.print_provider_id != profile.print_provider_id
             or any(
-                variant.retail_price_cents != profile.retail_price_cents
+                variant.retail_price_cents
+                != retail_price_for_variant(pricing, color=variant.color, size=variant.size)
                 for variant in sync.variants
             )
             or any(
-                variant.buyer_shipping_cents != profile.buyer_shipping_cents
+                variant.buyer_shipping_cents
+                != (0 if pricing.free_shipping else variant.production_shipping_cents)
                 for variant in estimate.variants
             )
             or (
@@ -738,25 +746,7 @@ class PublicationRequestService:
 
     @staticmethod
     def _review_fingerprint(review: ReviewContent) -> str:
-        return control_fingerprint(
-            {
-                "contract_version": review.contract_version,
-                "job_id": review.job_id,
-                "review_version": review.review_version,
-                "actor": review.actor.value,
-                "title": review.title,
-                "description": review.description,
-                "tags": review.tags,
-                "audience": review.audience,
-                "title_rationale": review.title_rationale,
-                "tag_rationale": review.tag_rationale,
-                "validation_passed": review.validation_passed,
-                "validation_issue_codes": review.validation_issue_codes,
-                "artwork_analysis_fingerprint": review.artwork_analysis_fingerprint,
-                "product_profile_fingerprint": review.product_profile_fingerprint,
-                "created_at": review.created_at.isoformat(),
-            }
-        )
+        return review_content_fingerprint(review)
 
     @staticmethod
     def _stable_id(prefix: str, *parts: str) -> str:

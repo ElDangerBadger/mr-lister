@@ -8,6 +8,7 @@ from typing import Annotated
 from pydantic import Field, StringConstraints
 
 from mr_lister.control.models import ControlModel
+from mr_lister.control.pricing import ReviewPricing
 
 SafeId = Annotated[
     str,
@@ -47,6 +48,7 @@ class ListingRevision(ControlModel):
     title: str = Field(min_length=1, max_length=140)
     description: str = Field(min_length=1, max_length=100_000)
     tags: tuple[str, ...] = Field(min_length=13, max_length=13)
+    pricing: ReviewPricing | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ReviseListingCommand(ReviewSensitiveCommand):

@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from mr_lister.control.pricing import ReviewPricing
 from mr_lister.publication.contract import PublicationPermitState, PublicationState
 from mr_lister.publication.errors import (
     PublicationConflictError,
@@ -114,8 +115,9 @@ class Harness:
         short_pricing_window: bool = False,
         capture_commits: bool = False,
         eligibility: object | None = None,
+        review_pricing: ReviewPricing | None = None,
     ) -> None:
-        source, exact = _authority()
+        source, exact = _authority(review_pricing=review_pricing)
         if short_pricing_window:
             request_at = source.pricing_snapshot.fresh_until - timedelta(minutes=1)
             request_store = AuthorityStore(source)
@@ -460,6 +462,18 @@ def test_pristine_dispatch_normalizes_same_records_and_replay_is_exact() -> None
     assert current.work.status is PublicationExecutionWorkStatus.DISPATCHED
     assert current.work.attempt_count == 1
     assert current.snapshot.verification_deadline == initial.snapshot.verification_deadline
+
+
+@pytest.mark.parametrize("free_shipping", [True, False])
+def test_provider_authority_reconstructs_reviewed_price_and_shipping(free_shipping) -> None:
+    harness = Harness(
+        review_pricing=ReviewPricing(retail_price_cents=3499, free_shipping=free_shipping)
+    )
+    harness.dispatch_and_reconstruct()
+    provider = harness.authority.provider_authority
+    assert provider is not None
+    assert provider.expected_variant_economics[0].retail_price_cents == 3499
+    assert provider.expected_free_shipping is free_shipping
 
 
 def test_provider_authority_is_required_and_reconstructed_from_phase6_records() -> None:

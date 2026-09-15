@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from pydantic import Field, StringConstraints, model_validator
 
 from mr_lister.control.models import ControlModel
+from mr_lister.control.pricing import ReviewPricing
 
 PublicId = Annotated[
     str,
@@ -181,6 +182,8 @@ class ProductPolicyProjection(ControlModel):
     placements: tuple[PlacementPresentation, ...] = Field(min_length=1, max_length=10)
     retail_price_cents: int = Field(gt=0)
     buyer_shipping_cents: int = Field(ge=0)
+    pricing: ReviewPricing | None = None
+    pricing_saved: bool = False
     currency: Literal["USD"] = "USD"
 
 

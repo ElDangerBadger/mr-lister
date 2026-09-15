@@ -240,6 +240,10 @@ def test_exact_versioned_source_and_profile_produce_one_inspection_and_draft() -
     assert drafted_analysis is intelligence.analysis
     assert observation.source_artifact_fingerprint == source.fingerprint
     assert observation.product_profile_fingerprint == canonical_fingerprint(profile)
+    assert observation.pricing is not None
+    assert observation.pricing.retail_price_cents == profile.retail_price_cents
+    assert observation.pricing.variant_prices == ()
+    assert observation.pricing.free_shipping is True
     assert observation.artwork_analysis == intelligence.analysis
     assert observation.listing == intelligence.listing
 

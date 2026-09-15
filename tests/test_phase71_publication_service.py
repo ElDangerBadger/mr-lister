@@ -31,6 +31,7 @@ from mr_lister.control.models import (
     ReviewDecisionRecord,
     SourceArtifactRecord,
 )
+from mr_lister.control.pricing import ReviewPricing, retail_price_for_variant
 from mr_lister.control.source_artwork import source_artifact_fingerprint
 from mr_lister.production.economics import estimate_etsy_us_standard_proceeds
 from mr_lister.production.printify_shipping import parse_standard_us_shipping
@@ -121,6 +122,7 @@ def _authority(
     variant_color: str = "Black",
     variant_size: str = "S",
     variant_group: str = "small",
+    review_pricing: ReviewPricing | None = None,
 ) -> tuple[PublicationRequestAuthority, ExactReviewProductProfile]:
     selected_profile = profile or _profile()
     profile_fingerprint = canonical_fingerprint(selected_profile)
@@ -163,6 +165,13 @@ def _authority(
         "product_profile_fingerprint": profile_fingerprint,
         "created_at": REVIEW_AT.isoformat(),
     }
+    if review_pricing is not None:
+        review_values["pricing"] = review_pricing.model_dump(mode="json")
+    retail = (
+        retail_price_for_variant(review_pricing, color=variant_color, size=variant_size)
+        if review_pricing is not None
+        else 2999
+    )
     review = ReviewContent(
         **{**review_values, "created_at": REVIEW_AT},
         fingerprint=_review_fingerprint(review_values),
@@ -190,7 +199,7 @@ def _authority(
                 color=variant_color,
                 size=variant_size,
                 placement_group_id=variant_group,
-                retail_price_cents=2999,
+                retail_price_cents=retail,
                 production_cost_cents=1200,
             ),
         ),
@@ -203,7 +212,7 @@ def _authority(
         variants=(
             ProductVariantCostEvidence(
                 variant_id=1000,
-                retail_price_cents=2999,
+                retail_price_cents=retail,
                 production_cost_cents=1200,
             ),
         ),
@@ -237,6 +246,7 @@ def _authority(
         product_costs=product_costs,
         shipping=shipping,
         calculated_at=ECONOMICS_AT,
+        free_shipping=review_pricing.free_shipping if review_pricing is not None else None,
     )
     pricing = PricingSnapshot(
         snapshot_id="pricing_phase71",
@@ -661,6 +671,43 @@ def test_expired_pricing_is_rejected_at_the_exact_request_instant() -> None:
         service.request_publication(_command(authority))
 
     assert captured.value.code is PublicationErrorCode.PRICING_NOT_FRESH
+
+
+@pytest.mark.parametrize("free_shipping", [True, False])
+def test_publication_accepts_reviewed_prices_and_shipping_without_changing_profile(
+    free_shipping,
+) -> None:
+    authority, exact_profile = _authority(
+        review_pricing=ReviewPricing(
+            retail_price_cents=3499,
+            free_shipping=free_shipping,
+            variant_prices=({"color": "Black", "size": "S", "retail_price_cents": 3999},),
+        )
+    )
+    store = InMemoryPublicationStore((authority,))
+    service, _profiles, _clock = _service(store, exact_profile)
+    response = service.request_publication(_command(authority))
+    assert response.publication_state is PublicationState.PUBLICATION_REQUESTED
+    assert exact_profile.profile.retail_price_cents == 2999
+    assert authority.product_sync.variants[0].retail_price_cents == 3999
+    assert authority.pricing_evidence.estimate.variants[0].buyer_shipping_cents == (
+        0 if free_shipping else 399
+    )
+
+
+def test_publication_rejects_changed_review_shipping_before_request() -> None:
+    from dataclasses import replace
+
+    authority, exact_profile = _authority(
+        review_pricing=ReviewPricing(retail_price_cents=3499, free_shipping=False)
+    )
+    changed = authority.review.model_copy(
+        update={"pricing": authority.review.pricing.model_copy(update={"free_shipping": True})}
+    )
+    forged = replace(authority, review=changed)
+    service, _profiles, _clock = _service(AuthorityStore(forged), exact_profile)
+    with pytest.raises(PublicationAuthorityError):
+        service.request_publication(_command(forged))
 
 
 def test_profile_must_be_exact_draft_safe_and_release_eligible() -> None:

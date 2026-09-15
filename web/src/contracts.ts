@@ -156,6 +156,22 @@ const placementSchema = z.strictObject({
   angle: z.number().int().min(-360).max(360),
 });
 
+export const listingPricingSchema = z.strictObject({
+  retail_price_cents: z.number().int().min(1).max(999_999),
+  variant_prices: z.array(z.strictObject({
+    color: publicText,
+    size: publicText,
+    retail_price_cents: z.number().int().min(1).max(999_999),
+  })).max(900),
+  free_shipping: z.boolean(),
+}).superRefine((value, context) => {
+  const pairs = value.variant_prices.map((item) => JSON.stringify([item.color, item.size]));
+  if (new Set(pairs).size !== pairs.length) {
+    context.addIssue({ code: "custom", message: "Variant prices must be unique" });
+  }
+});
+export type ListingPricing = z.infer<typeof listingPricingSchema>;
+
 const productPolicySchema = z.strictObject({
   contract_version: contractVersion,
   product_name: publicText,
@@ -166,6 +182,13 @@ const productPolicySchema = z.strictObject({
   retail_price_cents: z.number().int().positive(),
   buyer_shipping_cents: z.number().int().nonnegative(),
   currency: z.literal("USD"),
+  // Older API deployments have no editable-pricing capability.
+  pricing: listingPricingSchema.optional(),
+  pricing_saved: z.boolean().optional(),
+}).superRefine((value, context) => {
+  if (value.pricing?.variant_prices.some((item) => !value.colors.includes(item.color) || !value.sizes.includes(item.size))) {
+    context.addIssue({ code: "custom", message: "Variant prices must belong to this product" });
+  }
 });
 
 const synchronizationSchema = z.strictObject({

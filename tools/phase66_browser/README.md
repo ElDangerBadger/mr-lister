@@ -2,7 +2,7 @@
 
 This harness runs the exact `web/dist` production bundle through Playwright CLI without adding
 `@playwright/test` to the application. A local Python standard-library server owns deterministic
-API state, authority headers, delayed responses, and static files. Six compact CLI flow files
+API state, authority headers, delayed responses, and static files. Seven compact CLI flow files
 exercise browser behavior; a generic context route only maps production-like HTTPS origins to the
 loopback server.
 
@@ -11,6 +11,11 @@ system-theme changes and the matching decoded logo, and captures desktop/mobile 
 The real popup callback opens the existing authenticated upload home; signing out returns
 to the official landing page with the same display preference. Hosted sign-in is fulfilled
 entirely by the local fixture, and anonymous visitors must not read private APIs.
+
+Pricing coverage edits the item-wide price, replaces and restores variant overrides, toggles
+free shipping, and checks the exact authority-bound save payload and subsequent readback.
+Light, dark, and mobile screenshots cover the controls. The save response is a fixture;
+this verifies browser behavior, not a live Printify update.
 
 Upload-selection coverage sets local PNG fixtures on the multiple-file input and checks
 append, remove, ordering, limits, and desktop/mobile geometry without submitting uploads.

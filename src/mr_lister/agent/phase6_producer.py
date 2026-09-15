@@ -16,6 +16,7 @@ from mr_lister.agent.phase6 import PreparedReviewObservation
 from mr_lister.contracts import ArtworkAnalysis, ListingIntelligence, ProductProfile
 from mr_lister.control.fingerprints import canonical_fingerprint
 from mr_lister.control.models import SourceArtifactRecord
+from mr_lister.control.pricing import effective_review_pricing
 from mr_lister.control.source_artwork import (
     Phase6SourceArtworkError,
     validate_source_artifact_authority,
@@ -96,7 +97,8 @@ class PinnedSourcePreparedReviewProducer:
         source = self._source(job_id)
         content = self._source_content(source)
         artwork = self._validated_artwork(source, content)
-        profile_fingerprint = self._profile_fingerprint(source)
+        profile = self._profile(source)
+        pricing = effective_review_pricing(None, profile)
         with latency_span(
             "artwork_listing_intelligence",
             component="bedrock_intelligence",
@@ -106,7 +108,8 @@ class PinnedSourcePreparedReviewProducer:
             source_artifact_fingerprint=source.fingerprint,
             artwork_analysis=analysis,
             listing=listing,
-            product_profile_fingerprint=profile_fingerprint,
+            product_profile_fingerprint=source.product_profile_fingerprint,
+            pricing=pricing,
         )
 
     def _source(self, job_id: str) -> SourceArtifactRecord:
@@ -187,7 +190,7 @@ class PinnedSourcePreparedReviewProducer:
             raise PreparedReviewProducerError("Pinned source integrity check failed")
         return artwork
 
-    def _profile_fingerprint(self, source: SourceArtifactRecord) -> str:
+    def _profile(self, source: SourceArtifactRecord) -> ProductProfile:
         try:
             exact = self._profiles.get_exact(
                 profile_id=source.product_profile_id,
@@ -207,7 +210,7 @@ class PinnedSourcePreparedReviewProducer:
             or computed_fingerprint != source.product_profile_fingerprint
         ):
             raise PreparedReviewProducerError("Pinned product profile authority has drifted")
-        return computed_fingerprint
+        return profile
 
     def _run_intelligence(
         self,

@@ -33,6 +33,7 @@ from mr_lister.control.models import (
     WorkRequestStatus,
     WorkType,
 )
+from mr_lister.control.pricing import effective_review_pricing, retail_price_for_variant
 from mr_lister.control.store import SellerControlStore
 from mr_lister.control.worker_commands import (
     BeginProviderUploadCommand,
@@ -394,6 +395,7 @@ class Phase6ProductMachineWorker:
                 evidence=evidence,
                 attempt=attempt,
                 resolved=authority.resolved,
+                draft=draft,
             )
         except (PrintifyCreateOutcomeUnknown, PrintifyUpdateOutcomeUnknown):
             code = "PROVIDER_CONNECTION_LOST"
@@ -468,8 +470,14 @@ class Phase6ProductMachineWorker:
             raise InvalidControlStateError("Economics refresh changed product sync authority")
         variant_ids = tuple(item.variant_id for item in sync.variants)
         resolved_by_id = {item.variant_id: item for item in authority.resolved.variants}
+        pricing = effective_review_pricing(authority.review.pricing, authority.profile)
         if set(resolved_by_id) != set(variant_ids) or any(
-            resolved_by_id[item.variant_id].retail_price_cents != item.retail_price_cents
+            retail_price_for_variant(
+                pricing,
+                color=resolved_by_id[item.variant_id].color,
+                size=resolved_by_id[item.variant_id].size,
+            )
+            != item.retail_price_cents
             for item in sync.variants
         ):
             raise InvalidControlStateError(
@@ -518,6 +526,7 @@ class Phase6ProductMachineWorker:
                 shipping=shipping,
                 calculated_at=self._now(),
                 buyer_shipping_cents=authority.profile.buyer_shipping_cents,
+                free_shipping=pricing.free_shipping,
             )
         latest = self._store.get_job(job.job_id)
         response = self._control.record_pricing_success(
@@ -575,6 +584,7 @@ class Phase6ProductMachineWorker:
                         evidence=result.evidence,
                         attempt=attempt,
                         resolved=authority.resolved,
+                        draft=target,
                     )
                 elif result.outcome is CreateReconciliationOutcome.ZERO:
                     outcome = ReconciliationOutcome.NO_MATCH
@@ -602,6 +612,7 @@ class Phase6ProductMachineWorker:
                         evidence=result.evidence,
                         attempt=attempt,
                         resolved=authority.resolved,
+                        draft=target,
                     )
                 elif result.outcome is UpdateReconciliationOutcome.PRIOR_PAYLOAD:
                     outcome = ReconciliationOutcome.PRIOR_MATCH
@@ -775,6 +786,7 @@ class Phase6ProductMachineWorker:
             image_id=image_id,
             artwork_width=uploaded.width,
             artwork_height=uploaded.height,
+            pricing=review.pricing,
         )
 
     def _uploaded_artwork(
@@ -813,6 +825,7 @@ class Phase6ProductMachineWorker:
         evidence: DraftSynchronizationEvidence,
         attempt: ProviderWriteAttempt,
         resolved: PrintifyResolvedProfile,
+        draft: CanonicalPrintifyDraft,
     ) -> ProductSyncObservation:
         if evidence.request_fingerprint != attempt.target_payload_fingerprint:
             raise InvalidControlStateError("Provider evidence does not match the claimed target")
@@ -822,10 +835,14 @@ class Phase6ProductMachineWorker:
             raise InvalidControlStateError("Provider evidence changed immutable product identity")
         evidence_by_id = {item.variant_id: item for item in evidence.variants}
         resolved_by_id = {item.variant_id: item for item in resolved.variants}
-        if set(evidence_by_id) != set(resolved_by_id) or any(
-            evidence_by_id[variant_id].retail_price_cents
-            != resolved_by_id[variant_id].retail_price_cents
-            for variant_id in resolved_by_id
+        expected_prices = {item.id: item.price for item in draft.variants}
+        if (
+            set(evidence_by_id) != set(resolved_by_id)
+            or set(expected_prices) != set(resolved_by_id)
+            or any(
+                evidence_by_id[variant_id].retail_price_cents != expected_prices[variant_id]
+                for variant_id in resolved_by_id
+            )
         ):
             raise InvalidControlStateError(
                 "Provider evidence changed the exact configured variant identity"

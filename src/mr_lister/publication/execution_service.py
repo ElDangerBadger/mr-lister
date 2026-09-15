@@ -21,6 +21,7 @@ from mr_lister.control.fingerprints import (
     publication_terminal_summary_fingerprint,
 )
 from mr_lister.control.models import ControlJobRecord
+from mr_lister.control.pricing import effective_review_pricing, retail_price_for_variant
 from mr_lister.publication.contract import PublicationPermitState, PublicationState
 from mr_lister.publication.errors import (
     PublicationConflictError,
@@ -256,6 +257,8 @@ class PublicationExecutionService:
             "reconstructed_at": now,
             "verification_deadline": authority.snapshot.verification_deadline,
         }
+        if source.review.pricing is not None:
+            values["expected_free_shipping"] = source.review.pricing.free_shipping
         provider_authority = self._record(
             PublicationProviderAuthority,
             "provider_authority",
@@ -1715,6 +1718,10 @@ class PublicationExecutionService:
         profile = exact.profile
         expected_profile_fingerprint = control_fingerprint(profile)
         estimate = source.pricing_evidence.estimate
+        try:
+            pricing = effective_review_pricing(source.review.pricing, profile)
+        except ValueError:
+            self._invalid_authority("The reviewed pricing does not match the product")
         expected_variant_pairs = {
             (color, size) for color in profile.colors for size in profile.sizes
         }
@@ -1731,11 +1738,13 @@ class PublicationExecutionService:
             or estimate.blueprint_id != profile.blueprint_id
             or estimate.print_provider_id != profile.print_provider_id
             or any(
-                variant.retail_price_cents != profile.retail_price_cents
+                variant.retail_price_cents
+                != retail_price_for_variant(pricing, color=variant.color, size=variant.size)
                 for variant in sync.variants
             )
             or any(
-                variant.buyer_shipping_cents != profile.buyer_shipping_cents
+                variant.buyer_shipping_cents
+                != (0 if pricing.free_shipping else variant.production_shipping_cents)
                 for variant in estimate.variants
             )
             or (

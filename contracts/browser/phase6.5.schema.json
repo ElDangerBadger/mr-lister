@@ -777,6 +777,17 @@
           "title": "Description",
           "type": "string"
         },
+        "pricing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReviewPricing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "tags": {
           "items": {
             "maxLength": 20,
@@ -1014,6 +1025,22 @@
           "minItems": 1,
           "title": "Placements",
           "type": "array"
+        },
+        "pricing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReviewPricing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pricing_saved": {
+          "default": false,
+          "title": "Pricing Saved",
+          "type": "boolean"
         },
         "product_name": {
           "maxLength": 300,
@@ -1265,6 +1292,37 @@
       ],
       "title": "ReviewDisplayState",
       "type": "string"
+    },
+    "ReviewPricing": {
+      "additionalProperties": false,
+      "description": "USD item price and sparse, exact color/size overrides for this review only.",
+      "properties": {
+        "free_shipping": {
+          "title": "Free Shipping",
+          "type": "boolean"
+        },
+        "retail_price_cents": {
+          "maximum": 999999,
+          "minimum": 1,
+          "title": "Retail Price Cents",
+          "type": "integer"
+        },
+        "variant_prices": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/VariantPrice"
+          },
+          "maxItems": 900,
+          "title": "Variant Prices",
+          "type": "array"
+        }
+      },
+      "required": [
+        "retail_price_cents",
+        "free_shipping"
+      ],
+      "title": "ReviewPricing",
+      "type": "object"
     },
     "ReviewStage": {
       "enum": [
@@ -1966,6 +2024,36 @@
         "estimated_proceeds_cents"
       ],
       "title": "VariantEconomicsProjection",
+      "type": "object"
+    },
+    "VariantPrice": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Color",
+          "type": "string"
+        },
+        "retail_price_cents": {
+          "maximum": 999999,
+          "minimum": 1,
+          "title": "Retail Price Cents",
+          "type": "integer"
+        },
+        "size": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Size",
+          "type": "string"
+        }
+      },
+      "required": [
+        "color",
+        "size",
+        "retail_price_cents"
+      ],
+      "title": "VariantPrice",
       "type": "object"
     }
   },

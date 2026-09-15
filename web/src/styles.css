@@ -364,6 +364,37 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
 .listing-panel > div:not(.section-heading-row):not(.validation-summary) { padding: 0 19px 16px; }
 .listing-panel .listing-guidance { font-size: 11px; }
 .listing-panel fieldset > legend { margin-top: 0; }
+.listing-panel .pricing-fields { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 20px; }
+.pricing-fields > legend { float: left; width: 100%; margin-bottom: 10px; }
+.pricing-fields > legend + * { clear: both; }
+.pricing-intro, .pricing-help { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.pricing-help { margin: 8px 0 0; }
+.item-price-row { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.item-price-row > div { flex: 1 1 150px; }
+.item-price-row label { margin-top: 0; }
+.money-input { position: relative; }
+.money-input > span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.money-input input { padding-left: 26px; font-variant-numeric: tabular-nums; }
+.shipping-setting { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 20px 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-deep); }
+.shipping-setting label { margin: 0 0 5px; cursor: pointer; }
+.shipping-setting p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.shipping-setting .shipping-switch { appearance: none; position: relative; flex: 0 0 42px; width: 42px; height: 25px; min-height: 25px; margin: 0; padding: 0; border: 1px solid var(--muted); border-radius: 20px; background: var(--paper); cursor: pointer; }
+.shipping-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 17px; height: 17px; background: var(--muted); border-radius: 50%; transition: transform 150ms; }
+.shipping-setting .shipping-switch:checked { background: var(--green); border-color: var(--green); }
+.shipping-switch:checked::after { transform: translateX(17px); background: var(--primary-ink); }
+.shipping-switch:disabled { cursor: not-allowed; opacity: 0.55; }
+.variant-prices > summary { display: list-item; font-size: 13px; font-weight: 600; }
+.variant-prices > summary > span { margin-left: 8px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.variant-prices .table-scroll { max-height: 390px; margin-top: 12px; }
+.variant-prices table { min-width: 310px; }
+.variant-prices thead { position: sticky; top: 0; z-index: 1; background: var(--paper-deep); }
+.variant-prices td { vertical-align: middle; }
+.variant-prices th:nth-child(2), .variant-prices td:nth-child(2) { text-align: left; }
+.variant-prices .money-input { min-width: 88px; max-width: 130px; }
+.variant-size { display: block; margin-top: 4px; color: var(--muted); font-weight: 400; }
+.variant-size small { margin-left: 8px; font-size: 10px; color: var(--green-dark); }
+.variant-prices td:last-child { width: 50px; padding-left: 0; }
+@media (prefers-reduced-motion: reduce) { .shipping-switch::after { transition: none; } }
 .artwork-panel > .mockups-panel { margin: 0; padding: 14px 17px; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
 .mockups-panel > .section-heading-row { margin: 0 0 12px; }
 .mockups-panel .section-heading-row h2 { font-size: 12px; font-weight: 500; }
@@ -589,6 +620,8 @@ footer { padding: 22px var(--page-gutter); border-top: 1px solid var(--line); co
 }
 
 @media (forced-colors: active) {
+  .shipping-setting .shipping-switch { appearance: auto; }
+  .shipping-switch::after { display: none; }
   .authority-banner, .strands-card, .button--primary, .workflow-number { border: 1px solid ButtonText; }
   .drop-field--active { border: 3px solid CanvasText; box-shadow: none; }
   .session-dot { border: 1px solid CanvasText; }

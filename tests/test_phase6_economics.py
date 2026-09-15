@@ -142,6 +142,30 @@ def test_all_thirty_configured_variants_receive_per_variant_evidence() -> None:
     assert all(item.buyer_shipping_cents == 0 for item in estimate.variants)
 
 
+def test_buyer_paid_standard_shipping_is_variant_specific_and_included_in_fee_basis() -> None:
+    costs = _product_costs({1000: (3499, 1100), 1001: (3999, 1275)})
+    shipping = _shipping({1000: 399, 1001: 599})
+    paid = estimate_etsy_us_standard_proceeds(
+        product_costs=costs, shipping=shipping, calculated_at=NOW, free_shipping=False
+    )
+    free = estimate_etsy_us_standard_proceeds(
+        product_costs=costs, shipping=shipping, calculated_at=NOW, free_shipping=True
+    )
+    legacy = estimate_etsy_us_standard_proceeds(
+        product_costs=costs, shipping=shipping, calculated_at=NOW
+    )
+    assert free.fingerprint == legacy.fingerprint
+    assert tuple(row.buyer_shipping_cents for row in paid.variants) == (399, 599)
+    first, second = paid.variants
+    assert first.transaction_fee_cents == 253  # 3898 * 6.5%, rounded half-up.
+    assert first.payment_processing_percentage_cents == 117
+    assert first.estimated_proceeds_cents == 1984
+    assert second.transaction_fee_cents == 299
+    assert second.payment_processing_percentage_cents == 138
+    assert second.estimated_proceeds_cents == 2242
+    assert paid.fingerprint != free.fingerprint
+
+
 def test_logically_identical_variant_order_produces_the_same_fingerprint() -> None:
     forward_costs = _product_costs({1000: (2999, 1100), 1001: (2999, 1200)})
     reverse_costs = _product_costs({1001: (2999, 1200), 1000: (2999, 1100)})

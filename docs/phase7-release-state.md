@@ -2,6 +2,11 @@
 
 ## Decision
 
+The [September 13 pricing and shipping release](listing-pricing-release-state.md) supersedes
+the component code tuples below while preserving general availability, publication bindings,
+and the accepted 25-second query timeout. Use that record and fresh AWS captures for updates.
+
+
 **PHASE 7 COMPLETE AND SEALED — FUNCTIONAL HACKATHON-DEMO SCOPE**
 
 The Phase 7.18 backend is deployed in general-availability mode and its exact readback passed on

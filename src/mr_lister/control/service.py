@@ -147,7 +147,7 @@ class SellerControlService:
             ControlJobState.NEEDS_REVISION,
         }:
             raise InvalidControlStateError("The job cannot accept a listing revision")
-        review, _sync, _pricing, current_etag = self._review_basis(current)
+        review, sync, _pricing, current_etag = self._review_basis(current)
         self._require_review_authority(
             current,
             review,
@@ -156,6 +156,21 @@ class SellerControlService:
             expected_etag=command.expected_review_etag,
             current_etag=current_etag,
         )
+
+        pricing = command.revision.pricing or review.pricing
+        if pricing is not None and pricing.variant_prices:
+            if sync is None:
+                raise InvalidControlStateError(
+                    "Wait for product synchronization before saving variant price overrides"
+                )
+            allowed_pairs = {(variant.color, variant.size) for variant in sync.variants}
+            if any(
+                (variant.color, variant.size) not in allowed_pairs
+                for variant in pricing.variant_prices
+            ):
+                raise InvalidControlStateError(
+                    "Variant price overrides must belong to the synchronized product"
+                )
 
         listing: ListingIntelligence | None
         try:
@@ -193,6 +208,8 @@ class SellerControlService:
             "product_profile_fingerprint": review.product_profile_fingerprint,
             "created_at": now.isoformat(),
         }
+        if pricing is not None:
+            review_material["pricing"] = pricing.model_dump(mode="json")
         next_review = ReviewContent(
             **review_material,
             fingerprint=canonical_fingerprint(review_material),
