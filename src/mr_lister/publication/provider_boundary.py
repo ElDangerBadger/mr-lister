@@ -1914,14 +1914,17 @@ _MISSING = object()
 def _external_evidence(
     payload: Mapping[str, Any],
 ) -> tuple[ExternalEvidenceState, int | None]:
-    """Classify the documented external-reference array without trusting its handle."""
+    """Accept one external reference in object or array form, without trusting its handle."""
 
     external = payload.get("external", _MISSING)
     if external is _MISSING or external == [] or external == {}:
         return ExternalEvidenceState.ABSENT, None
-    if not isinstance(external, list) or len(external) != 1:
+    if isinstance(external, Mapping):
+        reference = external
+    elif isinstance(external, list) and len(external) == 1:
+        reference = external[0]
+    else:
         return ExternalEvidenceState.CONFLICTING_OR_INCOMPLETE, None
-    reference = external[0]
     if not isinstance(reference, Mapping):
         return ExternalEvidenceState.CONFLICTING_OR_INCOMPLETE, None
     identifier = reference.get("id")

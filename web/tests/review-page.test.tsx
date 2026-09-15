@@ -14,6 +14,19 @@ import type { PublicationApiPort } from "../src/publication/api-client";
 import { sellerPublicationProjectionSchema } from "../src/publication/contracts";
 
 describe("authoritative seller review", () => {
+  it("shows accessible activity while the first review loads and removes it when loading settles", async () => {
+    const review = readyReview();
+    let finish!: (response: ReturnType<typeof reviewResponse>) => void;
+    const getReview = vi.fn().mockReturnValue(new Promise<ReturnType<typeof reviewResponse>>((resolve) => { finish = resolve; }));
+    const { container } = render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview })} /></MemoryRouter>);
+    const activity = screen.getByText("Your artwork is uploaded. Loading your preview and preparation progress.").closest(".activity-status");
+    expect(activity).toHaveAttribute("role", "status");
+    expect(activity).toHaveAttribute("aria-live", "polite");
+    await act(async () => { finish(reviewResponse(review, "request-ready")); await Promise.resolve(); });
+    expect(await screen.findByRole("heading", { name: "Make it yours." })).toBeVisible();
+    expect(container.querySelector(".activity-status")).toBeNull();
+  });
+
   it("keeps the seller boundary visible and preparation evidence accessible with 13 labeled tags", async () => {
     const review = readyReview();
     render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review)} /></MemoryRouter>);
@@ -39,23 +52,30 @@ describe("authoritative seller review", () => {
     expect(await screen.findByText("Validation: Pending")).toBeInTheDocument();
   });
 
-  it("automatically recovers a transient first review read into the preparing workspace", async () => {
+  it.each(["503 response", "network interruption"])("keeps a transient first review %s neutral until the preparing workspace opens", async (failure) => {
     vi.useFakeTimers();
     try {
       const review = sellerReviewSchema.parse(browserFixtures.seller_review_pending);
       const getReview = vi.fn()
-        .mockRejectedValueOnce(new ApiError(503, "UNAVAILABLE", "Preparation is starting.", "request-starting", null))
+        .mockRejectedValueOnce(failure === "503 response"
+          ? new ApiError(503, "UNAVAILABLE", "Preparation is starting.", "request-starting", null)
+          : new TypeError("The connection was interrupted."))
         .mockResolvedValue(reviewResponse(review, "request-preparing"));
       const getJob = vi.fn().mockResolvedValue(progressResponse(review));
       render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview, getJob })} /></MemoryRouter>);
       await act(async () => { await Promise.resolve(); });
       expect(screen.getByRole("heading", { name: "Opening your listing…" })).toBeInTheDocument();
+      expect(screen.getByText("Your listing is still opening. We’ll try again shortly.").closest(".activity-status")).toHaveAttribute("role", "status");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
       await act(async () => { await vi.advanceTimersByTimeAsync(5_999); });
       expect(getReview).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       await act(async () => { await vi.advanceTimersByTimeAsync(1); });
       expect(getReview).toHaveBeenCalledTimes(2);
       expect(screen.getByRole("heading", { name: "Your listing is taking shape." })).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(screen.queryByText("Your listing is still opening. We’ll try again shortly.")).not.toBeInTheDocument();
       expect(getJob).not.toHaveBeenCalled();
       await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
       expect(getJob).toHaveBeenCalledTimes(1);
@@ -74,6 +94,9 @@ describe("authoritative seller review", () => {
         .mockResolvedValue(reviewResponse(review, "request-preparing"));
       render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview })} /></MemoryRouter>);
       await act(async () => { await Promise.resolve(); });
+      expect(screen.getByRole("alert")).toHaveTextContent("This review is unavailable.");
+      expect(screen.getByRole("alert")).toHaveTextContent("Support reference: request-unavailable");
+      expect(screen.getByRole("heading", { name: "We could not open this preparation." })).toBeInTheDocument();
       await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
       fireEvent.focus(window);
       expect(getReview).toHaveBeenCalledTimes(1);
@@ -95,8 +118,12 @@ describe("authoritative seller review", () => {
       await act(async () => { await Promise.resolve(); });
       await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
       expect(getReview).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
       expect(getReview).toHaveBeenCalledTimes(3);
+      expect(screen.getByRole("alert")).toHaveTextContent("The connection was interrupted.");
+      expect(screen.getByRole("heading", { name: "We could not open this preparation." })).toBeInTheDocument();
+      expect(screen.queryByText("Your listing is still opening. We’ll try again shortly.")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
       await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
       fireEvent.focus(window);
@@ -1370,7 +1397,7 @@ function dependencies(review: SellerReview, overrides: Partial<ApiPort> = {}): {
   session.set("test-token", 3600, "refresh-token");
   const never = () => Promise.reject(new Error("Unexpected test call"));
   const api: ApiPort = {
-    listJobs: never,
+    listJobs: never, clearRecentJobs: never,
     getJob: never,
     getUpload: never,
     getReview: vi.fn().mockResolvedValue({ value: review, requestId: "request-review", etag: `"${review.review_authority_etag ?? ""}"` }),

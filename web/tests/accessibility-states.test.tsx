@@ -32,7 +32,7 @@ describe("accessible application states", () => {
     await expectNoViolations(result);
   });
 
-  it("covers populated and cleared-for-now recent preparations", async () => {
+  it("covers populated and durably cleared recent preparations", async () => {
     const user = userEvent.setup();
     const listJobs = vi.fn().mockResolvedValue({
       value: {
@@ -49,12 +49,16 @@ describe("accessible application states", () => {
       requestId: "request-jobs",
       etag: null,
     });
-    const result = renderApp("/", true, { listJobs });
+    const clearRecentJobs = vi.fn().mockImplementation(() => {
+      listJobs.mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-jobs", etag: null });
+      return Promise.resolve({ value: { cleared_before: "2026-09-14T20:00:00Z" }, requestId: "request-clear", etag: null });
+    });
+    const result = renderApp("/", true, { listJobs, clearRecentJobs });
     await screen.findByRole("link", { name: /Open listing:/u });
     await expectNoViolations(result);
 
     await user.click(screen.getByRole("button", { name: "Clear recent list" }));
-    await screen.findByText("Recent list cleared for now.");
+    await screen.findByText("Recent list cleared. New uploads will appear here.");
     await expectNoViolations(result);
   });
 
@@ -156,6 +160,7 @@ function renderApp(route: string, authenticated: boolean, overrides: Partial<Api
   const never = () => Promise.reject(new Error("Unexpected accessibility test request"));
   const api: ApiPort = {
     listJobs: never,
+    clearRecentJobs: never,
     getJob: never,
     getUpload: never,
     getReview: never,

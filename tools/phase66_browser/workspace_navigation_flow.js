@@ -173,7 +173,7 @@ async page => {
     await home().click();
     await page.getByRole("heading", { name: "Let’s start with your artwork." }).waitFor();
     await choose(["moon-moth.png", "garden-fern.png"]);
-    await page.getByRole("button", { name: "Prepare 2 listings", exact: true }).click();
+    await page.getByRole("button", { name: "Submit", exact: true }).click();
     await waitUntil(() => heldCompletions.has("job_navigation_1"));
     check(publicPath(page.url()) === "/", "unverified artwork opened a listing");
     heldCompletions.get("job_navigation_1")();
@@ -263,7 +263,7 @@ async page => {
 
     // Explicitly leaving Home consumes automatic navigation for a new pending batch.
     await choose(["manual-navigation.png"]);
-    await page.getByRole("button", { name: "Prepare 1 listing", exact: true }).click();
+    await page.getByRole("button", { name: "Submit", exact: true }).click();
     await waitUntil(() => heldCompletions.has("job_navigation_3"));
     await page.locator('a[href="/jobs/job_route_b"]').first().click();
     await waitForTitle("Current route B artwork");

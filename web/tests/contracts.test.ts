@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import browserFixtures from "../../contracts/browser/phase6.5.fixtures.json";
 import {
+  clearRecentJobsSchema,
   errorEnvelopeSchema,
   jobPageSchema,
   jobProgressSchema,
@@ -16,6 +17,7 @@ describe("Python-to-browser golden contracts", () => {
     expect(uploadRecoverySchema.parse(browserFixtures.upload_recovery).status).toBe("open");
     expect(sellerReviewSchema.parse(browserFixtures.seller_review_pending).authority_notice).toBe("Unpublished — not on Etsy");
     expect(errorEnvelopeSchema.parse(browserFixtures.validation_error).error.fields).toHaveLength(1);
+    expect(clearRecentJobsSchema.parse(browserFixtures.clear_recent_jobs).cleared_before).toBeTruthy();
   });
 
   it("rejects an expanded seller action surface", () => {

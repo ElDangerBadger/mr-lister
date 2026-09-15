@@ -25,6 +25,7 @@ from mr_lister.agent.phase6 import (
 )
 from mr_lister.agent.phase6_producer import PinnedSourcePreparedReviewProducer
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
+from mr_lister.control.judge_pricing import JudgePricingPolicy, load_judge_pricing_policy
 from mr_lister.control.worker_service import WorkerControlService
 from mr_lister.intelligence.bedrock import build_bedrock_adapter
 from mr_lister.intelligence.prompts import ETSY_SEO_RELEASE_PROMPT_BUNDLE
@@ -84,6 +85,7 @@ class Phase6AgentCoreConfiguration:
     intelligence_fingerprint: str
     intelligence: BedrockSettings
     controller_model_id: str
+    judge_pricing_policy: JudgePricingPolicy | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,6 +220,7 @@ def load_phase6_agentcore_configuration(
             intelligence_fingerprint=intelligence_fingerprint,
             intelligence=intelligence,
             controller_model_id=controller_model_id,
+            judge_pricing_policy=load_judge_pricing_policy(environment),
         )
     except Exception:
         pass
@@ -262,7 +265,9 @@ def compose_phase6_agentcore_runtime(
         profiles=profiles,
         intelligence=cast(Any, intelligence),
     )
-    worker = WorkerControlService(store=store)
+    worker = WorkerControlService(
+        store=store, judge_pricing_policy=configuration.judge_pricing_policy
+    )
     service = WorkerControlPreparationAdapter(
         store=store,
         worker=worker,

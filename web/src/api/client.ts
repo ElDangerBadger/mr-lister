@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   commandResponseSchema,
+  clearRecentJobsSchema,
   errorEnvelopeSchema,
   jobPageSchema,
   jobProgressSchema,
@@ -8,6 +9,7 @@ import {
   uploadResponseSchema,
   uploadRecoverySchema,
   type CommandResponse,
+  type ClearRecentJobs,
   type JobPage,
   type JobProgress,
   type SellerAction,
@@ -37,7 +39,8 @@ export interface ListingDraft {
 }
 
 export interface ApiPort {
-  listJobs(): Promise<DecodedResponse<JobPage>>;
+  listJobs(cursor?: string): Promise<DecodedResponse<JobPage>>;
+  clearRecentJobs(idempotencyKey: string): Promise<DecodedResponse<ClearRecentJobs>>;
   getJob(jobId: string): Promise<DecodedResponse<JobProgress>>;
   getUpload(uploadId: string): Promise<DecodedResponse<UploadRecovery>>;
   getReview(jobId: string): Promise<DecodedResponse<SellerReview>>;
@@ -81,8 +84,18 @@ export class BrowserApiClient implements ApiPort {
     private readonly fetcher: typeof fetch = window.fetch.bind(window),
   ) {}
 
-  listJobs(): Promise<DecodedResponse<JobPage>> {
-    return this.request("/v1/jobs?limit=25", { method: "GET" }, jobPageSchema);
+  listJobs(cursor?: string): Promise<DecodedResponse<JobPage>> {
+    if (cursor !== undefined && !/^[A-Za-z0-9_-]{1,200}$/u.test(cursor)) throw new Error("Invalid history cursor");
+    const query = cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+    return this.request(`/v1/jobs?limit=25${query}`, { method: "GET" }, jobPageSchema);
+  }
+
+  clearRecentJobs(idempotencyKey: string): Promise<DecodedResponse<ClearRecentJobs>> {
+    return this.request("/v1/jobs/recent/clear", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: "{}",
+    }, clearRecentJobsSchema);
   }
 
   getJob(jobId: string): Promise<DecodedResponse<JobProgress>> {
@@ -258,7 +271,7 @@ export class BrowserApiClient implements ApiPort {
       if (renewed !== null) response = await perform(renewed);
     }
     if (!response.ok) await throwApiError(response);
-    const requestId = response.headers.get("X-Request-Id") ?? "unavailable";
+    const requestId = responseRequestId(response);
     const text = await response.text();
     if (text.length > 2 * 1024 * 1024) throw new ContractError(requestId);
     let decoded: unknown;
@@ -279,7 +292,7 @@ export function newIdempotencyKey(operation: string): string {
 }
 
 async function throwApiError(response: Response): Promise<never> {
-  const headerRequestId = response.headers.get("X-Request-Id") ?? "unavailable";
+  const headerRequestId = responseRequestId(response);
   const retry = response.headers.get("Retry-After");
   const retryAfterSeconds = retry !== null && /^\d{1,4}$/u.test(retry) ? Number(retry) : null;
   let candidate: unknown;
@@ -290,7 +303,14 @@ async function throwApiError(response: Response): Promise<never> {
     candidate = null;
   }
   const parsed = errorEnvelopeSchema.safeParse(candidate);
-  if (!parsed.success) throw new ApiError(response.status, "UNEXPECTED_RESPONSE", "The seller API returned an unexpected response.", headerRequestId, retryAfterSeconds);
+  if (!parsed.success) {
+    const message = response.status >= 500
+      ? "We couldn't confirm the server's response. Check the current status before trying again."
+      : response.status === 429
+        ? "The service is busy. Wait a moment, then check the current status."
+        : "The seller API returned an unexpected response.";
+    throw new ApiError(response.status, "UNEXPECTED_RESPONSE", message, headerRequestId, retryAfterSeconds);
+  }
   throw new ApiError(
     response.status,
     parsed.data.error.code,
@@ -299,6 +319,15 @@ async function throwApiError(response: Response): Promise<never> {
     retryAfterSeconds,
     parsed.data.error.fields ?? [],
   );
+}
+
+function responseRequestId(response: Response): string {
+  // Gateway failures can occur before the application creates its error envelope.
+  for (const header of ["X-Request-Id", "X-Amzn-RequestId", "X-Amz-Apigw-Id"]) {
+    const value = response.headers.get(header);
+    if (value !== null && /^[A-Za-z0-9._:+/=-]{1,128}$/u.test(value)) return value;
+  }
+  return "unavailable";
 }
 
 function requiredReviewFingerprint(review: SellerReview): string {

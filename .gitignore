@@ -19,4 +19,5 @@ infra/agentcore/mrlisterphase3/agentcore/.llm-context/
 infra/agentcore/mrlisterphase3/agentcore/cdk/
 .playwright-cli/
 .playwright-mcp/
-output/playwright/
+# Local browser evidence and generated diagram exports; shareable source lives in docs/.
+output/

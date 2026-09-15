@@ -52,10 +52,11 @@ export function validatePricing(draft: PricingFormDraft): Record<string, string>
   return errors;
 }
 
-export function ListingPricingFields({ review, draft, disabled, errors, onChange }: {
+export function ListingPricingFields({ review, draft, disabled, shippingLocked = false, errors, onChange }: {
   review: SellerReview;
   draft: PricingFormDraft | undefined;
   disabled: boolean;
+  shippingLocked?: boolean;
   errors: Record<string, string>;
   onChange: (draft: PricingFormDraft) => void;
 }) {
@@ -92,8 +93,19 @@ export function ListingPricingFields({ review, draft, disabled, errors, onChange
       {errors["pricing.price"] !== undefined && <p id="item-price-error" className="field-error">{errors["pricing.price"]}</p>}
 
       <div className="shipping-setting">
-        <div><label htmlFor="listing-free-shipping">Free shipping</label><p id="shipping-help">{value.freeShipping ? "You cover delivery. Production shipping is deducted from estimated proceeds." : "Use Printify’s standard shipping. Estimates assume the buyer pays the standard US shipping cost; checkout charges can vary."}</p></div>
-        <input id="listing-free-shipping" className="shipping-switch" type="checkbox" role="switch" checked={value.freeShipping} aria-describedby="shipping-help" onChange={(event) => onChange({ ...value, freeShipping: event.target.checked })} />
+        {shippingLocked ? <div>
+          <strong>{value.freeShipping ? "Free shipping is selected" : "Printify standard shipping"}</strong>
+          <p>{value.freeShipping
+            ? "Standard shipping is required before this judge listing can be published."
+            : pricing.free_shipping
+              ? "Save your revision to apply standard shipping before publication."
+              : "Estimates assume the buyer pays the standard US shipping cost; checkout charges can vary."}</p>
+          <p className="pricing-help">Shipping is fixed for judge access.</p>
+          {value.freeShipping && <button className="button" type="button" disabled={disabled} onClick={() => onChange({ ...value, freeShipping: false })}>Use standard shipping</button>}
+        </div> : <>
+          <div><label htmlFor="listing-free-shipping">Free shipping</label><p id="shipping-help">{value.freeShipping ? "You cover delivery. Production shipping is deducted from estimated proceeds." : "Use Printify’s standard shipping. Estimates assume the buyer pays the standard US shipping cost; checkout charges can vary."}</p></div>
+          <input id="listing-free-shipping" className="shipping-switch" type="checkbox" role="switch" checked={value.freeShipping} aria-describedby="shipping-help" onChange={(event) => onChange({ ...value, freeShipping: event.target.checked })} />
+        </>}
       </div>
 
       <details className="variant-prices" open={showVariants} onToggle={(event) => setShowVariants(event.currentTarget.open)}>

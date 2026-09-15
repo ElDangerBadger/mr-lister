@@ -16,9 +16,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from pydantic import SecretStr
-
 from mr_lister.cloud.phase7_worker_composition import compose_publication_worker_graph
+from mr_lister.cloud.printify_secret_contract import (
+    parse_printify_owner_secret,
+    validate_printify_secret_arn,
+)
 from mr_lister.publication.canary_runtime import (
     PublicationCanaryBinding,
     PublicationCanaryRuntime,
@@ -61,10 +63,6 @@ _SECRET_ARN = re.compile(
 )
 _GENERIC_CONFIGURATION_ERROR = "Phase 7 canary configuration is invalid"
 _GENERIC_CREDENTIAL_ERROR = "Publication provider credential is unavailable"
-_OWNER_SECRET_SCHEMA_VERSION = "phase6-printify-owner-v1"
-_OWNER_SECRET_FIELDS = frozenset({"schema_version", "owner_id", "shop_id", "api_token"})
-_MAX_SECRET_STRING_CHARS = 16_384
-_API_TOKEN = re.compile(r"^[\x21-\x7e]{1,4096}$")
 _REJECTED_AUDIT_LOGGER = logging.getLogger("mr_lister.phase7.canary.rejected_audit")
 
 
@@ -90,18 +88,25 @@ class Phase7CanaryHandler(Protocol):
 
 
 class FreshCanaryPublicationProviderCredentialAuthority:
-    """Resolve and bind the one owner secret afresh for every provider step."""
+    """Resolve only the primary owner afresh; delegation cannot authorize a canary."""
 
     __slots__ = ("_get_secret_value", "_secret_arn")
 
     def __init__(self, *, client: object, secret_arn: str) -> None:
-        get_secret_value = getattr(client, "get_secret_value", None)
-        if not callable(get_secret_value) or _SECRET_ARN.fullmatch(secret_arn) is None:
-            raise PublicationProviderCredentialError(
-                "Publication provider credential configuration is invalid"
-            ) from None
-        self._get_secret_value = get_secret_value
-        self._secret_arn = secret_arn
+        try:
+            get_secret_value = getattr(client, "get_secret_value", None)
+            if not callable(get_secret_value):
+                raise ValueError
+            validate_printify_secret_arn(secret_arn)
+        except Exception:
+            pass
+        else:
+            self._get_secret_value = get_secret_value
+            self._secret_arn = secret_arn
+            return
+        raise PublicationProviderCredentialError(
+            "Publication provider credential configuration is invalid"
+        ) from None
 
     def resolve_exact(
         self,
@@ -111,41 +116,20 @@ class FreshCanaryPublicationProviderCredentialAuthority:
         try:
             exact = PublicationProviderAuthority.model_validate(authority.model_dump(mode="python"))
             response = self._get_secret_value(SecretId=self._secret_arn)
-            if not isinstance(response, Mapping) or "SecretBinary" in response:
-                raise ValueError
-            if response.get("ARN", self._secret_arn) != self._secret_arn:
-                raise ValueError
-            if response.get("VersionStages", ["AWSCURRENT"]) != ["AWSCURRENT"]:
-                raise ValueError
-            secret_string = response.get("SecretString")
-            if (
-                not isinstance(secret_string, str)
-                or not secret_string
-                or len(secret_string) > _MAX_SECRET_STRING_CHARS
-            ):
-                raise ValueError
-            payload = json.loads(
-                secret_string,
-                object_pairs_hook=_unique_json_object,
-                parse_constant=_reject_json_constant,
+            connection = parse_printify_owner_secret(
+                response,
+                secret_arn=self._secret_arn,
+                owner_id=exact.owner_id,
+                primary_only=True,
             )
-            if not isinstance(payload, dict) or set(payload) != _OWNER_SECRET_FIELDS:
-                raise ValueError
-            owner_id = payload["owner_id"]
-            shop_id = payload["shop_id"]
-            token = payload["api_token"]
             if (
-                payload["schema_version"] != _OWNER_SECRET_SCHEMA_VERSION
-                or owner_id != exact.owner_id
-                or type(shop_id) is not int
-                or shop_id != exact.printify_shop_id
-                or not isinstance(token, str)
-                or _API_TOKEN.fullmatch(token) is None
+                connection.owner_id != exact.owner_id
+                or connection.shop_id != exact.printify_shop_id
             ):
                 raise ValueError
             return issue_bound_publication_provider_credential(
                 authority=exact,
-                bearer_token=SecretStr(token),
+                bearer_token=connection.api_token,
             )
         except Exception:
             pass
@@ -537,20 +521,6 @@ def _required(environment: Mapping[str, object], name: str) -> str:
     ):
         raise ValueError
     return value
-
-
-def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError
-        result[key] = value
-    return result
-
-
-def _reject_json_constant(value: str) -> None:
-    del value
-    raise ValueError
 
 
 __all__ = [

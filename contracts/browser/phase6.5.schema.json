@@ -165,6 +165,28 @@
       "title": "ArtworkPreview",
       "type": "object"
     },
+    "ClearRecentJobsRequest": {
+      "additionalProperties": false,
+      "description": "Identity and cutoff are assigned by the server, never by the browser.",
+      "properties": {},
+      "title": "ClearRecentJobsRequest",
+      "type": "object"
+    },
+    "ClearRecentJobsResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "cleared_before": {
+          "format": "date-time",
+          "title": "Cleared Before",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cleared_before"
+      ],
+      "title": "ClearRecentJobsResponse",
+      "type": "object"
+    },
     "ControlJobState": {
       "enum": [
         "intake_validated",
@@ -2062,6 +2084,8 @@
   "title": "Mr. Lister Phase 6.5 browser contract",
   "x-mr-lister-contract-version": "6.5.0",
   "x-mr-lister-models": {
+    "ClearRecentJobsRequest": "#/$defs/ClearRecentJobsRequest",
+    "ClearRecentJobsResponse": "#/$defs/ClearRecentJobsResponse",
     "CreateUploadRequest": "#/$defs/CreateUploadRequest",
     "ErrorEnvelope": "#/$defs/ErrorEnvelope",
     "HealthResponse": "#/$defs/HealthResponse",
@@ -2096,6 +2120,10 @@
     },
     "GET /v1/uploads/{upload_id}": {
       "response": "#/$defs/UploadRecoveryProjection"
+    },
+    "POST /v1/jobs/recent/clear": {
+      "request": "#/$defs/ClearRecentJobsRequest",
+      "response": "#/$defs/ClearRecentJobsResponse"
     },
     "POST /v1/jobs/{job_id}/approve": {
       "request": "#/$defs/ReviewAuthorityRequest",

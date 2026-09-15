@@ -42,6 +42,7 @@ ACTIVE_GUARD_RESOURCES = {
 }
 
 PHASE6_HTTP_ROUTES = {
+    "POST /v1/jobs/recent/clear",
     "GET /health",
     "GET /v1/jobs",
     "GET /v1/jobs/{job_id}",

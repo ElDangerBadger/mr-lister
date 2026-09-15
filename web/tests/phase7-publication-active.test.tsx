@@ -378,7 +378,7 @@ function sellerDependencies(review: SellerReview): { api: ApiPort; auth: AuthCoo
   const never = () => Promise.reject(new Error("Unexpected test call"));
   return {
     api: {
-      listJobs: never,
+      listJobs: never, clearRecentJobs: never,
       getJob: never,
       getUpload: never,
       getReview: vi.fn().mockResolvedValue({

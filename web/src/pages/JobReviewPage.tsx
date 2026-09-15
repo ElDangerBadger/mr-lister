@@ -9,6 +9,7 @@ import { WorkflowSteps } from "../components/WorkflowSteps";
 import { PreparationProgress } from "../components/PreparationProgress";
 import { isPreparationActive } from "../workflow";
 import { ActivityLog } from "../components/ActivityLog";
+import { ActivityStatus } from "../components/ActivityStatus";
 import { PublicationWorkspace } from "../publication/PublicationWorkspace";
 import { BatchNavigator } from "../navigation/BatchWorkspace";
 import { useNavigationProtection } from "../navigation/WorkspaceNavigation";
@@ -225,7 +226,7 @@ export function JobReviewPage() {
   }, [load, refreshProgress, retryInitialLoad, review]);
 
   if (loading && review === null) {
-    return <section className="page narrow-page"><WorkflowSteps current="Review" /><BatchNavigator /><h1>Opening your listing…</h1><p role="status">Your artwork is uploaded. Loading your preview and preparation progress.</p></section>;
+    return <section className="page narrow-page"><WorkflowSteps current="Review" /><BatchNavigator /><h1>Opening your listing…</h1><p><ActivityStatus>Your artwork is uploaded. Loading your preview and preparation progress.</ActivityStatus></p></section>;
   }
   if (review === null) {
     return (
@@ -234,8 +235,8 @@ export function JobReviewPage() {
         <BatchNavigator />
         <p className="eyebrow">{retryInitialLoad ? "Your listing workspace" : "Review unavailable"}</p>
         <h1>{retryInitialLoad ? "Opening your listing…" : "We could not open this preparation."}</h1>
-        {error !== null && <ErrorNotice {...error} />}
-        {retryInitialLoad ? <p role="status">Your listing is still opening. We’ll try again shortly.</p>
+        {error !== null && !retryInitialLoad && <ErrorNotice {...error} />}
+        {retryInitialLoad ? <p><ActivityStatus>Your listing is still opening. We’ll try again shortly.</ActivityStatus></p>
           : <button className="button" type="button" onClick={() => { void load(); }}>Try again</button>}
       </section>
     );
@@ -447,7 +448,7 @@ function ListingEditor({ review, reload, onEditBarrierChange, actionsTarget }: {
   onEditBarrierChange: (barrier: ListingEditBarrier) => void;
   actionsTarget: HTMLDivElement | null;
 }) {
-  const { api } = useAppDependencies();
+  const { api, judgeAccess } = useAppDependencies();
   const [draft, setDraft] = useState<ListingFormDraft | null>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -723,6 +724,7 @@ function ListingEditor({ review, reload, onEditBarrierChange, actionsTarget }: {
           review={review}
           draft={draft.pricing}
           disabled={!locallyEditable || saveState === "saving" || saveState === "saved"}
+          shippingLocked={judgeAccess !== undefined}
           errors={fieldErrors}
           onChange={(pricing) => {
             setErrors((current) => Object.fromEntries(Object.entries(current).filter(([path]) => !path.startsWith("pricing"))));

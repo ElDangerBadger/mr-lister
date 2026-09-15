@@ -19,6 +19,14 @@ preparation completion order. SVG and JPEG convert locally to proportional PNG. 
 native aspect ratios, and valid transparent or opaque backgrounds are preserved. The picker
 and validation explain source-file restrictions.
 
+**Clear recent list** saves an account-level cutoff on the server. Cleared entries stay
+out of the dashboard after reload or sign-in, including for the shared judge account.
+New uploads still appear; updating an older job does not restore it to the list. The
+action preserves direct job access, approval and publication records, store products,
+and scheduled judge cleanup. A failed or uncertain request can be retried safely.
+Deployment requires the matching authenticated `POST /v1/jobs/recent/clear` route and
+both the seller-command and review-query Lambda updates before the new web bundle.
+
 ## Development and verification
 
 From this directory, using Node 22.12 or newer:

@@ -513,6 +513,7 @@ def test_source_bundle_is_deterministic_sanitized_and_narrow(tmp_path: Path) -> 
         excluded=frozenset({SOURCE_MANIFEST_FILENAME}),
     )
     assert not any(module.startswith("mr_lister.production") for module in closure)
+    assert "mr_lister.cloud.printify_secret_contract" in closure
     assert not any(
         module.startswith(prefix)
         for module in closure

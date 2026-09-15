@@ -84,10 +84,14 @@ def test_existing_or_wrongly_named_destination_is_never_overwritten(tmp_path: Pa
 
 
 def test_lambda_bundle_excludes_agentcore_and_legacy_broad_surfaces(tmp_path: Path) -> None:
-    lambda_root, _agentcore = build_source_bundles(_destination(tmp_path, "lambda-surface"))
+    lambda_root, agentcore_root = build_source_bundles(_destination(tmp_path, "lambda-surface"))
 
     assert (lambda_root / "phase6_lambda.py").is_file()
     assert (lambda_root / "mr_lister/cloud/evaluator_publication.py").is_file()
+    assert (lambda_root / "mr_lister/cloud/printify_secret_contract.py").is_file()
+    assert (lambda_root / "mr_lister/cloud/workspace_history.py").is_file()
+    assert not (agentcore_root / "mr_lister/cloud/printify_secret_contract.py").exists()
+    assert not (agentcore_root / "mr_lister/cloud/workspace_history.py").exists()
     assert not (lambda_root / "mr_lister/publication").exists()
     assert (lambda_root / "mr_lister/cloud/phase6_entrypoints.py").is_file()
     assert (lambda_root / "mr_lister/cloud/phase6_retention_entrypoint.py").is_file()
@@ -175,3 +179,41 @@ def test_bundled_module_imports_do_not_eager_load_legacy_publish_surfaces(tmp_pa
         text=True,
     )
     assert agentcore_result.returncode == 0, agentcore_result.stderr
+
+
+@pytest.mark.parametrize("omit_history", [False, True])
+def test_packaged_api_composition_imports_its_history_dependency_without_checkout_fallback(
+    tmp_path: Path, omit_history: bool
+) -> None:
+    lambda_root, _ = build_source_bundles(_destination(tmp_path, "packaged-api"))
+    if omit_history:
+        # Reproduce the packaging regression: lazy entrypoint imports alone miss it.
+        (lambda_root / "mr_lister/cloud/workspace_history.py").unlink()
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            (
+                "import sys; from pathlib import Path; "
+                "root = Path(sys.argv[1]).resolve(); sys.path.insert(0, str(root)); "
+                "import mr_lister.cloud.api; import mr_lister.cloud.phase6_composition; "
+                "import mr_lister.cloud.workspace_history; "
+                "assert all(Path(module.__file__).resolve().is_relative_to(root) "
+                "for name, module in sys.modules.items() "
+                "if name.startswith('mr_lister') and getattr(module, '__file__', None)); "
+                "assert 'mr_lister.publication' not in sys.modules; "
+                "assert 'mr_lister.judge_cleanup' not in sys.modules; "
+                "assert 'mr_lister.judge_session' not in sys.modules"
+            ),
+            str(lambda_root),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if omit_history:
+        assert result.returncode != 0, "Packaged import silently used checkout source"
+    else:
+        assert result.returncode == 0, result.stderr

@@ -57,6 +57,7 @@ describe("listing pricing and shipping revisions", () => {
     const reviseListing = interruptedSave();
     renderReview(readyReview(), { reviseListing });
     fireEvent.change(await screen.findByRole("textbox", { name: "Item price" }), { target: { value: "0.29" } });
+    expect(screen.getByRole("switch", { name: "Free shipping" })).toBeEnabled();
     await userEvent.click(screen.getByRole("switch", { name: "Free shipping" }));
     await openVariants();
     fireEvent.change(variant("Black", "S"), { target: { value: "17.03" } });
@@ -75,6 +76,73 @@ describe("listing pricing and shipping revisions", () => {
     expect(payload?.tags).toHaveLength(13);
     expect(payload?.pricing).not.toHaveProperty("buyer_shipping_cents");
     expect(payload?.pricing).not.toHaveProperty("shipping_cost");
+  });
+
+  it.each([false, true])("shows authoritative judge shipping %s without a switch or changing saved data", async (freeShipping) => {
+    const review = readyReview();
+    const pricing = { ...defaultPricing(), free_shipping: freeShipping };
+    review.product_policy.pricing = pricing;
+    const originalPricing = structuredClone(pricing);
+    const reviseListing = interruptedSave();
+    renderReview(review, { reviseListing }, true);
+
+    const price = await screen.findByRole("textbox", { name: "Item price" });
+    expect(price).toHaveValue("29.99");
+    expect(price).toBeEnabled();
+    expect(screen.queryByRole("switch", { name: "Free shipping" })).not.toBeInTheDocument();
+    expect(screen.getByText("Shipping is fixed for judge access.")).toBeVisible();
+    if (freeShipping) {
+      expect(screen.getByText("Free shipping is selected")).toBeVisible();
+      expect(screen.getByText("Standard shipping is required before this judge listing can be published.")).toBeVisible();
+    } else {
+      expect(screen.getByText("Printify standard shipping", { selector: "strong" })).toBeVisible();
+      expect(screen.queryByText("Free shipping is selected")).not.toBeInTheDocument();
+    }
+    expect(screen.queryByRole("button", { name: "Save listing revision" })).not.toBeInTheDocument();
+    expect(reviseListing).not.toHaveBeenCalled();
+    expect(review.product_policy.pricing).toEqual(originalPricing);
+
+    if (freeShipping) {
+      await userEvent.click(screen.getByRole("button", { name: "Use standard shipping" }));
+      expect(screen.getByText("Save your revision to apply standard shipping before publication.")).toBeVisible();
+      expect(screen.queryByText("Free shipping is selected")).not.toBeInTheDocument();
+      expect(reviseListing).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Approve draft" })).not.toBeInTheDocument();
+    } else {
+      fireEvent.change(price, { target: { value: "35.00" } });
+    }
+    expect(screen.queryByRole("button", { name: "Use standard shipping" })).not.toBeInTheDocument();
+    await save();
+    expectSavedPricing(reviseListing, { ...originalPricing, retail_price_cents: freeShipping ? originalPricing.retail_price_cents : 3500, free_shipping: false });
+    expect(review.product_policy.pricing).toEqual(originalPricing);
+  });
+
+  it("keeps the judge shipping correction disabled when the review is read-only", async () => {
+    const base = readyReview();
+    const review = sellerReviewSchema.parse({
+      ...base, display_state: "approved", stage: "complete",
+      actions: base.actions.map((action) => ({ ...action, enabled: false, reason: "NOT_IN_CURRENT_STATE", message: "This review is read-only." })),
+    });
+    const reviseListing = vi.fn<ApiPort["reviseListing"]>();
+    renderReview(review, { reviseListing }, true);
+    expect(await screen.findByRole("button", { name: "Use standard shipping" })).toBeDisabled();
+    expect(screen.getByText("Free shipping is selected")).toBeVisible();
+    expect(screen.queryByRole("switch", { name: "Free shipping" })).not.toBeInTheDocument();
+    expect(reviseListing).not.toHaveBeenCalled();
+  });
+
+  it("displays a backend-projected $35 judge default without making a local revision", async () => {
+    const review = readyReview();
+    review.product_policy.pricing = { retail_price_cents: 3500, variant_prices: [], free_shipping: false };
+    const reviseListing = vi.fn<ApiPort["reviseListing"]>();
+    renderReview(review, { reviseListing }, true);
+    expect(await screen.findByRole("textbox", { name: "Item price" })).toHaveValue("35.00");
+    await openVariants();
+    for (const color of review.product_policy.colors) {
+      for (const size of review.product_policy.sizes) expect(variant(color, size)).toHaveValue("35.00");
+    }
+    expect(screen.queryByRole("button", { name: "Save listing revision" })).not.toBeInTheDocument();
+    expect(reviseListing).not.toHaveBeenCalled();
   });
 
   it.each(["", "0", "-1", "1.001", "1e2", "NaN", "Infinity", "$12.00", "1,000.00", "10000"])(
@@ -412,19 +480,20 @@ function acceptedResponse(review: SellerReview): Awaited<ReturnType<ApiPort["rev
   return { value: { job_id: review.job_id, state: "product_draft_syncing", record_version: 8, review_version: 3 }, requestId: "request-pricing-save", etag: null };
 }
 
-function renderReview(review: SellerReview, overrides: Partial<ApiPort> = {}) {
+function renderReview(review: SellerReview, overrides: Partial<ApiPort> = {}, judgeMode = false) {
   const session = new MemoryAuthSession();
   session.set("access-token", 3600, "refresh-token");
   const never = () => Promise.reject(new Error("Unexpected pricing test request"));
   const api: ApiPort = {
     listJobs: vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "request-pricing-jobs", etag: null }),
+    clearRecentJobs: never,
     getJob: vi.fn().mockResolvedValue(progressResponse(review)), getUpload: never,
     getReview: vi.fn().mockResolvedValue(reviewResponse(review)), createUpload: never, authorizeUpload: never,
     completeUpload: never, cancelUpload: never, reviseListing: never, runAction: never,
     fetchArtwork: vi.fn().mockResolvedValue(new Blob(["png"], { type: "image/png" })), ...overrides,
   };
   const auth: AuthCoordinator = { session, startSignIn: never, completeSignIn: never, signOut: vi.fn() };
-  return render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={{ api, auth }} /></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={{ api, auth, ...(judgeMode ? { judgeAccess: {} } : {}) }} /></MemoryRouter>);
 }
 
 function interruptedSave() {

@@ -42,6 +42,7 @@ EXPECTED_ROUTES = frozenset(
         "POST /v1/uploads/{upload_id}/complete",
         "POST /v1/uploads/{upload_id}/cancel",
         "GET /v1/jobs",
+        "POST /v1/jobs/recent/clear",
         "GET /v1/jobs/{job_id}",
         "GET /v1/jobs/{job_id}/review",
         "GET /v1/jobs/{job_id}/artwork-preview",

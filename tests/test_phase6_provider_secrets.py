@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -9,6 +10,8 @@ import pytest
 from mr_lister.production.printify import PrintifyAuthenticationError
 from mr_lister.production.provider_secrets import (
     MAX_PRINTIFY_API_TOKEN_CHARS,
+    MAX_PRINTIFY_DELEGATED_OWNER_GRANTS,
+    PRINTIFY_DELEGATED_OWNER_SECRET_SCHEMA_VERSION,
     PRINTIFY_OWNER_SECRET_SCHEMA_VERSION,
     SecretsManagerOwnerPrintifyConnectionResolver,
 )
@@ -19,6 +22,8 @@ SECRET_ARN = (
 OWNER = "a" * 64
 OTHER_OWNER = "b" * 64
 GENERIC_ERROR = "Owner-bound Printify credential is unavailable"
+GRANT_EXPIRY = "2026-10-09T00:00:00Z"
+BEFORE_EXPIRY = datetime(2026, 10, 8, tzinfo=UTC)
 
 
 class RecordingSecretsManager:
@@ -68,6 +73,22 @@ def _response(secret_string: str, **updates: object) -> dict[str, object]:
     }
     response.update(updates)
     return response
+
+
+def _delegated_secret_string(
+    *,
+    grants: object,
+    owner_id: str = OWNER,
+    token: str = "printify-token-private",
+    shop_id: object = 42,
+) -> str:
+    return _secret_string(
+        owner_id=owner_id,
+        token=token,
+        shop_id=shop_id,
+        schema_version=PRINTIFY_DELEGATED_OWNER_SECRET_SCHEMA_VERSION,
+        extra={"delegated_owner_grants": grants},
+    )
 
 
 def _resolver(client: RecordingSecretsManager) -> SecretsManagerOwnerPrintifyConnectionResolver:
@@ -289,3 +310,171 @@ def test_exact_supported_partition_secret_arns_are_accepted(secret_arn: str) -> 
     )
 
     assert repr(resolver).startswith("<mr_lister.production.provider_secrets.")
+
+
+def test_delegation_shares_connection_but_preserves_each_requested_owner_identity() -> None:
+    secret = _delegated_secret_string(
+        grants=[{"owner_id": OTHER_OWNER, "expires_at": GRANT_EXPIRY}]
+    )
+    client = RecordingSecretsManager([_response(secret), _response(secret)])
+    resolver = SecretsManagerOwnerPrintifyConnectionResolver(
+        client=client, secret_arn=SECRET_ARN, clock=lambda: BEFORE_EXPIRY
+    )
+
+    primary = resolver.resolve(owner_id=OWNER)
+    delegated = resolver.resolve(owner_id=OTHER_OWNER)
+
+    assert primary.owner_id == OWNER
+    assert delegated.owner_id == OTHER_OWNER
+    assert primary.shop_id == delegated.shop_id == 42
+    assert primary.api_token == delegated.api_token
+    assert "printify-token-private" not in delegated.model_dump_json()
+    assert client.requests == [{"SecretId": SECRET_ARN}] * 2
+
+
+@pytest.mark.parametrize("offset_seconds", [-1, 0, 1])
+def test_grant_expires_at_exact_utc_boundary_without_expiring_primary_owner(
+    offset_seconds: int,
+) -> None:
+    secret = _delegated_secret_string(
+        grants=[{"owner_id": OTHER_OWNER, "expires_at": GRANT_EXPIRY}]
+    )
+    now = datetime(2026, 10, 9, tzinfo=UTC) + timedelta(seconds=offset_seconds)
+    resolver = SecretsManagerOwnerPrintifyConnectionResolver(
+        client=RecordingSecretsManager([_response(secret), _response(secret)]),
+        secret_arn=SECRET_ARN,
+        clock=lambda: now,
+    )
+
+    assert resolver.resolve(owner_id=OWNER).owner_id == OWNER
+    if offset_seconds < 0:
+        assert resolver.resolve(owner_id=OTHER_OWNER).owner_id == OTHER_OWNER
+    else:
+        _assert_generic_failure(resolver, owner_id=OTHER_OWNER)
+
+
+def test_every_resolve_observes_delegation_removal_expiry_and_v1_rollback() -> None:
+    client = RecordingSecretsManager(
+        [
+            _response(
+                _delegated_secret_string(
+                    grants=[{"owner_id": OTHER_OWNER, "expires_at": GRANT_EXPIRY}]
+                )
+            ),
+            _response(_delegated_secret_string(grants=[])),
+            _response(
+                _delegated_secret_string(
+                    grants=[{"owner_id": OTHER_OWNER, "expires_at": "2026-10-08T00:00:00Z"}]
+                )
+            ),
+            _response(_secret_string()),
+        ]
+    )
+    resolver = SecretsManagerOwnerPrintifyConnectionResolver(
+        client=client, secret_arn=SECRET_ARN, clock=lambda: BEFORE_EXPIRY
+    )
+
+    assert resolver.resolve(owner_id=OTHER_OWNER).owner_id == OTHER_OWNER
+    for _ in range(3):
+        _assert_generic_failure(resolver, owner_id=OTHER_OWNER)
+    assert client.requests == [{"SecretId": SECRET_ARN}] * 4
+
+
+def test_empty_grant_list_preserves_primary_and_rejects_other_owners() -> None:
+    secret = _delegated_secret_string(grants=[])
+    resolver = _resolver(RecordingSecretsManager([_response(secret), _response(secret)]))
+
+    assert resolver.resolve(owner_id=OWNER).owner_id == OWNER
+    _assert_generic_failure(resolver, owner_id=OTHER_OWNER)
+
+
+@pytest.mark.parametrize(
+    "grants",
+    [
+        None,
+        {},
+        "*",
+        [None],
+        [{"owner_id": OTHER_OWNER}],
+        [{"expires_at": GRANT_EXPIRY}],
+        [{"owner_id": OTHER_OWNER, "expires_at": GRANT_EXPIRY, "publish": True}],
+        [
+            {"owner_id": OTHER_OWNER, "expires_at": GRANT_EXPIRY},
+            {"owner_id": OTHER_OWNER, "expires_at": "2026-10-10T00:00:00Z"},
+        ],
+        [
+            {"owner_id": f"{index:064x}", "expires_at": GRANT_EXPIRY}
+            for index in range(1, MAX_PRINTIFY_DELEGATED_OWNER_GRANTS + 2)
+        ],
+    ]
+    + [
+        [{"owner_id": owner, "expires_at": GRANT_EXPIRY}]
+        for owner in [OWNER, "0" * 64, OTHER_OWNER.upper(), "*", "shared", "", None, True, 42]
+    ]
+    + [
+        [{"owner_id": OTHER_OWNER, "expires_at": expiry}]
+        for expiry in [
+            None,
+            True,
+            1_791_504_000,
+            "",
+            "never",
+            "2026-10-09",
+            "2026-10-09T00:00:00",
+            "2026-10-09T00:00:00+00:00",
+            "2026-10-09T00:00:00.000Z",
+            "2026-02-30T00:00:00Z",
+            "2026-10-09T24:00:00Z",
+            "2026-10-09T00:00:60Z",
+            "2026-1-9T00:00:00Z",
+            "2026-10-09T00:00:00Z\n",
+        ]
+    ],
+)
+def test_malformed_or_ambiguous_grants_fail_closed_even_for_primary(grants: object) -> None:
+    secret = _delegated_secret_string(grants=grants)
+    resolver = _resolver(RecordingSecretsManager([_response(secret), _response(secret)]))
+
+    _assert_generic_failure(resolver, owner_id=OWNER)
+    _assert_generic_failure(resolver, owner_id=OTHER_OWNER)
+
+
+def test_maximum_grant_count_is_accepted_and_remains_explicit() -> None:
+    grants = [
+        {"owner_id": f"{index:064x}", "expires_at": GRANT_EXPIRY}
+        for index in range(1, MAX_PRINTIFY_DELEGATED_OWNER_GRANTS + 1)
+    ]
+    secret = _delegated_secret_string(grants=grants)
+    resolver = SecretsManagerOwnerPrintifyConnectionResolver(
+        client=RecordingSecretsManager([_response(secret), _response(secret)]),
+        secret_arn=SECRET_ARN,
+        clock=lambda: BEFORE_EXPIRY,
+    )
+
+    assert resolver.resolve(owner_id=grants[-1]["owner_id"]).owner_id == grants[-1]["owner_id"]
+    _assert_generic_failure(resolver, owner_id=OTHER_OWNER)
+
+
+def test_duplicate_nested_grant_json_key_is_rejected() -> None:
+    secret = _delegated_secret_string(
+        grants=[{"owner_id": OTHER_OWNER, "expires_at": GRANT_EXPIRY}]
+    ).replace(
+        f'"expires_at":"{GRANT_EXPIRY}"',
+        f'"expires_at":"{GRANT_EXPIRY}","expires_at":"2099-01-01T00:00:00Z"',
+    )
+
+    _assert_generic_failure(_resolver(RecordingSecretsManager([_response(secret)])))
+
+
+@pytest.mark.parametrize("now", [datetime(2026, 10, 8), None, "2026-10-08T00:00:00Z"])
+def test_delegation_rejects_untrusted_clock_result(now: object) -> None:
+    secret = _delegated_secret_string(
+        grants=[{"owner_id": OTHER_OWNER, "expires_at": GRANT_EXPIRY}]
+    )
+    resolver = SecretsManagerOwnerPrintifyConnectionResolver(
+        client=RecordingSecretsManager([_response(secret)]),
+        secret_arn=SECRET_ARN,
+        clock=lambda: now,  # type: ignore[arg-type,return-value]
+    )
+
+    _assert_generic_failure(resolver, owner_id=OTHER_OWNER)

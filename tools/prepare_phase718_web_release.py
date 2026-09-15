@@ -39,8 +39,8 @@ ENABLED_DESCRIPTOR_FORMAT: Final = "phase718-enabled-deployment-descriptor-v1"
 SERVER_SIDE_ENCRYPTION: Final = "AES256"
 
 _ASSET = re.compile(r"^assets/index-[A-Za-z0-9_-]{8}\.(css|js)$")
-# Only reviewed branding and locally hosted font bytes may extend the executable bundle.
-# Older four/five-object releases remain loadable for pinned predecessor verification.
+# Only reviewed branding, local fonts, and the approved judge sample may extend the bundle.
+# Older four/five/eight-object releases remain loadable for pinned predecessor verification.
 _APPROVED_ASSETS = {
     "mr-lister-icon": (
         "png",
@@ -57,6 +57,10 @@ _APPROVED_ASSETS = {
     "dm-sans-latin-wght-normal": (
         "woff2",
         "9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543",
+    ),
+    "judge-sample-artwork": (
+        "png",
+        "30a0c50acd707f71a8eb3fd957d436861828ce47458efc309e6ea2a0cd651bc5",
     ),
 }
 _COMMIT = re.compile(r"^[a-f0-9]{40}$")
@@ -309,7 +313,7 @@ def _validate_rendered_manifest(value: Mapping[str, object], *, repository: Path
         }
         or value.get("deployment_scope") != "static_objects_only_phase6_stack_unchanged"
         or value.get("distribution_id") != WEB_DISTRIBUTION_ID
-        or value.get("file_count") not in {4, 5, 8}
+        or value.get("file_count") not in {4, 5, 8, 9}
         or value.get("format") != WEB_RELEASE_FORMAT
         or value.get("server_side_encryption") != SERVER_SIDE_ENCRYPTION
         or not isinstance(source_commit, str)
@@ -578,6 +582,7 @@ def _approved_asset_inventory(paths: Mapping[str, Path]) -> dict[str, tuple[str,
     if len(names) != len(set(names)) or set(names) not in (
         set(),
         {"mr-lister-icon"},
+        set(_APPROVED_ASSETS) - {"judge-sample-artwork"},
         set(_APPROVED_ASSETS),
     ):
         raise ValueError

@@ -541,7 +541,7 @@ function makeJpeg(name: string): File {
 function fakeApi(overrides: Partial<ApiPort>): ApiPort {
   const never = () => Promise.reject(new Error("Unexpected test call"));
   return {
-    listJobs: never,
+    listJobs: never, clearRecentJobs: never,
     getJob: never,
     getUpload: never,
     getReview: never,

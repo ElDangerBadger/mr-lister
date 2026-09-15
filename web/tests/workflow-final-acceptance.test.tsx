@@ -197,7 +197,7 @@ function renderReview(review: SellerReview, overrides: Partial<ApiPort>) {
   session.set("access-token", 3600, "refresh-token");
   const never = () => Promise.reject(new Error("Unexpected final-acceptance test request"));
   const api: ApiPort = {
-    listJobs: never, getUpload: never,
+    listJobs: never, clearRecentJobs: never, getUpload: never,
     getJob: vi.fn().mockResolvedValue({ value: review, requestId: "request-progress", etag: null }),
     getReview: vi.fn().mockResolvedValue(reviewResponse(review)),
     createUpload: never, authorizeUpload: never, completeUpload: never, cancelUpload: never,

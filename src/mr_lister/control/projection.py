@@ -18,6 +18,7 @@ from mr_lister.control.fingerprints import (
     review_content_fingerprint,
     review_etag,
 )
+from mr_lister.control.judge_pricing import JudgePricingPolicy, JudgePricingPolicyError
 from mr_lister.control.models import (
     AgentPreparationEvidence,
     ArtworkAnalysisRecord,
@@ -224,6 +225,7 @@ class SellerReviewProjectionService:
         clock: Callable[[], datetime] | None = None,
         preview_issuer: ArtworkPreviewIssuer | None = None,
         preview_origin: str | None = None,
+        judge_pricing_policy: JudgePricingPolicy | None = None,
     ) -> None:
         if (preview_issuer is None) != (preview_origin is None):
             raise ValueError("Preview issuer and origin are optional as a pair")
@@ -232,6 +234,7 @@ class SellerReviewProjectionService:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._preview_issuer = preview_issuer
         self._preview_origin = preview_origin
+        self._judge_pricing_policy = judge_pricing_policy
 
     def get(self, *, owner_id: str, job_id: str) -> SellerReviewProjection:
         """Return the exact owner-scoped review; ownership is always checked first."""
@@ -283,6 +286,25 @@ class SellerReviewProjectionService:
             economics=economics,
             failure=failure,
         )
+        initial_pricing = None
+        if self._judge_pricing_policy is not None:
+            if review is None:
+                initial_pricing = self._judge_pricing_policy.defaults_for(job.owner_id)
+            else:
+                try:
+                    self._judge_pricing_policy.require_allowed(job.owner_id, review.pricing)
+                except JudgePricingPolicyError as error:
+                    actions = tuple(
+                        SellerActionCapability(
+                            action=action.action,
+                            enabled=False,
+                            reason=ActionReason.REVIEW_INVALID,
+                            message=str(error),
+                        )
+                        if action.action is SellerAction.APPROVE_REVIEW
+                        else action
+                        for action in actions
+                    )
         _ = work
         return SellerReviewProjection(
             job_id=job.job_id,
@@ -297,7 +319,9 @@ class SellerReviewProjectionService:
             artwork=analysis,
             listing=listing,
             validation=validation,
-            product_policy=self._product_policy(exact_profile, review),
+            product_policy=self._product_policy(
+                exact_profile, review, initial_pricing=initial_pricing
+            ),
             synchronization=self._synchronization(job, sync),
             mockups=mockups,
             economics=economics,
@@ -1021,10 +1045,14 @@ class SellerReviewProjectionService:
 
     @classmethod
     def _product_policy(
-        cls, exact: ExactReviewProductProfile, review: ReviewContent | None
+        cls,
+        exact: ExactReviewProductProfile,
+        review: ReviewContent | None,
+        *,
+        initial_pricing: ReviewPricing | None = None,
     ) -> ProductPolicyProjection:
         profile = exact.profile
-        pricing = cls._pricing_settings(review, profile)
+        pricing = initial_pricing or cls._pricing_settings(review, profile)
         return ProductPolicyProjection(
             product_name=exact.product_name,
             provider_name=exact.provider_name,

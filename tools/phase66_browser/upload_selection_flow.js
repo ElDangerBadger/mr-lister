@@ -67,16 +67,15 @@ async page => {
   try {
     await page.getByRole("link", { name: "Mr. Lister seller review home" }).click();
     await page.getByRole("heading", { name: "Let’s start with your artwork." }).waitFor();
-    const emptyAction = page.getByRole("button", { name: "Choose artwork to continue", exact: true });
-    check(await emptyAction.isDisabled(), "an empty queue can be submitted");
+    const submit = page.getByRole("button", { name: "Submit", exact: true });
+    check(await submit.count() === 0, "an empty queue exposes a submit control");
     const emptyLayout = await geometry();
-    check(emptyLayout.grid !== null && emptyLayout.action !== null, "the empty upload layout is absent");
-    check(Math.abs(emptyLayout.action.x - emptyLayout.grid.x) < 2
-      && Math.abs(emptyLayout.action.width - emptyLayout.grid.width) < 2, "the empty action panel does not span the grid");
+    check(emptyLayout.grid !== null && emptyLayout.artwork !== null && emptyLayout.guide !== null, "the empty upload layout is absent");
+    check(emptyLayout.action === null, "the duplicate empty action panel remains");
 
     await choose(page.locator(".upload-choose"), names.slice(0, 2));
     await expectOrder(names.slice(0, 2));
-    check(await page.getByRole("button", { name: "Prepare 2 listings", exact: true }).isEnabled(), "two-file selection does not enable batch preparation");
+    check(await page.getByRole("button", { name: "Submit", exact: true }).isEnabled(), "two-file selection does not enable batch preparation");
     const addMore = page.getByRole("button", { name: "Add more artwork", exact: true });
     await choose(addMore, [names[2]]);
     await expectOrder(names.slice(0, 3));
@@ -91,11 +90,11 @@ async page => {
     await choose(addMore, names.slice(4, 6));
     await page.getByRole("alert").filter({ hasText: /(?:no more than|up to|limit|at most|maximum|room for).*5|5.*(?:file|batch)/iu }).waitFor();
     await expectOrder(fourFiles);
-    check(await page.getByRole("button", { name: "Prepare 4 listings", exact: true }).isEnabled(), "an over-limit addition damaged the existing queue");
+    check(await page.getByRole("button", { name: "Submit", exact: true }).isEnabled(), "an over-limit addition damaged the existing queue");
     await choose(addMore, [names[4]]);
     const fiveFiles = [...fourFiles, names[4]];
     await expectOrder(fiveFiles);
-    check(await page.getByRole("button", { name: "Prepare 5 listings", exact: true }).isEnabled(), "the five-file limit cannot be reached");
+    check(await page.getByRole("button", { name: "Submit", exact: true }).isEnabled(), "the five-file limit cannot be reached");
     check(await addMore.isDisabled(), "Add more artwork stays enabled at the five-file limit");
     check(await page.getByRole("alert").count() === 0, "a valid addition did not clear the earlier selection error");
 
@@ -110,14 +109,14 @@ async page => {
         && Math.abs(desktop.selection.width - desktop.artwork.width) < 2, "the file queue is not aligned with the upload column");
       check(Math.abs(desktop.action.x - desktop.guide.x) < 2
         && Math.abs(desktop.action.width - desktop.guide.width) < 2, "the prepare panel is not aligned with the guide column");
-      const uploadShare = desktop.artwork.width / (desktop.artwork.width + desktop.guide.width);
-      check(Math.abs(uploadShare - 0.65) <= 0.03, "the approved upload/guide proportions changed");
+      check(Math.abs(desktop.artwork.width - desktop.guide.width) < 2, "the upload and guide columns are not equal");
     }
 
     await page.setViewportSize({ width: 360, height: 780 });
     const mobile = await geometry();
-    check(mobile.selection !== null && mobile.action !== null, "mobile queue or preparation panel is absent");
+    check(mobile.selection !== null && mobile.action !== null && mobile.guide !== null, "mobile queue, preparation panel or guide is absent");
     check(mobile.action.top >= mobile.selection.bottom - 2, "mobile preparation does not follow the file queue");
+    check(mobile.guide.top >= mobile.action.bottom - 2, "mobile guide separates the file queue from submission");
     check(Math.abs(mobile.selection.x - mobile.action.x) < 2
       && Math.abs(mobile.selection.width - mobile.action.width) < 2, "mobile queue and preparation panel do not share one column");
     check(mobile.documentWidth <= mobile.viewportWidth + 1, "the upload queue overflows the mobile viewport");
@@ -129,9 +128,9 @@ async page => {
       await page.getByRole("button", { name: `Remove ${fiveFiles[index]}`, exact: true }).click();
       await expectOrder(fiveFiles.slice(index + 1));
     }
-    check(await emptyAction.isDisabled(), "removing every file did not restore the disabled empty state");
+    check(await submit.count() === 0, "removing every file retained a submit control");
     check(await page.locator(".selection-panel").count() === 0, "an empty file list remained on screen");
-    check(await page.locator(".upload-actionbar--selected").count() === 0, "the empty action panel retained the selected layout");
+    check(await page.locator(".upload-actionbar").count() === 0, "the empty action panel remains after removing every file");
     const fixtureState = await (await page.request.get(`${fixtureOrigin}/__fixture__/state`)).json();
     check(uploadWrites.length === 0, "editing the file queue issued an API mutation");
     check(fixtureState.provider_transport_attempts === 0, "editing the file queue invoked provider transport");

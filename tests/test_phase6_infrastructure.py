@@ -369,6 +369,8 @@ def test_functions_have_distinct_explicit_roles_and_scaffold_gate() -> None:
     assert functions["PreparationDispatchFunction"]["Properties"]["Timeout"] == 600
     assert functions["ProviderDraftFunction"]["Properties"]["Timeout"] == 600
     assert functions["SettlementFunction"]["Properties"]["Timeout"] == 120
+    assert functions["UploadApiFunction"]["Properties"]["MemorySize"] == 1024
+    assert functions["UploadApiFunction"]["Properties"]["Timeout"] == 30
     assert functions["ReviewQueryApiFunction"]["Properties"]["MemorySize"] == 512
     assert functions["ReviewQueryApiFunction"]["Properties"]["Timeout"] == 30
     assert functions["SellerCommandApiFunction"]["Properties"]["MemorySize"] == 512
@@ -493,6 +495,7 @@ def test_exact_public_and_protected_http_routes_are_closed() -> None:
         "POST /v1/uploads/{upload_id}/complete",
         "POST /v1/uploads/{upload_id}/cancel",
         "GET /v1/jobs",
+        "POST /v1/jobs/recent/clear",
         "GET /v1/jobs/{job_id}",
         "GET /v1/jobs/{job_id}/review",
         "GET /v1/jobs/{job_id}/artwork-preview",
@@ -548,6 +551,7 @@ def test_dispatcher_and_machine_routes_are_exactly_allowlisted() -> None:
         "GET /v1/jobs/{job_id}/artwork-preview",
     }
     assert module.SELLER_COMMAND_API_ROUTE_KEYS == {
+        "POST /v1/jobs/recent/clear",
         "PUT /v1/jobs/{job_id}/review/listing",
         "POST /v1/jobs/{job_id}/economics/refresh",
         "POST /v1/jobs/{job_id}/approve",

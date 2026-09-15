@@ -46,6 +46,7 @@ from mr_lister.control.fingerprints import (
     product_sync_record_fingerprint,
     review_etag,
 )
+from mr_lister.control.judge_pricing import JudgePricingPolicy, JudgePricingPolicyError
 from mr_lister.control.models import (
     CONTROL_TERMINAL_STATES,
     CancellationDecisionRecord,
@@ -129,9 +130,11 @@ class SellerControlService:
         *,
         store: SellerControlStore,
         clock: Callable[[], datetime] | None = None,
+        judge_pricing_policy: JudgePricingPolicy | None = None,
     ) -> None:
         self.store = store
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._judge_pricing_policy = judge_pricing_policy
 
     def revise_listing(self, command: ReviseListingCommand) -> CommandResponse:
         command_type = CommandType.REVISE_LISTING.value
@@ -158,6 +161,11 @@ class SellerControlService:
         )
 
         pricing = command.revision.pricing or review.pricing
+        if self._judge_pricing_policy is not None:
+            try:
+                self._judge_pricing_policy.require_allowed(current.owner_id, pricing)
+            except JudgePricingPolicyError as exc:
+                raise InvalidControlStateError(str(exc)) from exc
         if pricing is not None and pricing.variant_prices:
             if sync is None:
                 raise InvalidControlStateError(
@@ -313,6 +321,11 @@ class SellerControlService:
         )
         if not review.validation_passed or not current.review_validated:
             raise InvalidControlStateError("An invalid review cannot be approved")
+        if self._judge_pricing_policy is not None:
+            try:
+                self._judge_pricing_policy.require_allowed(current.owner_id, review.pricing)
+            except JudgePricingPolicyError as exc:
+                raise InvalidControlStateError(str(exc)) from exc
         if sync is None or pricing is None:
             raise EconomicsStaleError("Current product and economics evidence is required")
         self._require_complete_pricing_evidence(current, sync, pricing)

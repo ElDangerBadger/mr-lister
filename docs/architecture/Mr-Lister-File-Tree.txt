@@ -1,0 +1,50 @@
+Mr_Lister/
+|-- README.md                     Project overview and setup
+|-- pyproject.toml                Python dependencies and tooling
+|-- agentcore_phase6_runtime.py   AgentCore runtime entry point
+|
+|-- web/                         React / TypeScript frontend
+|   |-- public/                  Static assets
+|   |-- src/
+|   |   |-- App.tsx              Application routing
+|   |   |-- pages/               Landing, upload, and review screens
+|   |   |-- components/          Shared UI components
+|   |   |-- auth/                Authentication
+|   |   |-- api/                 Backend API client
+|   |   |-- upload/              Artwork upload and batch handling
+|   |   |-- publication/         Publish confirmation and status
+|   |   |-- navigation/          Workspace navigation
+|   |   |-- assets/              Application images and assets
+|   |   |-- theme.ts             Light / Dark / Auto appearance
+|   |   `-- styles.css           Application styling
+|   `-- tests/                   Frontend tests
+|
+|-- src/mr_lister/               Python backend
+|   |-- api/                     API handlers and contracts
+|   |-- agent/                   Strands agent and AgentCore integration
+|   |-- intelligence/            Bedrock artwork analysis and listing copy
+|   |-- control/                 Job state, review versions, and approval
+|   |-- production/              Printify drafts, synchronization, and pricing
+|   |-- publication/             Guarded Etsy publication through Printify
+|   |-- judge_session/           Judge invitation and session broker
+|   |-- judge_cleanup/           30-minute judge product cleanup
+|   |-- cloud/                   AWS service composition and entry points
+|   |-- durable/                 Durable workflow support
+|   |-- workflow/                Workflow logic
+|   |-- contracts/               Shared backend contracts
+|   `-- release/                 Release validation and tooling
+|
+|-- infra/                       AWS infrastructure definitions
+|   |-- agentcore/               Agent runtime infrastructure
+|   |-- iam/                     Service permissions
+|   |-- phase6/                  Upload, preparation, and seller workspace
+|   `-- phase7/                  Controlled publication infrastructure
+|
+|-- config/                      Application and product configuration
+|-- contracts/                   Versioned API schemas and fixtures
+|-- tests/                       Backend and integration tests
+|-- tools/                       Build, deployment, and verification tools
+`-- docs/                        Architecture decisions and operating guides
+
+Simplified source tree. Dependencies, private credentials, build outputs,
+and historical implementation details are omitted.

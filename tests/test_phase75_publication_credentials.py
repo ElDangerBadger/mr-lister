@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pickle
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 
 import pytest
@@ -40,6 +41,7 @@ from mr_lister.publication.provider_credentials import (
 from tests.test_phase6_provider_secrets import (
     SECRET_ARN,
     RecordingSecretsManager,
+    _delegated_secret_string,
     _response,
     _secret_string,
 )
@@ -367,6 +369,73 @@ def test_factory_reuses_exact_production_secret_resolver_without_sdk_or_cache() 
     lower = credentials.resolve_exact(authority=authority).for_authority(authority)
 
     assert lower.bearer_token.get_secret_value() == token
+    assert client.requests == [{"SecretId": SECRET_ARN}]
+
+
+def test_factory_binds_delegated_owner_to_matching_shared_shop_without_aliasing_primary() -> None:
+    primary_owner = "9" * 64
+    authority = _authority()
+    expiry = (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    client = RecordingSecretsManager(
+        [
+            _response(
+                _delegated_secret_string(
+                    owner_id=primary_owner,
+                    grants=[{"owner_id": authority.owner_id, "expires_at": expiry}],
+                    shop_id=authority.printify_shop_id,
+                    token=TOKEN,
+                )
+            )
+        ]
+    )
+    credentials = build_phase7_publication_provider_credential_authority(
+        client=client, secret_arn=SECRET_ARN
+    )
+
+    bound = credentials.resolve_exact(authority=authority)
+    lower = bound.for_authority(authority)
+
+    assert lower.owner_id == authority.owner_id
+    assert lower.owner_id != primary_owner
+    assert lower.printify_shop_id == authority.printify_shop_id
+    assert lower.bearer_token.get_secret_value() == TOKEN
+    assert bound.binding == build_publication_provider_credential_binding(authority)
+    assert client.requests == [{"SecretId": SECRET_ARN}]
+    with pytest.raises(PublicationProviderCredentialError) as captured:
+        bound.for_authority(_authority(owner_id=primary_owner))
+    _assert_generic(captured)
+
+
+@pytest.mark.parametrize("mismatch", ["owner", "shop", "expired", "removed"])
+def test_factory_rejects_delegation_outside_exact_owner_shop_or_valid_grant(mismatch: str) -> None:
+    authority = _authority()
+    expiry = (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    grants = [
+        {
+            "owner_id": "8" * 64 if mismatch == "owner" else authority.owner_id,
+            "expires_at": "2000-01-01T00:00:00Z" if mismatch == "expired" else expiry,
+        }
+    ]
+    client = RecordingSecretsManager(
+        [
+            _response(
+                _delegated_secret_string(
+                    owner_id="9" * 64,
+                    grants=[] if mismatch == "removed" else grants,
+                    shop_id=authority.printify_shop_id + (1 if mismatch == "shop" else 0),
+                    token=TOKEN,
+                )
+            )
+        ]
+    )
+    credentials = build_phase7_publication_provider_credential_authority(
+        client=client, secret_arn=SECRET_ARN
+    )
+
+    with pytest.raises(PublicationProviderCredentialError) as captured:
+        credentials.resolve_exact(authority=authority)
+
+    _assert_generic(captured)
     assert client.requests == [{"SecretId": SECRET_ARN}]
 
 

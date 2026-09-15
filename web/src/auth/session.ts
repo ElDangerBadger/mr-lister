@@ -32,10 +32,10 @@ const popupCallbackSchema = z.strictObject({
 
 interface PopupAttempt {
   popup: Window;
-  promise: Promise<string>;
+  promise: Promise<string | null>;
   transaction: z.infer<typeof transactionSchema> | null;
   exchanging: boolean;
-  resolve: (returnPath: string) => void;
+  resolve: (returnPath: string | null) => void;
   reject: (reason: AuthError) => void;
   listener: (event: MessageEvent<unknown>) => void;
   timeout: number;
@@ -55,11 +55,17 @@ export interface AuthSession {
 export interface AuthCoordinator {
   readonly session: AuthSession;
   startSignIn(returnPath: string): Promise<void>;
-  startPopupSignIn?(returnPath: string): Promise<string>;
+  /** null means the authenticated workspace already handled navigation. */
+  startPopupSignIn?(returnPath: string): Promise<string | null>;
   cancelPopupSignIn?(): void;
   focusPopupSignIn?(): void;
-  completeSignIn(callbackSearch: string): Promise<string>;
+  completeSignIn(callbackSearch: string): Promise<string | null>;
   signOut(): void;
+}
+
+export interface SignInWorkspaceOptions {
+  resolveWorkspace(accessToken: string, currentConfig: RuntimeConfig): Promise<RuntimeConfig | null>;
+  activateWorkspace(config: RuntimeConfig, returnPath: string): void;
 }
 
 export class MemoryAuthSession implements AuthSession {
@@ -149,11 +155,12 @@ export class OAuthCoordinator implements AuthCoordinator {
   private signInGeneration = 0;
 
   constructor(
-    private readonly config: RuntimeConfig,
+    private config: RuntimeConfig,
     session = new MemoryAuthSession(),
     private readonly storage: Storage = window.sessionStorage,
     private readonly fetcher: typeof fetch = window.fetch.bind(window),
     private readonly navigateTo: (target: URL) => void = (target) => window.location.assign(target),
+    private readonly workspace?: SignInWorkspaceOptions,
   ) {
     this.session = session;
     this.session.setRenewer(async (refreshToken) => {
@@ -181,13 +188,14 @@ export class OAuthCoordinator implements AuthCoordinator {
     target.searchParams.set("client_id", this.config.client_id);
     target.searchParams.set("redirect_uri", this.config.redirect_uri);
     target.searchParams.set("scope", this.config.scopes.join(" "));
+    target.searchParams.set("identity_provider", this.config.judge_access?.identity_provider ?? "COGNITO");
     target.searchParams.set("state", transaction.stored.state);
     target.searchParams.set("code_challenge_method", "S256");
     target.searchParams.set("code_challenge", transaction.challenge);
     this.navigateTo(target);
   }
 
-  startPopupSignIn(returnPath: string): Promise<string> {
+  startPopupSignIn(returnPath: string): Promise<string | null> {
     if (this.popupAttempt !== null) {
       this.focusPopupSignIn();
       return this.popupAttempt.promise;
@@ -219,9 +227,9 @@ export class OAuthCoordinator implements AuthCoordinator {
     }
     this.signInGeneration += 1;
     const generation = this.signInGeneration;
-    let resolveAttempt!: (returnPath: string) => void;
+    let resolveAttempt!: (returnPath: string | null) => void;
     let rejectAttempt!: (reason: AuthError) => void;
-    const promise = new Promise<string>((resolve, reject) => {
+    const promise = new Promise<string | null>((resolve, reject) => {
       resolveAttempt = resolve;
       rejectAttempt = reject;
     });
@@ -249,6 +257,7 @@ export class OAuthCoordinator implements AuthCoordinator {
       target.searchParams.set("client_id", this.config.client_id);
       target.searchParams.set("redirect_uri", this.config.redirect_uri);
       target.searchParams.set("scope", this.config.scopes.join(" "));
+      target.searchParams.set("identity_provider", this.config.judge_access?.identity_provider ?? "COGNITO");
       target.searchParams.set("state", transaction.stored.state);
       target.searchParams.set("code_challenge_method", "S256");
       target.searchParams.set("code_challenge", transaction.challenge);
@@ -287,14 +296,17 @@ export class OAuthCoordinator implements AuthCoordinator {
       attempt.popup.postMessage({ type: POPUP_COMPLETE_TYPE, state: transaction.state }, event.origin);
       const tokens = await this.exchangeAuthorizationCode(code, transaction.verifier);
       if (this.popupAttempt !== attempt || this.signInGeneration !== generation) return;
-      this.session.set(tokens.access_token, tokens.expires_in, tokens.refresh_token);
-      this.finishPopup(attempt, null, transaction.returnPath);
+      const nextConfig = await this.resolveWorkspace(tokens.access_token);
+      if (this.popupAttempt !== attempt || this.signInGeneration !== generation) return;
+      this.finishPopup(attempt, null, nextConfig === null ? transaction.returnPath : null, () => {
+        this.acceptSignIn(tokens, nextConfig, transaction.returnPath);
+      });
     } catch {
       this.finishPopup(attempt, new AuthError("Sign-in could not be completed. Please try again."));
     }
   }
 
-  private finishPopup(attempt: PopupAttempt, error: AuthError | null, returnPath = "/"): void {
+  private finishPopup(attempt: PopupAttempt, error: AuthError | null, returnPath: string | null = "/", accept?: () => void): void {
     if (this.popupAttempt !== attempt) return;
     this.popupAttempt = null;
     attempt.transaction = null;
@@ -302,13 +314,21 @@ export class OAuthCoordinator implements AuthCoordinator {
     window.clearTimeout(attempt.timeout);
     window.clearInterval(attempt.closedPoll);
     try { attempt.popup.close(); } catch { /* Closing an already detached window is best effort. */ }
-    if (error === null) attempt.resolve(returnPath);
-    else attempt.reject(error);
+    if (error !== null) attempt.reject(error);
+    else {
+      try {
+        // Retire the attempt before a workspace remount cleans up its sign-in dialog.
+        accept?.();
+        attempt.resolve(returnPath);
+      } catch {
+        attempt.reject(new AuthError("Sign-in could not be completed. Please try again."));
+      }
+    }
   }
 
-  async completeSignIn(callbackSearch: string): Promise<string> {
+  async completeSignIn(callbackSearch: string): Promise<string | null> {
     const parameters = new URLSearchParams(callbackSearch);
-    window.history.replaceState(null, "", "/auth/callback");
+    window.history.replaceState(null, "", new URL(this.config.redirect_uri).pathname);
     const generation = this.signInGeneration;
     try {
       const code = authorizationCode(parameters);
@@ -316,12 +336,26 @@ export class OAuthCoordinator implements AuthCoordinator {
       const transaction = consumeTransaction(this.storage, returnedState);
       const tokens = await this.exchangeAuthorizationCode(code, transaction.verifier);
       if (this.signInGeneration !== generation) throw new AuthError("Sign-in was canceled.");
-      this.session.set(tokens.access_token, tokens.expires_in, tokens.refresh_token);
-      return transaction.returnPath;
+      const nextConfig = await this.resolveWorkspace(tokens.access_token);
+      if (this.signInGeneration !== generation) throw new AuthError("Sign-in was canceled.");
+      this.acceptSignIn(tokens, nextConfig, transaction.returnPath);
+      return nextConfig === null ? transaction.returnPath : null;
     } catch (error) {
       this.storage.removeItem(TRANSACTION_KEY);
       throw error;
     }
+  }
+
+  private resolveWorkspace(accessToken: string): Promise<RuntimeConfig | null> {
+    return this.workspace?.resolveWorkspace(accessToken, this.config) ?? Promise.resolve(null);
+  }
+
+  private acceptSignIn(tokens: z.infer<typeof tokenResponseSchema>, nextConfig: RuntimeConfig | null, returnPath: string): void {
+    if (nextConfig !== null && this.workspace !== undefined) {
+      this.workspace.activateWorkspace(nextConfig, returnPath);
+      this.config = nextConfig;
+    }
+    this.session.set(tokens.access_token, tokens.expires_in, tokens.refresh_token);
   }
 
   signOut(): void {
@@ -330,7 +364,7 @@ export class OAuthCoordinator implements AuthCoordinator {
     this.session.clear();
     const target = new URL(this.config.cognito_logout_url);
     target.searchParams.set("client_id", this.config.client_id);
-    target.searchParams.set("logout_uri", new URL("/", this.config.redirect_uri).href);
+    target.searchParams.set("logout_uri", new URL(this.config.judge_access === undefined ? "/" : "/judge/signout", this.config.redirect_uri).href);
     this.navigateTo(target);
   }
 
@@ -383,7 +417,8 @@ export function relayPopupCallback(callbackSearch: string, onFailure?: (error: A
   let marker: string | null = null;
   try { marker = window.sessionStorage.getItem(POPUP_MARKER_KEY); } catch { /* A valid window name still identifies the popup. */ }
   if (!ownedName(window.name) && !ownedName(marker)) return false;
-  window.history.replaceState(null, "", "/auth/callback");
+  const callbackPath = window.location.pathname === "/judge/auth/callback" ? "/judge/auth/callback" : "/auth/callback";
+  window.history.replaceState(null, "", callbackPath);
   window.name = "";
   try {
     window.sessionStorage.removeItem(POPUP_MARKER_KEY);

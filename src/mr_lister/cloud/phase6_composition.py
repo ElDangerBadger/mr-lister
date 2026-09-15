@@ -38,7 +38,9 @@ from mr_lister.cloud.preview import (
     AuthenticatedPreviewLinkIssuer,
     ExactVersionArtworkPreviewService,
 )
+from mr_lister.cloud.workspace_history import DynamoWorkspaceHistory, HistoryFilteredJobQuery
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
+from mr_lister.control.judge_pricing import JudgePricingPolicy, load_judge_pricing_policy
 from mr_lister.control.projection import SellerReviewProjectionService
 from mr_lister.control.service import SellerControlService
 from mr_lister.control.upload_service import UploadIntakeService
@@ -72,6 +74,7 @@ QUERY_ROUTE_KEYS = frozenset(
 )
 COMMAND_ROUTE_KEYS = frozenset(
     {
+        "POST /v1/jobs/recent/clear",
         "PUT /v1/jobs/{job_id}/review/listing",
         "POST /v1/jobs/{job_id}/economics/refresh",
         "POST /v1/jobs/{job_id}/approve",
@@ -115,6 +118,7 @@ class CommonApiConfiguration:
     state_table: str
     release_fingerprint: str
     claims_policy: SellerClaimsPolicy
+    judge_pricing_policy: JudgePricingPolicy | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,6 +300,7 @@ def compose_query_api_adapter(
         profiles=profiles,
         preview_issuer=preview_issuer,
         preview_origin=configuration.application_origin,
+        judge_pricing_policy=common.judge_pricing_policy,
     )
     previews = ExactVersionArtworkPreviewService(
         store=store,
@@ -305,7 +310,10 @@ def compose_query_api_adapter(
     )
     return ReviewQueryApiAdapter(
         claims_policy=common.claims_policy,
-        store=store,
+        store=HistoryFilteredJobQuery(
+            store=store,
+            history=DynamoWorkspaceHistory(client=dynamodb, table_name=common.state_table),
+        ),
         reviews=reviews,
         previews=previews,
         evaluator_publication_status=configuration.evaluator_publication_status,
@@ -327,8 +335,12 @@ def compose_command_api_adapter(
         required_methods=("get_item", "put_item", "transact_write_items"),
     )
     store = DynamoDBSellerControlStore(client=dynamodb, table_name=common.state_table)
-    commands = SellerControlService(store=store)
-    return SellerCommandApiAdapter(claims_policy=common.claims_policy, commands=commands)
+    commands = SellerControlService(store=store, judge_pricing_policy=common.judge_pricing_policy)
+    return SellerCommandApiAdapter(
+        claims_policy=common.claims_policy,
+        commands=commands,
+        history=DynamoWorkspaceHistory(client=dynamodb, table_name=common.state_table),
+    )
 
 
 def build_upload_api_handler(
@@ -528,6 +540,7 @@ def _common_configuration(environment: Mapping[str, object]) -> CommonApiConfigu
             required_scope=scope,
             required_group=group,
         ),
+        judge_pricing_policy=load_judge_pricing_policy(environment),
     )
 
 

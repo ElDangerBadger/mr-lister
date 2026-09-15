@@ -3,10 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { useAppDependencies } from "../app-context";
 import { useSessionStatus } from "../auth/use-session";
 import { LandingPage } from "./LandingPage";
+import { JudgeAccessPage } from "./JudgeAccessPage";
 import type { JobSummary } from "../contracts";
 import { WorkflowSteps } from "../components/WorkflowSteps";
+import { ActivityStatus } from "../components/ActivityStatus";
 import { batchItemStatus, jobProgressLabel, useBatchWorkspace } from "../navigation/BatchWorkspace";
 import { WorkspaceLink } from "../navigation/WorkspaceNavigation";
+import { useRecentJobs } from "../navigation/use-recent-jobs";
 import {
   MAX_BATCH_FILES,
   type BatchUploadItemState,
@@ -18,7 +21,7 @@ import {
 } from "../upload/direct-upload";
 
 export function HomePage() {
-  const { api, auth } = useAppDependencies();
+  const { api, auth, judgeAccess } = useAppDependencies();
   const status = useSessionStatus(auth.session);
   const navigate = useNavigate();
   const upload = useUpload();
@@ -36,23 +39,7 @@ export function HomePage() {
   const uploadLocked = preIntentBusy || batchBusy || batchFinished;
   const showSelection = selectedFiles.length > 0 && (upload.batch.phase === "idle" || upload.batch.phase === "error");
   const showUploadQueue = showSelection || upload.batch.items.length > 0;
-  const [jobs, setJobs] = useState<JobSummary[]>([]);
-  const [jobsError, setJobsError] = useState<string | null>(null);
-  const [hideRecentJobs, setHideRecentJobs] = useState(false);
-
-  useEffect(() => {
-    if (status !== "authenticated") return;
-    let active = true;
-    void api.listJobs().then((response) => {
-      if (active) {
-        setJobs(response.value.jobs);
-        setJobsError(null);
-      }
-    }).catch((error: unknown) => {
-      if (active) setJobsError(error instanceof Error ? error.message : "Recent work is unavailable.");
-    });
-    return () => { active = false; };
-  }, [api, status, batchFinished]);
+  const recent = useRecentJobs(api, auth.session, status, batchFinished);
 
   useEffect(() => {
     if (upload.batch.phase === "idle"
@@ -87,17 +74,8 @@ export function HomePage() {
   };
 
   const fileDrag = (event: DragEvent<HTMLElement>) => event.dataTransfer.types.includes("Files");
-  const visibleJobs = hideRecentJobs ? [] : jobs;
 
-  const clearRecentJobs = () => {
-    setHideRecentJobs(true);
-  };
-
-  const restoreRecentJobs = () => {
-    setHideRecentJobs(false);
-  };
-
-  if (status === "anonymous") return <LandingPage />;
+  if (status === "anonymous") return judgeAccess === undefined ? <LandingPage /> : <JudgeAccessPage />;
 
   return (
     <div className="page upload-page">
@@ -184,14 +162,6 @@ export function HomePage() {
               <p className="format-note">Original files stay on your device. PNG bytes are preserved; compatible SVG and JPEG files are converted to PNG in your browser before upload. Proportions and backgrounds are preserved. SVG files must be self-contained, with no linked assets, text, filters, or animation.</p>
             </details>
           </section>
-          <aside className="panel upload-guide" aria-labelledby="next-heading">
-            <h2 id="next-heading">From design to storefront.</h2>
-            <ol className="process-list">
-              <li><span>01</span><strong>Upload</strong><small>Add your finished artwork.</small></li>
-              <li><span>02</span><strong>Review</strong><small>Edit the copy and check your product.</small></li>
-              <li><span>03</span><strong>Publish</strong><small>You choose when it goes live.</small></li>
-            </ol>
-          </aside>
           {showUploadQueue && (
             <div className="upload-selection-column">
               {showSelection && (
@@ -217,7 +187,7 @@ export function HomePage() {
               )}
             </div>
           )}
-          <div className={showUploadQueue ? "upload-actionbar upload-actionbar--selected" : "upload-actionbar"}>
+          {showUploadQueue && <div className="upload-actionbar upload-actionbar--selected">
             <div>
               <strong>{batchBusy
                 ? "Preparing your artwork"
@@ -238,13 +208,17 @@ export function HomePage() {
                 ? "Uploading artwork…"
                 : batchFinished
                   ? "Uploads processed"
-                  : selectedFiles.length === 0
-                    ? "Choose artwork to continue"
-                    : selectedFiles.length === 1
-                      ? "Prepare 1 listing"
-                      : `Prepare ${selectedFiles.length} listings`}
+                  : "Submit"}
             </button>
-          </div>
+          </div>}
+          <aside className="panel upload-guide" aria-labelledby="next-heading">
+            <h2 id="next-heading">From design to storefront.</h2>
+            <ol className="process-list">
+              <li><span>01</span><strong>Upload</strong><small>Add your finished artwork.</small></li>
+              <li><span>02</span><strong>Review</strong><small>Edit the copy and check your product.</small></li>
+              <li><span>03</span><strong>Publish</strong><small>You choose when it goes live.</small></li>
+            </ol>
+          </aside>
         </div>
       </form>
       <section className="recent-panel" aria-labelledby="recent-heading">
@@ -254,32 +228,29 @@ export function HomePage() {
             <h2 id="recent-heading">Your listings</h2>
           </div>
           <div className="section-heading-actions">
-            <span className="count-chip">{visibleJobs.length}</span>
-            {visibleJobs.length > 0 && (
-              <button className="button button--quiet" type="button" onClick={clearRecentJobs}>
-                Clear recent list
-              </button>
-            )}
-            {hideRecentJobs && (
-              <button className="button button--quiet" type="button" onClick={restoreRecentJobs}>
-                Show recent list
+            <span className="count-chip">{recent.jobs.length}</span>
+            {(recent.jobs.length > 0 || recent.clearing || recent.clearError !== null) && (
+              <button className="button button--quiet" type="button" disabled={recent.clearing} onClick={() => { void recent.clear(); }}>
+                {recent.clearing ? "Clearing…" : recent.clearError !== null ? "Retry clearing list" : "Clear recent list"}
               </button>
             )}
           </div>
         </div>
-        {jobsError !== null && <p className="alert alert--error" role="alert">{jobsError}</p>}
-        {visibleJobs.length === 0 && jobsError === null ? (
+        {recent.clearError !== null && <p className="alert alert--error" role="alert">{recent.clearError}</p>}
+        {recent.error !== null && <div className="alert alert--error" role="alert">
+          <p>{recent.error}</p>
+          <button className="button button--quiet" type="button" disabled={recent.loading} onClick={() => { void recent.load(); }}>Retry loading listings</button>
+        </div>}
+        {recent.cleared && <p role="status">Recent list cleared. New uploads will appear here.</p>}
+        {recent.loading && <p role="status">Loading your listings…</p>}
+        {recent.jobs.length === 0 && recent.error === null && !recent.loading && !recent.cleared ? (
           <div className="empty-state">
-            <p>{hideRecentJobs ? "Recent list cleared for now." : "No listings yet."}</p>
-            <small>
-              {hideRecentJobs
-                ? "This only hides the current view. Jobs, provider products, publication records, and audit history are preserved."
-                : "Your first upload will appear here."}
-            </small>
+            <p>{recent.nextCursor === null ? "No listings yet." : "More history is available."}</p>
+            <small>{recent.nextCursor === null ? "Your first upload will appear here." : "Continue loading to find your remaining listings."}</small>
           </div>
         ) : (
           <ul className="job-list">
-            {visibleJobs.map((job) => (
+            {recent.jobs.map((job) => (
               <li key={job.job_id}>
                 <WorkspaceLink to={`/jobs/${job.job_id}`} aria-label={`Open listing: ${workspace.filenameByJob[job.job_id] ?? job.job_id}`}>
                   <span className="job-list-label"><strong>{workspace.filenameByJob[job.job_id] ?? `Listing ${job.job_id.slice(-8)}`}</strong><small>Updated {formatDate(job.updated_at)}</small></span>
@@ -291,6 +262,9 @@ export function HomePage() {
             ))}
           </ul>
         )}
+        {recent.nextCursor !== null && <button className="button button--quiet" type="button" disabled={recent.loading || recent.clearing} onClick={() => { void recent.load(recent.nextCursor ?? undefined); }}>
+          Load more listings
+        </button>}
       </section>
     </div>
   );
@@ -395,6 +369,8 @@ function BatchProgressItem({ item }: { item: BatchUploadItemState }) {
   const progress = item.jobId === null ? undefined : progressByJob[item.jobId];
   const progressError = item.jobId === null ? undefined : progressErrorByJob[item.jobId];
   const failed = item.phase === "error" || item.phase === "expired";
+  const active = ["validating", "hashing", "creating_intent", "uploading", "finalizing"].includes(item.phase);
+  const status = batchItemStatus(item, progress);
   return (
     <li className={failed ? "upload-queue-item upload-queue-item--error" : "upload-queue-item"}>
       <span className="queue-number" aria-hidden="true">{String(item.position).padStart(2, "0")}</span>
@@ -404,7 +380,7 @@ function BatchProgressItem({ item }: { item: BatchUploadItemState }) {
         <small>{item.phase === "complete" ? progressError ?? "Your artwork is uploaded. Open the listing at any time to follow its progress." : item.message}</small>
         {item.requestId !== null && <small>Support reference: {item.requestId}</small>}
       </span>
-      <span className={`queue-status queue-status--${item.phase}`}>{batchItemStatus(item, progress)}</span>
+      <span className={`queue-status queue-status--${item.phase}`}>{active ? <ActivityStatus>{status}</ActivityStatus> : status}</span>
       {item.phase === "uploading" && <progress max="100" value={item.progress} aria-label={`${item.filename} upload progress`}>{item.progress}%</progress>}
       {item.phase === "complete" && item.jobId !== null && <WorkspaceLink className="button button--quiet queue-link" to={`/jobs/${item.jobId}`}>Open listing</WorkspaceLink>}
       {failed && item.sourceFormat === "png" && item.uploadId !== null && <WorkspaceLink className="button button--quiet queue-link" to={`/uploads/${item.uploadId}`}>Recover upload</WorkspaceLink>}

@@ -103,6 +103,21 @@ class RecordAuthorityRequest(BrowserContractModel):
     expected_record_version: int = Field(ge=0)
 
 
+class ClearRecentJobsRequest(BrowserContractModel):
+    """Identity and cutoff are assigned by the server, never by the browser."""
+
+
+class ClearRecentJobsResponse(BrowserContractModel):
+    cleared_before: datetime
+
+    @field_validator("cleared_before")
+    @classmethod
+    def cutoff_is_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("History cutoff must include its time zone")
+        return value.astimezone(UTC)
+
+
 class UploadCommandProjection(BrowserContractModel):
     upload_id: PublicId
     job_id: PublicId
@@ -219,6 +234,8 @@ _SCHEMA_MODELS: tuple[tuple[type[BaseModel], JsonSchemaMode], ...] = (
     (ReviseListingRequest, "validation"),
     (ReviewAuthorityRequest, "validation"),
     (RecordAuthorityRequest, "validation"),
+    (ClearRecentJobsRequest, "validation"),
+    (ClearRecentJobsResponse, "serialization"),
     (UploadMutationResponse, "serialization"),
     (UploadRecoveryProjection, "serialization"),
     (JobPageProjection, "serialization"),
@@ -267,6 +284,10 @@ def browser_contract_schema() -> dict[str, Any]:
                 "response": references["UploadMutationResponse"],
             },
             "GET /v1/jobs": {"response": references["JobPageProjection"]},
+            "POST /v1/jobs/recent/clear": {
+                "request": references["ClearRecentJobsRequest"],
+                "response": references["ClearRecentJobsResponse"],
+            },
             "GET /v1/jobs/{job_id}": {
                 "response": references["JobProgressProjection"],
             },
@@ -394,6 +415,7 @@ def browser_contract_fixtures() -> dict[str, Any]:
         )
     )
     fixtures = {
+        "clear_recent_jobs": ClearRecentJobsResponse(cleared_before=now).model_dump(mode="json"),
         "upload_recovery": recovery.model_dump(mode="json"),
         "job_progress": progress.model_dump(mode="json"),
         "seller_review_pending": review.model_dump(mode="json"),
@@ -407,6 +429,8 @@ def browser_contract_fixtures() -> dict[str, Any]:
 __all__ = [
     "BROWSER_CONTRACT_VERSION",
     "BrowserContractModel",
+    "ClearRecentJobsRequest",
+    "ClearRecentJobsResponse",
     "CreateUploadRequest",
     "ErrorDetail",
     "ErrorEnvelope",

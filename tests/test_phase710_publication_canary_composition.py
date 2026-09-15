@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 import mr_lister.cloud.phase7_canary_composition as composition
+from mr_lister.production.provider_secrets import (
+    PRINTIFY_DELEGATED_OWNER_SECRET_SCHEMA_VERSION,
+    PRINTIFY_OWNER_SECRET_SCHEMA_VERSION,
+)
 from mr_lister.publication.canary_runtime import (
     PublicationCanaryMode,
     PublicationCanaryRuntime,
@@ -21,7 +25,11 @@ from mr_lister.publication.execution_models import (
     PublicationProviderAuditRecord,
 )
 from mr_lister.publication.provider_boundary import RedirectSafePublicationTransport
-from mr_lister.publication.provider_credentials import BoundPublicationProviderCredential
+from mr_lister.publication.provider_credentials import (
+    BoundPublicationProviderCredential,
+    PublicationProviderCredentialError,
+)
+from tests.test_phase6_provider_secrets import _delegated_secret_string
 from tests.test_phase71_publication_store import OWNER_ID
 from tests.test_phase72_publication_execution import Harness
 
@@ -190,7 +198,13 @@ def test_handler_build_creates_only_regional_state_and_secret_clients_without_io
     )
 
 
-def test_narrow_credential_authority_reads_the_exact_secret_afresh_per_resolution() -> None:
+@pytest.mark.parametrize(
+    "schema_version",
+    [PRINTIFY_OWNER_SECRET_SCHEMA_VERSION, PRINTIFY_DELEGATED_OWNER_SECRET_SCHEMA_VERSION],
+)
+def test_narrow_credential_authority_reads_the_exact_secret_afresh_per_resolution(
+    schema_version: str,
+) -> None:
     harness = Harness()
     harness.dispatch_and_reconstruct()
     authority = harness.authority.provider_authority
@@ -201,10 +215,19 @@ def test_narrow_credential_authority_reads_the_exact_secret_afresh_per_resolutio
             "VersionStages": ["AWSCURRENT"],
             "SecretString": json.dumps(
                 {
-                    "schema_version": "phase6-printify-owner-v1",
+                    "schema_version": schema_version,
                     "owner_id": OWNER_ID,
                     "shop_id": authority.printify_shop_id,
                     "api_token": "token-one",
+                    **(
+                        {
+                            "delegated_owner_grants": [
+                                {"owner_id": "9" * 64, "expires_at": "2000-01-01T00:00:00Z"}
+                            ]
+                        }
+                        if schema_version == PRINTIFY_DELEGATED_OWNER_SECRET_SCHEMA_VERSION
+                        else {}
+                    ),
                 }
             ),
         }
@@ -219,7 +242,50 @@ def test_narrow_credential_authority_reads_the_exact_secret_afresh_per_resolutio
 
     assert isinstance(first, BoundPublicationProviderCredential)
     assert isinstance(second, BoundPublicationProviderCredential)
+    assert first.for_authority(authority).owner_id == OWNER_ID
     assert secret.calls == [{"SecretId": SECRET_ARN}, {"SecretId": SECRET_ARN}]
+
+
+@pytest.mark.parametrize("mismatch", ["delegated_owner", "shop", "malformed_grant"])
+def test_canary_never_accepts_delegated_owner_wrong_shop_or_malformed_v2_secret(
+    mismatch: str,
+) -> None:
+    harness = Harness()
+    harness.dispatch_and_reconstruct()
+    authority = harness.authority.provider_authority
+    assert authority is not None
+    expiry = (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    delegated_owner = OWNER_ID if mismatch == "delegated_owner" else "9" * 64
+    token = "private-canary-token"
+    secret = InertSecretsClient(
+        {
+            "ARN": SECRET_ARN,
+            "VersionStages": ["AWSCURRENT"],
+            "SecretString": _delegated_secret_string(
+                owner_id="9" * 64 if mismatch == "delegated_owner" else OWNER_ID,
+                shop_id=authority.printify_shop_id + (1 if mismatch == "shop" else 0),
+                token=token,
+                grants=[
+                    {
+                        "owner_id": delegated_owner,
+                        "expires_at": "never" if mismatch == "malformed_grant" else expiry,
+                    }
+                ],
+            ),
+        }
+    )
+    credentials = composition.FreshCanaryPublicationProviderCredentialAuthority(
+        client=secret, secret_arn=SECRET_ARN
+    )
+
+    with pytest.raises(PublicationProviderCredentialError) as captured:
+        credentials.resolve_exact(authority=authority)
+
+    assert str(captured.value) == "Publication provider credential is unavailable"
+    assert captured.value.__cause__ is None
+    assert captured.value.__context__ is None
+    assert token not in str(captured.value)
+    assert secret.calls == [{"SecretId": SECRET_ARN}]
 
 
 @pytest.mark.parametrize(

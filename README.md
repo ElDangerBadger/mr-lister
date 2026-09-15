@@ -13,8 +13,10 @@ seller account. The application uses the deployed owner-scoped API and real prep
 Review and save listing changes, approve the exact draft, then separately confirm publication.
 See [`web/README.md`](web/README.md) for frontend development and
 [`docs/phase7-release-state.md`](docs/phase7-release-state.md) for deployment evidence.
-The approved UI implementation and pending isolated judge release are tracked in
-[`docs/ui-and-evaluator-release.md`](docs/ui-and-evaluator-release.md).
+The approved UI implementation is tracked in
+[`docs/ui-and-evaluator-release.md`](docs/ui-and-evaluator-release.md). The dedicated
+judge login and shared-store access implementation is tracked in
+[`docs/judge-demo-access.md`](docs/judge-demo-access.md).
 
 The fake local API and synthetic AgentCore canary are historical developer tools under
 [`tools/legacy/`](tools/legacy/README.md). They are not alternative ways to launch the current
@@ -135,6 +137,9 @@ tracked. See
 [`docs/architecture/0012-phase65-browser-and-hosting-boundary.md`](docs/architecture/0012-phase65-browser-and-hosting-boundary.md).
 
 ## Target submission architecture
+
+Download the [Mermaid architecture diagram](docs/architecture/Mr-Lister-Architecture.mmd)
+or the [simplified project file tree](docs/architecture/Mr-Lister-File-Tree.txt).
 
 ```mermaid
 flowchart TD

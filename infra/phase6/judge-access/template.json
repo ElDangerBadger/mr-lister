@@ -1,0 +1,182 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Admin-provisioned judge directory federated into the existing seller pool. Creates no API, seller client, account links, groups, or provider grants. Deploy directory first; populate the broker secret before enabling federation.",
+  "Parameters": {
+    "EnvironmentName": {
+      "Type": "String",
+      "AllowedPattern": "^[a-z][a-z0-9-]{1,15}$"
+    },
+    "PrimaryUserPoolId": {
+      "Type": "String",
+      "AllowedPattern": "^[a-z]{2}(?:-[a-z]+)+-[0-9]_[A-Za-z0-9]+$",
+      "MaxLength": 55,
+      "Description": "Existing seller pool in this account and Region; not the new judge pool."
+    },
+    "PrimarySignInOrigin": {
+      "Type": "String",
+      "AllowedPattern": "^https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
+      "Description": "Exact existing seller Cognito hosted/custom domain origin, without a trailing slash."
+    },
+    "ApplicationOrigin": {
+      "Type": "String",
+      "AllowedPattern": "^https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
+      "Description": "Exact existing seller application origin, without a trailing slash."
+    },
+    "JudgeDomainPrefix": {
+      "Type": "String",
+      "AllowedPattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+      "MaxLength": 63,
+      "Description": "Explicit unused Cognito prefix for this judge directory."
+    },
+    "EnableFederation": {
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": ["false", "true"],
+      "Description": "Enable only after the actual confidential client secret is stored in JudgeBrokerClientSecret."
+    },
+    "BrokerSecretVersionId": {
+      "Type": "String",
+      "Default": "",
+      "AllowedPattern": "^(?:|[A-Za-z0-9-]{32,64})$",
+      "Description": "Exact Secrets Manager version containing this JudgeBrokerClient's generated client_secret. It is an identifier, not the secret."
+    }
+  },
+  "Rules": {
+    "FederationRequiresPopulatedSecretVersion": {
+      "RuleCondition": {"Fn::Equals": [{"Ref": "EnableFederation"}, "true"]},
+      "Assertions": [
+        {
+          "Assert": {"Fn::Not": [{"Fn::Equals": [{"Ref": "BrokerSecretVersionId"}, ""]}]},
+          "AssertDescription": "Populate the confidential client secret and supply its exact version before enabling federation."
+        }
+      ]
+    }
+  },
+  "Conditions": {
+    "FederationEnabled": {"Fn::Equals": [{"Ref": "EnableFederation"}, "true"]}
+  },
+  "Resources": {
+    "JudgeUserPool": {
+      "Type": "AWS::Cognito::UserPool",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "UserPoolName": {"Fn::Sub": "mr-lister-${EnvironmentName}-judges"},
+        "UserPoolTier": "LITE",
+        "AdminCreateUserConfig": {"AllowAdminCreateUserOnly": true},
+        "UsernameAttributes": ["email"],
+        "UsernameConfiguration": {"CaseSensitive": false},
+        "MfaConfiguration": "OFF",
+        "DeletionProtection": "ACTIVE",
+        "AccountRecoverySetting": {
+          "RecoveryMechanisms": [{"Name": "admin_only", "Priority": 1}]
+        },
+        "Schema": [
+          {"Name": "email", "AttributeDataType": "String", "Required": true, "Mutable": true}
+        ],
+        "Policies": {
+          "PasswordPolicy": {
+            "MinimumLength": 14,
+            "RequireLowercase": true,
+            "RequireNumbers": true,
+            "RequireSymbols": true,
+            "RequireUppercase": true,
+            "TemporaryPasswordValidityDays": 1
+          }
+        },
+        "UserPoolTags": {
+          "Project": "MrLister",
+          "Environment": {"Ref": "EnvironmentName"},
+          "Purpose": "JudgeFederation",
+          "DataClassification": "JudgeIdentity"
+        }
+      }
+    },
+    "JudgeBrokerClient": {
+      "Type": "AWS::Cognito::UserPoolClient",
+      "Properties": {
+        "ClientName": {"Fn::Sub": "mr-lister-${EnvironmentName}-judge-broker"},
+        "UserPoolId": {"Ref": "JudgeUserPool"},
+        "GenerateSecret": true,
+        "AllowedOAuthFlowsUserPoolClient": true,
+        "AllowedOAuthFlows": ["code"],
+        "AllowedOAuthScopes": ["openid", "email"],
+        "CallbackURLs": [{"Fn::Sub": "${PrimarySignInOrigin}/oauth2/idpresponse"}],
+        "DefaultRedirectURI": {"Fn::Sub": "${PrimarySignInOrigin}/oauth2/idpresponse"},
+        "LogoutURLs": [{"Fn::Sub": "${ApplicationOrigin}/judge/"}],
+        "SupportedIdentityProviders": ["COGNITO"],
+        "ExplicitAuthFlows": ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
+        "ReadAttributes": ["email", "email_verified"],
+        "WriteAttributes": ["email"],
+        "AccessTokenValidity": 60,
+        "IdTokenValidity": 60,
+        "RefreshTokenValidity": 1,
+        "TokenValidityUnits": {
+          "AccessToken": "minutes",
+          "IdToken": "minutes",
+          "RefreshToken": "days"
+        },
+        "EnableTokenRevocation": true,
+        "PreventUserExistenceErrors": "ENABLED"
+      }
+    },
+    "JudgeUserPoolDomain": {
+      "Type": "AWS::Cognito::UserPoolDomain",
+      "Properties": {
+        "Domain": {"Ref": "JudgeDomainPrefix"},
+        "UserPoolId": {"Ref": "JudgeUserPool"},
+        "ManagedLoginVersion": 1
+      }
+    },
+    "JudgeBrokerClientSecret": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Name": {"Fn::Sub": "mr-lister/${EnvironmentName}/judge-access/broker-client"},
+        "Description": "Populated by the operator with the generated JudgeBrokerClient secret; never a judge password or Printify credential.",
+        "Tags": [
+          {"Key": "Project", "Value": "MrLister"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}},
+          {"Key": "Purpose", "Value": "JudgeFederation"}
+        ]
+      }
+    },
+    "JudgeIdentityProvider": {
+      "Type": "AWS::Cognito::UserPoolIdentityProvider",
+      "Condition": "FederationEnabled",
+      "DependsOn": "JudgeUserPoolDomain",
+      "Properties": {
+        "UserPoolId": {"Ref": "PrimaryUserPoolId"},
+        "ProviderName": "MrListerJudge",
+        "ProviderType": "OIDC",
+        "ProviderDetails": {
+          "client_id": {"Ref": "JudgeBrokerClient"},
+          "client_secret": {
+            "Fn::Sub": "{{resolve:secretsmanager:${JudgeBrokerClientSecret}:SecretString:client_secret::${BrokerSecretVersionId}}}"
+          },
+          "oidc_issuer": {"Fn::Sub": "https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${JudgeUserPool}"},
+          "authorize_scopes": "openid email",
+          "attributes_request_method": "GET"
+        },
+        "AttributeMapping": {"email": "email", "email_verified": "email_verified"}
+      }
+    }
+  },
+  "Outputs": {
+    "JudgeUserPoolId": {"Value": {"Ref": "JudgeUserPool"}},
+    "JudgeBrokerClientId": {"Value": {"Ref": "JudgeBrokerClient"}},
+    "JudgeBrokerClientSecretArn": {"Value": {"Ref": "JudgeBrokerClientSecret"}},
+    "JudgeSignInOrigin": {
+      "Value": {"Fn::Sub": "https://${JudgeUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"}
+    },
+    "JudgeIssuer": {
+      "Value": {"Fn::Sub": "https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${JudgeUserPool}"}
+    },
+    "PrimaryBrokerCallback": {"Value": {"Fn::Sub": "${PrimarySignInOrigin}/oauth2/idpresponse"}},
+    "JudgeApplicationCallback": {"Value": {"Fn::Sub": "${ApplicationOrigin}/judge/auth/callback"}},
+    "JudgePrimaryLogoutRelay": {"Value": {"Fn::Sub": "${ApplicationOrigin}/judge/signout"}},
+    "JudgeSignedOutDestination": {"Value": {"Fn::Sub": "${ApplicationOrigin}/judge/"}},
+    "IdentityProviderName": {"Condition": "FederationEnabled", "Value": {"Ref": "JudgeIdentityProvider"}}
+  }
+}

@@ -40,6 +40,7 @@ ICON_KEY = "assets/mr-lister-icon-NewIcon1.png"
 DARK_ICON_KEY = "assets/mr-lister-dark-DarkIcon.png"
 LORA_FONT_KEY = "assets/lora-latin-wght-normal-LoraFont.woff2"
 DM_SANS_FONT_KEY = "assets/dm-sans-latin-wght-normal-DmSans01.woff2"
+JUDGE_SAMPLE_KEY = "assets/judge-sample-artwork-Judge001.png"
 LANDING_ASSET_SOURCES = {
     DARK_ICON_KEY: "mr-lister-dark.png",
     LORA_FONT_KEY: "fonts/lora-latin-wght-normal.woff2",
@@ -260,6 +261,79 @@ def test_landing_asset_approval_requires_exact_bytes_and_references(
 
     with pytest.raises(Phase718WebReleaseError):
         _release(fixture)
+
+
+def test_judge_sample_release_binds_exact_download_bytes_before_index(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    _add_approved_landing_assets(fixture)
+    sample = _add_approved_judge_sample(fixture)
+
+    release_path, release = _release(fixture)
+    _, loaded = load_phase718_web_release_manifest(
+        release_path, repository_root=fixture["repository"]
+    )
+
+    assert loaded == release
+    assert release["file_count"] == 9
+    assert release["upload_order"] == [
+        CSS_KEY,
+        JS_KEY,
+        *sorted([ICON_KEY, *LANDING_ASSET_SOURCES, JUDGE_SAMPLE_KEY]),
+        "favicon.svg",
+        "index.html",
+    ]
+    record = next(item for item in release["objects"] if item["key"] == JUDGE_SAMPLE_KEY)
+    assert record["sha256"] == sha256(sample).hexdigest()
+    assert record["content_type"] == "image/png"
+    assert record["size_bytes"] == len(sample)
+    assert record["cache_control"] == "public, max-age=31536000, immutable"
+    assert release["runtime_config"]["preserve_existing"] is True
+    assert "runtime-config.json" not in release["upload_order"]
+
+    fixture["dist"].joinpath(JUDGE_SAMPLE_KEY).write_bytes(sample + b"changed")
+    with pytest.raises(Phase718WebReleaseError):
+        load_phase718_web_release_manifest(release_path, repository_root=fixture["repository"])
+
+
+@pytest.mark.parametrize(
+    "drift", ["wrong_bytes", "missing", "unreferenced", "duplicate", "other_name", "sample_only"]
+)
+def test_judge_sample_does_not_open_the_production_asset_allowlist(
+    tmp_path: Path, drift: str
+) -> None:
+    fixture = _fixture(tmp_path)
+    if drift != "sample_only":
+        _add_approved_landing_assets(fixture)
+    sample = _add_approved_judge_sample(fixture)
+    dist = fixture["dist"]
+    if drift == "wrong_bytes":
+        dist.joinpath(JUDGE_SAMPLE_KEY).write_bytes(sample + b"changed")
+    elif drift == "missing":
+        dist.joinpath(JUDGE_SAMPLE_KEY).unlink()
+    elif drift == "unreferenced":
+        source = dist / JS_KEY
+        source.write_bytes(source.read_bytes().replace(f"/{JUDGE_SAMPLE_KEY}".encode(), b""))
+    elif drift == "duplicate":
+        dist.joinpath("assets/judge-sample-artwork-Judge002.png").write_bytes(sample)
+    elif drift == "other_name":
+        dist.joinpath("assets/other-judge-artwork-Judge001.png").write_bytes(sample)
+
+    with pytest.raises(Phase718WebReleaseError):
+        _release(fixture)
+
+
+def _add_approved_judge_sample(fixture: dict[str, Any]) -> bytes:
+    sample = (
+        Path(__file__)
+        .resolve()
+        .parents[1]
+        .joinpath("web/src/assets/judge-sample-artwork.png")
+        .read_bytes()
+    )
+    fixture["dist"].joinpath(JUDGE_SAMPLE_KEY).write_bytes(sample)
+    source = fixture["dist"] / JS_KEY
+    source.write_bytes(source.read_bytes() + f'const judgeSample="/{JUDGE_SAMPLE_KEY}";\n'.encode())
+    return sample
 
 
 @pytest.mark.parametrize("filename", ["other-font-NewFont1.woff2", "other-image-NewIcon1.png"])

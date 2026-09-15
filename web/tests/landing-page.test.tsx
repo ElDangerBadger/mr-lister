@@ -114,6 +114,7 @@ function dependencies(overrides: Partial<AuthCoordinator> = {}) {
   const unused = () => vi.fn().mockRejectedValue(new Error("Unexpected private API call"));
   const api = {
     listJobs: vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "landing-jobs", etag: null }),
+    clearRecentJobs: unused(),
     getJob: unused(), getUpload: unused(), getReview: unused(), createUpload: unused(), authorizeUpload: unused(),
     completeUpload: unused(), cancelUpload: unused(), reviseListing: unused(), runAction: unused(), fetchArtwork: unused(),
   } satisfies ApiPort;

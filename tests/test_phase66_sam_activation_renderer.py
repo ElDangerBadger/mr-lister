@@ -589,7 +589,7 @@ def test_checked_source_serves_and_triggers_but_full_render_is_exactly_inert(
 
     source_resources = source["Resources"]
     rendered_resources = rendered["Resources"]
-    assert len(_http_api_routes(source)) == 15
+    assert len(_http_api_routes(source)) == 16
     assert _http_api_routes(rendered) == _http_api_routes(source)
     assert "DisableExecuteApiEndpoint" not in source_resources["SellerHttpApi"]["Properties"]
     assert (

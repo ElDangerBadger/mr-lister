@@ -1,5 +1,6 @@
 """Deterministic validation at the artwork and listing boundaries."""
 
+from dataclasses import dataclass
 from hashlib import sha256
 from io import BytesIO
 from pathlib import PurePath
@@ -16,12 +17,31 @@ from mr_lister.workflow.tag_policy import redundant_tag_pairs
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 MAX_ARTWORK_BYTES = 25 * 1024 * 1024
 MAX_ARTWORK_PIXELS = 100_000_000
+_ALPHA_SCAN_TILE = 512
 _TAG_STOP_WORDS = frozenset(
     {"a", "an", "and", "for", "from", "in", "of", "on", "the", "to", "with"}
 )
 
 
+@dataclass(frozen=True)
+class ValidatedArtwork:
+    artwork: ArtworkInput
+    width: int
+    height: int
+    alpha_minimum: int
+    alpha_maximum: int
+
+
 def validate_artwork(*, filename: str, content_type: str, content: bytes) -> ArtworkInput:
+    return validate_artwork_evidence(
+        filename=filename, content_type=content_type, content=content
+    ).artwork
+
+
+def validate_artwork_evidence(
+    *, filename: str, content_type: str, content: bytes
+) -> ValidatedArtwork:
+    """Verify PNG integrity, decode once, and return metadata without retaining pixels."""
     if not filename or PurePath(filename).suffix.casefold() != ".png":
         raise InvalidArtworkError("Artwork must have a .png filename")
     if content_type != "image/png":
@@ -49,20 +69,49 @@ def validate_artwork(*, filename: str, content_type: str, content: bytes) -> Art
                 raise InvalidArtworkError("Artwork PNG metadata is inconsistent")
             image.verify()
         with Image.open(BytesIO(content)) as image:
-            alpha_extrema = image.convert("RGBA").getchannel("A").getextrema()
+            image.load()
+            alpha_extrema = _alpha_extrema(image)
             if alpha_extrema[1] == 0:
                 raise InvalidArtworkError("Artwork is fully transparent and has no visible content")
     except InvalidArtworkError:
         raise
-    except (OSError, SyntaxError, UnidentifiedImageError) as error:
+    except (OSError, SyntaxError, UnidentifiedImageError, ValueError) as error:
         raise InvalidArtworkError("Artwork contains corrupt or incomplete PNG data") from error
 
-    return ArtworkInput(
-        filename=PurePath(filename).name,
-        content_type="image/png",
-        content_sha256=sha256(content).hexdigest(),
-        size_bytes=len(content),
+    return ValidatedArtwork(
+        artwork=ArtworkInput(
+            filename=PurePath(filename).name,
+            content_type="image/png",
+            content_sha256=sha256(content).hexdigest(),
+            size_bytes=len(content),
+        ),
+        width=width,
+        height=height,
+        alpha_minimum=alpha_extrema[0],
+        alpha_maximum=alpha_extrema[1],
     )
+
+
+def _alpha_extrema(image: Image.Image) -> tuple[int, int]:
+    """Bound temporary RGBA/alpha buffers while preserving PNG transparency semantics."""
+    minimum, maximum = 255, 0
+    for top in range(0, image.height, _ALPHA_SCAN_TILE):
+        for left in range(0, image.width, _ALPHA_SCAN_TILE):
+            box = (
+                left,
+                top,
+                min(left + _ALPHA_SCAN_TILE, image.width),
+                min(top + _ALPHA_SCAN_TILE, image.height),
+            )
+            # crop retains palette and tRNS metadata. Convert only this small tile,
+            # never a second full-resolution image, including for opaque PNGs.
+            with image.crop(box) as tile, tile.convert("RGBA") as rgba:
+                with rgba.getchannel("A") as alpha:
+                    low, high = alpha.getextrema()
+            minimum, maximum = min(minimum, low), max(maximum, high)
+            if minimum == 0 and maximum == 255:
+                return minimum, maximum
+    return minimum, maximum
 
 
 def validate_listing(listing: ListingIntelligence) -> ValidationResult:
