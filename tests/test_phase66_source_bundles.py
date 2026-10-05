@@ -120,6 +120,18 @@ def test_agentcore_bundle_is_phase6_gemma_strands_not_phase3_synthetic(tmp_path:
     assert "verify_phase6_packaged_release" in main
     assert "build_synthetic_canary_runtime" not in main
     assert (agentcore_root / "config/bedrock/google_gemma_3_27b_it.json").is_file()
+    active_config = agentcore_root / "config/bedrock/google_gemma_4_31b.json"
+    assert json.loads(active_config.read_text(encoding="utf-8")) == {
+        "transport": "mantle",
+        "region": "us-west-2",
+        "model_id": "google.gemma-4-31b",
+        "output_mode": "native_json_schema",
+        "max_tokens": 2048,
+        "temperature": 0.0,
+        "max_repair_attempts": 2,
+    }
+    assert not (agentcore_root / "config/bedrock/google_gemma_4_31b_candidate.json").exists()
+    assert not (agentcore_root / "tools").exists()
     assert not (agentcore_root / "mr_lister/cloud").exists()
     assert not (agentcore_root / "mr_lister/production").exists()
     assert not (agentcore_root / "mr_lister/workflow/service.py").exists()
@@ -179,6 +191,70 @@ def test_bundled_module_imports_do_not_eager_load_legacy_publish_surfaces(tmp_pa
         text=True,
     )
     assert agentcore_result.returncode == 0, agentcore_result.stderr
+
+
+@pytest.mark.parametrize(
+    "omit_module", [None, "harness_production.py", "harness_candidate.py", "mantle.py"]
+)
+def test_packaged_gemma4_runtime_imports_and_selects_frozen_harness_without_checkout_fallback(
+    tmp_path: Path, omit_module: str | None
+) -> None:
+    _lambda_root, agentcore_root = build_source_bundles(_destination(tmp_path, "packaged-gemma4"))
+    if omit_module is not None:
+        (agentcore_root / "mr_lister/intelligence" / omit_module).unlink()
+    code = """
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+root = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(root))
+import boto3
+def no_session(*args, **kwargs):
+    raise AssertionError('Packaged adapter construction attempted AWS access')
+boto3.Session = no_session
+from mr_lister.intelligence import harness_production as production
+from mr_lister.intelligence.harness_candidate import (
+    candidate_prompt_bundles, VerifiedProductContext,
+)
+from mr_lister.intelligence.mantle import MAX_REQUEST_BYTES
+from mr_lister.intelligence.settings import BedrockSettings
+settings = BedrockSettings.model_validate_json(
+    (root / 'config/bedrock/google_gemma_4_31b.json').read_bytes()
+)
+assert settings.transport == 'mantle'
+assert settings.model_id == 'google.gemma-4-31b'
+assert production.PRODUCTION_HARNESS_REVISION == 'v3'
+assert production.PRODUCTION_HARNESS_PROMPT_FINGERPRINT == (
+    candidate_prompt_bundles(revision='v3')['full'].fingerprint
+)
+assert MAX_REQUEST_BYTES == 3500000
+calls = []
+def candidate_factory(*args, **kwargs):
+    calls.append((args, kwargs))
+    return SimpleNamespace()
+production.build_harness_candidate_adapter = candidate_factory
+adapter = production.build_harness_production_adapter(settings, session=object())
+assert callable(adapter.prepare_listing)
+assert len(calls) == 1
+assert calls[0][1]['revision'] == 'v3'
+assert isinstance(calls[0][1]['product_context'], VerifiedProductContext)
+assert all(Path(module.__file__).resolve().is_relative_to(root)
+    for name, module in sys.modules.items()
+    if name.startswith('mr_lister') and getattr(module, '__file__', None))
+assert 'mr_lister.production' not in sys.modules
+assert 'mr_lister.publication' not in sys.modules
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-B", "-c", code, str(agentcore_root)],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if omit_module is not None:
+        assert result.returncode != 0, "Packaged runtime silently used checkout source"
+    else:
+        assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("omit_history", [False, True])

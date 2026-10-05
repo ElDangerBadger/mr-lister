@@ -1,0 +1,17 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EvaluateOnlyGemma431BInUSWest2",
+      "Effect": "Allow",
+      "Action": "bedrock-mantle:CreateInference",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "bedrock-mantle:Model": "google.gemma-4-31b",
+          "aws:RequestedRegion": "us-west-2"
+        }
+      }
+    }
+  ]
+}

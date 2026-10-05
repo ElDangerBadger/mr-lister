@@ -145,3 +145,45 @@ manifest and prompt identity remain frozen. Legacy score artifacts without the n
 not recertified under the current policy: summaries retain their numeric telemetry, identify
 `quality_unassessed_score_count`, and leave current-policy `passed`/`pass_rate` null when any score
 in the group lacks the metric. Missing redundancy evidence is never inferred from a root count.
+
+
+## Gemma 4 candidate (not activated)
+
+The isolated candidate uses `config/bedrock/google_gemma_4_31b_candidate.json`, explicit
+`mantle` transport, and the current production SEO prompt. Existing configurations default to
+Converse, and the production composition and release bundle remain pinned to Gemma 3.
+The candidate requests JSON-schema output with no silent prompted-JSON fallback. On October 4,
+2026, the one-image canary passed on the current Free account plan, but the subsequent quality
+comparison found subject-interpretation regressions. **The candidate is not qualified for
+production.** See the migration plan for results and retained private evidence. The temporary
+development inference grant was removed after those checks.
+
+After account/region access, a narrow candidate IAM grant, and cost-bearing canary authorization
+are confirmed, run this one-case test from the candidate checkout. Do not use bootstrap or root
+credentials to bypass the evaluator's `mr-lister-dev` identity check:
+
+```shell
+MR_LISTER_RUN_LIVE_BEDROCK=1 \
+MR_LISTER_EVAL_RUN_ID=gemma4-31b-schema-canary \
+MR_LISTER_EVAL_CASE=illustrated_badger_subject \
+MR_LISTER_EVAL_EXECUTION=two_call \
+MR_LISTER_EVAL_PROMPT_VERSION=2026-09-08.2-etsy-seo-plain-preview-tag-diversity \
+MR_LISTER_BEDROCK_CONFIG=config/bedrock/google_gemma_4_31b_candidate.json \
+AWS_PROFILE=mr-lister-dev \
+  .venv/bin/python -m pytest -m live_bedrock -s tests/evaluation/test_live_bedrock.py
+```
+
+The existing fake production adapter creates only synthetic records and asserts zero publication
+calls. This command invokes AWS inference, but never Printify or Etsy. Omit
+`MR_LISTER_CAPTURE_RAW_BEDROCK`; diagnostics and score files remain private and gitignored.
+Use a fresh run ID for every run because the evaluator refuses to overwrite artifacts.
+
+Only after that canary, explicitly authorize the broader comparison: add
+`MR_LISTER_RUN_FULL_BEDROCK_EVAL=1`, remove `MR_LISTER_EVAL_CASE`, and use the same prompt, fixture
+set, and trial count for the Gemma 3 baseline and Gemma 4 candidate. Evaluate grounding and
+visible-text fidelity, validated listing/tag quality, schema and repair failures, cold/warm wall
+clock, and billed usage. The historical eleven cases are regressions, not newly unseen holdouts.
+The local two-call harness does not execute the Nova controller or live provider steps, so its
+intelligence timing is not the complete upload-to-review time.
+
+See [the migration plan](../../docs/gemma-4-migration.md) for cutover and rollback gates.

@@ -430,3 +430,48 @@ def test_profile_version_or_fingerprint_drift_is_rejected(drift: str) -> None:
     assert profiles.requests == [(source_profile.profile_id, source_profile.profile_version)]
     assert intelligence.inspect_calls == []
     assert intelligence.draft_calls == []
+
+
+def test_atomic_pair_is_used_once_without_legacy_duplicate_calls() -> None:
+    class Paired(RecordingIntelligence):
+        def __init__(self):
+            super().__init__()
+            self.paired_calls = []
+
+        def prepare_listing(self, artwork, content):
+            self.paired_calls.append((artwork, content))
+            return self.analysis, self.listing
+
+    profile = _profile()
+    source = _source(VALID_PNG, profile)
+    intelligence = Paired()
+    producer, _, _, _ = _producer(
+        source=source,
+        s3=RecordingS3(VALID_PNG),
+        exact=ExactProfile(profile=profile, fingerprint=canonical_fingerprint(profile)),
+        intelligence=intelligence,
+    )
+    result = producer.prepare_review(JOB_ID, WORK_ID)
+    assert len(intelligence.paired_calls) == 1
+    assert intelligence.inspect_calls == intelligence.draft_calls == []
+    assert result.listing == intelligence.listing
+    assert result.source_artifact_fingerprint == source.fingerprint
+    assert result.product_profile_fingerprint == source.product_profile_fingerprint
+
+
+def test_rejected_atomic_pair_does_not_fall_back_to_legacy_or_return_review() -> None:
+    class Rejected(RecordingIntelligence):
+        def prepare_listing(self, artwork, content):
+            raise ValueError("private rejected draft")
+
+    profile = _profile()
+    intelligence = Rejected()
+    producer, _, _, _ = _producer(
+        source=_source(VALID_PNG, profile),
+        s3=RecordingS3(VALID_PNG),
+        exact=ExactProfile(profile=profile, fingerprint=canonical_fingerprint(profile)),
+        intelligence=intelligence,
+    )
+    with pytest.raises(PreparedReviewProducerError, match="Prepared review intelligence failed"):
+        producer.prepare_review(JOB_ID, WORK_ID)
+    assert intelligence.inspect_calls == intelligence.draft_calls == []
