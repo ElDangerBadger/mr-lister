@@ -14,6 +14,7 @@ import mrListerBanner from "./assets/mr-lister-dark.png";
 import { ThemeControl } from "./components/ThemeControl";
 import { WorkspaceLink, WorkspaceNavigationProvider } from "./navigation/WorkspaceNavigation";
 import { BatchWorkspaceProvider } from "./navigation/BatchWorkspace";
+import { DraftCancellationProvider } from "./navigation/DraftCancellation";
 import { JudgeModeBanner } from "./components/JudgeModeBanner";
 import { JudgeSessionCoordinator } from "./auth/judge-session";
 import { JudgeSessionEntry } from "./auth/JudgeSessionEntry";
@@ -40,6 +41,7 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
       <SignInProvider>
       <WorkspaceNavigationProvider>
       <UploadProvider api={dependencies.api}>
+      <DraftCancellationProvider>
       <BatchWorkspaceProvider>
         <div className={landing ? "app-shell app-shell--landing" : "app-shell"}>
           <RouteFocusManager status={status} judgeMode={judgeMode} />
@@ -75,6 +77,7 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
           </footer>}
         </div>
       </BatchWorkspaceProvider>
+      </DraftCancellationProvider>
       </UploadProvider>
       </WorkspaceNavigationProvider>
       </SignInProvider>

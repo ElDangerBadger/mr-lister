@@ -100,7 +100,7 @@ async function expectJudgeWorkspace(endpoints: ReturnType<typeof mockEndpoints>)
   expect(screen.getByRole("complementary", { name: "Judge walkthrough" })).toBeVisible();
   expect(screen.getByRole("link", { name: "Mr. Lister seller review home" })).toHaveAttribute("href", "/judge");
   expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/judge");
-  expect(screen.getByRole("link", { name: "Review prepared example" })).toHaveAttribute("href", "/judge/jobs/job_example");
+  expect(screen.getByRole("link", { name: "Review example draft" })).toHaveAttribute("href", "/judge/jobs/job_example");
   expect(screen.queryByRole("heading", { name: "Sign-in needs another try" })).not.toBeInTheDocument();
   expect(endpoints.reads.every((read) => read.pathname === "/judge" && read.judgeBanner && read.authorization === `Bearer ${accessToken}`)).toBe(true);
   expect(endpoints.fetcher.mock.calls.filter(([input]) => input === sellerConfig.cognito_token_url)).toHaveLength(1);

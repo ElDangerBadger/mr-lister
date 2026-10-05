@@ -59,13 +59,13 @@ describe("durable upload operation identity", () => {
     await user.click(screen.getByRole("button", { name: "Recover" }));
     expect(await screen.findByText("network interrupted")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Recover" }));
-    expect(await screen.findByText("Artwork verified. Preparation has started.")).toBeInTheDocument();
+    expect(await screen.findByText("Artwork verified. Your draft is now being created.")).toBeInTheDocument();
     expect(completeUpload).toHaveBeenCalledTimes(2);
     expect(completeUpload.mock.calls[0]?.[1]).toBe(completeUpload.mock.calls[1]?.[1]);
   });
 
   it.each([
-    ["completed", "complete", "Artwork verified. Preparation has started."],
+    ["completed", "complete", "Artwork verified. Your draft is now being created."],
     ["cancelled", "cancelled", "Upload cancelled."],
     ["expired", "expired", "Upload expired."],
   ] as const)(
@@ -97,7 +97,7 @@ describe("durable upload operation identity", () => {
     render(<UploadProvider api={api}><RecoveryHarness /></UploadProvider>);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Recover complete" }));
-    await screen.findByText("Artwork verified. Preparation has started.");
+    await screen.findByText("Artwork verified. Your draft is now being created.");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(await screen.findByText("network interrupted")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -112,7 +112,7 @@ describe("durable upload operation identity", () => {
     render(<UploadProvider api={api}><RecoveryHarness /></UploadProvider>);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Recover complete" }));
-    await screen.findByText("Artwork verified. Preparation has started.");
+    await screen.findByText("Artwork verified. Your draft is now being created.");
     expect(screen.getByTestId("upload-id")).toHaveTextContent(recovery.upload_id);
     await user.click(screen.getByRole("button", { name: "Begin second" }));
     expect(screen.getByTestId("upload-id")).toHaveTextContent("none");
@@ -223,7 +223,7 @@ describe("durable upload operation identity", () => {
       await Promise.resolve();
     });
     expect(screen.getByText("Upload cancelled.")).toBeInTheDocument();
-    expect(screen.queryByText("Artwork verified. Preparation has started.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Artwork verified. Your draft is now being created.")).not.toBeInTheDocument();
   });
 });
 
@@ -338,7 +338,7 @@ describe("ordered in-memory upload batches", () => {
     expect(screen.getByTestId("batch-item-2")).toHaveTextContent("simulated per-file failure");
     expect(screen.getByTestId("batch-item-3")).toHaveTextContent("complete");
     expect(screen.getByTestId("batch-message")).toHaveTextContent(
-      "2 of 3 artwork files started preparation; 1 need attention.",
+      "2 of 3 drafts started; 1 needs attention.",
     );
   });
 

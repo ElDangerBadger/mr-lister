@@ -19,7 +19,7 @@ export function ActivityLog({ review, children }: { review: SellerReview; childr
       <ol className="activity-list">
         {entries.map((entry, index) => <li key={`${entry.key}:${index}`}><time dateTime={entry.at}>{new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><div><strong>{entry.label}</strong><small>{entry.completed}</small></div></li>)}
       </ol>
-      <dl className="compact-facts activity-reference"><div><dt>Preparation</dt><dd>{review.job_id}</dd></div><div><dt>Record / review version</dt><dd>{review.record_version} / {review.review_version}</dd></div><div><dt>Last server update</dt><dd>{new Date(review.updated_at).toLocaleString()}</dd></div></dl>
+      <dl className="compact-facts activity-reference"><div><dt>Draft</dt><dd>{review.job_id}</dd></div><div><dt>Record / review version</dt><dd>{review.record_version} / {review.review_version}</dd></div><div><dt>Last server update</dt><dd>{new Date(review.updated_at).toLocaleString()}</dd></div></dl>
       {children}
     </details>
   );

@@ -72,7 +72,7 @@ describe("accessible application states", () => {
   it("covers a pending preparation review", async () => {
     const review = sellerReviewSchema.parse(browserFixtures.seller_review_pending);
     const result = renderReview(review);
-    await screen.findByRole("heading", { level: 1, name: "Your listing is taking shape." });
+    await screen.findByRole("heading", { level: 1, name: "Your draft is taking shape." });
     await expectNoViolations(result);
   });
 

@@ -28,7 +28,7 @@ async page => {
 
   const activity = page.locator("details.activity-panel");
   await activity.locator(":scope > summary").click();
-  check(await activity.getByRole("heading", { name: "Prepared with Strands Agents" }).isVisible(), "provenance cannot be opened at 360 CSS pixels");
+  check(await activity.getByRole("heading", { name: "Created with Strands Agents" }).isVisible(), "provenance cannot be opened at 360 CSS pixels");
   const expanded = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,

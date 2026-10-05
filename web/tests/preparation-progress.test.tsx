@@ -29,7 +29,7 @@ describe("preparation activity and elapsed time", () => {
 
     const syncing = { ...writing, display_state: "synchronizing" as const, stage: "product_sync" as const, provider_outcome_unconfirmed: true };
     rerender(<PreparationProgress review={syncing} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Preparing your product previews");
+    expect(screen.getByRole("status")).toHaveTextContent("Creating your product previews");
     expect(container.querySelector('[aria-current="step"]')).toHaveTextContent("Mockups prepared");
     expect(container.querySelector(".milestone--current")).toHaveTextContent("In progress");
     expect(screen.getByRole("timer")).toHaveTextContent("Since submission 0:20");

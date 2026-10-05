@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ApiError, ContractError, newIdempotencyKey, type ListingDraft } from "../api/client";
 import { useAppDependencies } from "../app-context";
 import { sellerActions, type SellerAction, type SellerReview } from "../contracts";
@@ -13,6 +13,8 @@ import { ActivityStatus } from "../components/ActivityStatus";
 import { PublicationWorkspace } from "../publication/PublicationWorkspace";
 import { BatchNavigator } from "../navigation/BatchWorkspace";
 import { useNavigationProtection } from "../navigation/WorkspaceNavigation";
+import { useDraftCancellation, type CanceledDraft } from "../navigation/DraftCancellation";
+import { useUpload } from "../upload/upload-context";
 import { ListingPricingFields, pricingMatches, pricingRequest, validatePricing, type PricingFormDraft } from "../components/ListingPricingFields";
 
 const POLLING_STATES = new Set([
@@ -26,7 +28,11 @@ type ListingFormDraft = Omit<ListingDraft, "pricing"> & { pricing?: PricingFormD
 
 export function JobReviewPage() {
   const { jobId = "" } = useParams();
-  const { api, publicationApi } = useAppDependencies();
+  const { api, auth, publicationApi } = useAppDependencies();
+  const navigate = useNavigate();
+  const upload = useUpload();
+  const cancellation = useDraftCancellation();
+  const [cancelMinimum, setCancelMinimum] = useState<ReviewMinimum | null>(null);
   const [loadedReview, setReview] = useState<SellerReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<{ message: string; requestId: string | null; retryable?: boolean } | null>(null);
@@ -60,6 +66,24 @@ export function JobReviewPage() {
   const review = loadedReview?.job_id === jobId ? loadedReview : null;
   reviewRef.current = review;
   const retryInitialLoad = review === null && !loading && error?.retryable === true;
+  const finishCancellation = useCallback((receipt: CanceledDraft) => {
+    if (!lifecycle.current.mounted || auth.session.getStatus() !== "authenticated"
+      || routeIdentity.current.jobId !== receipt.jobId || routeIdentity.current.epoch !== routeEpoch) return;
+    cancellation.confirm(receipt);
+    // A recovered single upload belongs only to this canceled draft. A batch's
+    // active/recoverable siblings are handled individually by BatchWorkspace.
+    if (upload.batch.items.length === 0 && upload.batch.phase !== "running"
+      && upload.state.jobId === receipt.jobId) upload.reset();
+    setCancelMinimum(null);
+    setListingEditBarrier("none");
+    void navigate("/", { replace: true });
+  }, [auth.session, cancellation, navigate, routeEpoch, upload]);
+
+  useEffect(() => {
+    if (cancelMinimum !== null && review?.display_state === "cancelled" && meetsMinimum(review, cancelMinimum)) {
+      finishCancellation({ jobId: review.job_id, recordVersion: review.record_version, reviewVersion: review.review_version });
+    }
+  }, [cancelMinimum, finishCancellation, review]);
 
   useEffect(() => {
     lifecycle.current = { mounted: true, generation: lifecycle.current.generation + 1 };
@@ -154,7 +178,7 @@ export function JobReviewPage() {
         || routeIdentity.current.jobId !== jobId) return;
       const requestId = reason instanceof ApiError || reason instanceof ContractError ? reason.requestId : null;
       setError({
-        message: reason instanceof Error ? reason.message : "Preparation status is temporarily unavailable.",
+        message: reason instanceof Error ? reason.message : "Draft status is temporarily unavailable.",
         requestId: requestId === "unavailable" ? null : requestId,
       });
       const retryAfter = reason instanceof ApiError ? reason.retryAfterSeconds : null;
@@ -174,18 +198,19 @@ export function JobReviewPage() {
     setLoadedPreviewKey(null);
     setLoadedMockupSetKey(null);
     setListingEditBarrier("none");
+    setCancelMinimum(null);
     void load();
   }, [load]);
 
   useEffect(() => {
     if (review === null || lastStage.current === review.stage) return;
-    if (lastStage.current !== null) setStageAnnouncement(`Preparation moved to ${humanLabel(review.stage)}.`);
+    if (lastStage.current !== null) setStageAnnouncement(`Draft status: ${humanLabel(review.stage)}.`);
     lastStage.current = review.stage;
   }, [review]);
 
   useEffect(() => {
     if (review === null && !retryInitialLoad) return;
-    const continuouslyPoll = review === null || POLLING_STATES.has(review.display_state);
+    const continuouslyPoll = review === null || cancelMinimum !== null || POLLING_STATES.has(review.display_state);
     const refresh = () => review === null ? load() : refreshProgress();
     let active = true;
     let inFlight = false;
@@ -223,10 +248,10 @@ export function JobReviewPage() {
       window.removeEventListener("online", refreshOnFocus);
       document.removeEventListener("visibilitychange", refreshOnFocus);
     };
-  }, [load, refreshProgress, retryInitialLoad, review]);
+  }, [cancelMinimum, load, refreshProgress, retryInitialLoad, review]);
 
   if (loading && review === null) {
-    return <section className="page narrow-page"><WorkflowSteps current="Review" /><BatchNavigator /><h1>Opening your listing…</h1><p><ActivityStatus>Your artwork is uploaded. Loading your preview and preparation progress.</ActivityStatus></p></section>;
+    return <section className="page narrow-page"><WorkflowSteps current="Review" /><BatchNavigator /><h1>Opening your draft…</h1><p><ActivityStatus>Your artwork is uploaded. Loading your draft and preview.</ActivityStatus></p></section>;
   }
   if (review === null) {
     return (
@@ -234,7 +259,7 @@ export function JobReviewPage() {
         <WorkflowSteps current="Review" />
         <BatchNavigator />
         <p className="eyebrow">{retryInitialLoad ? "Your listing workspace" : "Review unavailable"}</p>
-        <h1>{retryInitialLoad ? "Opening your listing…" : "We could not open this preparation."}</h1>
+        <h1>{retryInitialLoad ? "Opening your draft…" : "We couldn’t open this draft."}</h1>
         {error !== null && !retryInitialLoad && <ErrorNotice {...error} />}
         {retryInitialLoad ? <p><ActivityStatus>Your listing is still opening. We’ll try again shortly.</ActivityStatus></p>
           : <button className="button" type="button" onClick={() => { void load(); }}>Try again</button>}
@@ -249,9 +274,9 @@ export function JobReviewPage() {
       <BatchNavigator currentReview={review} />
       <div className="review-title-row">
         <div>
-          <p className="eyebrow">Your listing workspace</p>
-          <h1>{review.display_state === "approved" && listingEditBarrier === "none" ? "Your review is approved." : review.display_state === "cancelled" ? "This preparation was cancelled." : review.failure !== null || providerNeedsAttention ? "Your preparation needs attention." : review.listing.readiness === "ready" ? "Make it yours." : "Your listing is taking shape."}</h1>
-          <p>{review.display_state === "approved" ? "Your saved listing is below. Publication availability and status appear here." : "Review your design, refine the details, and approve when it feels right."}</p>
+          <p className="eyebrow">Your draft</p>
+          <h1>{review.display_state === "cancelled" ? "Draft Canceled" : cancelMinimum !== null || review.display_state === "cancelling" ? "Confirming cancellation…" : review.display_state === "approved" && listingEditBarrier === "none" ? "Draft approved." : review.failure !== null || providerNeedsAttention ? "Your draft needs attention." : review.listing.readiness === "ready" ? "Make it yours." : "Your draft is taking shape."}</h1>
+          <p>{cancelMinimum !== null || review.display_state === "cancelling" ? "You’ll return to the start page once cancellation is confirmed." : review.display_state === "cancelled" ? "This draft is closed. You can start a new one whenever you’re ready." : review.display_state === "approved" ? "Your saved listing is below. Publication availability and status appear here." : "Review your design, refine the details, and approve when it feels right."}</p>
         </div>
         <div className={`stage-badge stage-badge--${review.display_state}`}>{humanLabel(review.display_state)}</div>
       </div>
@@ -264,7 +289,7 @@ export function JobReviewPage() {
       {review.failure !== null && <FailureCard review={review} />}
 
 
-      <PreparationProgress review={review} />
+      {cancelMinimum === null ? <PreparationProgress review={review} /> : <p><ActivityStatus>Checking cancellation status…</ActivityStatus></p>}
       <div className="review-grid">
         <aside className="review-preview-rail" aria-label="Artwork and product preview">
         <section className="panel artwork-panel" aria-labelledby="artwork-heading">
@@ -331,10 +356,13 @@ export function JobReviewPage() {
         </div>
       </div>
       <ActionPanel
+        key={`actions:${review.job_id}`}
         editActionsRef={setEditActionsTarget}
         review={review}
         reload={load}
         listingEditBarrier={listingEditBarrier}
+        onCanceled={finishCancellation}
+        onCancelRequested={(minimum) => setCancelMinimum(minimum)}
         approvalEvidenceAvailable={review.preview.url !== null
           && loadedPreviewKey === previewEvidenceKey(review)
           && loadedMockupSetKey === mockupSetKey(review)}
@@ -352,16 +380,16 @@ export function JobReviewPage() {
               {review.artwork.confidence !== null && <p><small>Interpretation confidence: {Math.round(review.artwork.confidence * 100)}%</small></p>}
             </details>
           )}
-        {review.listing.audience.length > 0 && <TokenList label="Prepared audience" values={review.listing.audience} headingLevel={3} />}
+        {review.listing.audience.length > 0 && <TokenList label="Suggested audience" values={review.listing.audience} headingLevel={3} />}
         <section className="strands-card" aria-labelledby="strands-heading">
           <div className="strands-symbol" aria-hidden="true">S</div>
           <div>
-            <p className="eyebrow">Agentic preparation evidence</p>
-            <h2 id="strands-heading">Prepared with Strands Agents</h2>
+            <p className="eyebrow">How your draft was created</p>
+            <h2 id="strands-heading">Created with Strands Agents</h2>
             {review.strands.readiness === "ready" ? (
               <p>Strands orchestration recorded the prepared review through its bounded <code>record_prepared_review</code> tool.</p>
             ) : (
-              <p>Strands Agents preparation evidence is {humanLabel(review.strands.readiness)}.</p>
+              <p>Draft activity is {humanLabel(review.strands.readiness).toLocaleLowerCase()}.</p>
             )}
           </div>
           <dl className="compact-facts">
@@ -552,7 +580,7 @@ function ListingEditor({ review, reload, onEditBarrierChange, actionsTarget }: {
       <section className="panel listing-panel" aria-labelledby="listing-heading">
         <SectionHeader eyebrow="Listing" heading="Draft content" id="listing-heading" readiness={review.listing.readiness} />
         <p className="validation-result">Validation: {validationResultLabel(review)}</p>
-        <p>Listing content will appear after artwork preparation.</p>
+        <p>Your draft will appear once your artwork is checked.</p>
       </section>
     );
   }
@@ -681,7 +709,7 @@ function ListingEditor({ review, reload, onEditBarrierChange, actionsTarget }: {
       />
       {review.validation.passed !== true && <p className="validation-result">Validation: {validationResultLabel(review)}</p>}
       {!capability.enabled && earlyEditingAvailable && (
-        <p className="listing-guidance">You can edit the title, description, and tags while preparation finishes. Changes stay only on this page until you save; keep this page open. Saving becomes available when preparation is ready.</p>
+        <p className="listing-guidance">You can edit while your draft is being created. Keep this page open to retain your changes. You can save once the draft is ready.</p>
       )}
       {(Object.keys(errors).length > 0 || mergedIssues.length > 0) && (
         <div id="listing-errors" ref={validationSummary} className="validation-summary" role="alert" tabIndex={-1}>
@@ -738,12 +766,14 @@ function ListingEditor({ review, reload, onEditBarrierChange, actionsTarget }: {
   );
 }
 
-function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvailable, editActionsRef }: {
+function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvailable, editActionsRef, onCanceled, onCancelRequested }: {
   review: SellerReview;
   reload: (minimum?: ReviewMinimum) => Promise<boolean>;
   listingEditBarrier: ListingEditBarrier;
   approvalEvidenceAvailable: boolean;
   editActionsRef: (element: HTMLDivElement | null) => void;
+  onCanceled: (receipt: CanceledDraft) => void;
+  onCancelRequested: (minimum: ReviewMinimum | null) => void;
 }) {
   const { api } = useAppDependencies();
   const [running, setRunning] = useState<SellerAction | null>(null);
@@ -759,6 +789,12 @@ function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvail
   const [triggerFocusRequest, setTriggerFocusRequest] = useState(0);
   const [statusFocusRequest, setStatusFocusRequest] = useState(0);
   const operationKeys = useRef(new Map<string, string>());
+  const lastAction = useRef<SellerAction | null>(null);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const approvalAuthority = [
     review.job_id,
     review.record_version,
@@ -801,17 +837,18 @@ function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvail
   useEffect(() => {
     if (pendingMinimum !== null && meetsMinimum(review, pendingMinimum)) {
       setPendingMinimum(null);
-      setMessage("Action accepted. Authoritative status is current.");
+      setMessage(lastAction.current === "cancel_job" ? "Canceling draft… We’ll return you to the start page when it’s finished." : "Draft status updated.");
     }
   }, [pendingMinimum, review]);
 
   const reconcileAcceptedAction = async (minimum: ReviewMinimum) => {
     const current = await reload(minimum);
+    if (!mounted.current) return;
     if (current) {
       setPendingMinimum(null);
-      setMessage("Action accepted. Authoritative status is current.");
+      setMessage(lastAction.current === "cancel_job" ? "Canceling draft… We’ll return you to the start page when it’s finished." : "Draft status updated.");
     } else {
-      setMessage("Action accepted, but the latest status is unavailable. Refresh status before issuing another action.");
+      setMessage(lastAction.current === "cancel_job" ? "Cancellation requested. We’re checking draft status before confirming it." : "Action accepted, but the latest status is unavailable. Refresh status before issuing another action.");
     }
   };
 
@@ -833,30 +870,54 @@ function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvail
       if (action === "approve_review") dismissApproval();
       return;
     }
+    if (action === "cancel_job" && listingEditBarrier === "saving") {
+      setMessage("Wait for your changes to finish saving, then cancel the draft.");
+      return;
+    }
     const keyId = `${action}:${review.record_version}:${review.review_version}`;
     const idempotencyKey = operationKeys.current.get(keyId) ?? newIdempotencyKey(action);
     operationKeys.current.set(keyId, idempotencyKey);
     setRunning(action);
+    lastAction.current = action;
+    if (action === "cancel_job") onCancelRequested({ recordVersion: review.record_version + 1, reviewVersion: review.review_version });
     setMessage(null);
     setRequestId(null);
     try {
       const response = await api.runAction(review, action, idempotencyKey);
+      if (!mounted.current) return;
+      if (response.value.job_id !== review.job_id || response.value.record_version < review.record_version
+        || response.value.review_version < review.review_version
+        || (action === "cancel_job" && !["cancelled", "cancel_requested"].includes(response.value.state))) {
+        throw new ContractError(response.requestId);
+      }
       const minimum = { recordVersion: response.value.record_version, reviewVersion: response.value.review_version };
       operationKeys.current.delete(keyId);
-      setMessage(action === "approve_review" ? "Draft approved. It remains unpublished. Refreshing status…" : "Action accepted. Refreshing status…");
+      if (action === "cancel_job" && response.value.state === "cancelled") {
+        onCanceled({ jobId: review.job_id, ...minimum });
+        return;
+      }
+      if (action === "cancel_job") onCancelRequested(minimum);
+      setMessage(action === "cancel_job" ? "Canceling draft… We’ll return you to the start page when it’s finished."
+        : action === "approve_review" ? "Draft approved. It remains unpublished. Refreshing status…" : "Updating draft status…");
       setPendingMinimum(minimum);
       setRunning(null);
       if (action === "approve_review") setStatusFocusRequest((current) => current + 1);
       void reconcileAcceptedAction(minimum);
       return;
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "The action could not be completed.");
+      if (!mounted.current) return;
+      if (action === "cancel_job" && reason instanceof ApiError && reason.status < 500
+        && reason.status !== 408 && reason.status !== 429) onCancelRequested(null);
+      setMessage(action === "cancel_job" ? "We couldn’t confirm cancellation. Refresh draft status or try Cancel again."
+        : reason instanceof Error ? reason.message : "The action could not be completed.");
       if (reason instanceof ApiError && reason.requestId !== "unavailable") setRequestId(reason.requestId);
       if (reason instanceof ApiError && reason.isConflict) await reload();
       if (action === "approve_review") setStatusFocusRequest((current) => current + 1);
     } finally {
-      setRunning(null);
-      setConfirmationAuthority(null);
+      if (mounted.current) {
+        setRunning(null);
+        setConfirmationAuthority(null);
+      }
     }
   };
 
@@ -864,13 +925,14 @@ function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvail
     const capability = capabilityFor(review, action);
     const blockedByListingEdits = listingEditBarrier !== "none"
       && (action === "approve_review" || action === "refresh_economics");
+    const waitingForSave = action === "cancel_job" && listingEditBarrier === "saving";
     return (
       <div className={`action-item ${action === "approve_review" ? "action-item--primary" : ""}`} key={action}>
         <button
           ref={action === "approve_review" ? approvalTrigger : undefined}
           className={`button ${action === "approve_review" ? "button--primary" : action === "cancel_job" ? "button--danger" : ""}`}
           type="button"
-          disabled={!capability.enabled || blockedByListingEdits || running !== null || pendingMinimum !== null || (action === "approve_review" && !approvalEvidenceAvailable)}
+          disabled={!capability.enabled || blockedByListingEdits || waitingForSave || running !== null || pendingMinimum !== null || (action === "approve_review" && !approvalEvidenceAvailable)}
           onClick={() => {
             if (action === "approve_review") {
               setConfirmationAuthority(approvalAuthority);
@@ -878,9 +940,10 @@ function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvail
             else void execute(action);
           }}
         >
-          {running === action ? "Working…" : actionLabel(action)}
+          {running === action ? action === "cancel_job" ? "Canceling draft…" : "Working…" : actionLabel(action)}
         </button>
-        <small>{blockedByListingEdits
+        <small>{waitingForSave ? "Wait for your changes to finish saving."
+          : blockedByListingEdits
           ? listingEditBarrierMessage(listingEditBarrier)
           : action === "approve_review" && capability.enabled && !approvalEvidenceAvailable
             ? "Load the original artwork and all representative mockups before approval."
@@ -894,8 +957,9 @@ function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvail
     : listingEditBarrier === "saving" ? "Saving your changes"
     : listingEditBarrier === "reconciling" ? "Saved · updating your product and estimate"
     : capabilityFor(review, "approve_review").enabled && approvalEvidenceAvailable ? "Saved · all checks complete"
-    : review.display_state === "cancelled" ? "Preparation cancelled"
-    : POLLING_STATES.has(review.display_state) ? "Preparing your listing"
+    : review.display_state === "cancelled" ? "Draft Canceled"
+    : review.display_state === "cancelling" ? "Canceling draft…"
+    : POLLING_STATES.has(review.display_state) ? "Creating your draft"
     : "Review your listing";
   const decisionHelp = approved ? `Saved review version ${review.review_version} is locked. Publication status is shown beside your artwork.`
     : listingEditBarrier === "unsaved" ? "Save or discard your edits before approving."
@@ -914,10 +978,13 @@ function ActionPanel({ review, reload, listingEditBarrier, approvalEvidenceAvail
         <details className="secondary-actions">
           <summary>More actions</summary>
           <div className="action-menu">
-            {(["refresh_economics", "retry_job", "cancel_job"] as const).map(renderAction)}
+            {(["refresh_economics", "retry_job"] as const).map(renderAction)}
           </div>
         </details>
-        {!approved && listingEditBarrier === "none" && renderAction("approve_review")}
+        <div className="decision-primary-actions">
+          {renderAction("cancel_job")}
+          {!approved && listingEditBarrier === "none" && renderAction("approve_review")}
+        </div>
       </div>
       {message !== null && <p ref={actionStatus} className="alert alert--info" role="status" tabIndex={-1}>{message}{requestId !== null && <> Support reference: {requestId}.</>}</p>}
       {pendingMinimum !== null && running === null && (
@@ -1014,7 +1081,7 @@ function EconomicsTable({ review, hasUnsavedChanges }: { review: SellerReview; h
 function FailureCard({ review }: { review: SellerReview }) {
   const failure = review.failure;
   if (failure === null) return null;
-  return <div className={`alert ${failure.retryable ? "alert--warning" : "alert--error"}`} role="alert"><strong>{failure.retryable ? "Preparation paused" : "Preparation stopped"}</strong><p>{failure.message}</p><dl className="compact-facts"><div><dt>Failure code</dt><dd>{failure.code}</dd></div><div><dt>Stage</dt><dd>{humanLabel(failure.stage)}</dd></div><div><dt>Recovery</dt><dd>{failure.recovery === null ? "No recovery action available" : humanLabel(failure.recovery)}</dd></div></dl></div>;
+  return <div className={`alert ${failure.retryable ? "alert--warning" : "alert--error"}`} role="alert"><strong>{failure.retryable ? "Draft paused" : "Draft stopped"}</strong><p>{failure.message}</p><dl className="compact-facts"><div><dt>Failure code</dt><dd>{failure.code}</dd></div><div><dt>Stage</dt><dd>{humanLabel(failure.stage)}</dd></div><div><dt>Recovery</dt><dd>{failure.recovery === null ? "No recovery action available" : humanLabel(failure.recovery)}</dd></div></dl></div>;
 }
 
 function ErrorNotice({ message, requestId }: { message: string; requestId: string | null }) {
@@ -1100,10 +1167,12 @@ function normalizeApiPath(path: string): string {
 }
 
 function actionLabel(action: Exclude<SellerAction, "edit_listing">): string {
-  return { approve_review: "Approve draft", cancel_job: "Cancel preparation", retry_job: "Retry preparation", refresh_economics: "Refresh estimate" }[action];
+  return { approve_review: "Approve draft", cancel_job: "Cancel draft", retry_job: "Retry draft", refresh_economics: "Refresh estimate" }[action];
 }
 
 function humanLabel(value: string): string {
+  const labels: Record<string, string> = { preparing: "Creating draft", cancelling: "Canceling draft", cancelled: "Draft Canceled", artwork_preparation: "Checking artwork", listing_generation: "Writing draft", listing_validation: "Checking draft" };
+  if (labels[value] !== undefined) return labels[value];
   return value.replaceAll("_", " ").replace(/^./u, (character) => character.toUpperCase());
 }
 

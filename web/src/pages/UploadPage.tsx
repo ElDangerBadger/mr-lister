@@ -101,7 +101,7 @@ export function UploadPage() {
         <button className="button button--danger" type="button" onClick={() => { void upload.cancel(); }}>Cancel upload</button>
       )}
       {upload.state.phase === "complete" && upload.state.jobId !== null && (
-        <WorkspaceLink className="button button--primary" to={`/jobs/${upload.state.jobId}`}>Follow preparation</WorkspaceLink>
+        <WorkspaceLink className="button button--primary" to={`/jobs/${upload.state.jobId}`}>View draft</WorkspaceLink>
       )}
       {["error", "expired", "cancelled"].includes(upload.state.phase) && (
         <div className="form-actions">

@@ -30,7 +30,7 @@ describe("judge access in the existing application", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(document.querySelector('input[type="password"]')).toBeNull();
     expect(screen.queryByRole("button", { name: /Google|Apple|Facebook/iu })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Review prepared example" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Review example draft" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u)).not.toBeInTheDocument();
     expect(setup.session.getStatus()).toBe("anonymous");
     expect(setup.auth.startSignIn).not.toHaveBeenCalled();
@@ -69,7 +69,7 @@ describe("judge access in the existing application", () => {
   it("opens the configured prepared example only through existing sign-in", async () => {
     const setup = dependencies("job_prepared_example");
     renderJudge(setup);
-    await userEvent.click(screen.getByRole("button", { name: "Review prepared example" }));
+    await userEvent.click(screen.getByRole("button", { name: "Review example draft" }));
     expect(setup.auth.startPopupSignIn).toHaveBeenCalledExactlyOnceWith("/jobs/job_prepared_example");
     expect(setup.session.getStatus()).toBe("anonymous");
     expect(window.location.pathname).toBe("/judge/");
@@ -94,7 +94,7 @@ describe("judge access in the existing application", () => {
     expect(screen.getByRole("heading", { name: "Let’s start with your artwork." })).toBeVisible();
     await waitFor(() => expect(setup.api.listJobs).toHaveBeenCalledExactlyOnceWith(undefined));
     const resources = screen.getByRole("navigation", { name: "Judge resources" });
-    expect(within(resources).getByRole("link", { name: "Review prepared example" })).toHaveAttribute("href", "/judge/jobs/job_prepared_example");
+    expect(within(resources).getByRole("link", { name: "Review example draft" })).toHaveAttribute("href", "/judge/jobs/job_prepared_example");
     expect(within(resources).getByRole("link", { name: "Download sample artwork" })).toHaveAttribute("download", "mr-lister-sample-artwork.png");
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/judge");
     expect(screen.queryByRole("button", { name: "Submit" })).not.toBeInTheDocument();
@@ -108,7 +108,7 @@ describe("judge access in the existing application", () => {
     setup.session.set("test-session", 3600);
     renderJudge(setup);
     await waitFor(() => expect(setup.api.listJobs).toHaveBeenCalledOnce());
-    expect(screen.queryByRole("link", { name: "Review prepared example" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Review example draft" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Download sample artwork" })).toBeVisible();
   });
 

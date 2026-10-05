@@ -24,7 +24,7 @@ export function JudgeSessionEntry({ auth, returnPath = "/", preparedJobId }: {
       {state.phase !== "missing" && state.phase !== "signing-out" && state.phase !== "signout-error" && <button className="button button--primary" type="button" disabled={pending} onClick={() => { enter(returnPath); }}>
         {pending ? "Opening workspace…" : "Enter judge workspace"}
       </button>}
-      {preparedJobId !== undefined && state.phase === "ready" && <button className="button" type="button" onClick={() => { enter(`/jobs/${encodeURIComponent(preparedJobId)}`); }}>Review prepared example</button>}
+      {preparedJobId !== undefined && state.phase === "ready" && <button className="button" type="button" onClick={() => { enter(`/jobs/${encodeURIComponent(preparedJobId)}`); }}>Review example draft</button>}
       {pending && <button className="button" type="button" onClick={() => { generation.current += 1; auth.cancel(); }}>Cancel</button>}
       {state.phase === "signout-error" && <button className="button" type="button" onClick={() => { auth.signOut(); }}>Try sign-out again</button>}
     </div>

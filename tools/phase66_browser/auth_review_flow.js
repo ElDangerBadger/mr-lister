@@ -68,7 +68,7 @@ async page => {
     const grid = document.querySelector(".review-grid");
     const actionBar = document.querySelector(".action-panel");
     const activityPanel = document.querySelector(".activity-panel");
-    const progress = document.querySelector('[aria-label="Preparation milestones"]');
+    const progress = document.querySelector('[aria-label="Draft milestones"]');
     const milestoneItems = [...(progress?.querySelectorAll("li") ?? [])];
     return {
       viewportWidth: window.innerWidth,
@@ -121,7 +121,7 @@ async page => {
   const activity = page.locator("details.activity-panel");
   check(await activity.getAttribute("open") === null, "activity should start collapsed");
   await activity.locator(":scope > summary").click();
-  const strands = activity.getByRole("heading", { name: "Prepared with Strands Agents" });
+  const strands = activity.getByRole("heading", { name: "Created with Strands Agents" });
   check(await strands.isVisible(), "Strands evidence is absent from expanded activity");
   check(await activity.getByText("job_browser_fixture", { exact: true }).isVisible(), "activity does not identify the current job");
   check(await activity.getByText("strands-agents", { exact: true }).isVisible(), "the recorded framework is absent");
