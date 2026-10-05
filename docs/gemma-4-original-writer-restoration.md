@@ -1,5 +1,9 @@
 # Gemma 4 original writer restoration
 
+This records the v4 release. The later [tag-coverage release](gemma-4-tag-coverage.md) supersedes
+its active preparation binding with v6/runtime 11, retaining runtime 10 as immediate rollback.
+The restored title/description and image-review instructions are preserved by that release.
+
 ## Requested change
 
 After the Gemma 4 release, the user reported plainer descriptions and tags and requested the

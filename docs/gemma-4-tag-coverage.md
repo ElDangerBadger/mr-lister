@@ -95,6 +95,39 @@ path was corrected to preserve original analysis/copy across length-only repair.
 worker or experimental unified path is activated by this rollout.
 
 Bootstrap authentication was renewed, the temporary test policy was detached/deleted, and the
-exact prior developer permission baseline was verified restored. Sealed release preparation is
-finishing; deployment readback will be recorded after execution.
-The live preparation binding remains the prior v4/runtime 10 until the scoped rollout completes.
+exact prior developer permission baseline was verified restored. Source was merged/pushed to
+`main` at `8f1985111363536a2f0305e2fde83d41d51ec5ed` and deployed October 5, 2026.
+
+| Release identity | Verified value |
+| --- | --- |
+| Sealed component release | `4cb9cae8f4ae708a2be753ad48a445a9e44a423e3bb4f9b75e52cb3aa86b913f` |
+| AgentCore runtime | `mr_lister_phase6-4HoPmq2hCI`, immutable version `11` |
+| Preparation endpoint | `phase6_v11_dev` |
+| Runtime binding | `be4cf5ebdb7d2d7b4bb10da7210f4211889eec3563029aa7cd5b7695927c2c57` |
+| AgentCore archive SHA-256 | `3ff9fc2f938d95edbd9f87fb6ec4be6ed5da1f44438804665c29261cd98721d1` |
+| Lambda archive SHA-256 | `f7ba60c7436c70211e0a3376c5ddd7777efbdc2610b2f05f6732679425f98b6a` |
+| Immediate rollback | Immutable runtime `10`, unchanged `phase6_v10_dev` endpoint |
+
+The rollout updated only preparation's sealed code/full environment pair and added exact-version
+archive and exact-endpoint IAM permissions. Current runtime 10 remains ready for rollback.
+AWS's two-custom-endpoint quota required retiring unused v9's endpoint; immutable v9, its exact
+archive and recreation request remain retained. Stale CloudFormation references to v8 still
+exist: do not reconcile the historical stack templates as part of this rollout.
+
+Runtime 11 matched the plan and rejected an empty envelope with the expected HTTP 422 before
+job/model access. Its log retention is 14 days. Cutover guards compared full accepted/completed
+Lambda state while allowing AWS's completion revision/status transition, then used the freshly
+read revision for the next update. The code/environment switch is not atomic and can briefly
+fail closed. Exact captured runtime 10 code/environment remains the guarded rollback.
+
+These checks verify deployed startup and binding, not a positive authenticated website job.
+A fresh normal upload is the final end-to-end confirmation. No listing was created, approved,
+published or rewritten by deployment verification; saved drafts retain their existing copy/tags.
+
+Independent postdeployment readback passed without relaxed checks: preparation's exact code/full
+environment, runtime 11/prompt pins, all 15 other functions, both stacks/templates, API routes,
+integrations and authorizer, and every baseline IAM policy match their expected states. Only the
+two planned narrow IAM policies were added. Runtime 10 and its endpoint are unchanged; all five
+new/rollback archives and immutable v9 remain recoverable. Startup/log-retention receipts match
+the plan. Home, judge, health and both runtime-config endpoints returned HTTP 200. The private
+receipt is `.mr_lister_private/tag-coverage-20261005/verification-v6.json`.
