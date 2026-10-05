@@ -1,5 +1,29 @@
 # Seller sign-in branding
 
+## Legacy judge login removal — October 5, 2026
+
+The client-specific branding now hides `.idpButton-customizable` and
+`.idpDescription-customizable`. This removes the obsolete `MrListerJudge` button
+and Cognito's generic corporate-ID heading from normal seller sign-in. Judge entry
+uses the complete private `/judge/#access=…` invitation described in
+[judge link access](../../../docs/judge-link-and-cleanup.md).
+
+This is a visual change only. The underlying provider remains configured for
+controlled credential renewal; removing it from the app client would change that
+authentication path. Before applying these styles, confirm that `MrListerJudge` is
+the client's only non-COGNITO provider. The selectors would also hide future
+enterprise-provider choices and must be revisited before enabling another one.
+
+AWS accepted `display: none` and returned CSS version `20261005193849`. Exact CSS
+and logo readback, live WebKit visibility checks, and a controlled private judge
+entry/logout passed. Pool, client, domain, pool-wide branding, and both runtime
+configurations compare unchanged. No seller credentials or MFA code were entered
+during this check. Cognito still owns the surrounding provider layout and divider.
+Private rollback and verification receipts are retained under
+`.mr_lister_private/legacy-judge-button-20261005/`.
+
+## Original branding
+
 `branding.css` and `logo.jpg` are the cosmetic branding applied to the existing
 Cognito Hosted UI (classic) seller app client on September 11, 2026. They are not
 part of the React bundle. The original PNG in `web/src/assets` remains unchanged;

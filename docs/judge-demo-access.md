@@ -1,5 +1,12 @@
 # Judge demo access
 
+Current entry uses the complete private project invitation and **Enter judge
+workspace**, without typed login credentials. See
+[judge link access](judge-link-and-cleanup.md). The legacy hosted-login button and
+corporate-ID heading were hidden from seller sign-in on October 5, 2026. The
+password/federation details below describe the earlier entry method and remain
+relevant to controlled server-credential renewal only.
+
 The approved judge experience uses the full Mr. Lister application at `/judge/`,
 with a dedicated login and workspace connected to the owner's existing Printify
 store. Upload, review, pricing, approval, and confirmed publication remain available.
@@ -70,8 +77,9 @@ configuration contains public OAuth identifiers only. Its fixed callback and
 two-stage logout remain inside the approved application and Cognito origins. No
 password, broker secret, or Printify token belongs in public files.
 
-The primary Cognito login also exposes a `MrListerJudge` provider button beside the
-normal credential form. Selecting it preserves the original OAuth callback, which
+The primary Cognito login previously exposed a `MrListerJudge` provider button beside
+the normal credential form; current branding hides it. The underlying provider is
+retained for controlled credential renewal. Direct federation preserves the original OAuth callback, which
 may be `/auth/callback` when sign-in began on the main site. After that code exchange,
 the browser recognizes the issuer-derived judge group as a presentation hint,
 loads the strict `/judge/runtime-config.json`, and switches the router and logout
