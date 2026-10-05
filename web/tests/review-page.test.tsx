@@ -19,7 +19,7 @@ describe("authoritative seller review", () => {
     let finish!: (response: ReturnType<typeof reviewResponse>) => void;
     const getReview = vi.fn().mockReturnValue(new Promise<ReturnType<typeof reviewResponse>>((resolve) => { finish = resolve; }));
     const { container } = render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview })} /></MemoryRouter>);
-    const activity = screen.getByText("Your artwork is uploaded. Loading your preview and preparation progress.").closest(".activity-status");
+    const activity = screen.getByText("Your artwork is uploaded. Loading your draft and preview.").closest(".activity-status");
     expect(activity).toHaveAttribute("role", "status");
     expect(activity).toHaveAttribute("aria-live", "polite");
     await act(async () => { finish(reviewResponse(review, "request-ready")); await Promise.resolve(); });
@@ -36,7 +36,7 @@ describe("authoritative seller review", () => {
     const activitySummary = screen.getByText(/^Activity & details/u);
     expect(activitySummary.closest("details")).not.toHaveAttribute("open");
     await userEvent.click(activitySummary);
-    expect(screen.getByRole("heading", { name: "Prepared with Strands Agents" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Created with Strands Agents" })).toBeVisible();
     expect(screen.getAllByText("record_prepared_review").length).toBeGreaterThan(0);
     expect(screen.getByText("a".repeat(24))).toBeInTheDocument();
     expect(screen.getByText("Review exact print placements")).toBeInTheDocument();
@@ -64,7 +64,7 @@ describe("authoritative seller review", () => {
       const getJob = vi.fn().mockResolvedValue(progressResponse(review));
       render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { getReview, getJob })} /></MemoryRouter>);
       await act(async () => { await Promise.resolve(); });
-      expect(screen.getByRole("heading", { name: "Opening your listing…" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Opening your draft…" })).toBeInTheDocument();
       expect(screen.getByText("Your listing is still opening. We’ll try again shortly.").closest(".activity-status")).toHaveAttribute("role", "status");
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
@@ -73,7 +73,7 @@ describe("authoritative seller review", () => {
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       await act(async () => { await vi.advanceTimersByTimeAsync(1); });
       expect(getReview).toHaveBeenCalledTimes(2);
-      expect(screen.getByRole("heading", { name: "Your listing is taking shape." })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Your draft is taking shape." })).toBeInTheDocument();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(screen.queryByText("Your listing is still opening. We’ll try again shortly.")).not.toBeInTheDocument();
       expect(getJob).not.toHaveBeenCalled();
@@ -96,14 +96,14 @@ describe("authoritative seller review", () => {
       await act(async () => { await Promise.resolve(); });
       expect(screen.getByRole("alert")).toHaveTextContent("This review is unavailable.");
       expect(screen.getByRole("alert")).toHaveTextContent("Support reference: request-unavailable");
-      expect(screen.getByRole("heading", { name: "We could not open this preparation." })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "We couldn’t open this draft." })).toBeInTheDocument();
       await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
       fireEvent.focus(window);
       expect(getReview).toHaveBeenCalledTimes(1);
       fireEvent.click(screen.getByRole("button", { name: "Try again" }));
       await act(async () => { await Promise.resolve(); });
       expect(getReview).toHaveBeenCalledTimes(2);
-      expect(screen.getByRole("heading", { name: "Your listing is taking shape." })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Your draft is taking shape." })).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
@@ -122,7 +122,7 @@ describe("authoritative seller review", () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
       expect(getReview).toHaveBeenCalledTimes(3);
       expect(screen.getByRole("alert")).toHaveTextContent("The connection was interrupted.");
-      expect(screen.getByRole("heading", { name: "We could not open this preparation." })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "We couldn’t open this draft." })).toBeInTheDocument();
       expect(screen.queryByText("Your listing is still opening. We’ll try again shortly.")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
       await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
@@ -175,7 +175,7 @@ describe("authoritative seller review", () => {
       act(() => { app.auth.session.clear(); });
       await act(async () => { resolveRetry(reviewResponse(review, "request-late")); await pending; });
       expect(screen.getByRole("heading", { name: "Restore your seller session." })).toBeInTheDocument();
-      expect(screen.queryByRole("heading", { name: "Your listing is taking shape." })).not.toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Your draft is taking shape." })).not.toBeInTheDocument();
       await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
       expect(getReview).toHaveBeenCalledTimes(2);
     } finally {
@@ -258,7 +258,7 @@ describe("authoritative seller review", () => {
     expect(title).not.toHaveAttribute("readonly");
     expect(description).not.toHaveAttribute("readonly");
     expect(tag).not.toHaveAttribute("readonly");
-    expect(screen.getByText(/Changes stay only on this page until you save/u)).toBeInTheDocument();
+    expect(screen.getByText(/Keep this page open to retain your changes/u)).toBeInTheDocument();
     fireEvent.change(title, { target: { value: "Early seller title" } });
     fireEvent.change(description, { target: { value: "Early seller description." } });
     fireEvent.change(tag, { target: { value: "seller edit" } });
@@ -315,7 +315,7 @@ describe("authoritative seller review", () => {
     const milestone = vi.spyOn(latency, "recordBrowserLatencyMilestone");
     render(<MemoryRouter initialEntries={[`/jobs/${review.job_id}`]}><AppRoutes dependencies={dependencies(review, { reviseListing })} /></MemoryRouter>);
     const title = await screen.findByRole("textbox", { name: /^Title/u });
-    const milestones = screen.getByRole("region", { name: "Preparation milestones" });
+    const milestones = screen.getByRole("region", { name: "Draft milestones" });
     expect(within(milestones).getByText("Mockups prepared").closest("li")).toHaveClass("milestone--current");
     expect(within(milestones).getByText("In progress")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Make it yours." })).toBeVisible();
@@ -768,7 +768,7 @@ describe("authoritative seller review", () => {
     await screen.findByDisplayValue(first.listing.title ?? "");
     await user.click(screen.getByRole("button", { name: "Open second route" }));
     expect(screen.queryByDisplayValue(first.listing.title ?? "")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Opening your listing…" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Opening your draft…" })).toBeInTheDocument();
     resolveSecond?.({ value: second, requestId: "request-second", etag: `"${second.review_authority_etag ?? ""}"` });
     expect(await screen.findByDisplayValue("Second listing")).toBeInTheDocument();
   });

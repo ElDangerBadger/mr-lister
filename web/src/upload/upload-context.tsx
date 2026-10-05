@@ -141,7 +141,7 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
     recoveryKeys.current.delete(uploadId);
     cancellationKeys.current.delete(uploadId);
     if (status === "completed") {
-      dispatch({ type: "terminal", phase: "complete", message: "Artwork verified. Preparation has started." });
+      dispatch({ type: "terminal", phase: "complete", message: "Artwork verified. Your draft is now being created." });
     } else if (status === "cancelled") {
       dispatch({ type: "terminal", phase: "cancelled", message: "Upload cancelled." });
     } else {
@@ -216,7 +216,7 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
         throw new Error("The upload did not reach its completed state.");
       }
       recoveryKeys.current.delete(created.value.upload.upload_id);
-      dispatch({ type: "phase", phase: "complete", message: "Artwork verified. Preparation has started." });
+      dispatch({ type: "phase", phase: "complete", message: "Artwork verified. Your draft is now being created." });
     } catch (error) {
       if (operationEpoch.current !== epoch || (error instanceof DOMException && error.name === "AbortError")) return;
       const apiError = error instanceof ApiError ? error : null;
@@ -420,7 +420,7 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
             changes: {
               phase: "complete",
               progress: 100,
-              message: "Artwork verified. Preparation has started.",
+              message: "Artwork verified. Your draft is now being created.",
             },
           });
         } catch (error) {
@@ -570,7 +570,7 @@ export function UploadProvider({ api, children }: { api: ApiPort; children: Reac
         || completed.value.upload.job_id !== recovery.job_id
         || completed.value.upload.status !== "completed") throw new Error("The upload did not reach its completed state.");
       recoveryKeys.current.delete(recovery.upload_id);
-      dispatch({ type: "phase", phase: "complete", message: "Artwork verified. Preparation has started." });
+      dispatch({ type: "phase", phase: "complete", message: "Artwork verified. Your draft is now being created." });
     } catch (error) {
       if (operationEpoch.current !== epoch || (error instanceof DOMException && error.name === "AbortError")) return;
       const apiError = error instanceof ApiError ? error : null;
@@ -685,7 +685,7 @@ function uploadBatchReducer(state: UploadBatchState, action: UploadBatchAction):
       return {
         phase: "running",
         items: action.items,
-        message: `Preparing ${action.items.length} artwork file${action.items.length === 1 ? "" : "s"} in order.`,
+        message: `Uploading ${action.items.length} artwork file${action.items.length === 1 ? "" : "s"} in order.`,
       };
     case "item":
       return {
@@ -699,8 +699,8 @@ function uploadBatchReducer(state: UploadBatchState, action: UploadBatchAction):
         ...state,
         phase: "complete",
         message: action.failed === 0
-          ? `All ${state.items.length} artwork files started preparation.`
-          : `${state.items.length - action.failed} of ${state.items.length} artwork files started preparation; ${action.failed} need attention.`,
+          ? `${state.items.length} draft${state.items.length === 1 ? "" : "s"} started.`
+          : `${state.items.length - action.failed} of ${state.items.length} drafts started; ${action.failed} ${action.failed === 1 ? "needs" : "need"} attention.`,
       };
     case "failure":
       return { phase: "error", items: [], message: action.message };

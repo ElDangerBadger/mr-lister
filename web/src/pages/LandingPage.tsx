@@ -66,7 +66,7 @@ export function LandingPage() {
               <p className="landing-eyebrow">A SIMPLE, FAMILIAR PROCESS</p>
               <h2 id="how-heading">From artwork to storefront.</h2>
             </div>
-            <p>Mr. Lister handles the preparation.<br /> You stay in control.</p>
+            <p>Mr. Lister creates your draft.<br /> You stay in control.</p>
           </div>
           <ol className="landing-steps">
             <li><span className="landing-step-number">01</span><div><h3>Upload your artwork</h3><p>Start with a design you want to offer in your shop.</p></div></li>

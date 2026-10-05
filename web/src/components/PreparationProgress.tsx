@@ -20,7 +20,7 @@ export function PreparationProgress({ review }: { review: SellerReview }) {
   const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(review.created_at)) / 1_000));
   const activity = preparationActivity(review.stage);
   return (
-    <section className="preparation-progress" aria-label="Preparation milestones">
+    <section className="preparation-progress" aria-label="Draft milestones">
       <ol className="milestones">
         {preparationMilestones(review).map(({ id, label, state }) => (
           <li key={id} className={`milestone milestone--${state}`} aria-current={state === "current" ? "step" : undefined}>
@@ -36,7 +36,7 @@ export function PreparationProgress({ review }: { review: SellerReview }) {
             <strong className="preparation-activity-label" role="status" aria-live="polite" aria-atomic="true">{activity.label}</strong>
             <span className="preparation-elapsed" role="timer" aria-live="off" aria-label="Elapsed time since submission">Since submission <time dateTime={`PT${elapsedSeconds}S`}>{formatElapsed(elapsedSeconds)}</time></span>
           </div>
-          <p>{longWait ? "The first preparation after a quiet period may take a little longer. Your work is still being checked; you can keep this page open." : activity.detail}</p>
+          <p>{longWait ? "Creating a draft after a quiet period may take a little longer. Your work is still being checked; you can keep this page open." : activity.detail}</p>
         </div>
       </div>}
     </section>
@@ -48,9 +48,9 @@ function preparationActivity(stage: SellerReview["stage"]): { label: string; det
   switch (stage) {
     case "artwork_review": return { label: "Reviewing your artwork", detail };
     case "listing_validation": return { label: "Writing and checking your listing", detail };
-    case "product_sync": return { label: "Preparing your product previews", detail: "Product previews will appear here as they arrive." };
+    case "product_sync": return { label: "Creating your product previews", detail: "Product previews will appear here as they arrive." };
     case "economics_refresh": return { label: "Checking costs and shipping", detail: "We’re checking product costs and shipping before the final review." };
-    default: return { label: "Preparing your listing", detail };
+    default: return { label: "Creating your draft", detail };
   }
 }
 

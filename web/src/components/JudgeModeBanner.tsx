@@ -17,7 +17,7 @@ export function JudgeModeBanner({ authenticated }: { authenticated: boolean }) {
         {authenticated && <nav className="judge-resources" aria-label="Judge resources">
           <a href={sampleArtwork} download="mr-lister-sample-artwork.png">Download sample artwork</a>
           {judgeAccess.preparedJobId !== undefined && <WorkspaceLink to={`/jobs/${encodeURIComponent(judgeAccess.preparedJobId)}`}>
-            Review prepared example
+            Review example draft
           </WorkspaceLink>}
         </nav>}
       </div>

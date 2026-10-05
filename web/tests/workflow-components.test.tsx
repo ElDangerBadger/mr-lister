@@ -87,7 +87,7 @@ describe("accessible workflow and preparation status", () => {
   it("expresses preparation status in text, and pauses the active marker when provider outcome is uncertain", () => {
     const review = sellerReviewSchema.parse({ ...pendingReview(), display_state: "preparing", stage: "listing_validation" });
     const { container, rerender } = render(<PreparationProgress review={review} />);
-    const milestones = screen.getByRole("region", { name: "Preparation milestones" });
+    const milestones = screen.getByRole("region", { name: "Draft milestones" });
     const items = within(milestones).getAllByRole("listitem");
     expect(items).toHaveLength(4);
     expect(items[0]).toHaveTextContent("CompleteArtwork received");

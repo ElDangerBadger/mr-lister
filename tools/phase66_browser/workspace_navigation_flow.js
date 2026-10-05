@@ -179,7 +179,7 @@ async page => {
     heldCompletions.get("job_navigation_1")();
     await page.waitForURL(`${publicOrigin}/jobs/job_navigation_1`, { timeout: 10000 });
     await waitUntil(() => completeJobs.size === 2 && (progressReads.get("job_navigation_1") ?? 0) > 0 && (progressReads.get("job_navigation_2") ?? 0) > 0);
-    await page.getByRole("heading", { name: "Your listing is taking shape." }).waitFor();
+    await page.getByRole("heading", { name: "Your draft is taking shape." }).waitFor();
     await page.waitForFunction(() => {
       const artwork = document.querySelector("img.artwork-preview");
       return artwork?.complete && artwork.naturalWidth > 0;

@@ -82,8 +82,8 @@ describe("upload route authority", () => {
       await Promise.resolve();
     });
     expect(screen.getByRole("heading", { name: "second.png" })).toBeInTheDocument();
-    expect(screen.queryByText("Artwork verified. Preparation has started.")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Follow preparation" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Artwork verified. Your draft is now being created.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "View draft" })).not.toBeInTheDocument();
   });
 
   it("fails closed for an invalid upload identifier without calling the API", () => {
@@ -106,7 +106,7 @@ describe("upload route authority", () => {
     const form = submit.closest("form");
     if (form === null) throw new Error("Upload form is missing");
     fireEvent.submit(form);
-    expect(await screen.findByRole("button", { name: "Uploading artwork…" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Submitting…" })).toBeDisabled();
     expect(input).toBeDisabled();
     await waitFor(() => expect(createUpload).toHaveBeenCalledTimes(1));
   });
@@ -139,7 +139,7 @@ describe("upload route authority", () => {
     const input = await screen.findByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u);
     await waitFor(() => expect(input).toBeEnabled());
     expect(screen.queryByRole("button", { name: "Choose another batch" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Uploads processed" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Submitted" })).not.toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "Open listing: finished.png" })).toHaveAttribute("href", "/jobs/job_art");
     await user.upload(input, makePng("next.png", 2));
     expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
@@ -337,7 +337,7 @@ describe("upload route authority", () => {
 
     submitBatchForm(3);
 
-    expect(await screen.findByRole("button", { name: "Uploads processed" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Submitted" })).toBeDisabled();
     expect(createUpload.mock.calls.map(([file]) => file.name)).toEqual(["third.png", "first.png", "fourth.png"]);
     expect(completeUpload).toHaveBeenCalledTimes(3);
   });
@@ -426,7 +426,7 @@ describe("upload route authority", () => {
     await waitFor(() => expect(getReview).toHaveBeenCalledWith("job_art"));
     await userEvent.setup().click(screen.getByRole("link", { name: "Dashboard" }));
     expect(await screen.findByText(
-      "1 of 2 artwork files started preparation; 1 need attention.",
+      "1 of 2 drafts started; 1 needs attention.",
     )).toBeInTheDocument();
     expect(screen.getByText("Choose PNG, compatible SVG, or JPEG artwork files.")).toBeInTheDocument();
     expect(createUpload).toHaveBeenCalledTimes(1);
@@ -445,7 +445,7 @@ describe("upload route authority", () => {
     const user = userEvent.setup();
     await user.upload(screen.getByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u), makePng("first.png", 1));
     submitBatchForm();
-    expect(await screen.findByRole("button", { name: "Uploading artwork…" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Submitting…" })).toBeDisabled();
     const dropField = screen.getByText(/Drag and drop PNG, SVG, or JPEG artwork/u).closest("label");
     if (dropField === null) throw new Error("Drop field is missing");
 
@@ -493,7 +493,7 @@ describe("upload route authority", () => {
     submitBatchForm();
     await waitFor(() => expect(getReview).toHaveBeenCalledWith("job_art"));
     await user.click(screen.getByRole("link", { name: "Dashboard" }));
-    expect(await screen.findByRole("button", { name: "Uploads processed" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Submitted" })).toBeDisabled();
     expect(screen.getByLabelText(/Drag and drop PNG, SVG, or JPEG artwork/u)).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "Choose another batch" }));

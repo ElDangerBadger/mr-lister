@@ -24,10 +24,10 @@ export function JudgeAccessPage() {
           {preparedJobId !== undefined && <button className="button" type="button" onClick={() => {
             startSignIn(`/jobs/${encodeURIComponent(preparedJobId)}`);
           }}>
-            Review prepared example
+            Review example draft
           </button>}
         </div>
-        {preparedJobId !== undefined && <p className="judge-access-example-note">The prepared example opens after sign-in. You can also start a fresh upload.</p>}
+        {preparedJobId !== undefined && <p className="judge-access-example-note">The example draft opens after sign-in. You can also start a fresh upload.</p>}
         </>}
         <ol className="judge-journey" aria-label="The listing journey">
           <li>
@@ -36,7 +36,7 @@ export function JudgeAccessPage() {
           </li>
           <li>
             <span aria-hidden="true">02</span>
-            <div><h2>Review</h2><p>Follow preparation, edit the copy, and check the product and pricing.</p></div>
+            <div><h2>Review</h2><p>Review your draft, edit the copy, and check the product and pricing.</p></div>
           </li>
           <li>
             <span aria-hidden="true">03</span>
@@ -53,7 +53,7 @@ export function JudgeAccessPage() {
           <div>
             <p className="eyebrow">Your starting point</p>
             <h2 id="judge-sample-heading">A design to try.</h2>
-            <p>Download the sample, enter your workspace, and add it to the upload area. Preparation begins when you choose Submit.</p>
+            <p>Download the sample, enter your workspace, and add it to the upload area. Choose Submit to create your draft.</p>
           </div>
           <a className="button" href={sampleArtwork} download="mr-lister-sample-artwork.png">
             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3" /></svg>

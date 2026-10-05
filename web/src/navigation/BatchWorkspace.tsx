@@ -6,6 +6,7 @@ import { useSessionStatus } from "../auth/use-session";
 import type { JobProgress, SellerReview } from "../contracts";
 import { useUpload, type BatchUploadItemState } from "../upload/upload-context";
 import { WorkspaceLink } from "./WorkspaceNavigation";
+import { useDraftCancellation } from "./DraftCancellation";
 
 const PREPARING_STATES = new Set<JobProgress["display_state"]>([
   "preparing", "synchronizing", "refreshing_estimate", "reconciling", "cancelling",
@@ -33,6 +34,7 @@ export function BatchWorkspaceProvider({ children }: { children: ReactNode }) {
   const { api, auth } = useAppDependencies();
   const status = useSessionStatus(auth.session);
   const upload = useUpload();
+  const cancellation = useDraftCancellation();
   const { batch } = upload;
   const location = useLocation();
   const navigate = useNavigate();
@@ -111,9 +113,12 @@ export function BatchWorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const returningHome = previousPath.current !== "/" && location.pathname === "/";
     previousPath.current = location.pathname;
-    if (!returningHome || status !== "authenticated" || batch.phase !== "complete"
+    const completingCanceledReturn = location.pathname === "/" && cancellation.notice
+      && batch.items.some((item) => item.jobId !== null && cancellation.canceledJobIds.has(item.jobId));
+    if ((!returningHome && !completingCanceledReturn) || status !== "authenticated" || batch.phase !== "complete"
       || batch.items.length === 0 || !["idle", "complete"].includes(upload.state.phase)) return;
     const prepared = batch.items.every((item) => {
+      if (item.jobId !== null && cancellation.canceledJobIds.has(item.jobId)) return true;
       const progress = item.jobId === null ? undefined : progressByJob[item.jobId];
       return item.phase === "complete" && progress !== undefined
         && PREPARED_STATES.has(progress.display_state)
@@ -125,7 +130,7 @@ export function BatchWorkspaceProvider({ children }: { children: ReactNode }) {
     // in the background while the seller is already on this page. The cached
     // job names and statuses remain available in Your listings after reset.
     if (prepared) upload.reset();
-  }, [batch.items, batch.phase, location.pathname, progressByJob, progressErrorByJob, status, upload]);
+  }, [batch.items, batch.phase, cancellation.canceledJobIds, cancellation.notice, location.pathname, progressByJob, progressErrorByJob, status, upload]);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -237,17 +242,17 @@ export function batchItemStatus(item: BatchUploadItemState, progress?: Pick<JobP
   if (item.phase === "complete" && progress !== undefined) return jobProgressLabel(progress);
   return {
     queued: "Queued", validating: "Checking artwork", hashing: "Checking artwork", creating_intent: "Starting upload",
-    uploading: "Uploading artwork", finalizing: "Verifying artwork", complete: "Preparing listing",
+    uploading: "Uploading artwork", finalizing: "Verifying artwork", complete: "Creating draft",
     error: "Upload needs attention", expired: "Upload expired",
   }[item.phase];
 }
 
 export function jobProgressLabel(progress: Pick<JobProgress, "display_state">): string {
   return {
-    preparing: "Preparing listing", needs_revision: "Ready to edit", synchronizing: "Preparing product",
+    preparing: "Creating draft", needs_revision: "Ready to edit", synchronizing: "Creating product previews",
     ready_for_review: "Ready for review", refreshing_estimate: "Updating estimate", reconciling: "Checking product",
-    cancelling: "Cancelling", retryable_failure: "Needs attention", terminal_failure: "Preparation stopped",
-    cancelled: "Cancelled", approved: "Review approved",
+    cancelling: "Canceling draft", retryable_failure: "Needs attention", terminal_failure: "Draft stopped",
+    cancelled: "Draft Canceled", approved: "Review approved",
   }[progress.display_state];
 }
 

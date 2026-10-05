@@ -10,6 +10,7 @@ import { ActivityStatus } from "../components/ActivityStatus";
 import { batchItemStatus, jobProgressLabel, useBatchWorkspace } from "../navigation/BatchWorkspace";
 import { WorkspaceLink } from "../navigation/WorkspaceNavigation";
 import { useRecentJobs } from "../navigation/use-recent-jobs";
+import { DraftCanceledNotice, useDraftCancellation } from "../navigation/DraftCancellation";
 import {
   MAX_BATCH_FILES,
   type BatchUploadItemState,
@@ -26,6 +27,7 @@ export function HomePage() {
   const navigate = useNavigate();
   const upload = useUpload();
   const workspace = useBatchWorkspace();
+  const cancellation = useDraftCancellation();
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
@@ -40,11 +42,14 @@ export function HomePage() {
   const showSelection = selectedFiles.length > 0 && (upload.batch.phase === "idle" || upload.batch.phase === "error");
   const showUploadQueue = showSelection || upload.batch.items.length > 0;
   const recent = useRecentJobs(api, auth.session, status, batchFinished);
+  const visibleJobs = recent.jobs.filter((job) => job.state !== "cancelled"
+    && !cancellation.canceledJobIds.has(job.job_id)
+    && workspace.progressByJob[job.job_id]?.display_state !== "cancelled");
 
   useEffect(() => {
     if (upload.batch.phase === "idle"
       && upload.state.uploadId !== null
-      && upload.state.phase !== "complete") {
+      && !["complete", "cancelled", "expired"].includes(upload.state.phase)) {
       void navigate(`/uploads/${upload.state.uploadId}`);
     }
   }, [navigate, upload.batch.phase, upload.state.phase, upload.state.uploadId]);
@@ -63,6 +68,7 @@ export function HomePage() {
       return;
     }
     setSelectionError(null);
+    cancellation.dismiss();
     setSelectedFiles((current) => [...current, ...files]);
   };
 
@@ -82,12 +88,13 @@ export function HomePage() {
       <WorkflowSteps current="Upload" />
       <div className="review-title-row upload-heading">
         <div>
-          <p className="eyebrow">New listing</p>
+          <p className="eyebrow">New draft</p>
           <h1 id="upload-heading">Let’s start with your artwork.</h1>
-          <p>Upload a design. We’ll prepare the listing for your review.</p>
+          <p>Upload a design. We’ll create a draft for you to review.</p>
         </div>
-        <span className="status-pill">1 artwork = 1 listing</span>
+        <span className="status-pill">1 artwork = 1 draft</span>
       </div>
+      <DraftCanceledNotice />
       <form className="upload-form" aria-labelledby="upload-heading" onSubmit={(event) => {
         event.preventDefault();
         if (uploadLocked || selectedFiles.length === 0 || selectedFiles.length > MAX_BATCH_FILES) return;
@@ -190,26 +197,35 @@ export function HomePage() {
           {showUploadQueue && <div className="upload-actionbar upload-actionbar--selected">
             <div>
               <strong>{batchBusy
-                ? "Preparing your artwork"
+                ? "Starting your drafts"
                 : batchFinished
-                  ? "Follow your listings"
+                  ? "Your drafts have started"
                   : selectedFiles.length === 0
-                    ? "Your next listing starts here"
+                    ? "Your next draft starts here"
                     : `${selectedFiles.length} artwork ${selectedFiles.length === 1 ? "file" : "files"} selected`}
               </strong>
               <small>Nothing publishes until you approve and confirm.</small>
               {workspace.autoOpenPending && <p className="loading-line" role="status">{upload.batch.items.length === 1
-                ? "Your listing will open after the artwork upload is verified. Preparation will continue there."
-                : "Your first uploaded listing will open automatically. The rest will stay together in your batch."}</p>}
+                ? "Your draft will open once your artwork is uploaded."
+                : "Your first draft will open automatically. The others will stay together in your batch."}</p>}
               {upload.batch.phase === "running" && <p className="loading-line" role="status" aria-live="polite">{upload.batch.message}</p>}
             </div>
+            <div className="upload-submit-actions">
+            <button className="button" type="button" disabled={uploadLocked || selectedFiles.length === 0} onClick={() => {
+              if (uploadLocked || selectedFiles.length === 0) return;
+              changeSelection([]);
+              if (inputRef.current !== null) inputRef.current.value = "";
+              cancellation.confirm();
+              inputRef.current?.focus();
+            }}>Cancel</button>
             <button className="button button--primary" type="submit" disabled={uploadLocked || selectedFiles.length === 0}>
               {batchBusy
-                ? "Uploading artwork…"
+                ? "Submitting…"
                 : batchFinished
-                  ? "Uploads processed"
+                  ? "Submitted"
                   : "Submit"}
             </button>
+            </div>
           </div>}
           <aside className="panel upload-guide" aria-labelledby="next-heading">
             <h2 id="next-heading">From design to storefront.</h2>
@@ -228,8 +244,8 @@ export function HomePage() {
             <h2 id="recent-heading">Your listings</h2>
           </div>
           <div className="section-heading-actions">
-            <span className="count-chip">{recent.jobs.length}</span>
-            {(recent.jobs.length > 0 || recent.clearing || recent.clearError !== null) && (
+            <span className="count-chip">{visibleJobs.length}</span>
+            {(visibleJobs.length > 0 || recent.clearing || recent.clearError !== null) && (
               <button className="button button--quiet" type="button" disabled={recent.clearing} onClick={() => { void recent.clear(); }}>
                 {recent.clearing ? "Clearing…" : recent.clearError !== null ? "Retry clearing list" : "Clear recent list"}
               </button>
@@ -243,14 +259,14 @@ export function HomePage() {
         </div>}
         {recent.cleared && <p role="status">Recent list cleared. New uploads will appear here.</p>}
         {recent.loading && <p role="status">Loading your listings…</p>}
-        {recent.jobs.length === 0 && recent.error === null && !recent.loading && !recent.cleared ? (
+        {visibleJobs.length === 0 && recent.error === null && !recent.loading && !recent.cleared ? (
           <div className="empty-state">
             <p>{recent.nextCursor === null ? "No listings yet." : "More history is available."}</p>
             <small>{recent.nextCursor === null ? "Your first upload will appear here." : "Continue loading to find your remaining listings."}</small>
           </div>
         ) : (
           <ul className="job-list">
-            {recent.jobs.map((job) => (
+            {visibleJobs.map((job) => (
               <li key={job.job_id}>
                 <WorkspaceLink to={`/jobs/${job.job_id}`} aria-label={`Open listing: ${workspace.filenameByJob[job.job_id] ?? job.job_id}`}>
                   <span className="job-list-label"><strong>{workspace.filenameByJob[job.job_id] ?? `Listing ${job.job_id.slice(-8)}`}</strong><small>Updated {formatDate(job.updated_at)}</small></span>
@@ -390,10 +406,10 @@ function BatchProgressItem({ item }: { item: BatchUploadItemState }) {
 
 function jobStateLabel(state: JobSummary["state"]): string {
   return {
-    intake_validated: "Preparing listing", analyzing_artwork: "Preparing listing", listing_drafted: "Preparing listing",
+    intake_validated: "Creating draft", analyzing_artwork: "Creating draft", listing_drafted: "Creating draft",
     needs_revision: "Ready to edit", product_draft_syncing: "Preparing product", awaiting_approval: "Ready for review",
     pricing_refreshing: "Updating estimate", reconciliation_required: "Checking product", failed_retryable: "Needs attention",
-    failed_terminal: "Preparation stopped", cancel_requested: "Cancelling", cancelled: "Cancelled", approved: "Review approved",
+    failed_terminal: "Draft stopped", cancel_requested: "Canceling draft", cancelled: "Draft Canceled", approved: "Draft approved",
   }[state];
 }
 
