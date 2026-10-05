@@ -292,7 +292,7 @@ def run_experiment(
     settings: BedrockSettings,
     revision: str = "v1",
 ) -> list[dict[str, Any]]:
-    if revision not in {"v1", "v2", "v3"}:
+    if revision not in {"v1", "v2", "v3", "v4"}:
         raise ValueError("Unknown harness revision")
     if mode not in {"writer-ab", "full"}:
         raise ValueError("Unknown experiment mode")
@@ -571,7 +571,7 @@ def render_review_pack(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("writer-ab", "full"), default="writer-ab")
-    parser.add_argument("--revision", choices=("v1", "v2", "v3"), default="v1")
+    parser.add_argument("--revision", choices=("v1", "v2", "v3", "v4"), default="v1")
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument("--all", action="store_true", dest="all_cases")
     parser.add_argument("--trials", type=int, default=1)

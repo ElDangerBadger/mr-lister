@@ -106,8 +106,8 @@ def load_artwork(path: Path) -> tuple[IndependentArtworkInput, bytes]:
 
 
 def validate_options(*, revision: str, trials: int, run_id: str) -> None:
-    if revision not in {"v1", "v2", "v3"}:
-        raise ValueError("Revision must be v1, v2 or v3")
+    if revision not in {"v1", "v2", "v3", "v4"}:
+        raise ValueError("Revision must be v1, v2, v3 or v4")
     if isinstance(trials, bool) or not 1 <= trials <= 3:
         raise ValueError("Trials must be between 1 and 3")
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", run_id) is None:
@@ -281,7 +281,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--artwork", type=Path, required=True, help="Local PNG or JPEG, at most 5 MiB"
     )
-    parser.add_argument("--revision", choices=("v1", "v2", "v3"), default="v2")
+    parser.add_argument("--revision", choices=("v1", "v2", "v3", "v4"), default="v2")
     parser.add_argument("--trials", type=int, default=1)
     parser.add_argument("--run-id", default=datetime.now(UTC).strftime("artwork-%Y%m%dT%H%M%SZ"))
     parser.add_argument(

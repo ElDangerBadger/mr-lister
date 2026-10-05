@@ -343,7 +343,7 @@ def test_unknown_attempt_metadata_is_not_inferred_from_invalid_outputs(attempt):
     assert telemetry["invalid_output_count"] == 1
 
 
-@pytest.mark.parametrize("revision", ["v2", "v3"])
+@pytest.mark.parametrize("revision", ["v2", "v3", "v4"])
 def test_revision_fingerprints_bind_evaluator_source_and_preserve_reference(settings, revision):
     from hashlib import sha256
     from pathlib import Path
@@ -362,7 +362,7 @@ def test_revision_fingerprints_bind_evaluator_source_and_preserve_reference(sett
     assert first["candidate_prompts"] != second["candidate_prompts"]
 
 
-@pytest.mark.parametrize("revision", ["v1", "v2", "v3"])
+@pytest.mark.parametrize("revision", ["v1", "v2", "v3", "v4"])
 @pytest.mark.parametrize("mode", ["writer-ab", "full"])
 def test_live_cli_passes_revision_to_adapter_without_network(
     monkeypatch, tmp_path, cases, revision, mode
@@ -494,4 +494,4 @@ def test_unknown_revision_fails_in_cli_before_network(monkeypatch):
 
     monkeypatch.setattr(boto3, "Session", lambda **kwargs: pytest.fail("unexpected AWS session"))
     with pytest.raises(SystemExit):
-        harness.main(["--live", "--revision", "v4"])
+        harness.main(["--live", "--revision", "v5"])
