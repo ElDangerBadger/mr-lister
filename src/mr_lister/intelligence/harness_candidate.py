@@ -79,7 +79,7 @@ supported by the image or null if unresolved. Do not hide a disagreement by sile
 the subject. Your verification is a report for human review, never approval or publication."""
 
 
-HarnessRevision = Literal["v1", "v2", "v3", "v4"]
+HarnessRevision = Literal["v1", "v2", "v3", "v4", "v5", "v6"]
 EVIDENCE_PROMPT_V2_VERSION = "2026-10-04.2-evidence-brief"
 CANDIDATE_WRITER_PROMPT_V2_VERSION = "2026-10-04.2-evidence-writer"
 FULL_HARNESS_PROMPT_V2_VERSION = "2026-10-04.3-image-aware-harness"
@@ -276,8 +276,74 @@ RESTORED_IMAGE_WRITER_PROMPT_V4 = (
 )
 
 
+TAG_COVERAGE_WRITER_PROMPT_V5_VERSION = "2026-10-05.1-tag-coverage-writer"
+FULL_HARNESS_PROMPT_V5_VERSION = "2026-10-05.2-tag-coverage-harness"
+
+# V5 replaces only this bounded section. Keep V4's editorial instructions,
+# evidence input, system/repair prompts, and image verification byte-identical.
+_ORIGINAL_TAG_GUIDANCE = (
+    "TAG CANDIDATES\n"
+    + _ORIGINAL_WRITER_BODY.split("TAG CANDIDATES\n", 1)[1].split("AUDIENCE AND RATIONALES\n", 1)[0]
+)
+_TAG_COVERAGE_GUIDANCE = """TAG CANDIDATES
+- Return 18 to 30 unique, complete, natural Etsy search phrases, strongest and most
+  design-specific first. Every candidate must be at most 20 characters, including spaces
+  and punctuation. Count each complete phrase before returning it; never truncate a tag.
+- Include the exact legible defining phrase or motto when it fits that limit as a complete
+  natural search phrase. Preserve its wording; do not invent text or split a longer motto
+  into fragments merely to fit. For longer wording, use grounded subject or concept searches.
+- Prioritize the actual subject, defining motif or phrase, and distinctive concrete visual
+  details before broad style, palette, or product language. Do not substitute a related but
+  different subject to create variety.
+- Build distinct semantic coverage from supported subjects, details, style, concept or humor,
+  thematic interests, and credible buyer searches. Use only the angles this artwork supports;
+  no fixed category quota is required. Favor useful search intent over random synonyms.
+- Avoid filling slots with interchangeable versions of the same broad aesthetic or with the
+  same idea plus shirt, tee, clothing, gift, or fan. Shared meaningful words are allowed when
+  a phrase adds a distinct, relevant concept. Do not force a recipient, gender, profession,
+  gift occasion, product claim, or irrelevant theme merely to fill the candidate pool.
+- Supply enough genuinely distinct alternatives for the application to select exactly 13
+  complete, nonredundant final tags without losing the strongest design-specific searches.
+
+"""
+TAG_COVERAGE_WRITER_PROMPT_V5 = RESTORED_WRITER_PROMPT_V4.replace(
+    _ORIGINAL_TAG_GUIDANCE, _TAG_COVERAGE_GUIDANCE, 1
+)
+TAG_COVERAGE_IMAGE_WRITER_PROMPT_V5 = RESTORED_IMAGE_WRITER_PROMPT_V4.replace(
+    _ORIGINAL_TAG_GUIDANCE, _TAG_COVERAGE_GUIDANCE, 1
+)
+
+
+TAG_LENGTH_WRITER_PROMPT_V6_VERSION = "2026-10-05.3-tag-length-writer"
+FULL_HARNESS_PROMPT_V6_VERSION = "2026-10-05.4-tag-length-harness"
+
+# Leave the evaluated V5 bytes intact. This revision gives length headroom while
+# retaining complete defining phrases and every other tag-coverage instruction.
+_TAG_LENGTH_GUIDANCE = _TAG_COVERAGE_GUIDANCE.replace(
+    "  design-specific first. Every candidate must be at most 20 characters, including spaces\n"
+    "  and punctuation. Count each complete phrase before returning it; never truncate a tag.\n"
+    "- Include the exact legible defining phrase or motto when it fits that limit as a complete\n"
+    "  natural search phrase. Preserve its wording; do not invent text or split a longer motto\n",
+    "  design-specific first. Prefer concise, complete phrases around 12 to 16 characters;\n"
+    "  shorter useful phrases are welcome. The hard maximum is 20 characters, including every\n"
+    "  space and punctuation mark. Count each complete phrase before returning it.\n"
+    "  Omit an unnecessary product suffix when it would exceed the limit or repeat a concept.\n"
+    "  Never truncate a phrase or drop meaningful words merely to make it fit.\n"
+    "- Prioritize the exact legible defining phrase or motto when it fits the 20-character\n"
+    "  limit as a complete natural search phrase, even when it is longer than 16 characters.\n"
+    "  Preserve its wording; do not invent text or split a longer motto\n",
+    1,
+)
+TAG_LENGTH_WRITER_PROMPT_V6 = RESTORED_WRITER_PROMPT_V4.replace(
+    _ORIGINAL_TAG_GUIDANCE, _TAG_LENGTH_GUIDANCE, 1
+)
+TAG_LENGTH_IMAGE_WRITER_PROMPT_V6 = RESTORED_IMAGE_WRITER_PROMPT_V4.replace(
+    _ORIGINAL_TAG_GUIDANCE, _TAG_LENGTH_GUIDANCE, 1
+)
+
+
 def _check_revision(revision: HarnessRevision) -> None:
-    if revision not in {"v1", "v2", "v3", "v4"}:
+    if revision not in {"v1", "v2", "v3", "v4", "v5", "v6"}:
         raise IntelligenceConfigurationError("Unknown harness prompt revision")
 
 
@@ -334,6 +400,36 @@ def candidate_prompt_bundles(
     """New immutable versions/fingerprints; never relabel changes as a released prompt."""
 
     _check_revision(revision)
+    if revision == "v6":
+        restored = candidate_prompt_bundles(base, revision="v4")
+        return {
+            "evidence": restored["evidence"],
+            "writer": replace(
+                restored["writer"],
+                version=TAG_LENGTH_WRITER_PROMPT_V6_VERSION,
+                listing=TAG_LENGTH_WRITER_PROMPT_V6,
+            ),
+            "full": replace(
+                restored["full"],
+                version=FULL_HARNESS_PROMPT_V6_VERSION,
+                listing=TAG_LENGTH_IMAGE_WRITER_PROMPT_V6,
+            ),
+        }
+    if revision == "v5":
+        restored = candidate_prompt_bundles(base, revision="v4")
+        return {
+            "evidence": restored["evidence"],
+            "writer": replace(
+                restored["writer"],
+                version=TAG_COVERAGE_WRITER_PROMPT_V5_VERSION,
+                listing=TAG_COVERAGE_WRITER_PROMPT_V5,
+            ),
+            "full": replace(
+                restored["full"],
+                version=FULL_HARNESS_PROMPT_V5_VERSION,
+                listing=TAG_COVERAGE_IMAGE_WRITER_PROMPT_V5,
+            ),
+        }
     if revision == "v4":
         return {
             "evidence": replace(
@@ -370,12 +466,8 @@ def candidate_prompt_bundles(
             )
         )
         return {
-            "evidence": replace(
-                base, version=evidence_version, artwork=evidence_prompt
-            ),
-            "writer": replace(
-                base, version=writer_version, listing=writer_prompt
-            ),
+            "evidence": replace(base, version=evidence_version, artwork=evidence_prompt),
+            "writer": replace(base, version=writer_version, listing=writer_prompt),
             "full": replace(
                 base,
                 version=full_version,

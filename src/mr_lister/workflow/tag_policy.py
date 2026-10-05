@@ -6,7 +6,7 @@ ranking model or a proof of semantic grounding. It never generates or rewrites a
 """
 
 from itertools import combinations
-from re import findall
+from re import findall, fullmatch
 
 TAG_POLICY_VERSION = "2026-09-08.phrase-coverage-1"
 ETSY_TAG_LENGTH_LIMIT = 20
@@ -37,6 +37,30 @@ _SINGULAR_EXCEPTIONS = {
 }
 _UNCHANGED_SINGULARS = frozenset({"canvas", "cosmos"})
 
+# A soft selection preference only. These words can be useful searches, but changing
+# generic apparel/style wording should not outrank a new subject, motif or detail.
+# Do not use this signature to reject tags or validate manually edited listings.
+_COVERAGE_MODIFIERS = _LOW_INFORMATION | frozenset(
+    {
+        "apparel",
+        "aesthetic",
+        "classic",
+        "clothing",
+        "era",
+        "fashion",
+        "groovy",
+        "inspired",
+        "look",
+        "retro",
+        "style",
+        "theme",
+        "top",
+        "vibe",
+        "vintage",
+        "wear",
+    }
+)
+
 
 def _keyword_root(token: str) -> str:
     if token in _SINGULAR_EXCEPTIONS:
@@ -61,6 +85,21 @@ def tag_intent_keywords(tag: str) -> frozenset[str]:
         if len(token) > 1 and token not in _STOP_WORDS
     )
     return frozenset(_ALIASES.get(root, root) for root in roots)
+
+
+def tag_coverage_keywords(tag: str) -> frozenset[str]:
+    """Specific lexical coverage, without treating style synonyms as hard duplicates.
+
+    Decade modifiers such as 70s/1970s are soft context. Other numbers, names and
+    distinguishing style terms remain eligible. This does not infer semantic meaning.
+    """
+
+    tokens = (
+        token
+        for token in findall(r"[a-z0-9]+", tag.casefold())
+        if not fullmatch(r"(?:[0-9]{2}|[0-9]{4})s", token)
+    )
+    return tag_intent_keywords(" ".join(tokens)) - _COVERAGE_MODIFIERS
 
 
 def is_complete_tag_phrase(tag: str) -> bool:

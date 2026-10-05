@@ -1,6 +1,6 @@
 """Pinned Gemma 4 preparation boundary; user approval remains application-owned.
 
-The restored v4 writer runs with frozen v3 inspection and verification, atomically
+The v6 tag-coverage writer runs with frozen v3 inspection and verification, atomically
 within the standard image budget. This adapter projects an accepted pair into existing
 persisted contracts, without caching results,
 creating provider products, granting approval, or publishing anything.
@@ -23,9 +23,9 @@ from mr_lister.intelligence.settings import BedrockSettings
 from mr_lister.workflow.errors import IntelligenceConfigurationError, InvalidGeneratedOutputError
 from mr_lister.workflow.models import ArtworkInput
 
-PRODUCTION_HARNESS_REVISION = "v4"
+PRODUCTION_HARNESS_REVISION = "v6"
 PRODUCTION_HARNESS_PROMPT_FINGERPRINT = (
-    "fef64b014379eceae1d8bd421010acef01105be4e85a2c75b584beb3a5ac536e"
+    "5e0e88750e43f8acbda97ff23cf9876dad34c47c1a37bc3d50cfcba062139b56"
 )
 UNCALIBRATED_CONFIDENCE_NOTE = "Interpretation confidence is not calibrated for this model."
 

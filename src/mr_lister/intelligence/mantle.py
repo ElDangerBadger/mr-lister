@@ -21,17 +21,21 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSPreparedRequest, AWSRequest, AWSResponse
 from botocore.exceptions import BotoCoreError
 from botocore.httpsession import URLLib3Session
+from pydantic import BaseModel
 
 from mr_lister.intelligence.bedrock import BedrockListingIntelligenceAdapter
 from mr_lister.intelligence.diagnostics import BedrockDiagnosticRecord, DiagnosticSink
 from mr_lister.intelligence.images import BedrockImage, prepare_bedrock_image
+from mr_lister.intelligence.listing_draft import ListingCandidateDraft
 from mr_lister.intelligence.prompts import BASELINE_PROMPT_BUNDLE, PromptBundle
+from mr_lister.intelligence.schema import bedrock_output_schema
 from mr_lister.intelligence.settings import BedrockSettings
 from mr_lister.workflow.errors import (
     IntelligenceConfigurationError,
     IntelligenceUnavailableError,
     InvalidGeneratedOutputError,
 )
+from mr_lister.workflow.tag_policy import ETSY_TAG_LENGTH_LIMIT
 
 MAX_REQUEST_BYTES = 3_500_000
 MAX_RESPONSE_BYTES = 1_000_000
@@ -41,6 +45,19 @@ MAX_OPERATION_SECONDS = 300.0
 _OPERATION_DEADLINE: ContextVar[float | None] = ContextVar(
     "mantle_operation_deadline", default=None
 )
+
+
+def mantle_output_schema(contract: type[BaseModel]) -> dict[str, Any]:
+    """Add only the candidate-tag length bound verified by the Mantle canary.
+
+    All other fields and features retain the existing sanitized provider schema;
+    application validation remains authoritative for every contract constraint.
+    """
+
+    schema = bedrock_output_schema(contract)
+    if issubclass(contract, ListingCandidateDraft):
+        schema["properties"]["tag_candidates"]["items"]["maxLength"] = ETSY_TAG_LENGTH_LIMIT
+    return schema
 
 
 def _remaining_seconds() -> float:
@@ -347,6 +364,9 @@ class MantleListingIntelligenceAdapter(BedrockListingIntelligenceAdapter):
             diagnostics=diagnostics,
             prompt_bundle=prompt_bundle,
         )
+
+    def _output_schema(self, contract: type[BaseModel]) -> dict[str, Any]:
+        return mantle_output_schema(contract)
 
     def _invoke_contract(self, **kwargs: Any) -> Any:
         deadline = _OPERATION_DEADLINE.set(monotonic() + MAX_OPERATION_SECONDS)

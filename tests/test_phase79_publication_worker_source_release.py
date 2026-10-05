@@ -35,11 +35,12 @@ from tools.build_phase79_worker_source_release import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE_PATH = (ROOT / "config/product_profiles/gildan_64000_swiftpod.json").resolve()
-# The 49-module closure is unchanged. Source artwork validation now decodes once
-# and bounds alpha-scan buffers; publication accepts numeric object-form references.
+# The 49-module closure is unchanged. Only tag_policy.py adds the soft coverage
+# helper/modifiers and its standard-library import; hard tag validation is unchanged.
+# The worker does not call the new helper. No other bundled source bytes changed.
 # Double-built and verified locally; this is not a deployed-runtime release seal.
-EXPECTED_MANIFEST_FINGERPRINT = "f1d9f9ed6438bbb3e8ff1400df7eac834a6bfe737a0788a5f88cb3fc7944cfc7"
-EXPECTED_ARCHIVE_FINGERPRINT = "30953c5c5790789db15c88c591d945c84d89d88cfd5e36a45e22047181e54196"
+EXPECTED_MANIFEST_FINGERPRINT = "32bf5d726988364353644a0963811fc4ae0119819e759ac223a0488cf7f2797b"
+EXPECTED_ARCHIVE_FINGERPRINT = "9747e4441f9dcf938e3cdcc18184c20009c09ce2b45432d85ea41660876178a3"
 CAPABILITY_FREE_INITIALIZERS = {
     "mr_lister/__init__.py",
     "mr_lister/cloud/__init__.py",

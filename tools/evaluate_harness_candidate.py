@@ -242,8 +242,18 @@ def literal_signals(
 
 def experiment_fingerprints(settings: BedrockSettings, *, revision: str = "v1") -> dict[str, Any]:
     from mr_lister.intelligence import harness_candidate as candidate
+    from mr_lister.intelligence import listing_draft as drafts
+    from mr_lister.intelligence import mantle
     from mr_lister.intelligence.listing_draft import ListingCandidateDraft
     from mr_lister.intelligence.schema import bedrock_output_schema
+    from mr_lister.workflow import tag_policy
+
+    # Historical sealed sources predate the Mantle-specific schema and selector version.
+    provider_schema = (
+        getattr(mantle, "mantle_output_schema", bedrock_output_schema)
+        if settings.transport == "mantle"
+        else bedrock_output_schema
+    )
 
     schemas = {
         cls.__name__: digest(cls.model_json_schema())
@@ -260,6 +270,12 @@ def experiment_fingerprints(settings: BedrockSettings, *, revision: str = "v1") 
         "verified_briefs_sha256": sha256(BRIEFS.read_bytes()).hexdigest(),
         "settings_sha256": digest(settings.model_dump(mode="json")),
         "harness_source_sha256": sha256(Path(candidate.__file__).read_bytes()).hexdigest(),
+        "mantle_source_sha256": sha256(Path(mantle.__file__).read_bytes()).hexdigest(),
+        "tag_selection_source_sha256": sha256(Path(drafts.__file__).read_bytes()).hexdigest(),
+        "tag_policy_source_sha256": sha256(Path(tag_policy.__file__).read_bytes()).hexdigest(),
+        "tag_selection_version": getattr(
+            drafts, "TAG_SELECTION_VERSION", tag_policy.TAG_POLICY_VERSION
+        ),
         "current_prompt_version": ETSY_SEO_RELEASE_PROMPT_BUNDLE.version,
         "current_prompt_fingerprint": ETSY_SEO_RELEASE_PROMPT_BUNDLE.fingerprint,
         "candidate_prompts": {
@@ -268,7 +284,7 @@ def experiment_fingerprints(settings: BedrockSettings, *, revision: str = "v1") 
         },
         "application_schema_sha256": schemas,
         "provider_schema_sha256": {
-            cls.__name__: digest(bedrock_output_schema(cls))
+            cls.__name__: digest(provider_schema(cls))
             for cls in (
                 candidate.EvidenceBrief,
                 ListingCandidateDraft,
@@ -292,7 +308,7 @@ def run_experiment(
     settings: BedrockSettings,
     revision: str = "v1",
 ) -> list[dict[str, Any]]:
-    if revision not in {"v1", "v2", "v3", "v4"}:
+    if revision not in {"v1", "v2", "v3", "v4", "v5", "v6"}:
         raise ValueError("Unknown harness revision")
     if mode not in {"writer-ab", "full"}:
         raise ValueError("Unknown experiment mode")
@@ -571,7 +587,7 @@ def render_review_pack(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("writer-ab", "full"), default="writer-ab")
-    parser.add_argument("--revision", choices=("v1", "v2", "v3", "v4"), default="v1")
+    parser.add_argument("--revision", choices=("v1", "v2", "v3", "v4", "v5", "v6"), default="v1")
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument("--all", action="store_true", dest="all_cases")
     parser.add_argument("--trials", type=int, default=1)

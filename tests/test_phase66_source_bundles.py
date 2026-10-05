@@ -223,9 +223,9 @@ settings = BedrockSettings.model_validate_json(
 )
 assert settings.transport == 'mantle'
 assert settings.model_id == 'google.gemma-4-31b'
-assert production.PRODUCTION_HARNESS_REVISION == 'v4'
+assert production.PRODUCTION_HARNESS_REVISION == 'v6'
 assert production.PRODUCTION_HARNESS_PROMPT_FINGERPRINT == (
-    candidate_prompt_bundles(revision='v4')['full'].fingerprint
+    candidate_prompt_bundles(revision='v6')['full'].fingerprint
 )
 assert MAX_REQUEST_BYTES == 3500000
 calls = []
@@ -236,7 +236,7 @@ production.build_harness_candidate_adapter = candidate_factory
 adapter = production.build_harness_production_adapter(settings, session=object())
 assert callable(adapter.prepare_listing)
 assert len(calls) == 1
-assert calls[0][1]['revision'] == 'v4'
+assert calls[0][1]['revision'] == 'v6'
 assert isinstance(calls[0][1]['product_context'], VerifiedProductContext)
 assert all(Path(module.__file__).resolve().is_relative_to(root)
     for name, module in sys.modules.items()

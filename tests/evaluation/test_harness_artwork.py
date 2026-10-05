@@ -93,12 +93,12 @@ def test_trials_bounded(trials):
 
 
 def test_run_id_and_revision_fail_before_model():
-    for revision, run_id in [("v5", "run"), ("v2", "../escape")]:
+    for revision, run_id in [("v7", "run"), ("v2", "../escape")]:
         with pytest.raises(ValueError):
             tool.validate_options(revision=revision, trials=1, run_id=run_id)
 
 
-@pytest.mark.parametrize("revision", [None, "v1", "v2", "v3", "v4"])
+@pytest.mark.parametrize("revision", [None, "v1", "v2", "v3", "v4", "v5", "v6"])
 def test_default_plan_no_aws_no_fixtures_no_source_name(tmp_path, monkeypatch, capsys, revision):
     import boto3
 
@@ -253,7 +253,7 @@ def test_error_text_is_redacted_and_no_result_contract_is_unknown(tmp_path, sett
     assert rows[0]["contract_valid"] is None
 
 
-@pytest.mark.parametrize("revision", ["v1", "v2", "v3", "v4"])
+@pytest.mark.parametrize("revision", ["v1", "v2", "v3", "v4", "v5", "v6"])
 def test_live_flag_still_requires_environment_opt_ins(tmp_path, monkeypatch, revision):
     import boto3
 
@@ -265,7 +265,7 @@ def test_live_flag_still_requires_environment_opt_ins(tmp_path, monkeypatch, rev
         tool.main(["--live", "--artwork", str(source), "--revision", revision])
 
 
-@pytest.mark.parametrize("revision", ["v1", "v2", "v3", "v4"])
+@pytest.mark.parametrize("revision", ["v1", "v2", "v3", "v4", "v5", "v6"])
 def test_live_cli_binds_revision_and_private_artifacts_without_network(
     tmp_path, monkeypatch, revision
 ):
@@ -300,9 +300,12 @@ def test_live_cli_binds_revision_and_private_artifacts_without_network(
     for key in ("MR_LISTER_RUN_LIVE_BEDROCK", "MR_LISTER_RUN_HARNESS_EVAL"):
         monkeypatch.setenv(key, "1")
     monkeypatch.setenv("AWS_PROFILE", "mr-lister-dev")
-    assert tool.main(
-        ["--live", "--artwork", str(source), "--revision", revision, "--run-id", "fake-live"]
-    ) == 0
+    assert (
+        tool.main(
+            ["--live", "--artwork", str(source), "--revision", revision, "--run-id", "fake-live"]
+        )
+        == 0
+    )
     assert len(calls) == 1
     actual_revision, artwork, snapshot = calls[0]
     assert actual_revision == revision
