@@ -37,9 +37,11 @@ Verification:
   and enabled. Synthetic fixtures do not prove live backend cleanup or a real authenticated
   cancellation operation.
 
-Final browser evidence is under `output/playwright/phase66/20261005T185517Z/` and
+Final browser evidence is under `output/playwright/phase66/20261005T191507Z/` and
 `output/playwright/draft-cancel-final-20261005/`, ignored by Git. The final bundle digest is
-`ac9b07f8d34d4c2ebbddb569666f8d6380b85ebc36cb42c9a9fcf6292f530de0`.
+`80f6b4a3ebdd7c0cabedeb08bafa3d680464fb36ee4a59cc13670e49d5cc9957`.
+The screenshots precede the final batch filtering and neutral notice-body correction; geometry
+is unchanged. The final exact bundle subsequently passed all eight WebKit iteration flows.
 
 The site uses one shared `index.html` and `/assets/` tree for seller and judge routes; there is
 no separate `judge/index.html`. Preserve both runtime-config objects and the existing CloudFront
@@ -48,4 +50,11 @@ retaining prior assets and the captured entry page for rollback. It does not upd
 model configuration, stores, publishing, accounts or cleanup timers.
 
 Private deployment captures/manifests are in `.mr_lister_private/draft-ui-20261005/`.
-Deployment verification will be recorded after the web update completes.
+Source was merged/pushed to `main` and deployed at
+`80635667e3198d1683d50faca0d8f2aca3b668a5`. Both cache invalidations completed. Live seller,
+judge and nested judge routes serve the expected shared entry page; exact public JS/CSS hashes
+match the final bundle. Both runtime-config versions and CloudFront configuration are unchanged.
+Readback also verified all 16 backend functions' code/environment and key settings are unchanged.
+The final receipt is `verification-final.json`; no real draft or provider operation was mutated
+by verification. A fresh authenticated user cancellation remains the real-service confirmation
+of the existing backend endpoint, distinct from these frontend fixture and deployment checks.
