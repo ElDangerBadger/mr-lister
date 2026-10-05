@@ -25,6 +25,8 @@ from mr_lister.intelligence.diagnostics import (
 )
 from mr_lister.intelligence.images import BedrockImage, prepare_bedrock_image
 from mr_lister.intelligence.listing_draft import (
+    MAX_CANDIDATE_TAGS,
+    MIN_CANDIDATE_TAGS,
     ListingCandidateDraft,
     finalize_listing_draft,
     select_etsy_tags,
@@ -39,6 +41,7 @@ from mr_lister.workflow.errors import (
     InvalidGeneratedOutputError,
 )
 from mr_lister.workflow.models import ArtworkInput
+from mr_lister.workflow.tag_policy import ETSY_TAG_LENGTH_LIMIT
 
 ContractT = TypeVar("ContractT", bound=BaseModel)
 
@@ -162,6 +165,11 @@ class BedrockListingIntelligenceAdapter:
         )
         return finalize_listing_draft(draft)
 
+    def _output_schema(self, contract: type[BaseModel]) -> dict[str, Any]:
+        """Keep Converse on its existing provider-compatible schema subset."""
+
+        return bedrock_output_schema(contract)
+
     def _invoke_contract(
         self,
         *,
@@ -172,7 +180,7 @@ class BedrockListingIntelligenceAdapter:
         image: BedrockImage | None,
         artwork_sha256: str,
     ) -> ContractT:
-        schema = bedrock_output_schema(contract)
+        schema = self._output_schema(contract)
         if self._settings.output_mode == "prompted_json":
             prompt = _prompt_with_schema(prompt, schema)
         content_blocks: list[dict[str, Any]] = []
@@ -189,9 +197,9 @@ class BedrockListingIntelligenceAdapter:
         # Listing selection gets at most one repair in the existing call path. Do not
         # change artwork inspection's separately pinned configuration or add a tag call.
         repair_limit = self._settings.max_repair_attempts
-        if contract is ListingCandidateDraft:
+        if issubclass(contract, ListingCandidateDraft):
             repair_limit = min(repair_limit, 1)
-        tag_repair_source: ListingCandidateDraft | None = None
+        tag_repair_fields: dict[str, Any] | None = None
         for attempt in range(repair_limit + 1):
             response = self._converse(
                 operation=operation,
@@ -215,8 +223,24 @@ class BedrockListingIntelligenceAdapter:
                     else raw_output
                 )
                 accepted = contract.model_validate_json(contract_payload)
+                if tag_repair_fields is not None and isinstance(accepted, ListingCandidateDraft):
+                    # Revalidate preserved copy/report together with the actual repaired tags.
+                    accepted = contract.model_validate(
+                        {**accepted.model_dump(), **tag_repair_fields}
+                    )
             except (ValidationError, ValueError) as error:
                 problems = _safe_validation_problems(error)
+                if tag_repair_fields is None and attempt < repair_limit:
+                    tag_repair_fields = _copy_fields_for_tag_length_repair(
+                        contract, contract_payload, error
+                    )
+                    if tag_repair_fields is not None:
+                        problems += "\n" + _tag_length_repair_feedback(contract_payload)
+                if tag_repair_fields is not None:
+                    problems += (
+                        "\n- tag_candidates: Preserve every other field exactly; "
+                        "change only tag_candidates. (tag_only_repair)"
+                    )
                 self._emit_response_diagnostic(
                     operation=operation,
                     attempt=attempt + 1,
@@ -243,11 +267,6 @@ class BedrockListingIntelligenceAdapter:
                 messages = repair_messages
                 continue
 
-            if tag_repair_source is not None and isinstance(accepted, ListingCandidateDraft):
-                # A tag-only repair cannot silently replace the already accepted copy.
-                accepted = accepted.model_copy(
-                    update=tag_repair_source.model_dump(exclude={"tag_candidates"})
-                )
             quality_problems = _repairable_quality_problems(accepted)
             if quality_problems:
                 self._emit_response_diagnostic(
@@ -265,7 +284,7 @@ class BedrockListingIntelligenceAdapter:
                 if attempt >= repair_limit:
                     break
                 if isinstance(accepted, ListingCandidateDraft):
-                    tag_repair_source = accepted
+                    tag_repair_fields = accepted.model_dump(exclude={"tag_candidates"})
                 messages = [
                     *messages,
                     {"role": "assistant", "content": [{"text": raw_output}]},
@@ -478,6 +497,76 @@ def _safe_validation_problems(error: Exception) -> str:
             problems.append(f"- {location}: {item['msg']} ({item['type']})")
         return "\n".join(problems)
     return f"- response: {error}"
+
+
+def _copy_fields_for_tag_length_repair(
+    contract: type[BaseModel], payload: str, error: Exception
+) -> dict[str, Any] | None:
+    """Capture validated copy/report only when candidate lengths are the sole defect.
+
+    Pydantic cannot return a partial model after an item-length error. Validate the
+    same full contract using a bounded, unique placeholder pool, then immediately
+    discard that pool. These private placeholders never enter selection, prompts,
+    diagnostics, or returned contracts; actual candidate tags still require repair.
+    """
+
+    if not issubclass(contract, ListingCandidateDraft) or not isinstance(error, ValidationError):
+        return None
+    errors = error.errors(include_url=False, include_context=False, include_input=False)
+    if not any(item["type"] == "string_too_long" for item in errors):
+        return None
+    for item in errors:
+        if (
+            item["type"] == "string_too_long"
+            and len(item["loc"]) == 2
+            and item["loc"][0] == "tag_candidates"
+            and isinstance(item["loc"][1], int)
+        ):
+            continue
+        # Failed items can also cause a derived tuple-length error. The original
+        # pool's actual length is checked below before this can be disregarded.
+        if item["type"] == "too_short" and item["loc"] == ("tag_candidates",):
+            continue
+        return None
+    try:
+        document = json.loads(payload)
+        candidates = document["tag_candidates"]
+        if (
+            not isinstance(candidates, list)
+            or not MIN_CANDIDATE_TAGS <= len(candidates) <= MAX_CANDIDATE_TAGS
+            or any(not isinstance(tag, str) for tag in candidates)
+            or len({" ".join(tag.casefold().split()) for tag in candidates}) != len(candidates)
+        ):
+            return None
+        # The original pool's count and uniqueness still matter: item failures can
+        # otherwise prevent Pydantic's after-validator from checking duplicates.
+        document["tag_candidates"] = [f"validation tag {index}" for index in range(len(candidates))]
+        validated = contract.model_validate(document)
+    except (ValidationError, ValueError, KeyError, TypeError):
+        return None
+    return validated.model_dump(exclude={"tag_candidates"})
+
+
+def _tag_length_repair_feedback(payload: str) -> str:
+    """Count the already-checked original strings without echoing or rewriting them."""
+
+    candidates = json.loads(payload)["tag_candidates"]
+    problems = []
+    for index, tag in enumerate(candidates):
+        length = len(tag.strip())
+        if length > ETSY_TAG_LENGTH_LIMIT:
+            problems.append(
+                f"- tag_candidates.{index}: Actual length is {length} characters after "
+                f"trimming outer whitespace, {length - ETSY_TAG_LENGTH_LIMIT} over the "
+                f"{ETSY_TAG_LENGTH_LIMIT}-character limit. (tag_length)"
+            )
+    problems.append(
+        "- tag_candidates: For each overlength candidate, use a shorter complete phrase "
+        "that preserves the defining concept. Aim for 16 characters or fewer, including "
+        f"spaces and punctuation; the hard limit remains {ETSY_TAG_LENGTH_LIMIT}. "
+        "Do not truncate a phrase or split it into fragments."
+    )
+    return "\n".join(problems)
 
 
 def _repairable_quality_problems(contract: BaseModel) -> str:

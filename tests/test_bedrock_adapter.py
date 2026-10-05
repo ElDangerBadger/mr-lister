@@ -636,3 +636,187 @@ def test_sdk_errors_are_sanitized_and_classified(sdk_error, expected_error) -> N
     assert "private.invalid" not in str(captured.value)
     assert diagnostics.records[0]["error_type"] == type(sdk_error).__name__
     assert diagnostics.records[0]["error_message"] == "[REDACTED]"
+
+
+@pytest.mark.parametrize("output_mode", ["native_json_schema", "prompted_json"])
+def test_one_overlength_candidate_requires_repair_and_preserves_other_valid_copy(output_mode):
+    content = transparent_png()
+    original = listing()
+    original["tag_candidates"][0] = "geometric badger shirt"
+    repaired = listing()
+    repaired.update(title="Rewritten title", description="Rewritten description")
+    diagnostics = InMemoryDiagnosticSink()
+    client = ScriptedConverseClient(response(original), response(repaired))
+    subject = build_adapter(client, diagnostics=diagnostics, output_mode=output_mode)
+
+    result = subject.draft_listing(
+        artwork_input(content), content, ArtworkAnalysis.model_validate(artwork_analysis())
+    )
+
+    assert len(client.calls) == 2
+    assert result.title == original["title"]
+    assert result.description == original["description"]
+    assert set(result.tags) <= set(repaired["tag_candidates"])
+    repair_prompt = client.calls[1]["messages"][-1]["content"][0]["text"]
+    assert "tag_candidates.0" in repair_prompt
+    assert "change only tag_candidates" in repair_prompt
+    assert "validation tag" not in json.dumps(client.calls)
+    assert "validation tag" not in json.dumps(diagnostics.records)
+    assert "validation tag" not in result.model_dump_json()
+
+
+def test_overlength_repair_preserves_the_full_validated_verification_report():
+    from mr_lister.intelligence.harness_candidate import VerificationListingDraft
+
+    original = {
+        **listing(),
+        "subject_verification": "disagrees",
+        "verified_subject": "a different animal",
+        "subject_issues": ["The original subject does not fit the visible features"],
+    }
+    original["tag_candidates"] = [f"geometric woodland badger {index}" for index in range(18)]
+    repaired = {
+        **listing(),
+        "title": "Unexpected rewritten title",
+        "description": "Unexpected rewritten description",
+        "audience": ["Unexpected audience"],
+        "title_rationale": "Unexpected title rationale",
+        "tag_rationale": "Unexpected tag rationale",
+        "subject_verification": "agrees",
+        "verified_subject": "geometric badger",
+        "subject_issues": [],
+    }
+    client = ScriptedConverseClient(response(original), response(repaired))
+
+    result = build_adapter(client, max_repair_attempts=2)._invoke_contract(
+        operation="draft_listing",
+        contract=VerificationListingDraft,
+        schema_name="mr_lister_verification_listing_candidate_v1",
+        prompt="Return the complete requested listing and verification report.",
+        image=None,
+        artwork_sha256="a" * 64,
+    )
+
+    expected = VerificationListingDraft.model_validate(
+        {**original, "tag_candidates": repaired["tag_candidates"]}
+    )
+    assert result == expected
+    assert len(client.calls) == 2
+    assert "validation tag" not in json.dumps(client.calls)
+    assert "validation tag" not in result.model_dump_json()
+
+
+@pytest.mark.parametrize("other_defect", ["invalid_copy", "duplicate_tags"])
+def test_length_capture_cannot_hide_another_original_contract_defect(other_defect):
+    content = transparent_png()
+    original = listing()
+    original["tag_candidates"] = [f"geometric woodland badger {index}" for index in range(18)]
+    if other_defect == "invalid_copy":
+        original["description"] = ""
+    else:
+        original["tag_candidates"][1] = original["tag_candidates"][0]
+    repaired = listing()
+    repaired.update(title="Repaired contract title", description="Repaired contract description")
+    client = ScriptedConverseClient(response(original), response(repaired))
+
+    result = build_adapter(client).draft_listing(
+        artwork_input(content), content, ArtworkAnalysis.model_validate(artwork_analysis())
+    )
+
+    assert result.title == repaired["title"]
+    assert result.description == repaired["description"]
+    assert "change only tag_candidates" not in client.calls[1]["messages"][-1]["content"][0]["text"]
+
+
+def test_strict_length_repairs_for_verification_drafts_are_capped_at_one():
+    from mr_lister.intelligence.harness_candidate import VerificationListingDraft
+
+    bad = {
+        **listing(),
+        "tag_candidates": [f"geometric woodland badger {index}" for index in range(18)],
+        "subject_verification": "agrees",
+        "verified_subject": "geometric badger",
+        "subject_issues": [],
+    }
+    client = ScriptedConverseClient(response(bad), response(bad), response(bad))
+
+    with pytest.raises(InvalidGeneratedOutputError, match="bounded repair"):
+        build_adapter(client, max_repair_attempts=2)._invoke_contract(
+            operation="draft_listing",
+            contract=VerificationListingDraft,
+            schema_name="mr_lister_verification_listing_candidate_v1",
+            prompt="Return the requested listing and verification report.",
+            image=None,
+            artwork_sha256="a" * 64,
+        )
+    assert len(client.calls) == 2
+    assert len(client.results) == 1
+
+
+def test_tag_length_feedback_counts_trimmed_characters_without_echoing_candidate_text():
+    content = transparent_png()
+    original = listing()
+    original["tag_candidates"][0] = "  geometric woodland deer \n"
+    original["tag_candidates"][3] = "psychedelic lettering"
+    assert len(original["tag_candidates"][0].strip()) == 23
+    assert len(original["tag_candidates"][3]) == 21
+    repaired = listing()
+    repaired.update(title="Unexpected repair title", description="Unexpected repair description")
+    diagnostics = InMemoryDiagnosticSink()
+    client = ScriptedConverseClient(response(original), response(repaired))
+
+    result = build_adapter(client, diagnostics=diagnostics).draft_listing(
+        artwork_input(content), content, ArtworkAnalysis.model_validate(artwork_analysis())
+    )
+
+    feedback = client.calls[1]["messages"][-1]["content"][0]["text"]
+    assert (
+        "tag_candidates.0: Actual length is 23 characters after trimming outer whitespace, "
+        "3 over the 20-character limit"
+    ) in feedback
+    assert (
+        "tag_candidates.3: Actual length is 21 characters after trimming outer whitespace, "
+        "1 over the 20-character limit"
+    ) in feedback
+    assert "shorter complete phrase that preserves the defining concept" in feedback
+    assert "16 characters or fewer" in feedback
+    assert "hard limit remains 20" in feedback
+    assert "Do not truncate" in feedback
+    for source_phrase in ("geometric woodland deer", "psychedelic lettering", "validation tag"):
+        assert source_phrase not in feedback
+        assert source_phrase not in json.dumps(diagnostics.records)
+        assert source_phrase not in result.model_dump_json()
+    assert result.title == original["title"]
+    assert result.description == original["description"]
+    assert set(result.tags) <= set(repaired["tag_candidates"])
+    assert len(client.calls) == 2
+
+
+@pytest.mark.parametrize("with_verification", [False, True])
+def test_converse_listing_wire_schema_does_not_receive_mantle_length_bound(with_verification):
+    from mr_lister.intelligence.harness_candidate import VerificationListingDraft
+    from mr_lister.intelligence.listing_draft import ListingCandidateDraft
+    from mr_lister.intelligence.schema import bedrock_output_schema
+
+    contract = VerificationListingDraft if with_verification else ListingCandidateDraft
+    payload = listing()
+    if with_verification:
+        payload.update(
+            subject_verification="agrees", verified_subject="geometric badger", subject_issues=[]
+        )
+    client = ScriptedConverseClient(response(payload))
+
+    build_adapter(client)._invoke_contract(
+        operation="draft_listing",
+        contract=contract,
+        schema_name="mr_lister_listing_schema_boundary_test",
+        prompt="Return the requested listing contract.",
+        image=None,
+        artwork_sha256="a" * 64,
+    )
+
+    wire_schema = json.loads(
+        client.calls[0]["outputConfig"]["textFormat"]["structure"]["jsonSchema"]["schema"]
+    )
+    assert wire_schema == bedrock_output_schema(contract)
+    assert "maxLength" not in wire_schema["properties"]["tag_candidates"]["items"]

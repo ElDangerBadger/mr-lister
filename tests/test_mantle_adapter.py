@@ -708,3 +708,117 @@ def test_request_id_is_taken_only_from_transport_headers():
 
     assert "_mr_lister_request_id" not in client.complete(simple_request())
     assert client.complete(simple_request())["_mr_lister_request_id"] == "request-123"
+
+
+@pytest.mark.parametrize("disagreement_attempt", ["initial", "repair"])
+def test_overlength_tag_repair_preserves_report_and_sticky_verification_issues(
+    disagreement_attempt,
+):
+    from mr_lister.intelligence.harness_candidate import (
+        VerificationListingDraft,
+        _VerificationAdapter,
+    )
+
+    original = {
+        **listing_payload(),
+        "tag_candidates": [f"geometric woodland badger {index}" for index in range(18)],
+        "subject_verification": "agrees",
+        "verified_subject": "geometric badger",
+        "subject_issues": [],
+    }
+    repaired = {
+        **listing_payload(),
+        "title": "Unexpected rewritten title",
+        "description": "Unexpected rewritten description",
+        "audience": ["Unexpected audience"],
+        "title_rationale": "Unexpected title rationale",
+        "tag_rationale": "Unexpected tag rationale",
+        "subject_verification": "agrees",
+        "verified_subject": "geometric badger",
+        "subject_issues": [],
+    }
+    tainted = original if disagreement_attempt == "initial" else repaired
+    tainted.update(
+        subject_verification="disagrees",
+        verified_subject="a different animal",
+        subject_issues=["The visible subject contradicts the supplied interpretation"],
+    )
+    client = ScriptedMantleClient(completion(original), completion(repaired))
+    subject = _VerificationAdapter(
+        expected_subject="geometric badger",
+        client=client,
+        settings=BedrockSettings(
+            transport="mantle", model_id="google.gemma-4-31b", max_repair_attempts=2
+        ),
+        prompt_bundle=ETSY_SEO_RELEASE_PROMPT_BUNDLE,
+    )
+
+    result = subject._invoke_contract(
+        operation="draft_listing",
+        contract=VerificationListingDraft,
+        schema_name="mr_lister_verification_listing_candidate_v1",
+        prompt="Return the complete requested listing and verification report.",
+        image=None,
+        artwork_sha256="a" * 64,
+    )
+
+    expected = VerificationListingDraft.model_validate(
+        {**original, "tag_candidates": repaired["tag_candidates"]}
+    )
+    assert result == expected
+    assert subject.reported_verification == "disagrees"
+    assert subject.reported_issues
+    assert len(client.calls) == 2
+    assert "change only tag_candidates" in json.dumps(client.calls[1]["messages"][-1])
+    assert "validation tag" not in json.dumps(client.calls)
+    assert "validation tag" not in result.model_dump_json()
+
+
+@pytest.mark.parametrize("with_verification", [False, True])
+def test_listing_wire_schema_adds_only_the_tested_twenty_character_tag_bound(with_verification):
+    from mr_lister.intelligence.harness_candidate import VerificationListingDraft
+    from mr_lister.intelligence.listing_draft import ListingCandidateDraft
+    from mr_lister.intelligence.mantle import mantle_output_schema
+    from mr_lister.intelligence.schema import bedrock_output_schema
+
+    contract = VerificationListingDraft if with_verification else ListingCandidateDraft
+    payload = listing_payload()
+    if with_verification:
+        payload.update(
+            subject_verification="agrees", verified_subject="geometric badger", subject_issues=[]
+        )
+    client = ScriptedMantleClient(completion(payload))
+
+    result = adapter(client)._invoke_contract(
+        operation="draft_listing",
+        contract=contract,
+        schema_name="mr_lister_listing_schema_boundary_test",
+        prompt="Return the requested listing contract.",
+        image=None,
+        artwork_sha256="a" * 64,
+    )
+
+    assert isinstance(result, contract)
+    wire_schema = client.calls[0]["response_format"]["json_schema"]["schema"]
+    assert wire_schema == mantle_output_schema(contract)
+    without_tested_bound = copy.deepcopy(wire_schema)
+    assert without_tested_bound["properties"]["tag_candidates"]["items"].pop("maxLength") == 20
+    assert without_tested_bound == bedrock_output_schema(contract)
+    assert contract.model_json_schema()["properties"]["tag_candidates"]["items"]["maxLength"] == 20
+
+
+def test_mantle_non_candidate_schemas_remain_exactly_the_generic_sanitized_schema():
+    from mr_lister.contracts import ListingIntelligence
+    from mr_lister.intelligence.harness_candidate import EvidenceBrief
+    from mr_lister.intelligence.mantle import mantle_output_schema
+    from mr_lister.intelligence.schema import bedrock_output_schema
+
+    for contract in (ArtworkAnalysis, EvidenceBrief, ListingIntelligence):
+        assert mantle_output_schema(contract) == bedrock_output_schema(contract)
+
+    client = ScriptedMantleClient(completion(analysis_payload()))
+    content = png_bytes()
+    adapter(client).inspect_artwork(artwork(content), content)
+    assert client.calls[0]["response_format"]["json_schema"]["schema"] == bedrock_output_schema(
+        ArtworkAnalysis
+    )

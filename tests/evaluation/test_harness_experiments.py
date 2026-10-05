@@ -343,7 +343,7 @@ def test_unknown_attempt_metadata_is_not_inferred_from_invalid_outputs(attempt):
     assert telemetry["invalid_output_count"] == 1
 
 
-@pytest.mark.parametrize("revision", ["v2", "v3", "v4"])
+@pytest.mark.parametrize("revision", ["v2", "v3", "v4", "v5", "v6"])
 def test_revision_fingerprints_bind_evaluator_source_and_preserve_reference(settings, revision):
     from hashlib import sha256
     from pathlib import Path
@@ -362,7 +362,7 @@ def test_revision_fingerprints_bind_evaluator_source_and_preserve_reference(sett
     assert first["candidate_prompts"] != second["candidate_prompts"]
 
 
-@pytest.mark.parametrize("revision", ["v1", "v2", "v3", "v4"])
+@pytest.mark.parametrize("revision", ["v1", "v2", "v3", "v4", "v5", "v6"])
 @pytest.mark.parametrize("mode", ["writer-ab", "full"])
 def test_live_cli_passes_revision_to_adapter_without_network(
     monkeypatch, tmp_path, cases, revision, mode
@@ -401,9 +401,10 @@ def test_live_cli_passes_revision_to_adapter_without_network(
     for key in ("MR_LISTER_RUN_LIVE_BEDROCK", "MR_LISTER_RUN_HARNESS_EVAL"):
         monkeypatch.setenv(key, "1")
     monkeypatch.setenv("AWS_PROFILE", "mr-lister-dev")
-    assert harness.main(
-        ["--live", "--mode", mode, "--revision", revision, "--run-id", "offline-fake"]
-    ) == 0
+    assert (
+        harness.main(["--live", "--mode", mode, "--revision", revision, "--run-id", "offline-fake"])
+        == 0
+    )
     assert revisions == [revision] * (2 if mode == "writer-ab" else 1)
     output = tmp_path / ".mr_lister_private/harness-experiments/offline-fake"
     plan = json.loads((output / "plan.json").read_text())
@@ -494,4 +495,4 @@ def test_unknown_revision_fails_in_cli_before_network(monkeypatch):
 
     monkeypatch.setattr(boto3, "Session", lambda **kwargs: pytest.fail("unexpected AWS session"))
     with pytest.raises(SystemExit):
-        harness.main(["--live", "--revision", "v5"])
+        harness.main(["--live", "--revision", "v7"])

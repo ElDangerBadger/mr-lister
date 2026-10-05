@@ -27,6 +27,7 @@ from strands.types.tools import ToolChoice, ToolSpec
 from mr_lister.contracts import ArtworkAnalysis, ContractModel, ListingIntelligence
 from mr_lister.intelligence.bedrock import (
     _CONFIGURATION_ERROR_CODES,
+    _copy_fields_for_tag_length_repair,
     _repairable_quality_problems,
     _safe_validation_problems,
     _transparency_note,
@@ -55,6 +56,35 @@ class UnifiedArtworkListing(ContractModel):
 
     analysis: ArtworkAnalysis
     listing: ListingCandidateDraft
+
+
+def _copy_fields_for_unified_tag_length_repair(
+    payload: str, error: Exception
+) -> dict[str, Any] | None:
+    """Protect analysis and copy only when the nested candidate lengths alone fail."""
+
+    if not isinstance(error, ValidationError) or any(
+        item["loc"][:2] != ("listing", "tag_candidates")
+        for item in error.errors(include_url=False, include_context=False, include_input=False)
+    ):
+        return None
+    try:
+        document = json.loads(payload)
+        analysis = ArtworkAnalysis.model_validate(document["analysis"])
+        listing_payload = json.dumps(document["listing"])
+        try:
+            ListingCandidateDraft.model_validate_json(listing_payload)
+        except ValidationError as listing_error:
+            fields = _copy_fields_for_tag_length_repair(
+                ListingCandidateDraft, listing_payload, listing_error
+            )
+        else:
+            return None
+    except (ValidationError, ValueError, KeyError, TypeError):
+        return None
+    if fields is None:
+        return None
+    return {"analysis": analysis.model_dump(), "listing": fields}
 
 
 def unified_review_prompt() -> str:
@@ -230,7 +260,7 @@ def prepare_unified_review(
         {"image": {"format": "png", "source": {"bytes": image.content}}},
         {"text": unified_review_prompt() + _transparency_note(image)},
     ]
-    tag_repair_source: UnifiedArtworkListing | None = None
+    tag_repair_fields: dict[str, Any] | None = None
     for attempt in range(MAX_UNIFIED_MODEL_CALLS):
         usage = agent.event_loop_metrics.get_summary()["accumulated_usage"]
         remaining_output = MAX_UNIFIED_OUTPUT_TOKENS - usage["outputTokens"]
@@ -251,24 +281,33 @@ def prepare_unified_review(
         except MaxTokensReachedException:
             problems = "- response: The JSON object was incomplete; return the complete contract."
         else:
+            contract_payload = str(result)
             try:
                 if result.stop_reason != "end_turn":
                     raise ValueError("The response did not complete its JSON object")
-                accepted = UnifiedArtworkListing.model_validate_json(str(result))
-            except (ValidationError, ValueError) as error:
-                problems = _safe_validation_problems(error)
-            else:
-                if tag_repair_source is not None:
-                    accepted = accepted.model_copy(
-                        update={
-                            "analysis": tag_repair_source.analysis,
-                            "listing": accepted.listing.model_copy(
-                                update=tag_repair_source.listing.model_dump(
-                                    exclude={"tag_candidates"}
-                                )
-                            ),
+                accepted = UnifiedArtworkListing.model_validate_json(contract_payload)
+                if tag_repair_fields is not None:
+                    accepted = UnifiedArtworkListing.model_validate(
+                        {
+                            "analysis": tag_repair_fields["analysis"],
+                            "listing": {
+                                **accepted.listing.model_dump(),
+                                **tag_repair_fields["listing"],
+                            },
                         }
                     )
+            except (ValidationError, ValueError) as error:
+                problems = _safe_validation_problems(error)
+                if tag_repair_fields is None and attempt + 1 < MAX_UNIFIED_MODEL_CALLS:
+                    tag_repair_fields = _copy_fields_for_unified_tag_length_repair(
+                        contract_payload, error
+                    )
+                if tag_repair_fields is not None:
+                    problems += (
+                        "\n- listing.tag_candidates: Preserve the analysis and every other "
+                        "listing field exactly; change only tag_candidates. (tag_only_repair)"
+                    )
+            else:
                 problems = _repairable_quality_problems(accepted.listing)
                 if not problems:
                     usage = agent.event_loop_metrics.get_summary()["accumulated_usage"]
@@ -280,7 +319,10 @@ def prepare_unified_review(
                             "Unified intelligence exceeded its budget"
                         )
                     return accepted.analysis, finalize_listing_draft(accepted.listing)
-                tag_repair_source = accepted
+                tag_repair_fields = {
+                    "analysis": accepted.analysis.model_dump(),
+                    "listing": accepted.listing.model_dump(exclude={"tag_candidates"}),
+                }
         if attempt + 1 == MAX_UNIFIED_MODEL_CALLS:
             break
         prompt = ETSY_SEO_RELEASE_PROMPT_BUNDLE.repair.format(problems=problems)

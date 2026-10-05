@@ -15,14 +15,20 @@ from mr_lister.contracts.models import (
     NonEmptyText,
     ShortText,
 )
-from mr_lister.workflow.tag_policy import is_complete_tag_phrase, tags_are_redundant
+from mr_lister.workflow.tag_policy import (
+    ETSY_TAG_LENGTH_LIMIT,
+    is_complete_tag_phrase,
+    tag_coverage_keywords,
+    tags_are_redundant,
+)
 
 FINAL_TAG_COUNT = 13
 MIN_CANDIDATE_TAGS = 18
 MAX_CANDIDATE_TAGS = 30
+TAG_SELECTION_VERSION = "2026-10-05.specific-coverage-2"
 CandidateTagPhrase = Annotated[
     str,
-    StringConstraints(strip_whitespace=True, min_length=1, max_length=60),
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=ETSY_TAG_LENGTH_LIMIT),
 ]
 
 
@@ -55,11 +61,12 @@ def select_etsy_tags(
     *,
     count: int = FINAL_TAG_COUNT,
 ) -> tuple[str, ...]:
-    """Select ranked complete phrases that contribute distinct lexical search coverage.
+    """Prefer ranked complete phrases that contribute new specific lexical coverage.
 
-    Never shorten, split, or invent phrases. Include-first search preserves the model's
-    relevance ranking, backtracking only when necessary to obtain a complete set. Shared
-    words are allowed; equivalent inflections and low-information paraphrases are not.
+    Keep the first feasible ranked anchor. Later candidates that introduce a specific
+    concept precede generic style variations, with original rank breaking ties. Always
+    check that a full nonredundant set remains possible, and fall back to ranked valid
+    phrases when coverage is exhausted. Return unchanged strings in original order.
     """
 
     if not 1 <= count <= FINAL_TAG_COUNT:
@@ -70,36 +77,51 @@ def select_etsy_tags(
     conflicts = tuple(
         sum(
             1 << other
-            for other in range(index + 1, len(eligible))
-            if tags_are_redundant(tag, eligible[other])
+            for other in range(len(eligible))
+            if other != index and tags_are_redundant(tag, eligible[other])
         )
         for index, tag in enumerate(eligible)
     )
     failed: set[tuple[int, int]] = set()
 
-    def search(available: int, needed: int) -> tuple[int, ...] | None:
+    def feasible(available: int, needed: int) -> bool:
         if needed == 0:
-            return ()
+            return True
         if available.bit_count() < needed or (available, needed) in failed:
-            return None
+            return False
         state = (available, needed)
         while available.bit_count() >= needed:
             first = available & -available
             index = first.bit_length() - 1
             available ^= first
-            tail = search(available & ~conflicts[index], needed - 1)
-            if tail is not None:
-                return (index, *tail)
+            if feasible(available & ~conflicts[index], needed - 1):
+                return True
         failed.add(state)
-        return None
+        return False
 
-    indexes = search((1 << len(eligible)) - 1, count)
-    if indexes is None:
+    available = (1 << len(eligible)) - 1
+    if not feasible(available, count):
         raise ValueError(
             f"Candidate pool cannot produce {count} complete, nonredundant tags; "
             "additional relevant natural phrases are required"
         )
-    return tuple(eligible[index] for index in indexes)
+    selected: list[int] = []
+    covered: set[str] = set()
+    coverage = tuple(tag_coverage_keywords(tag) for tag in eligible)
+    for needed in range(count, 0, -1):
+        choices = [index for index in range(len(eligible)) if available & (1 << index)]
+        if selected:
+            choices.sort(key=lambda index: (not bool(coverage[index] - covered), index))
+        for index in choices:
+            remainder = available & ~(1 << index) & ~conflicts[index]
+            if feasible(remainder, needed - 1):
+                selected.append(index)
+                covered.update(coverage[index])
+                available = remainder
+                break
+        else:  # Every selected step was proven to have a feasible completion.
+            raise AssertionError("Tag selection lost its feasible completion")
+    return tuple(eligible[index] for index in sorted(selected))
 
 
 def finalize_listing_draft(draft: ListingCandidateDraft) -> ListingIntelligence:

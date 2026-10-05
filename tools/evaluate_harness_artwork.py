@@ -106,8 +106,8 @@ def load_artwork(path: Path) -> tuple[IndependentArtworkInput, bytes]:
 
 
 def validate_options(*, revision: str, trials: int, run_id: str) -> None:
-    if revision not in {"v1", "v2", "v3", "v4"}:
-        raise ValueError("Revision must be v1, v2, v3 or v4")
+    if revision not in {"v1", "v2", "v3", "v4", "v5", "v6"}:
+        raise ValueError("Revision must be v1, v2, v3, v4, v5 or v6")
     if isinstance(trials, bool) or not 1 <= trials <= 3:
         raise ValueError("Trials must be between 1 and 3")
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", run_id) is None:
@@ -116,10 +116,19 @@ def validate_options(*, revision: str, trials: int, run_id: str) -> None:
 
 def artwork_fingerprints(settings: BedrockSettings, *, revision: str) -> dict[str, Any]:
     from mr_lister.intelligence import harness_candidate as candidate
+    from mr_lister.intelligence import listing_draft as drafts
+    from mr_lister.intelligence import mantle
     from mr_lister.intelligence.listing_draft import ListingCandidateDraft
     from mr_lister.intelligence.prompts import ETSY_SEO_RELEASE_PROMPT_BUNDLE
     from mr_lister.intelligence.schema import bedrock_output_schema
+    from mr_lister.workflow import tag_policy
     from tools import evaluate_harness_candidate as shared
+
+    provider_schema = (
+        getattr(mantle, "mantle_output_schema", bedrock_output_schema)
+        if settings.transport == "mantle"
+        else bedrock_output_schema
+    )
 
     classes = (candidate.EvidenceBrief, ListingCandidateDraft, candidate.VerificationListingDraft)
     return {
@@ -127,6 +136,12 @@ def artwork_fingerprints(settings: BedrockSettings, *, revision: str) -> dict[st
         "evaluator_source_sha256": sha256(Path(__file__).read_bytes()).hexdigest(),
         "shared_evaluator_source_sha256": sha256(Path(shared.__file__).read_bytes()).hexdigest(),
         "harness_source_sha256": sha256(Path(candidate.__file__).read_bytes()).hexdigest(),
+        "mantle_source_sha256": sha256(Path(mantle.__file__).read_bytes()).hexdigest(),
+        "tag_selection_source_sha256": sha256(Path(drafts.__file__).read_bytes()).hexdigest(),
+        "tag_policy_source_sha256": sha256(Path(tag_policy.__file__).read_bytes()).hexdigest(),
+        "tag_selection_version": getattr(
+            drafts, "TAG_SELECTION_VERSION", tag_policy.TAG_POLICY_VERSION
+        ),
         "settings_sha256": digest(settings.model_dump(mode="json")),
         "current_prompt_version": ETSY_SEO_RELEASE_PROMPT_BUNDLE.version,
         "current_prompt_fingerprint": ETSY_SEO_RELEASE_PROMPT_BUNDLE.fingerprint,
@@ -137,9 +152,7 @@ def artwork_fingerprints(settings: BedrockSettings, *, revision: str) -> dict[st
         "application_schema_sha256": {
             cls.__name__: digest(cls.model_json_schema()) for cls in classes
         },
-        "provider_schema_sha256": {
-            cls.__name__: digest(bedrock_output_schema(cls)) for cls in classes
-        },
+        "provider_schema_sha256": {cls.__name__: digest(provider_schema(cls)) for cls in classes},
     }
 
 
@@ -281,7 +294,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--artwork", type=Path, required=True, help="Local PNG or JPEG, at most 5 MiB"
     )
-    parser.add_argument("--revision", choices=("v1", "v2", "v3", "v4"), default="v2")
+    parser.add_argument("--revision", choices=("v1", "v2", "v3", "v4", "v5", "v6"), default="v2")
     parser.add_argument("--trials", type=int, default=1)
     parser.add_argument("--run-id", default=datetime.now(UTC).strftime("artwork-%Y%m%dT%H%M%SZ"))
     parser.add_argument(

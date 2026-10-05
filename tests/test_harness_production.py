@@ -30,7 +30,7 @@ def settings():
     return BedrockSettings(transport="mantle", model_id="google.gemma-4-31b", max_repair_attempts=2)
 
 
-def accepted(source, listing, *, subject="badger explorer", revision="v4"):
+def accepted(source, listing, *, subject="badger explorer", revision="v6"):
     bundle = candidate_prompt_bundles(revision=revision)["full"]
     return HarnessResult(
         state="accepted_for_evaluation",
@@ -43,7 +43,7 @@ def accepted(source, listing, *, subject="badger explorer", revision="v4"):
     )
 
 
-def test_factory_pins_v4_product_context_settings_and_prompt_before_clients(monkeypatch):
+def test_factory_pins_v6_product_context_settings_and_prompt_before_clients(monkeypatch):
     factory = Mock(return_value=object())
     monkeypatch.setattr(harness_production, "build_harness_candidate_adapter", factory)
     session = object()
@@ -53,11 +53,11 @@ def test_factory_pins_v4_product_context_settings_and_prompt_before_clients(monk
         "session": session,
         "diagnostics": None,
         "product_context": VerifiedProductContext(product_type="T-shirt"),
-        "revision": "v4",
+        "revision": "v6",
     }
     assert (
         PRODUCTION_HARNESS_PROMPT_FINGERPRINT
-        == candidate_prompt_bundles(revision="v4")["full"].fingerprint
+        == candidate_prompt_bundles(revision="v6")["full"].fingerprint
     )
     assert not hasattr(adapter, "approve")
     assert not hasattr(adapter, "publish")
@@ -101,7 +101,7 @@ def test_restored_two_call_harness_retains_standard_image_budget(monkeypatch):
             client=client,
             settings=settings(),
             product_context=VerifiedProductContext(),
-            revision="v4",
+            revision="v6",
         )
     )
     analysis, listing = adapter.prepare_listing(source, content)
@@ -113,17 +113,17 @@ def test_restored_two_call_harness_retains_standard_image_budget(monkeypatch):
     assert content == png_bytes()
 
 
-def test_v4_factory_rejects_an_otherwise_accepted_frozen_v3_result(monkeypatch, listing):
+def test_v6_factory_rejects_an_otherwise_accepted_previous_v4_result(monkeypatch, listing):
     content = png_bytes()
     source = artwork(content)
-    stale_result = accepted(source, listing, revision="v3")
+    stale_result = accepted(source, listing, revision="v4")
     prepare = Mock(return_value=stale_result)
     factory = Mock(return_value=SimpleNamespace(prepare=prepare))
     monkeypatch.setattr(harness_production, "build_harness_candidate_adapter", factory)
 
     adapter = build_harness_production_adapter(settings(), session=object())
 
-    assert factory.call_args.kwargs["revision"] == "v4"
+    assert factory.call_args.kwargs["revision"] == "v6"
     assert stale_result.state == "accepted_for_evaluation"
     assert stale_result.subject_verification == "agrees"
     assert stale_result.listing is not None

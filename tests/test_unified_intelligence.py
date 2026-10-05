@@ -16,6 +16,7 @@ from strands import Agent, tool
 from strands.agent.conversation_manager import NullConversationManager
 from strands.models import BedrockModel
 
+from mr_lister.contracts import ArtworkAnalysis
 from mr_lister.intelligence.listing_draft import finalize_listing_draft
 from mr_lister.intelligence.prompts import ETSY_SEO_RELEASE_PROMPT_BUNDLE
 from mr_lister.intelligence.settings import BedrockSettings
@@ -272,18 +273,23 @@ def test_tag_only_repair_cannot_replace_accepted_copy_or_analysis() -> None:
     repaired["listing"]["title"] = "Changed title"
     repaired["listing"]["description"] = "Changed description"
     repaired["listing"]["audience"] = ["Changed audience"]
+    repaired["listing"]["title_rationale"] = "Changed title rationale"
+    repaired["listing"]["tag_rationale"] = "Changed tag rationale"
     agent, client, _ = agent_for([response(invalid), response(repaired)])
 
     analysis, listing = prepare_unified_review(agent, *artwork())
 
-    assert analysis == UnifiedArtworkListing.model_validate(invalid).analysis
-    expected = UnifiedArtworkListing.model_validate(invalid).listing.model_dump(
-        exclude={"tag_candidates"}
-    )
-    assert listing.model_dump(exclude={"tags"}) == expected
+    assert analysis == ArtworkAnalysis.model_validate(invalid["analysis"])
+    expected = {key: value for key, value in invalid["listing"].items() if key != "tag_candidates"}
+    assert listing.model_dump(mode="json", exclude={"tags", "contract_version"}) == expected
     assert len(listing.tags) == 13
     assert len(client.calls) == 2
-    assert "change only tag_candidates" in client.calls[1]["messages"][-1]["content"][0]["text"]
+    feedback = client.calls[1]["messages"][-1]["content"][0]["text"]
+    assert "change only tag_candidates" in feedback
+    assert "Preserve the analysis" in feedback
+    assert "validation tag" not in feedback
+    assert "validation tag" not in listing.model_dump_json()
+    assert set(listing.tags) <= set(repaired["listing"]["tag_candidates"])
 
 
 def test_schema_then_tag_failure_cannot_open_a_third_call() -> None:
@@ -404,3 +410,28 @@ def test_transport_value_error_is_not_mistaken_for_structured_validation_failure
     with pytest.raises(ValueError, match="Transport configuration failed"):
         prepare_unified_review(agent, *artwork())
     assert len(client.calls) == 1
+
+
+@pytest.mark.parametrize("other_defect", ["analysis", "copy", "duplicate_tags"])
+def test_unified_length_capture_cannot_preserve_another_invalid_contract(other_defect):
+    invalid = payload()
+    invalid["listing"]["tag_candidates"] = [
+        f"exceptionally detailed badger search {number}" for number in range(18)
+    ]
+    if other_defect == "analysis":
+        invalid["analysis"]["confidence"] = 2.0
+    elif other_defect == "copy":
+        invalid["listing"]["title"] = ""
+    else:
+        invalid["listing"]["tag_candidates"][1] = invalid["listing"]["tag_candidates"][0]
+    repaired = payload()
+    repaired["analysis"]["subject"] = "A corrected animal interpretation"
+    repaired["listing"]["title"] = "Corrected listing title"
+    agent, client, _ = agent_for([response(invalid), response(repaired)])
+
+    analysis, listing = prepare_unified_review(agent, *artwork())
+
+    assert analysis == ArtworkAnalysis.model_validate(repaired["analysis"])
+    assert listing.title == repaired["listing"]["title"]
+    assert "Preserve the analysis" not in client.calls[1]["messages"][-1]["content"][0]["text"]
+    assert len(client.calls) == 2
