@@ -1,5 +1,11 @@
 # Gemma 4 draft-generation release
 
+This document records the original v3 rollout. The subsequent
+[original-writer restoration](gemma-4-original-writer-restoration.md) supersedes its active
+preparation binding with v4/runtime 10. Runtime 9 is now the immediate rollback; the unused
+v8 endpoint was retired with recreation evidence retained. Do not use the historical endpoint
+inventory below as current deployment authority.
+
 ## Release decision
 
 The user accepted the single-subject artwork results as a useful editable-draft milestone and

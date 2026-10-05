@@ -63,7 +63,53 @@ release. The v4 release requires a new plan based on actual runtime and Lambda r
 CloudFormation still intentionally records older deployment state. Never replay the historical
 stack template to deploy this prompt.
 
-The intended update is a new immutable AgentCore runtime and preparation Lambda's sealed
-code/environment pair. Query projection and the other 15 functions, API, frontend, account,
-store, pricing, judge cleanup and publication behavior remain unchanged. Current v9 is the
-immediate rollback. Deployment/readback results will be recorded here after execution.
+## Deployment
+
+The restoration was merged and pushed to `main` at
+`574379ae9a181a5cb64f306329d104241272bbda`, then deployed October 4, 2026 (October 5 UTC).
+
+| Release identity | Value |
+| --- | --- |
+| Component release | `bcae9f6dc9215ffb3c1ee342252bf6e6ed198288eb026eb7d8c6a499b3ca002f` |
+| Runtime | `mr_lister_phase6-4HoPmq2hCI`, immutable version `10` |
+| Preparation endpoint | `phase6_v10_dev` |
+| Binding | `a8ee69aaf636d9171ee7452582f66af317d9331c5da898837680fd48f9eb442f` |
+| AgentCore archive SHA-256 | `c5e13ae6b75ecb076c844b8a91bdec6f81a6e8d425a4bf308add96f6d29fd033` |
+| Lambda archive SHA-256 | `5ddc1a8a3fc2e19624a26f5e66a3afb3a9e6021be53e4a6bb89ee17d130c3747` |
+| Immediate rollback | `phase6_v9_dev`, immutable runtime `9` |
+
+Only the preparation Lambda's sealed code/environment pair was switched. Query projection,
+the other 15 functions, API, frontend, account, store, pricing, judge cleanup and publication
+were outside the update. Two additive IAM policies grant only the exact new archive version
+and exact v10 endpoint; existing policies remain required and preserved. The new runtime's
+log retention is 14 days.
+
+AWS's two-custom-endpoint quota required retiring unused `phase6_v8_dev`; its immutable runtime,
+exact archive and endpoint recreation request remain retained. Fresh function/API checks found
+no active v8 reference or running preparation workflow. Historical CloudFormation references
+to v8 still exist: preserve the intentional drift and do not replay those templates. Runtime 9
+and its unchanged endpoint remain ready for immediate rollback.
+
+The Lambda code update completed with a different revision identifier from its initial accepted
+response. The guard stopped before configuration rather than assuming ownership of an unknown
+revision. Readback matched the accepted code response in every field except the AWS update-status
+fields and revision identifier, with the original full environment and all other settings intact.
+The matching configuration was then applied using the freshly read revision and verified. This
+code/environment transition is not atomic and can briefly fail closed; the private receipt records
+the recovery. No product, approval, publication or saved listing was modified by verification.
+
+An IAM-authenticated empty request to the exact v10 endpoint returned the expected runtime HTTP
+422 before job/model access. This confirms startup and envelope rejection, not positive deployed
+inference. The two successful model comparisons ran under the developer identity. A fresh normal
+website upload remains the final end-to-end confirmation of the deployed writer.
+
+Independent postdeployment verification passed: preparation's exact archive hash and full
+environment match the plan; all 15 other functions, both stacks/templates/resources, 18 API
+routes, 18 integrations and the authorizer are unchanged. Baseline IAM is preserved with exactly
+the two planned additive policies. Runtime 10 and its prompt pins match; runtime 9 and its
+endpoint are unchanged; immutable v8 and all five candidate/rollback archives remain recoverable.
+The homepage, judge page, health endpoint and both runtime-config endpoints returned HTTP 200.
+Ruff and whitespace checks passed, and temporary developer inference access was removed.
+
+The private plan, exact-version archive receipts, before/after captures, rollback requests and
+verification evidence are in `.mr_lister_private/original-writer-20261004/` and remain ignored.
