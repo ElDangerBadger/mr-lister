@@ -257,10 +257,17 @@ def test_source_is_deterministic_full_production_closure_and_topology_bound(
     assert (first / SOURCE_MANIFEST_FILENAME).read_bytes() == (
         second / SOURCE_MANIFEST_FILENAME
     ).read_bytes()
-    # Review pricing, pure credential validation, and the optional exact-owner judge
-    # pricing policy are included in this current-source closure.
-    # The frozen publication topology and external dependency closure remain unchanged.
-    assert len(closure) == 79
+    # Control/publication records now reference the pure immutable store-binding type.
+    # Only its package initializer and binding module extend the reviewed 79-module closure;
+    # account provisioning, connection management, topology, and dependencies stay excluded
+    # or unchanged. The historical publication activation guards remain in force.
+    assert len(closure) == 81
+    assert {module for module in closure if module.startswith("mr_lister.connections")} == {
+        "mr_lister.connections",
+        "mr_lister.connections.binding",
+    }
+    assert not any(module.startswith("mr_lister.accounts") for module in closure)
+    assert "mr_lister.cloud.connection_composition" not in closure
     assert "mr_lister.control.pricing" in closure
     assert "mr_lister.cloud.printify_secret_contract" in closure
     assert "mr_lister.control.judge_pricing" in closure

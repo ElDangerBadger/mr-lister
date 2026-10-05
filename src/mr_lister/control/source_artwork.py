@@ -12,6 +12,7 @@ from datetime import datetime
 from hashlib import sha256
 from pathlib import PurePath
 
+from mr_lister.connections.binding import StoreBindingAuthority
 from mr_lister.contracts import ProductProfile
 from mr_lister.control.fingerprints import canonical_fingerprint
 from mr_lister.control.models import (
@@ -248,6 +249,7 @@ def source_artifact_fingerprint(
     product_profile_fingerprint: str,
     created_at: datetime,
     contract_version: str = CONTROL_CONTRACT_VERSION,
+    store_binding: StoreBindingAuthority | None = None,
 ) -> str:
     """Hash every immutable field that grants authority over a source version."""
 
@@ -270,6 +272,10 @@ def source_artifact_fingerprint(
         "product_profile_fingerprint": product_profile_fingerprint,
         "created_at": created_at.isoformat(),
     }
+    if store_binding is not None:
+        material["store_binding"] = store_binding.checked_for_owner(owner_id).model_dump(
+            mode="json"
+        )
     return canonical_fingerprint(material)
 
 
@@ -290,6 +296,7 @@ def source_artifact_authority_fingerprint(source: SourceArtifactRecord) -> str:
         product_profile_version=source.product_profile_version,
         product_profile_fingerprint=source.product_profile_fingerprint,
         created_at=source.created_at,
+        store_binding=source.store_binding,
     )
 
 

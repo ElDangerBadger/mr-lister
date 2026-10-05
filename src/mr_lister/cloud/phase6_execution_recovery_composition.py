@@ -8,6 +8,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Literal, Protocol
 
+from mr_lister.cloud.connection_composition import (
+    connection_directory,
+    load_connection_configuration,
+)
+from mr_lister.connections.models import ConnectionConfig
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
 from mr_lister.control.execution_recovery import (
     ExecutionRecoveryExecutionError,
@@ -64,6 +69,7 @@ class ExecutionRecoveryConfiguration:
     stale_after: timedelta
     batch_limit: int
     maximum_cas_rechecks: int
+    connections: ConnectionConfig | None = None
 
 
 class InstrumentedExecutionRecoveryHandler:
@@ -175,6 +181,9 @@ def load_execution_recovery_configuration(
             stale_after=timedelta(seconds=stale_seconds),
             batch_limit=batch_limit,
             maximum_cas_rechecks=maximum_cas_rechecks,
+            connections=load_connection_configuration(
+                environment, region=region, environment_name=environment_name
+            ),
         )
     except Exception:
         raise Phase6ExecutionRecoveryConfigurationError(_GENERIC_CONFIGURATION_ERROR) from None
@@ -210,6 +219,7 @@ def compose_execution_recovery_handler(
     store = DynamoDBSellerControlStore(
         client=dynamodb,
         table_name=configuration.state_table,
+        binding_guard=connection_directory(configuration.connections, dynamodb),
     )
     authority = DynamoDBExecutionRecoveryAuthority(
         client=dynamodb,

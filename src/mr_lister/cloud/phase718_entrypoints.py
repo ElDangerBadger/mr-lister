@@ -54,6 +54,15 @@ _ENVIRONMENT_NAMES = (
     "MR_LISTER_PUBLICATION_WORKFLOW_ARN",
     "MR_LISTER_PUBLICATION_RECOVERY_QUEUE_URL",
     "MR_LISTER_PRINTIFY_SECRET_ARN",
+    "MR_LISTER_CONNECTION_ENABLED",
+    "MR_LISTER_CONNECTION_TABLE_NAME",
+    "MR_LISTER_CONNECTION_SECRET_PREFIX",
+    "MR_LISTER_CONNECTION_WORKFLOW_ENABLED",
+    "MR_LISTER_ACCOUNT_USER_POOL_ID",
+    "MR_LISTER_ACCOUNT_CLIENT_ID",
+    "MR_LISTER_ACCOUNT_TABLE_NAME",
+    "MR_LISTER_ACCOUNT_RESERVED_OWNER_IDS",
+    "MR_LISTER_LEGACY_OWNER_IDS",
 )
 
 
@@ -141,41 +150,61 @@ def _dynamodb_factory(service_name: str, *, region_name: str) -> object:
 
 
 def _build_query() -> Phase718Handler:
-    configuration = _configuration(_QUERY_ENTRYPOINT)
+    environment, configuration = _verified_configuration(_QUERY_ENTRYPOINT)
     from mr_lister.cloud.phase718_composition import compose_phase718_query_handler
 
     return compose_phase718_query_handler(
         configuration,  # type: ignore[arg-type]
         client_factory=_dynamodb_factory,
+        connections=_connections(environment, configuration),
     )
 
 
 def _build_request() -> Phase718Handler:
-    configuration = _configuration(_REQUEST_ENTRYPOINT)
+    environment, configuration = _verified_configuration(_REQUEST_ENTRYPOINT)
     from mr_lister.cloud.phase718_composition import compose_phase718_request_handler
 
     return compose_phase718_request_handler(
         configuration,  # type: ignore[arg-type]
         client_factory=_dynamodb_factory,
+        connections=_connections(environment, configuration),
     )
 
 
 def _build_worker() -> Phase718Handler:
     environment, configuration = _verified_configuration(_WORKER_ENTRYPOINT)
     secret_arn = _required(environment, "MR_LISTER_PRINTIFY_SECRET_ARN")
+    connections = _connections(environment, configuration)
+    from mr_lister.cloud.connection_composition import (
+        RoutedConnectionResolver,
+        connection_directory,
+        load_legacy_owner_ids,
+    )
+
+    legacy_owner_ids = load_legacy_owner_ids(environment, connections)
     import boto3
 
     from mr_lister.cloud.phase7_provider_credentials import (
-        build_phase7_publication_provider_credential_authority,
+        ProductionPublicationProviderCredentialAuthority,
     )
     from mr_lister.cloud.phase718_composition import compose_phase718_worker_handler
     from mr_lister.publication.provider_boundary import RedirectSafePublicationTransport
 
     dynamodb = boto3.client("dynamodb", region_name=configuration.region)
     secrets = boto3.client("secretsmanager", region_name=configuration.region)
-    credentials = build_phase7_publication_provider_credential_authority(
-        client=secrets,  # type: ignore[arg-type]
-        secret_arn=secret_arn,
+    from mr_lister.production.provider_secrets import SecretsManagerOwnerPrintifyConnectionResolver
+
+    resolver = SecretsManagerOwnerPrintifyConnectionResolver(client=secrets, secret_arn=secret_arn)
+    if connections is not None:
+        resolver = RoutedConnectionResolver(
+            legacy=resolver,
+            directory=connection_directory(connections, dynamodb),
+            secrets=secrets,
+            config=connections,
+        )
+    credentials = ProductionPublicationProviderCredentialAuthority(
+        connections=resolver,
+        legacy_owner_ids=legacy_owner_ids,
     )
     return compose_phase718_worker_handler(
         configuration,  # type: ignore[arg-type]
@@ -183,6 +212,18 @@ def _build_worker() -> Phase718Handler:
         credentials=credentials,
         transport=RedirectSafePublicationTransport(),
         rejected_audit_writer=_write_rejected_audit,
+        connections=connections,
+    )
+
+
+def _connections(environment: Mapping[str, object], configuration: _VerifiedConfiguration):
+    from mr_lister.cloud.connection_composition import load_connection_configuration
+
+    return load_connection_configuration(
+        environment,
+        region=configuration.region,
+        environment_name=configuration.foundation.environment_name,
+        claims_policy=configuration.foundation.claims_policy,
     )
 
 

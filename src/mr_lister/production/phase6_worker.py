@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
+from mr_lister.connections.binding import StoreBindingAuthority
 from mr_lister.contracts import ListingIntelligence, ProductProfile
 from mr_lister.control.errors import InvalidControlStateError, WorkNotActiveError
 from mr_lister.control.fingerprints import canonical_fingerprint
@@ -94,6 +95,10 @@ class ProductProfileAuthority(Protocol):
 class ProviderDraftResources(Protocol):
     """Owner-scoped provider dependencies supplied by the AWS composition root."""
 
+    def for_binding(
+        self, *, owner_id: str, binding: StoreBindingAuthority
+    ) -> ProviderDraftResources: ...
+
     def preflight(self, *, owner_id: str, profile: ProductProfile) -> PrintifyResolvedProfile: ...
 
     def upload_source(
@@ -144,6 +149,7 @@ class _DraftAuthority:
     profile: ProductProfile
     resolved: PrintifyResolvedProfile
     review: ReviewContent
+    resources: ProviderDraftResources
 
 
 class Phase6ProductMachineWorker:
@@ -238,12 +244,12 @@ class Phase6ProductMachineWorker:
                     )
                 raise WorkNotActiveError("The one-shot upload permit is no longer available")
             try:
-                provider_upload = self._resources.upload_source(
+                provider_upload = authority.resources.upload_source(
                     owner_id=job.owner_id,
                     source=authority.source,
                     file_name=upload_attempt.file_name,
                 )
-                exact_upload = self._resources.get_upload(
+                exact_upload = authority.resources.get_upload(
                     owner_id=job.owner_id,
                     image_id=provider_upload.image_id,
                 )
@@ -293,6 +299,7 @@ class Phase6ProductMachineWorker:
                 profile=authority.profile,
                 resolved=authority.resolved,
                 review=authority.review,
+                resources=authority.resources,
             )
             if job.uploaded_image_id is None:
                 raise InvalidControlStateError(
@@ -354,7 +361,7 @@ class Phase6ProductMachineWorker:
             if attempt.operation is ProviderWriteOperation.UPDATE
             else None
         )
-        synchronizer = self._resources.synchronizer(
+        synchronizer = authority.resources.synchronizer(
             owner_id=authority.job.owner_id,
             shop_id=authority.resolved.shop_id,
         )
@@ -484,7 +491,7 @@ class Phase6ProductMachineWorker:
                 "Economics refresh variants changed the pinned product profile"
             )
 
-        product_costs = self._resources.current_product_costs(
+        product_costs = authority.resources.current_product_costs(
             owner_id=job.owner_id,
             shop_id=authority.resolved.shop_id,
             product_id=sync.product_id,
@@ -503,7 +510,7 @@ class Phase6ProductMachineWorker:
             raise InvalidControlStateError(
                 "Current product readback does not match synchronized variant authority"
             )
-        shipping = self._resources.standard_us_shipping(
+        shipping = authority.resources.standard_us_shipping(
             owner_id=job.owner_id,
             blueprint_id=authority.profile.blueprint_id,
             print_provider_id=authority.profile.print_provider_id,
@@ -566,7 +573,7 @@ class Phase6ProductMachineWorker:
             image_id=attempt.image_id,
         )
         self._require_target(attempt=attempt, draft=target)
-        synchronizer = self._resources.synchronizer(
+        synchronizer = authority.resources.synchronizer(
             owner_id=job.owner_id,
             shop_id=authority.resolved.shop_id,
         )
@@ -656,13 +663,15 @@ class Phase6ProductMachineWorker:
         if (
             attempt.source_artifact_fingerprint != job.source_artifact_fingerprint
             or source.fingerprint != job.source_artifact_fingerprint
+            or source.store_binding != job.store_binding
         ):
             raise InvalidControlStateError("Upload reconciliation changed pinned source")
+        resources = self._resources_for(job)
         upload = None
         try:
             matches = tuple(
                 item
-                for item in self._resources.list_uploads(
+                for item in resources.list_uploads(
                     owner_id=job.owner_id,
                     file_name=attempt.file_name,
                 )
@@ -673,11 +682,11 @@ class Phase6ProductMachineWorker:
             elif len(matches) > 1:
                 outcome = ReconciliationOutcome.MULTIPLE_MATCHES
             else:
-                exact = self._resources.get_upload(
+                exact = resources.get_upload(
                     owner_id=job.owner_id,
                     image_id=matches[0].image_id,
                 )
-                exact = self._resources.verify_upload_source_geometry(
+                exact = resources.verify_upload_source_geometry(
                     owner_id=job.owner_id,
                     source=source,
                     upload=exact,
@@ -715,6 +724,7 @@ class Phase6ProductMachineWorker:
             source.job_id != job.job_id
             or source.owner_id != job.owner_id
             or source.fingerprint != job.source_artifact_fingerprint
+            or source.store_binding != job.store_binding
         ):
             raise InvalidControlStateError("Pinned source artifact does not match the job")
         review = self._store.get_review(job.job_id, job.review_version)
@@ -735,7 +745,10 @@ class Phase6ProductMachineWorker:
             or exact.profile.profile_version != source.product_profile_version
         ):
             raise InvalidControlStateError("Product profile snapshot changed after intake")
-        resolved = self._resources.preflight(owner_id=job.owner_id, profile=exact.profile)
+        resources = self._resources_for(job)
+        resolved = resources.preflight(owner_id=job.owner_id, profile=exact.profile)
+        if job.store_binding is not None and resolved.shop_id != job.store_binding.shop_id:
+            raise InvalidControlStateError("Provider preflight changed the pinned shop")
         return _DraftAuthority(
             job=job,
             work=work,
@@ -743,7 +756,16 @@ class Phase6ProductMachineWorker:
             profile=exact.profile,
             resolved=resolved,
             review=review,
+            resources=resources,
         )
+
+    def _resources_for(self, job: ControlJobRecord) -> ProviderDraftResources:
+        if job.store_binding is None:
+            return self._resources
+        try:
+            return self._resources.for_binding(owner_id=job.owner_id, binding=job.store_binding)
+        except Exception:
+            raise InvalidControlStateError("Pinned provider resources are unavailable") from None
 
     def _prior_draft(
         self, *, authority: _DraftAuthority, attempt: ProviderWriteAttempt

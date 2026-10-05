@@ -259,6 +259,8 @@ class PublicationExecutionService:
         }
         if source.review.pricing is not None:
             values["expected_free_shipping"] = source.review.pricing.free_shipping
+        if authority.snapshot.store_binding is not None:
+            values["store_binding"] = authority.snapshot.store_binding
         provider_authority = self._record(
             PublicationProviderAuthority,
             "provider_authority",
@@ -1689,6 +1691,9 @@ class PublicationExecutionService:
             or sync.sync_id != snapshot.product_sync_id
             or sync.fingerprint != snapshot.product_sync_fingerprint
             or sync.printify_shop_id != snapshot.printify_shop_id
+            or job.store_binding != snapshot.store_binding
+            or sync.store_binding != snapshot.store_binding
+            or source.source.store_binding != snapshot.store_binding
             or sync.product_id != snapshot.printify_product_id
             or sync.image_id != snapshot.printify_image_id
             or sync.payload_fingerprint != snapshot.product_payload_fingerprint

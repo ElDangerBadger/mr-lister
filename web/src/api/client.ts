@@ -25,6 +25,12 @@ const artworkPreviewGrantSchema = z.strictObject({
   expires_at: z.string().datetime({ offset: true }),
 });
 
+const accountUploadBindingSchema = z.strictObject({
+  shop_binding_id: z.string().regex(/^binding_[a-f0-9]{32}$/u),
+  expected_setup_version: z.number().int().positive().safe(),
+});
+export type AccountUploadBinding = z.infer<typeof accountUploadBindingSchema>;
+
 export interface DecodedResponse<T> {
   value: T;
   requestId: string;
@@ -79,10 +85,14 @@ export class ContractError extends Error {
 }
 
 export class BrowserApiClient implements ApiPort {
+  private readonly accountBinding: Readonly<AccountUploadBinding> | undefined;
   constructor(
     private readonly session: AuthSession,
     private readonly fetcher: typeof fetch = window.fetch.bind(window),
-  ) {}
+    accountBinding?: AccountUploadBinding,
+  ) {
+    this.accountBinding = accountBinding === undefined ? undefined : Object.freeze(accountUploadBindingSchema.parse(accountBinding));
+  }
 
   listJobs(cursor?: string): Promise<DecodedResponse<JobPage>> {
     if (cursor !== undefined && !/^[A-Za-z0-9_-]{1,200}$/u.test(cursor)) throw new Error("Invalid history cursor");
@@ -133,6 +143,7 @@ export class BrowserApiClient implements ApiPort {
         content_type: "image/png",
         content_sha256: sha256,
         size_bytes: file.size,
+        ...this.accountBinding,
       }),
     }, uploadResponseSchema).then((response) => requireUploadMutation(response, null, "open", "optional"));
   }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { areServiceNoticesReviewed } from "../service-notices";
 import type { RuntimeConfig } from "../contracts";
 
 const TRANSACTION_KEY = "mr-lister.oauth-transaction.v1";
@@ -55,8 +56,10 @@ export interface AuthSession {
 export interface AuthCoordinator {
   readonly session: AuthSession;
   startSignIn(returnPath: string): Promise<void>;
+  startSignUp?: ((returnPath: string) => Promise<void>) | undefined;
   /** null means the authenticated workspace already handled navigation. */
   startPopupSignIn?(returnPath: string): Promise<string | null>;
+  startPopupSignUp?: ((returnPath: string) => Promise<string | null>) | undefined;
   cancelPopupSignIn?(): void;
   focusPopupSignIn?(): void;
   completeSignIn(callbackSearch: string): Promise<string | null>;
@@ -178,24 +181,52 @@ export class OAuthCoordinator implements AuthCoordinator {
   }
 
   async startSignIn(returnPath: string): Promise<void> {
+    return this.startRedirect(returnPath, false);
+  }
+
+  async startSignUp(returnPath: string): Promise<void> {
+    this.requireSignUp();
+    return this.startRedirect(returnPath, true);
+  }
+
+  private requireSignUp(): void {
+    if (this.config.account_access?.self_service_signup !== true || this.config.judge_access !== undefined || !areServiceNoticesReviewed(this.config.account_access.notices_version, this.config.account_access.support_email)) {
+      throw new AuthError("Account creation is not available in this workspace.");
+    }
+  }
+
+  private authorizationTarget(transaction: Awaited<ReturnType<typeof createPkceTransaction>>, signup: boolean): URL {
+    const target = signup ? new URL("/signup", this.config.cognito_authorize_url) : new URL(this.config.cognito_authorize_url);
+    target.searchParams.set("response_type", "code");
+    target.searchParams.set("client_id", this.config.client_id);
+    target.searchParams.set("redirect_uri", this.config.redirect_uri);
+    target.searchParams.set("scope", this.config.scopes.join(" "));
+    if (!signup) target.searchParams.set("identity_provider", this.config.judge_access?.identity_provider ?? "COGNITO");
+    target.searchParams.set("state", transaction.stored.state);
+    target.searchParams.set("code_challenge_method", "S256");
+    target.searchParams.set("code_challenge", transaction.challenge);
+    return target;
+  }
+
+  private async startRedirect(returnPath: string, signup: boolean): Promise<void> {
     this.cancelPopupSignIn();
     const generation = this.signInGeneration;
     const transaction = await createPkceTransaction(returnPath);
     if (this.signInGeneration !== generation) throw new AuthError("Sign-in was canceled.");
     this.storage.setItem(TRANSACTION_KEY, JSON.stringify(transaction.stored));
-    const target = new URL(this.config.cognito_authorize_url);
-    target.searchParams.set("response_type", "code");
-    target.searchParams.set("client_id", this.config.client_id);
-    target.searchParams.set("redirect_uri", this.config.redirect_uri);
-    target.searchParams.set("scope", this.config.scopes.join(" "));
-    target.searchParams.set("identity_provider", this.config.judge_access?.identity_provider ?? "COGNITO");
-    target.searchParams.set("state", transaction.stored.state);
-    target.searchParams.set("code_challenge_method", "S256");
-    target.searchParams.set("code_challenge", transaction.challenge);
-    this.navigateTo(target);
+    this.navigateTo(this.authorizationTarget(transaction, signup));
   }
 
   startPopupSignIn(returnPath: string): Promise<string | null> {
+    return this.startPopup(returnPath, false);
+  }
+
+  startPopupSignUp(returnPath: string): Promise<string | null> {
+    try { this.requireSignUp(); } catch { return Promise.reject(new AuthError("Account creation is not available in this workspace.")); }
+    return this.startPopup(returnPath, true);
+  }
+
+  private startPopup(returnPath: string, signup: boolean): Promise<string | null> {
     if (this.popupAttempt !== null) {
       this.focusPopupSignIn();
       return this.popupAttempt.promise;
@@ -252,16 +283,7 @@ export class OAuthCoordinator implements AuthCoordinator {
     void createPkceTransaction(returnPath).then((transaction) => {
       if (this.popupAttempt !== attempt) return;
       attempt.transaction = transaction.stored;
-      const target = new URL(this.config.cognito_authorize_url);
-      target.searchParams.set("response_type", "code");
-      target.searchParams.set("client_id", this.config.client_id);
-      target.searchParams.set("redirect_uri", this.config.redirect_uri);
-      target.searchParams.set("scope", this.config.scopes.join(" "));
-      target.searchParams.set("identity_provider", this.config.judge_access?.identity_provider ?? "COGNITO");
-      target.searchParams.set("state", transaction.stored.state);
-      target.searchParams.set("code_challenge_method", "S256");
-      target.searchParams.set("code_challenge", transaction.challenge);
-      popup.location.replace(target.href);
+      popup.location.replace(this.authorizationTarget(transaction, signup).href);
       popup.focus();
     }).catch(() => {
       this.finishPopup(attempt, new AuthError("The secure sign-in window could not be prepared. Please try again."));
@@ -457,7 +479,7 @@ export function relayPopupCallback(callbackSearch: string, onFailure?: (error: A
 }
 
 export function validateReturnPath(candidate: string): string {
-  if (candidate === "/") return candidate;
+  if (candidate === "/" || candidate === "/store-setup") return candidate;
   const match = SAFE_RESOURCE_RETURN.exec(candidate);
   return match?.[0] === candidate && !candidate.includes("//") ? candidate : "/";
 }

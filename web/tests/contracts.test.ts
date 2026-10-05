@@ -66,6 +66,51 @@ describe("Python-to-browser golden contracts", () => {
     expect(schema.safeParse({ ...config, redirect_uri: "https://other.example.com/auth/callback" }).success).toBe(false);
   });
 
+  it("confines public account signup configuration to the primary Cognito authority", () => {
+    const config = {
+      cognito_authorize_url: "https://seller.auth.us-west-2.amazoncognito.com/oauth2/authorize",
+      cognito_token_url: "https://seller.auth.us-west-2.amazoncognito.com/oauth2/token",
+      cognito_logout_url: "https://seller.auth.us-west-2.amazoncognito.com/logout",
+      client_id: "public-client",
+      redirect_uri: "https://seller.example.com/auth/callback",
+      scopes: ["openid", "mr-lister-api/seller"],
+      account_access: {
+        self_service_signup: true,
+        issuer: "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_ExamplePool",
+        support_email: "support@example.com",
+        notices_version: "2026-10-05",
+      },
+    };
+    const schema = runtimeConfigSchemaForOrigin("https://seller.example.com");
+    expect(schema.safeParse(config).success).toBe(true);
+    expect(schema.safeParse({ ...config, account_access: { ...config.account_access, support_email: undefined } }).success).toBe(false);
+    expect(schema.safeParse({ ...config, account_access: { ...config.account_access, notices_version: undefined } }).success).toBe(false);
+    expect(schema.safeParse({ ...config, account_access: { ...config.account_access, self_service_signup: false } }).success).toBe(true);
+    for (const issuer of [
+      "https://attacker.example/us-west-2_ExamplePool",
+      "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_ExamplePool",
+      "https://cognito-idp.us-west-2.amazonaws.com/us-east-1_ExamplePool",
+      `${config.account_access.issuer}?next=evil`,
+      `${config.account_access.issuer}#fragment`,
+      `${config.account_access.issuer}/`,
+    ]) expect(schema.safeParse({ ...config, account_access: { ...config.account_access, issuer } }).success).toBe(false);
+    expect(schema.safeParse({ ...config, account_access: { ...config.account_access, client_secret: "private" } }).success).toBe(false);
+    expect(schema.safeParse({ ...config, account_access: { ...config.account_access, connected_workflow: true } }).success).toBe(false);
+    expect(schema.safeParse({ ...config, account_access: { ...config.account_access, connection_method: "unavailable", connected_workflow: true } }).success).toBe(false);
+    expect(schema.safeParse({ ...config, account_access: { ...config.account_access, connection_method: "personal_token", connected_workflow: true } }).success).toBe(true);
+    expect(schema.safeParse({ ...config, account_access: { ...config.account_access, connection_method: "oauth", connected_workflow: false } }).success).toBe(true);
+    expect(runtimeConfigSchemaForOrigin("https://seller.example.com", "/judge").safeParse({
+      ...config,
+      redirect_uri: "https://seller.example.com/judge/auth/callback",
+      judge_access: {
+        identity_provider: "MrListerJudge",
+        upstream_client_id: "judgeclient",
+        upstream_logout_url: "https://judge.auth.us-west-2.amazoncognito.com/logout",
+        session_entry: true,
+      },
+    }).success).toBe(false);
+  });
+
   it("rejects cross-field presentation drift before rendering", () => {
     const pending = structuredClone(browserFixtures.seller_review_pending);
     expect(sellerReviewSchema.safeParse({

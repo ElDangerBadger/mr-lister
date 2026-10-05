@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Protocol
 
+from mr_lister.connections.binding import StoreBindingAuthority
 from mr_lister.control.dispatch import deterministic_execution_name, work_input_fingerprint
 from mr_lister.control.errors import (
     ConcurrentControlModificationError,
@@ -145,22 +146,27 @@ class UploadIntakeService:
         content_type: str,
         content_sha256: str,
         size_bytes: int,
+        store_binding: StoreBindingAuthority | None = None,
     ) -> UploadIntakeResult:
         command_type = UploadCommandType.CREATE_UPLOAD
         key_digest = idempotency_key_digest(idempotency_key)
         upload_id = self._stable_id("upload", owner_id, key_digest)
         job_id = self._stable_id("job", owner_id, key_digest)
+        request_payload = {
+            "owner_id": owner_id,
+            "upload_id": upload_id,
+            "job_id": job_id,
+            "filename": filename,
+            "content_type": content_type,
+            "content_sha256": content_sha256,
+            "size_bytes": size_bytes,
+        }
+        if store_binding is not None:
+            store_binding = store_binding.checked_for_owner(owner_id)
+            request_payload["store_binding"] = store_binding.model_dump(mode="json")
         request_fingerprint = command_request_fingerprint(
             command_type=command_type.value,
-            payload={
-                "owner_id": owner_id,
-                "upload_id": upload_id,
-                "job_id": job_id,
-                "filename": filename,
-                "content_type": content_type,
-                "content_sha256": content_sha256,
-                "size_bytes": size_bytes,
-            },
+            payload=request_payload,
         )
         replay = self._resolve_replay(
             owner_id=owner_id,
@@ -179,6 +185,7 @@ class UploadIntakeService:
         now = self._now()
         exact_profile = self._exact_profile()
         intent = UploadIntent(
+            store_binding=store_binding,
             owner_id=owner_id,
             upload_id=upload_id,
             job_id=job_id,
@@ -368,6 +375,7 @@ class UploadIntakeService:
             updated_at=now,
         )
         job = ControlJobRecord(
+            store_binding=current.store_binding,
             owner_id=owner_id,
             job_id=current.job_id,
             state=ControlJobState.INTAKE_VALIDATED,
@@ -592,7 +600,8 @@ class UploadIntakeService:
             "created_at": now,
         }
         return SourceArtifactRecord(
-            fingerprint=source_artifact_fingerprint(**material),
+            fingerprint=source_artifact_fingerprint(**material, store_binding=intent.store_binding),
+            store_binding=intent.store_binding,
             **material,
         )
 

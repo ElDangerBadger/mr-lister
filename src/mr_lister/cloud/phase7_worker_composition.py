@@ -121,6 +121,7 @@ def compose_publication_worker_graph(
     clock: Callable[[], datetime] | None = None,
     timeout_seconds: float = PHASE7_WORKER_TIMEOUT_SECONDS,
     user_agent: str = PHASE7_WORKER_USER_AGENT,
+    binding_guard: object | None = None,
 ) -> PublicationProviderCoordinator:
     """Join a validated configuration to the worker graph without constructing capability."""
 
@@ -146,6 +147,7 @@ def compose_publication_worker_graph(
     store = DynamoDBPublicationExecutionStore(
         client=dynamodb,
         table_name=state_table,
+        binding_guard=binding_guard,
     )
     execution = PublicationExecutionService(
         store,

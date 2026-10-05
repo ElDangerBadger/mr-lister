@@ -7,6 +7,11 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any, Literal, Protocol
 
+from mr_lister.cloud.connection_composition import (
+    connection_directory,
+    load_connection_configuration,
+    validate_connection_configuration,
+)
 from mr_lister.cloud.phase7_composition import (
     Phase7OwnerAuthenticator,
     PinnedPublicationProfileAuthority,
@@ -16,6 +21,7 @@ from mr_lister.cloud.phase718_configuration import (
     load_phase718_enabled_configuration,
     validate_phase718_enabled_configuration,
 )
+from mr_lister.connections.models import ConnectionConfig
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
 from mr_lister.publication.application import DynamoPublicationProjectionStore
 from mr_lister.publication.dynamodb import DynamoDBPublicationStore
@@ -70,17 +76,24 @@ def compose_phase718_query_handler(
     configuration: Phase718EnabledConfiguration,
     *,
     client_factory: Phase718DynamoClientFactory,
+    connections: ConnectionConfig | None = None,
 ) -> Phase718PublicationQueryApiAdapter:
     """Build the authenticated owner-scoped read graph without performing a read."""
 
     exact = validate_phase718_enabled_configuration(configuration)
+    connections = _checked_connections(exact, connections)
     dynamodb = _client(
         client_factory,
         exact.region,
         required_methods=("get_item", "query"),
     )
-    jobs = DynamoDBSellerControlStore(client=dynamodb, table_name=exact.state_table)
-    execution = DynamoDBPublicationExecutionStore(client=dynamodb, table_name=exact.state_table)
+    directory = connection_directory(connections, dynamodb)
+    jobs = DynamoDBSellerControlStore(
+        client=dynamodb, table_name=exact.state_table, binding_guard=directory
+    )
+    execution = DynamoDBPublicationExecutionStore(
+        client=dynamodb, table_name=exact.state_table, binding_guard=directory
+    )
     store = DynamoPublicationProjectionStore(jobs=jobs, execution=execution)
     return Phase718PublicationQueryApiAdapter(
         authenticator=Phase7OwnerAuthenticator(exact.foundation.claims_policy),
@@ -93,17 +106,24 @@ def compose_phase718_request_handler(
     *,
     client_factory: Phase718DynamoClientFactory,
     clock: Callable[[], datetime] | None = None,
+    connections: ConnectionConfig | None = None,
 ) -> Phase718PublicationRequestApiAdapter:
     """Build the existing atomic request service behind the enabled HTTP discriminator."""
 
     exact = validate_phase718_enabled_configuration(configuration)
+    connections = _checked_connections(exact, connections)
     dynamodb = _client(
         client_factory,
         exact.region,
         required_methods=("get_item", "transact_write_items"),
     )
-    jobs = DynamoDBSellerControlStore(client=dynamodb, table_name=exact.state_table)
-    store = DynamoDBPublicationStore(client=dynamodb, table_name=exact.state_table)
+    directory = connection_directory(connections, dynamodb)
+    jobs = DynamoDBSellerControlStore(
+        client=dynamodb, table_name=exact.state_table, binding_guard=directory
+    )
+    store = DynamoDBPublicationStore(
+        client=dynamodb, table_name=exact.state_table, binding_guard=directory
+    )
     service = PublicationRequestService(
         store=store,
         profiles=PinnedPublicationProfileAuthority(exact.foundation.profile.exact),
@@ -130,10 +150,12 @@ def compose_phase718_worker_handler(
     transport: PublicationHttpTransport,
     rejected_audit_writer: Callable[[PublicationProviderAuditRecord], None],
     clock: Callable[[], datetime] | None = None,
+    connections: ConnectionConfig | None = None,
 ) -> Phase718Handler:
     """Build one enabled coordinator step; construction performs no state, secret, or wire I/O."""
 
     configuration = validate_phase718_enabled_configuration(configuration)
+    connections = _checked_connections(configuration, connections)
     coordinator = compose_publication_worker_graph(
         state_table=configuration.state_table,
         release_manifest_fingerprint=configuration.application_release_fingerprint,
@@ -145,6 +167,7 @@ def compose_phase718_worker_handler(
         rejected_audit_writer=rejected_audit_writer,
         clock=clock,
         user_agent="MrLister-Phase7/phase718-enabled",
+        binding_guard=connection_directory(connections, dynamodb),
     )
     return _Phase718PublicationWorkerHandler(coordinator)
 
@@ -158,8 +181,10 @@ def build_phase718_worker_handler(
     rejected_audit_writer: Callable[[PublicationProviderAuditRecord], None],
     clock: Callable[[], datetime] | None = None,
 ) -> Phase718Handler:
+    configuration = load_phase718_enabled_configuration(environment)
     return compose_phase718_worker_handler(
-        load_phase718_enabled_configuration(environment),
+        configuration,
+        connections=_loaded_connections(environment, configuration),
         dynamodb=dynamodb,
         credentials=credentials,
         transport=transport,
@@ -214,8 +239,10 @@ def build_phase718_query_handler(
     *,
     client_factory: Phase718DynamoClientFactory,
 ) -> Phase718PublicationQueryApiAdapter:
+    configuration = load_phase718_enabled_configuration(environment)
     return compose_phase718_query_handler(
-        load_phase718_enabled_configuration(environment),
+        configuration,
+        connections=_loaded_connections(environment, configuration),
         client_factory=client_factory,
     )
 
@@ -226,10 +253,36 @@ def build_phase718_request_handler(
     client_factory: Phase718DynamoClientFactory,
     clock: Callable[[], datetime] | None = None,
 ) -> Phase718PublicationRequestApiAdapter:
+    configuration = load_phase718_enabled_configuration(environment)
     return compose_phase718_request_handler(
-        load_phase718_enabled_configuration(environment),
+        configuration,
+        connections=_loaded_connections(environment, configuration),
         client_factory=client_factory,
         clock=clock,
+    )
+
+
+def _loaded_connections(
+    environment: Mapping[str, object], configuration: Phase718EnabledConfiguration
+) -> ConnectionConfig | None:
+    return load_connection_configuration(
+        environment,
+        region=configuration.region,
+        environment_name=configuration.environment_name,
+        claims_policy=configuration.foundation.claims_policy,
+    )
+
+
+def _checked_connections(
+    configuration: Phase718EnabledConfiguration, connections: ConnectionConfig | None
+) -> ConnectionConfig | None:
+    if connections is None:
+        return None
+    return validate_connection_configuration(
+        connections,
+        region=configuration.region,
+        environment_name=configuration.environment_name,
+        claims_policy=configuration.foundation.claims_policy,
     )
 
 

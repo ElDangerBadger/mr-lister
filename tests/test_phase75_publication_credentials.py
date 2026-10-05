@@ -272,7 +272,9 @@ def test_production_adapter_resolves_fresh_and_observes_secret_rotation() -> Non
             _connection(authority, token="credential-after-rotation"),
         ]
     )
-    credentials = ProductionPublicationProviderCredentialAuthority(connections=resolver)
+    credentials = ProductionPublicationProviderCredentialAuthority(
+        connections=resolver, legacy_owner_ids=frozenset({authority.owner_id})
+    )
 
     first = credentials.resolve_exact(authority=authority).for_authority(authority)
     second = credentials.resolve_exact(authority=authority).for_authority(authority)
@@ -288,7 +290,9 @@ def test_production_adapter_prepares_from_one_deep_execution_authority_before_cl
     authority = harness.authority.provider_authority
     assert authority is not None
     resolver = RotatingConnections([_connection(authority)])
-    credentials = ProductionPublicationProviderCredentialAuthority(connections=resolver)
+    credentials = ProductionPublicationProviderCredentialAuthority(
+        connections=resolver, legacy_owner_ids=frozenset({authority.owner_id})
+    )
 
     prepared = credentials.prepare_credential(execution_authority=harness.authority)
 
@@ -305,7 +309,9 @@ def test_production_adapter_rejects_model_copy_authority_before_secret_resolutio
     authority = harness.authority.provider_authority
     assert authority is not None
     resolver = RotatingConnections([_connection(authority)])
-    credentials = ProductionPublicationProviderCredentialAuthority(connections=resolver)
+    credentials = ProductionPublicationProviderCredentialAuthority(
+        connections=resolver, legacy_owner_ids=frozenset({authority.owner_id})
+    )
     forged = harness.authority.model_copy(
         update={
             "provider_authority": authority.model_copy(
@@ -338,7 +344,7 @@ def test_resolver_owner_shop_or_dependency_failure_is_one_value_free_error(
     else:
         value = RuntimeError(f"dependency leaked {TOKEN}")
     credentials = ProductionPublicationProviderCredentialAuthority(
-        connections=RotatingConnections([value])
+        connections=RotatingConnections([value]), legacy_owner_ids=frozenset({authority.owner_id})
     )
 
     with pytest.raises(PublicationProviderCredentialError) as captured:
@@ -364,6 +370,7 @@ def test_factory_reuses_exact_production_secret_resolver_without_sdk_or_cache() 
     credentials = build_phase7_publication_provider_credential_authority(
         client=client,
         secret_arn=SECRET_ARN,
+        legacy_owner_ids=frozenset({authority.owner_id}),
     )
 
     lower = credentials.resolve_exact(authority=authority).for_authority(authority)
@@ -389,7 +396,7 @@ def test_factory_binds_delegated_owner_to_matching_shared_shop_without_aliasing_
         ]
     )
     credentials = build_phase7_publication_provider_credential_authority(
-        client=client, secret_arn=SECRET_ARN
+        client=client, secret_arn=SECRET_ARN, legacy_owner_ids=frozenset({authority.owner_id})
     )
 
     bound = credentials.resolve_exact(authority=authority)
@@ -429,7 +436,7 @@ def test_factory_rejects_delegation_outside_exact_owner_shop_or_valid_grant(mism
         ]
     )
     credentials = build_phase7_publication_provider_credential_authority(
-        client=client, secret_arn=SECRET_ARN
+        client=client, secret_arn=SECRET_ARN, legacy_owner_ids=frozenset({authority.owner_id})
     )
 
     with pytest.raises(PublicationProviderCredentialError) as captured:

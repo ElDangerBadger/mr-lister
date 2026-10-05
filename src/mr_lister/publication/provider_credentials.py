@@ -19,9 +19,15 @@ from pydantic import (
     model_validator,
 )
 
+from mr_lister.connections.binding import StoreBindingAuthority
 from mr_lister.publication.execution_fingerprints import execution_record_fingerprint
 from mr_lister.publication.execution_models import PublicationProviderAuthority
-from mr_lister.publication.models import Fingerprint, OwnerId, PublicationModel, SafeId
+from mr_lister.publication.models import (
+    Fingerprint,
+    OwnerId,
+    SafeId,
+    StoreBoundPublicationModel,
+)
 
 _UNAVAILABLE = "Publication provider credential is unavailable"
 _MAX_BEARER_TOKEN_CHARS = 4_096
@@ -41,6 +47,9 @@ class OwnerBoundPrintifyCredential(_CredentialModel):
     owner_id: OwnerId
     printify_shop_id: StrictInt = Field(gt=0)
     bearer_token: SecretStr = Field(exclude=True, repr=False)
+    store_binding: StoreBindingAuthority | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     def __init__(self, **values: object) -> None:
         try:
@@ -53,6 +62,10 @@ class OwnerBoundPrintifyCredential(_CredentialModel):
     @model_validator(mode="after")
     def token_is_bounded_without_disclosure(self) -> OwnerBoundPrintifyCredential:
         _require_safe_token(self.bearer_token)
+        if self.store_binding is not None:
+            self.store_binding.checked_for_owner(self.owner_id)
+            if self.store_binding.shop_id != self.printify_shop_id:
+                raise ValueError("Publication credential binding differs from its shop")
         return self
 
     def __reduce__(self) -> object:
@@ -63,7 +76,7 @@ class OwnerBoundPrintifyCredential(_CredentialModel):
         raise TypeError("Publication credentials cannot be serialized")
 
 
-class PublicationProviderCredentialBinding(PublicationModel):
+class PublicationProviderCredentialBinding(StoreBoundPublicationModel):
     """Credential-free, content-bound scope for one reconstructed provider authority."""
 
     owner_id: OwnerId
@@ -155,6 +168,7 @@ class BoundPublicationProviderCredential:
                 owner_id=binding.owner_id,
                 printify_shop_id=binding.printify_shop_id,
                 bearer_token=self._token.get_secret_value(),
+                store_binding=binding.store_binding,
             )
         except Exception:
             pass
@@ -191,6 +205,8 @@ def build_publication_provider_credential_binding(
             "provider_authority_id": exact.provider_authority_id,
             "provider_authority_fingerprint": exact.fingerprint,
         }
+        if exact.store_binding is not None:
+            values["store_binding"] = exact.store_binding
         binding = PublicationProviderCredentialBinding(
             **values,
             fingerprint=execution_record_fingerprint(

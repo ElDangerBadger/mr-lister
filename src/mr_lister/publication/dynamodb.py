@@ -259,9 +259,10 @@ def _validate_transaction_envelope(items: list[dict[str, Any]]) -> None:
 class DynamoDBPublicationStore:
     """Single-table adapter whose request write is exactly fifteen atomic actions."""
 
-    def __init__(self, *, client: Any, table_name: str) -> None:
+    def __init__(self, *, client: Any, table_name: str, binding_guard: Any | None = None) -> None:
         self._client = client
         self._table_name = table_name
+        self._binding_guard = binding_guard
 
     def resolve_request_receipt(
         self,
@@ -424,6 +425,18 @@ class DynamoDBPublicationStore:
         items = self._request_transaction_items(transaction)
         if len(items) != PUBLICATION_REQUEST_TRANSACTION_ITEMS:
             raise ValueError("Publication request transaction must contain exactly 15 actions")
+        binding = transaction.authority.current_job.store_binding
+        if binding is not None:
+            try:
+                condition = self._binding_guard.current_epoch_condition(binding)
+                if not isinstance(condition, dict) or set(condition) != {"ConditionCheck"}:
+                    raise ValueError
+                items.append(condition)
+            except Exception:
+                raise PublicationAuthorityError(
+                    PublicationErrorCode.INVALID_AUTHORITY,
+                    "Pinned store connection is unavailable",
+                ) from None
         if len(items) > MAX_PUBLICATION_REQUEST_TRANSACTION_ITEMS:
             raise ValueError("Publication request transaction exceeds its conservative bound")
         _validate_transaction_envelope(items)

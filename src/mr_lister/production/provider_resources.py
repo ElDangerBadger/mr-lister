@@ -12,13 +12,15 @@ import re
 import sys
 from base64 import b64encode
 from collections.abc import Callable, Mapping
+from copy import copy
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import IO, Any, Literal, Protocol, cast
 from urllib.parse import urlsplit
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
+from mr_lister.connections.binding import StoreBindingAuthority
 from mr_lister.contracts import ContractModel, ProductProfile
 from mr_lister.control.economics import ProductCostEvidence, ProductVariantCostEvidence
 from mr_lister.control.models import OwnerId, SourceArtifactRecord
@@ -131,12 +133,25 @@ class OwnerPrintifyConnection(PrintifyConnection):
     """One resolved credential that proves its exact seller owner binding."""
 
     owner_id: OwnerId
+    store_binding: StoreBindingAuthority | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def binding_matches_credential(self) -> OwnerPrintifyConnection:
+        if self.store_binding is not None:
+            self.store_binding.checked_for_owner(self.owner_id)
+            if self.store_binding.shop_id != self.shop_id:
+                raise ValueError("Credential shop differs from its immutable binding")
+        return self
 
 
 class OwnerPrintifyConnectionResolver(Protocol):
     """Resolve one owner-specific connection without sharing an unbound secret."""
 
     def resolve(self, *, owner_id: str) -> OwnerPrintifyConnection: ...
+
+    def resolve_exact(self, *, binding: StoreBindingAuthority) -> OwnerPrintifyConnection: ...
 
 
 class VersionedSourceObjectClient(Protocol):
@@ -257,6 +272,7 @@ class OwnerBoundProviderDraftResources:
         clock: Callable[[], datetime] | None = None,
         user_agent: str = "MrLister-Phase6",
         timeout_seconds: float = 15.0,
+        legacy_owner_ids: frozenset[str] = frozenset(),
     ) -> None:
         if not artifact_bucket or not artifact_bucket.isascii() or "/" in artifact_bucket:
             raise ValueError("Artifact bucket configuration is invalid")
@@ -281,6 +297,24 @@ class OwnerBoundProviderDraftResources:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._user_agent = normalized_user_agent
         self._timeout_seconds = timeout_seconds
+        if any(_OWNER_ID.fullmatch(owner) is None for owner in legacy_owner_ids):
+            raise ValueError("Explicit legacy owner authority is invalid")
+        self._legacy_owner_ids = frozenset(legacy_owner_ids)
+        self._store_binding: StoreBindingAuthority | None = None
+
+    def for_binding(
+        self, *, owner_id: str, binding: StoreBindingAuthority
+    ) -> OwnerBoundProviderDraftResources:
+        """Create job-local authority; never mutate shared resources or select a current shop."""
+        try:
+            checked = binding.checked_for_owner(owner_id)
+            if self._store_binding is not None and self._store_binding != checked:
+                raise ValueError
+        except Exception:
+            raise PrintifyAuthenticationError("Pinned Printify binding is unavailable") from None
+        bound = copy(self)
+        bound._store_binding = checked
+        return bound
 
     def preflight(self, *, owner_id: str, profile: ProductProfile) -> PrintifyResolvedProfile:
         with latency_span(
@@ -415,13 +449,19 @@ class OwnerBoundProviderDraftResources:
             component="printify_credentials",
         ):
             try:
-                resolved = self._connection_resolver.resolve(owner_id=owner_id)
+                if self._store_binding is not None:
+                    binding = self._store_binding.checked_for_owner(owner_id)
+                    resolved = self._connection_resolver.resolve_exact(binding=binding)
+                else:
+                    if owner_id not in self._legacy_owner_ids:
+                        raise ValueError
+                    resolved = self._connection_resolver.resolve(owner_id=owner_id)
                 connection = OwnerPrintifyConnection.model_validate(resolved)
             except Exception:
                 raise PrintifyAuthenticationError(
                     "Owner-bound Printify credential is unavailable"
                 ) from None
-        if connection.owner_id != owner_id:
+        if connection.owner_id != owner_id or connection.store_binding != self._store_binding:
             raise PrintifyAuthenticationError("Owner-bound Printify credential is unavailable")
         return connection
 
@@ -465,7 +505,11 @@ class OwnerBoundProviderDraftResources:
         )
 
     def _read_source(self, *, owner_id: str, source: SourceArtifactRecord) -> bytes:
-        if source.owner_id != owner_id or source.bucket != self._artifact_bucket:
+        if (
+            source.owner_id != owner_id
+            or source.bucket != self._artifact_bucket
+            or source.store_binding != self._store_binding
+        ):
             raise PrintifyInputError("Pinned source does not belong to the configured owner")
         try:
             response = self._s3.get_object(

@@ -16,7 +16,12 @@ from urllib.parse import parse_qsl
 
 from pydantic import ValidationError
 
-from mr_lister.cloud.auth import AuthenticatedSeller, SellerClaimsPolicy, authenticate_seller
+from mr_lister.cloud.auth import (
+    AccessDeniedError,
+    AuthenticatedSeller,
+    SellerClaimsPolicy,
+    authenticate_seller,
+)
 from mr_lister.cloud.browser_contracts import (
     BrowserContractModel,
     ClearRecentJobsRequest,
@@ -55,6 +60,8 @@ from mr_lister.cloud.preview import (
     preview_redirect_response,
 )
 from mr_lister.cloud.workspace_history import WorkspaceHistoryPort
+from mr_lister.connections.binding import StoreBindingAuthority
+from mr_lister.connections.models import ConnectionConflict
 from mr_lister.control.commands import (
     ApproveReviewCommand,
     CancelJobCommand,
@@ -70,7 +77,7 @@ from mr_lister.control.models import (
 from mr_lister.control.projection_models import SellerReviewProjection
 from mr_lister.control.store import OwnerJobPage, decode_owner_job_cursor
 from mr_lister.control.upload_models import UploadAuthorization, UploadCommandType, UploadIntent
-from mr_lister.control.upload_service import UploadIntakeResult
+from mr_lister.control.upload_service import UploadDependencyUnavailableError, UploadIntakeResult
 
 _UPLOAD_ROUTES = frozenset(
     {
@@ -117,6 +124,7 @@ class UploadIntakePort(Protocol):
         content_type: str,
         content_sha256: str,
         size_bytes: int,
+        store_binding: StoreBindingAuthority | None = None,
     ) -> UploadIntakeResult: ...
 
     def authorize_upload(
@@ -200,6 +208,12 @@ class _ProtectedApiAdapter:
         raise NotImplementedError
 
 
+class UploadBindingAuthority(Protocol):
+    def get_active_binding(
+        self, *, owner_id: str, shop_binding_id: str, expected_setup_version: int
+    ) -> StoreBindingAuthority: ...
+
+
 class UploadApiAdapter(_ProtectedApiAdapter):
     """Translate the closed private direct-upload routes for the upload-only Lambda role."""
 
@@ -210,9 +224,79 @@ class UploadApiAdapter(_ProtectedApiAdapter):
         *,
         claims_policy: SellerClaimsPolicy,
         uploads: UploadIntakePort,
+        binding_authority: UploadBindingAuthority | None = None,
+        legacy_owner_ids: frozenset[str] | None = None,
     ) -> None:
         super().__init__(claims_policy=claims_policy)
         self._uploads = uploads
+        if legacy_owner_ids is not None and (
+            not isinstance(legacy_owner_ids, frozenset)
+            or not legacy_owner_ids
+            or any(
+                not isinstance(owner, str) or re.fullmatch(r"[a-f0-9]{64}", owner) is None
+                for owner in legacy_owner_ids
+            )
+        ):
+            raise ValueError("Legacy upload authority is invalid")
+        if binding_authority is not None and legacy_owner_ids is None:
+            raise ValueError("Bound upload intake requires explicit legacy authority")
+        self._binding_authority = binding_authority
+        self._legacy_owner_ids = legacy_owner_ids
+
+    def _resolve_upload_binding(
+        self, body: CreateUploadRequest, owner_id: str, *, native_account: bool = False
+    ) -> StoreBindingAuthority | None:
+        if body.shop_binding_id is None:
+            if native_account or (
+                self._legacy_owner_ids is not None and owner_id not in self._legacy_owner_ids
+            ):
+                raise RequestValidationError(
+                    (
+                        RequestFieldError(
+                            path="$.shop_binding_id",
+                            code="REQUIRED",
+                            message="Connect your store before submitting artwork.",
+                        ),
+                    )
+                )
+            return None
+        if self._binding_authority is None:
+            if native_account:
+                raise AccessDeniedError
+            raise InvalidRequestError
+        if native_account and self._legacy_owner_ids is None:
+            raise AccessDeniedError
+        if self._legacy_owner_ids is not None and owner_id in self._legacy_owner_ids:
+            raise AccessDeniedError
+        assert body.expected_setup_version is not None
+        changed = False
+        try:
+            binding = self._binding_authority.get_active_binding(
+                owner_id=owner_id,
+                shop_binding_id=body.shop_binding_id,
+                expected_setup_version=body.expected_setup_version,
+            )
+            if not isinstance(binding, StoreBindingAuthority):
+                raise ValueError
+            return StoreBindingAuthority.model_validate(
+                binding.model_dump(mode="python")
+            ).checked_for_owner(owner_id)
+        except ConnectionConflict:
+            changed = True
+        except Exception:
+            pass
+        # Never retain a dependency exception containing private state in public errors.
+        if changed:
+            raise RequestValidationError(
+                (
+                    RequestFieldError(
+                        path="$.shop_binding_id",
+                        code="INVALID_VALUE",
+                        message="Your store setup changed. Reopen store setup before submitting.",
+                    ),
+                )
+            )
+        raise UploadDependencyUnavailableError from None
 
     def _dispatch(
         self,
@@ -246,6 +330,9 @@ class UploadApiAdapter(_ProtectedApiAdapter):
         if route_key == "POST /v1/uploads":
             _require_path(event, expected="/v1/uploads")
             body = _parse_json_body(event, CreateUploadRequest)
+            binding = self._resolve_upload_binding(
+                body, seller.owner_id, native_account="account" in seller.groups
+            )
             result = self._uploads.create_upload(
                 owner_id=seller.owner_id,
                 idempotency_key=idempotency_key,
@@ -253,6 +340,7 @@ class UploadApiAdapter(_ProtectedApiAdapter):
                 content_type=body.content_type,
                 content_sha256=body.content_sha256,
                 size_bytes=body.size_bytes,
+                **({} if binding is None else {"store_binding": binding}),
             )
             return _upload_response(
                 result,

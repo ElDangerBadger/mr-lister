@@ -3,6 +3,7 @@ import { ThemeControl } from "../components/ThemeControl";
 import { WorkspaceLink } from "../navigation/WorkspaceNavigation";
 import mrListerIcon from "../assets/mr-lister-icon.png";
 import mrListerDark from "../assets/mr-lister-dark.png";
+import { ServiceNoticeLinks } from "./ServiceNotices";
 
 export function LandingHeader() {
   const { startSignIn, error } = useSignIn();
@@ -27,7 +28,7 @@ export function LandingHeader() {
 }
 
 export function LandingPage() {
-  const { startSignIn, error } = useSignIn();
+  const { startSignIn, startSignUp, canCreateAccount, error } = useSignIn();
   return (
     <>
       <section className="landing-welcome landing-container" aria-labelledby="welcome-heading">
@@ -55,7 +56,10 @@ export function LandingPage() {
           <button className="landing-primary-button" type="button" onClick={() => { startSignIn("/"); }}>
             Open seller workspace <ArrowIcon />
           </button>
-          <p className="landing-signin-note">Sign in to your Mr. Lister account.</p>
+          {canCreateAccount ? <>
+            <button className="button button--quiet account-signup-note" type="button" onClick={() => { startSignUp("/store-setup"); }}>Create account</button>
+            <p className="landing-signin-note">New here? Create your account to get started.</p>
+          </> : <p className="landing-signin-note">Sign in to your Mr. Lister account.</p>}
           {error !== null && <p className="landing-signin-error" role="alert">{error}</p>}
         </section>
       </section>
@@ -85,6 +89,7 @@ export function LandingFooter() {
     <footer className="landing-footer landing-container">
       <WorkspaceLink className="landing-footer-brand" to="/">Mr. Lister.</WorkspaceLink>
       <p>Made for your next great listing.</p>
+      <ServiceNoticeLinks />
       <button className="landing-footer-signin" type="button" onClick={() => { startSignIn("/"); }}>Open seller workspace</button>
       {error !== null && <p className="landing-signin-error" role="alert">{error}</p>}
     </footer>

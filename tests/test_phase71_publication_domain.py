@@ -347,8 +347,11 @@ def test_snapshot_fields_and_deadline_are_exact_contract_authority() -> None:
     metadata = {"contract_version", "snapshot_id", "fingerprint"}
 
     assert tuple(field for field in PublicationSnapshot.model_fields if field not in metadata) == (
-        phase7_publication_contract().snapshot_fields
+        "store_binding", *phase7_publication_contract().snapshot_fields
     )
+    # The new merchant authority extends modern snapshots without changing legacy bytes.
+    assert snapshot.store_binding is None
+    assert "store_binding" not in snapshot.model_dump(mode="python")
     assert snapshot.verification_deadline == snapshot.requested_at + timedelta(seconds=1800)
     assert snapshot.publication_body_fingerprint == publication_body_fingerprint()
     assert not set(phase7_publication_contract().terminal_settlement_fields).intersection(

@@ -62,6 +62,7 @@ class AuthenticatedSeller:
     owner_id: str
     log_owner_digest: str
     scopes: frozenset[str]
+    groups: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if not _OWNER_ID.fullmatch(self.owner_id):
@@ -70,6 +71,10 @@ class AuthenticatedSeller:
             raise ValueError("Logging owner digest is invalid")
         if not self.scopes or any(_OAUTH_TOKEN.fullmatch(scope) is None for scope in self.scopes):
             raise ValueError("Authorized scope set is invalid")
+        if not isinstance(self.groups, frozenset) or any(
+            not isinstance(group, str) or _GROUP.fullmatch(group) is None for group in self.groups
+        ):
+            raise ValueError("Authorized group set is invalid")
 
 
 def authenticate_seller(
@@ -98,7 +103,8 @@ def authenticate_seller(
     scopes = _parse_scopes(scope_text)
     if policy.required_scope not in scopes:
         raise AccessDeniedError
-    if policy.required_group not in _parse_groups(claims.get("cognito:groups")):
+    groups = _parse_groups(claims.get("cognito:groups"))
+    if policy.required_group not in groups:
         raise AccessDeniedError
 
     owner_id = sha256(policy.issuer.encode() + b"\0" + subject.encode()).hexdigest()
@@ -107,6 +113,7 @@ def authenticate_seller(
         owner_id=owner_id,
         log_owner_digest=log_owner_digest,
         scopes=frozenset(scopes),
+        groups=groups,
     )
 
 

@@ -14,6 +14,12 @@ from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
 from mr_lister.agent.runtime_binding import load_agentcore_runtime_binding
+from mr_lister.cloud.connection_composition import (
+    RoutedConnectionResolver,
+    connection_directory,
+    load_connection_configuration,
+    load_legacy_owner_ids,
+)
 from mr_lister.cloud.phase6_composition import (
     PinnedProfileConfiguration,
     PinnedReviewProductAuthority,
@@ -24,6 +30,7 @@ from mr_lister.cloud.phase6_machine import (
     Phase6ProviderHandler,
     Phase6SettlementHandler,
 )
+from mr_lister.connections.models import ConnectionConfig
 from mr_lister.control.agentcore import AgentCorePreparationBridge
 from mr_lister.control.dispatch import WorkDispatcher
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
@@ -73,6 +80,7 @@ class MachineCommonConfiguration:
     account_id: str
     state_table: str
     release_fingerprint: str
+    connections: ConnectionConfig | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +105,7 @@ class ProviderConfiguration:
     artifact_bucket: str
     secret_arn: str
     profile: PinnedProfileConfiguration
+    legacy_owner_ids: frozenset[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,6 +199,7 @@ def load_provider_configuration(environment: Mapping[str, object]) -> ProviderCo
             artifact_bucket=artifact_bucket,
             secret_arn=secret_arn,
             profile=profile,
+            legacy_owner_ids=load_legacy_owner_ids(environment, common.connections),
         )
     except Exception:
         pass
@@ -224,6 +234,7 @@ def compose_dispatcher_handler(
     store = DynamoDBSellerControlStore(
         client=dynamodb,
         table_name=configuration.common.state_table,
+        binding_guard=connection_directory(configuration.common.connections, dynamodb),
     )
     dispatcher = WorkDispatcher(
         store=store,
@@ -253,6 +264,7 @@ def compose_preparation_handler(
     store = DynamoDBSellerControlStore(
         client=dynamodb,
         table_name=configuration.common.state_table,
+        binding_guard=connection_directory(configuration.common.connections, dynamodb),
     )
     bridge = AgentCorePreparationBridge(
         store=store,
@@ -288,17 +300,25 @@ def compose_provider_handler(
         common.region,
         required_methods=("get_secret_value",),
     )
-    store = DynamoDBSellerControlStore(client=dynamodb, table_name=common.state_table)
+    directory = connection_directory(common.connections, dynamodb)
+    store = DynamoDBSellerControlStore(
+        client=dynamodb, table_name=common.state_table, binding_guard=directory
+    )
     worker_control = WorkerControlService(store=store)
     resolver = SecretsManagerOwnerPrintifyConnectionResolver(
         client=cast(Any, secrets),
         secret_arn=configuration.secret_arn,
     )
+    if common.connections is not None:
+        resolver = RoutedConnectionResolver(
+            legacy=resolver, directory=directory, secrets=secrets, config=common.connections
+        )
     resources = OwnerBoundProviderDraftResources(
         connection_resolver=resolver,
         s3_client=cast(Any, s3),
         artifact_bucket=configuration.artifact_bucket,
         bucket_owner_account_id=common.account_id,
+        legacy_owner_ids=configuration.legacy_owner_ids,
     )
     worker = Phase6ProductMachineWorker(
         store=store,
@@ -323,6 +343,7 @@ def compose_settlement_handler(
     store = DynamoDBSellerControlStore(
         client=dynamodb,
         table_name=configuration.common.state_table,
+        binding_guard=connection_directory(configuration.common.connections, dynamodb),
     )
     control = SellerControlService(store=store)
     preparation = PreparationFailureReconciler(store=store, control=control)
@@ -430,6 +451,9 @@ def _common(environment: Mapping[str, object]) -> MachineCommonConfiguration:
         account_id=account_id,
         state_table=state_table,
         release_fingerprint=release_fingerprint,
+        connections=load_connection_configuration(
+            environment, region=region, environment_name=environment_name
+        ),
     )
 
 

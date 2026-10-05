@@ -6,8 +6,16 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, Field, StrictInt, StringConstraints, model_validator
+from pydantic import (
+    AwareDatetime,
+    Field,
+    StrictInt,
+    StringConstraints,
+    model_serializer,
+    model_validator,
+)
 
+from mr_lister.connections.binding import StoreBindingAuthority
 from mr_lister.contracts import ArtworkAnalysis, ContractModel
 from mr_lister.contracts.presentation import ProductMockupEvidence
 from mr_lister.control.economics import EtsyUsStandardEstimate
@@ -35,6 +43,25 @@ class ControlModel(ContractModel):
     """Base for records that must never be confused with legacy contract 1.0.0."""
 
     contract_version: ControlContractVersion = CONTROL_CONTRACT_VERSION
+
+
+class StoreBoundControlModel(ControlModel):
+    """Omit absent destination authority so existing immutable records retain their hashes."""
+
+    store_binding: StoreBindingAuthority | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_shape(self, handler):
+        value = handler(self)
+        if self.store_binding is None:
+            value.pop("store_binding", None)
+        return value
+
+    @model_validator(mode="after")
+    def store_binding_matches_owner(self):
+        if self.store_binding is not None and hasattr(self, "owner_id"):
+            self.store_binding.checked_for_owner(self.owner_id)
+        return self
 
 
 class ControlJobState(StrEnum):
@@ -244,7 +271,7 @@ CONTROL_RECOVERY_BINDINGS: dict[RecoveryAction, tuple[ControlJobState, WorkType]
 }
 
 
-class ControlJobRecord(ControlModel):
+class ControlJobRecord(StoreBoundControlModel):
     owner_id: OwnerId
     job_id: SafeId
     record_version: int = Field(default=0, ge=0)
@@ -505,7 +532,7 @@ class ReviewContent(ControlModel):
         return self
 
 
-class SourceArtifactRecord(ControlModel):
+class SourceArtifactRecord(StoreBoundControlModel):
     """Pinned, owner-scoped source used by the durable preparation runtime."""
 
     job_id: SafeId
@@ -733,7 +760,7 @@ class ReconciliationObservationRecord(ControlModel):
     observed_at: datetime
 
 
-class ProductSyncRecord(ControlModel):
+class ProductSyncRecord(StoreBoundControlModel):
     sync_id: SafeId
     job_id: SafeId
     review_version: int = Field(ge=1)
@@ -755,6 +782,8 @@ class ProductSyncRecord(ControlModel):
 
     @model_validator(mode="after")
     def variant_evidence_is_unique(self) -> ProductSyncRecord:
+        if self.store_binding is not None and self.printify_shop_id != self.store_binding.shop_id:
+            raise ValueError("Synchronization shop differs from the pinned store binding")
         variant_ids = tuple(variant.variant_id for variant in self.variants)
         if len(set(variant_ids)) != len(variant_ids):
             raise ValueError("Product synchronization variants must be unique")

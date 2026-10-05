@@ -295,10 +295,13 @@ def _entity_for_root(record: BaseModel) -> str:
 class DynamoDBPublicationExecutionStore:
     """Strong-read, full-payload-CAS implementation of ``PublicationExecutionStore``."""
 
-    def __init__(self, *, client: Any, table_name: str) -> None:
+    def __init__(self, *, client: Any, table_name: str, binding_guard: Any | None = None) -> None:
         self._client = client
         self._table_name = table_name
-        self._request_store = DynamoDBPublicationStore(client=client, table_name=table_name)
+        self._binding_guard = binding_guard
+        self._request_store = DynamoDBPublicationStore(
+            client=client, table_name=table_name, binding_guard=binding_guard
+        )
 
     def resolve_execution_receipt(
         self,
@@ -767,6 +770,16 @@ class DynamoDBPublicationExecutionStore:
                 return PublicationExecutionCommitResult(receipt=existing)
             raise PublicationIdempotencyConflictError()
         items = self._execution_transaction_items(commit)
+        if commit.new_call_claim is not None and commit.expected.snapshot.store_binding is not None:
+            try:
+                condition = self._binding_guard.current_epoch_condition(
+                    commit.expected.snapshot.store_binding
+                )
+                if not isinstance(condition, dict) or set(condition) != {"ConditionCheck"}:
+                    raise ValueError
+                items.append(condition)
+            except Exception:
+                self._invalid("Pinned store connection is unavailable")
         try:
             self._transact(items)
         except PublicationConflictError:

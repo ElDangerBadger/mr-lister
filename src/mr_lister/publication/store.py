@@ -218,6 +218,7 @@ def validate_publication_request_authority(authority: PublicationRequestAuthorit
         source.owner_id != job.owner_id
         or source.job_id != job.job_id
         or source.fingerprint != job.source_artifact_fingerprint
+        or source.store_binding != job.store_binding
         or review.product_profile_fingerprint != source.product_profile_fingerprint
     ):
         raise _invalid_authority("The pinned source artifact does not match the approved job")
@@ -231,6 +232,7 @@ def validate_publication_request_authority(authority: PublicationRequestAuthorit
         or sync.payload_fingerprint != job.provider_payload_fingerprint
         or sync.fingerprint != job.product_sync_fingerprint
         or sync.printify_shop_id is None
+        or sync.store_binding != job.store_binding
         or sync.provider_locked
         or sync.provider_published
     ):

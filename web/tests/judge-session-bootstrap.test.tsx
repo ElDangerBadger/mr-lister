@@ -45,6 +45,13 @@ function endpoints() {
 }
 
 describe("credential-free judge entry in the actual application", () => {
+  it.each(["privacy", "terms"])("opens public %s without restoring a judge session or loading private work", async (kind) => {
+    const api = endpoints();
+    await mount(`/judge/${kind}`);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(kind === "privacy" ? "Your privacy, in plain language." : "A few things to agree on.");
+    expect(api.requests).toEqual([]);
+    expect(screen.getByRole("link", { name: "Back to Mr. Lister" })).toHaveAttribute("href", "/judge");
+  });
   it("waits for explicit entry without a modal, opens the workspace, and signs out in judge mode", async () => {
     const api = endpoints();
     const popup = vi.spyOn(window, "open");

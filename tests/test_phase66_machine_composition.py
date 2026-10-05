@@ -51,6 +51,8 @@ def _base_environment() -> dict[str, object]:
         "MR_LISTER_AWS_ACCOUNT_ID": ACCOUNT,
         "MR_LISTER_STATE_TABLE": f"mr-lister-phase6-{ENVIRONMENT}",
         "MR_LISTER_RELEASE_FINGERPRINT": RELEASE,
+        # Static legacy eligibility is separate from the exact secret primary/delegation checks.
+        "MR_LISTER_LEGACY_OWNER_IDS": '["' + "a" * 64 + '"]',
         "MR_LISTER_PREPARE_MACHINE_ARN": f"{prefix}-prepare",
         "MR_LISTER_SYNCHRONIZE_PRODUCT_MACHINE_ARN": f"{prefix}-synchronize-product",
         "MR_LISTER_RECONCILE_PRODUCT_MACHINE_ARN": f"{prefix}-reconcile-product",

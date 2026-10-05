@@ -30,6 +30,7 @@ from mr_lister.publication.models import (
     PublicationSnapshot,
     PublicationWorkRequest,
     SafeId,
+    StoreBoundPublicationModel,
     UtcDateTime,
 )
 
@@ -692,7 +693,7 @@ class ExpectedVariantEconomics(PublicationModel):
     production_cost_cents: StrictInt = Field(ge=0)
 
 
-class PublicationProviderAuthority(PublicationModel):
+class PublicationProviderAuthority(StoreBoundPublicationModel):
     """Re-read application-owned authority proven before any provider call is claimed."""
 
     provider_authority_id: SafeId
@@ -1610,6 +1611,7 @@ class PublicationExecutionAuthority(PublicationModel):
                 or provider_authority.release_manifest_fingerprint
                 != snapshot.release_manifest_fingerprint
                 or provider_authority.printify_shop_id != snapshot.printify_shop_id
+                or provider_authority.store_binding != snapshot.store_binding
                 or provider_authority.printify_product_id != snapshot.printify_product_id
                 or provider_authority.printify_image_id != snapshot.printify_image_id
                 or provider_authority.product_payload_fingerprint

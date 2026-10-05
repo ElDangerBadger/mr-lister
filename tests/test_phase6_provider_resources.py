@@ -259,6 +259,7 @@ def _resources(
         v1_transport_factory=lambda: transport,
         v2_transport_factory=lambda: v2_transport or transport,
         clock=lambda: NOW,
+        legacy_owner_ids=frozenset({OWNER}),
     )
 
 

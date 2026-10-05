@@ -236,8 +236,19 @@ def test_source_bundle_is_the_exact_local_guard_import_closure(tmp_path: Path) -
         (source / relative).read_bytes() == b"" for relative in CAPABILITY_FREE_PACKAGE_INIT_PATHS
     )
     assert "mr_lister.release.phase6" not in closure
+    # The historical guard needs only the credential-free type referenced by control models.
+    assert {module for module in closure if module.startswith("mr_lister.connections")} == {
+        "mr_lister.connections",
+        "mr_lister.connections.binding",
+    }
+    assert {path for path in paths if path.startswith("mr_lister/connections/")} == {
+        "mr_lister/connections/__init__.py",
+        "mr_lister/connections/binding.py",
+    }
 
     forbidden = (
+        "mr_lister/accounts/",
+        "mr_lister/cloud/connection_composition.py",
         "mr_lister/production/",
         "mr_lister/workflow/",
         "mr_lister/publication/execution_dynamodb.py",

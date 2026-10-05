@@ -1,0 +1,20 @@
+.account-setup-page { max-width: 1060px; padding-block: clamp(2rem, 6vw, 5rem); }
+.account-setup-intro { max-width: 660px; margin-bottom: 2.5rem; }
+.account-setup-intro h1 { font-size: clamp(2rem, 4.5vw, 3.5rem); letter-spacing: -.04em; line-height: 1.08; margin-block: .7rem 1rem; }
+.account-setup-intro > p:last-child { color: var(--muted); font-size: 1.1rem; }
+.account-setup-layout { display: grid; grid-template-columns: minmax(230px, .8fr) minmax(0, 1.3fr); gap: clamp(1.5rem, 5vw, 4rem); align-items: start; }
+.account-setup-steps { display: grid; gap: 1.8rem; list-style: none; margin: 1rem 0; padding: 0; }
+.account-setup-steps li { display: flex; gap: 1rem; align-items: flex-start; }
+.account-step-number { display: grid; flex: 0 0 34px; height: 34px; place-items: center; border: 1px solid var(--line); border-radius: 50%; font-weight: 700; }
+.account-setup-steps li:first-child .account-step-number { color: var(--green); border-color: currentColor; }
+.account-setup-steps h2 { margin: .1rem 0 .3rem; font-size: 1rem; }
+.account-setup-steps p { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.5; }
+.account-connection-card { border: 1px solid var(--line); border-radius: 20px; padding: clamp(1.5rem, 4vw, 2.5rem); background: var(--paper); }
+.account-connection-mark { display: grid; place-items: center; width: 58px; height: 58px; border: 1px solid var(--line); border-radius: 16px; margin-bottom: 1.8rem; }
+.account-connection-card h2 { font-size: clamp(1.4rem, 2.5vw, 1.8rem); letter-spacing: -.025em; margin-block: .5rem 1rem; }
+.account-connection-card > p { line-height: 1.65; }
+.account-connection-status { display: flex; align-items: center; gap: .6rem; width: fit-content; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; padding: .6rem .9rem; font-size: .85rem; margin-top: 1.5rem; }
+.account-connection-status > span { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: currentColor; opacity: .6; }
+.account-setup-note { color: var(--muted); font-size: .9rem; margin-top: 1.5rem; }
+.account-signup-note { margin-top: 1rem; font-size: .85rem; }
+@media (max-width: 680px) { .account-setup-layout { grid-template-columns: 1fr; } .account-setup-steps { gap: 1.2rem; margin-bottom: 1rem; } }

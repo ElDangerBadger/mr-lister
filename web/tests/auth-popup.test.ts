@@ -37,12 +37,12 @@ function fakePopup() {
   return { popup, stored, handle: popup as unknown as Window };
 }
 
-async function authorizedPopup(fetcher = vi.fn<typeof fetch>().mockResolvedValue(tokenResponse()), runtimeConfig = config) {
+async function authorizedPopup(fetcher = vi.fn<typeof fetch>().mockResolvedValue(tokenResponse()), runtimeConfig = config, signup = false) {
   const fake = fakePopup();
   const open = vi.spyOn(window, "open").mockReturnValue(fake.handle);
   const session = new MemoryAuthSession();
   const coordinator = new OAuthCoordinator(runtimeConfig, session, window.sessionStorage, fetcher, vi.fn());
-  const pending = coordinator.startPopupSignIn("/jobs/job_popup");
+  const pending = signup ? coordinator.startPopupSignUp("/store-setup") : coordinator.startPopupSignIn("/jobs/job_popup");
   // Attach rejection handling while tests exercise cancellation and timeouts.
   const outcome = pending.catch((reason: unknown) => reason);
   expect(open).toHaveBeenCalledOnce();
@@ -63,6 +63,19 @@ afterEach(() => {
 });
 
 describe("popup sign-in", () => {
+  it("uses signup with the same one-use popup callback checks and returns to store setup", async () => {
+    const auth = await authorizedPopup(undefined, { ...config, account_access: { self_service_signup: true, issuer: "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_Sellers", support_email: "support@example.com", notices_version: "2026-10-05" as const } }, true);
+    expect(auth.target.pathname).toBe("/signup");
+    expect(auth.target.origin).toBe(new URL(config.cognito_authorize_url).origin);
+    expect(auth.target.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(auth.target.searchParams.has("identity_provider")).toBe(false);
+    auth.send({ type: callbackType, search: `?code=one-use&state=${auth.state}` }, "https://attacker.example");
+    expect(auth.fetcher).not.toHaveBeenCalled();
+    auth.send({ type: callbackType, search: `?code=one-use&state=${auth.state}` });
+    await expect(auth.pending).resolves.toBe("/store-setup");
+    expect(auth.session.getStatus()).toBe("authenticated");
+    expect(window.sessionStorage.length).toBe(0);
+  });
   it("uses judge federation and its callback while retaining the original judge workspace", async () => {
     window.history.replaceState(null, "", "/judge/jobs/job_popup");
     const judgeConfig: RuntimeConfig = {

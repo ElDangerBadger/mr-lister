@@ -67,8 +67,12 @@ def product_sync_record_fingerprint(value: BaseModel | Mapping[str, Any]) -> str
             payload["synchronized_at"] = payload["synchronized_at"].isoformat()
     if payload.get("printify_shop_id") is None:
         payload.pop("printify_shop_id", None)
-    expected_fields = _PRODUCT_SYNC_FINGERPRINT_FIELDS | (
-        {"printify_shop_id"} if "printify_shop_id" in payload else set()
+    if payload.get("store_binding") is None:
+        payload.pop("store_binding", None)
+    expected_fields = (
+        _PRODUCT_SYNC_FINGERPRINT_FIELDS
+        | ({"printify_shop_id"} if "printify_shop_id" in payload else set())
+        | ({"store_binding"} if "store_binding" in payload else set())
     )
     if set(payload) != expected_fields:
         raise ValueError("Product synchronization fingerprint material has unexpected fields")

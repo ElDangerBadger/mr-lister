@@ -24,6 +24,11 @@ from mr_lister.agent.phase6 import (
     create_phase6_agentcore_runtime,
 )
 from mr_lister.agent.phase6_producer import PinnedSourcePreparedReviewProducer
+from mr_lister.connections.configuration import (
+    connection_directory,
+    load_connection_configuration,
+)
+from mr_lister.connections.models import ConnectionConfig
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
 from mr_lister.control.judge_pricing import JudgePricingPolicy, load_judge_pricing_policy
 from mr_lister.control.worker_service import WorkerControlService
@@ -89,6 +94,7 @@ class Phase6AgentCoreConfiguration:
     intelligence: BedrockSettings
     controller_model_id: str
     judge_pricing_policy: JudgePricingPolicy | None = None
+    connections: ConnectionConfig | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,6 +238,9 @@ def load_phase6_agentcore_configuration(
             intelligence=intelligence,
             controller_model_id=controller_model_id,
             judge_pricing_policy=load_judge_pricing_policy(environment),
+            connections=load_connection_configuration(
+                environment, region=region, environment_name=environment_name
+            ),
         )
     except Exception:
         pass
@@ -264,6 +273,7 @@ def compose_phase6_agentcore_runtime(
     store = DynamoDBSellerControlStore(
         client=dynamodb_client,
         table_name=configuration.state_table,
+        binding_guard=connection_directory(configuration.connections, dynamodb_client),
     )
     profiles = AgentCorePinnedProductAuthority(configuration.profile.exact)
     source_client = ExactPinnedSourceS3(

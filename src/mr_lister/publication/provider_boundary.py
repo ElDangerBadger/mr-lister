@@ -685,6 +685,7 @@ class PrintifyPublicationBoundary:
                 owner_id=credential.owner_id,
                 printify_shop_id=credential.printify_shop_id,
                 bearer_token=credential.bearer_token.get_secret_value(),
+                store_binding=credential.store_binding,
             )
         except Exception:
             raise PublicationProviderInputError(
@@ -693,6 +694,7 @@ class PrintifyPublicationBoundary:
         if (
             self._credential.owner_id != self._authority.owner_id
             or self._credential.printify_shop_id != self._authority.printify_shop_id
+            or self._credential.store_binding != self._authority.store_binding
         ):
             raise PublicationProviderInputError(
                 "Publication credential does not match owner/shop authority"

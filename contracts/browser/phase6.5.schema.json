@@ -219,12 +219,38 @@
           "title": "Content Type",
           "type": "string"
         },
+        "expected_setup_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Setup Version"
+        },
         "filename": {
           "description": "PNG basename without path or control characters",
           "maxLength": 255,
           "minLength": 1,
           "title": "Filename",
           "type": "string"
+        },
+        "shop_binding_id": {
+          "anyOf": [
+            {
+              "pattern": "^binding_[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shop Binding Id"
         },
         "size_bytes": {
           "exclusiveMinimum": 0,

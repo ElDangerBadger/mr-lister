@@ -181,6 +181,22 @@ describe("BrowserApiClient", () => {
     await expect(client.getUpload("upload_other")).rejects.toBeInstanceOf(ContractError);
   });
 
+  it("pins new account uploads to a copied setup binding without browser-selected provider authority", async () => {
+    const session = new MemoryAuthSession(); session.set("account-seller-token", 3600);
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ upload: { upload_id: "upload_1", job_id: "job_1", status: "open", record_version: 0 }, authorization: null }))));
+    const binding = { shop_binding_id: `binding_${"a".repeat(32)}`, expected_setup_version: 3 };
+    const client = new BrowserApiClient(session, fetcher, binding);
+    binding.shop_binding_id = `binding_${"b".repeat(32)}`; binding.expected_setup_version = 4;
+    const file = new File([new Uint8Array([137, 80, 78, 71])], "art.png", { type: "image/png" });
+    await client.createUpload(file, "a".repeat(64), "web:create:stable");
+    expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string)).toEqual({ filename: "art.png", content_type: "image/png", content_sha256: "a".repeat(64), size_bytes: 4, shop_binding_id: `binding_${"a".repeat(32)}`, expected_setup_version: 3 });
+    const legacy = new BrowserApiClient(session, fetcher);
+    await legacy.createUpload(file, "a".repeat(64), "web:create:legacy");
+    expect(JSON.parse(fetcher.mock.calls[1]![1]!.body as string)).toEqual({ filename: "art.png", content_type: "image/png", content_sha256: "a".repeat(64), size_bytes: 4 });
+    expect(() => new BrowserApiClient(session, fetcher, { ...binding, expected_setup_version: 0 })).toThrow();
+    expect(() => new BrowserApiClient(session, fetcher, { ...binding, owner_id: "browser-owner" } as typeof binding)).toThrow();
+  });
+
   it.each([500, 502, 503, 504])("keeps a gateway support reference without replaying a failed completion (%s)", async (status) => {
     const session = new MemoryAuthSession();
     session.set("access", 3600, "refresh");

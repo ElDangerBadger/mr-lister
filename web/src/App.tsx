@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { BrowserRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef } from "react";
+import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { AppContext, useAppDependencies, type AppDependencies } from "./app-context";
 import { useSessionStatus } from "./auth/use-session";
 import { SignInProvider, useSignIn } from "./auth/sign-in";
@@ -18,6 +18,10 @@ import { DraftCancellationProvider } from "./navigation/DraftCancellation";
 import { JudgeModeBanner } from "./components/JudgeModeBanner";
 import { JudgeSessionCoordinator } from "./auth/judge-session";
 import { JudgeSessionEntry } from "./auth/JudgeSessionEntry";
+import { AccountSetupPage, useAccountIdentity, useAccountSetup, useAccountWorkflowToken, type AccountSetupController } from "./auth/AccountSetupPage";
+import type { ConnectedStore } from "./store-setup/connection-adapter";
+import { ServiceNoticeLinks, ServiceNoticePage } from "./pages/ServiceNotices";
+import { areServiceNoticesReviewed } from "./service-notices";
 import "./styles.css";
 import "./landing-fonts.css";
 import "./landing.css";
@@ -32,6 +36,37 @@ export function App({ dependencies }: { dependencies: AppDependencies }) {
 }
 
 export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
+  const identity = useAccountIdentity(dependencies.auth.session, dependencies.judgeAccess === undefined ? dependencies.accountConfig : undefined);
+  const location = useLocation();
+  if (location.pathname === "/privacy" || location.pathname === "/terms") return <AppContext.Provider value={dependencies}><ServiceNoticePage kind={location.pathname === "/privacy" ? "privacy" : "terms"} account={identity !== null} /></AppContext.Provider>;
+  if (identity !== null) return <AccountBoundary key={identity} identity={identity} dependencies={dependencies} />;
+  return <WorkflowRoutes dependencies={dependencies} />;
+}
+
+function AccountBoundary({ identity, dependencies }: { identity: string; dependencies: AppDependencies }) {
+  const setup = useAccountSetup(identity, dependencies.accountApi, dependencies.auth.session);
+  const workflowToken = useAccountWorkflowToken(dependencies.auth.session, dependencies.accountConfig, identity);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const store = setup.value?.state === "ready" && setup.value.connection_method === "personal_token" ? setup.value.store : null;
+  const bindingId = store?.shop_binding_id;
+  const setupVersion = setup.value?.record_version;
+  const enabled = dependencies.accountConfig?.connectedWorkflow === true && dependencies.accountConfig.connectionMethod === "personal_token" && areServiceNoticesReviewed(dependencies.accountConfig.noticeVersion, dependencies.accountConfig.supportEmail);
+  const factory = dependencies.createAccountWorkflowApi;
+  const workflowApi = useMemo(() => enabled && bindingId !== undefined && setupVersion !== undefined && factory !== undefined ? factory({ shop_binding_id: bindingId, expected_setup_version: setupVersion }) : null, [enabled, bindingId, setupVersion, factory]);
+  const canOpen = workflowToken && workflowApi !== null && !setup.loading && setup.error === null;
+  const workflowDependencies = useMemo(() => workflowApi === null ? dependencies : { ...dependencies, api: workflowApi }, [dependencies, workflowApi]);
+  function continueToWorkspace(connection: ConnectedStore) {
+    if (!enabled || !workflowToken) return;
+    setup.accept(connection.setup);
+    void navigate("/", { replace: true });
+  }
+  const authenticatedCallback = location.pathname === "/auth/callback";
+  if (canOpen && location.pathname !== "/store-setup" && !authenticatedCallback) return <WorkflowRoutes dependencies={workflowDependencies} />;
+  return <AppContext.Provider value={dependencies}><SignInProvider><AccountWorkspace identity={identity} dependencies={dependencies} controller={setup} onContinue={continueToWorkspace} canonicalize={authenticatedCallback || !setup.loading && !canOpen} /></SignInProvider></AppContext.Provider>;
+}
+
+function WorkflowRoutes({ dependencies }: { dependencies: AppDependencies }) {
   const status = useSessionStatus(dependencies.auth.session);
   const location = useLocation();
   const judgeMode = dependencies.judgeAccess !== undefined;
@@ -67,13 +102,14 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
             <Routes>
               <Route path="/" element={<HomePage />} />
               <Route path="/auth/callback" element={<AuthCallbackPage />} />
+              {!judgeMode && <Route path="/store-setup" element={<RequireSession status={status}><LegacyStoreSetup /></RequireSession>} />}
               <Route path="/jobs/:jobId" element={<RequireSession status={status}><JobReviewPage /></RequireSession>} />
               <Route path="/uploads/:uploadId" element={<RequireSession status={status}><UploadPage /></RequireSession>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </main>
-          {landing ? <LandingFooter /> : <footer>
-            Made for your next great listing. You review, approve, and confirm before anything is published.
+          {landing ? <LandingFooter /> : <footer className="service-notice-footer">
+            <span>Made for your next great listing. You review, approve, and confirm before anything is published.</span><ServiceNoticeLinks />
           </footer>}
         </div>
       </BatchWorkspaceProvider>
@@ -83,6 +119,28 @@ export function AppRoutes({ dependencies }: { dependencies: AppDependencies }) {
       </SignInProvider>
     </AppContext.Provider>
   );
+}
+
+function AccountWorkspace({ identity, dependencies, controller, onContinue, canonicalize }: { identity: string; dependencies: AppDependencies; controller: AccountSetupController; onContinue: (connection: ConnectedStore) => void; canonicalize: boolean }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    document.title = "Your account | Mr. Lister";
+    if (canonicalize && location.pathname !== "/store-setup") void navigate("/store-setup", { replace: true });
+  }, [location.pathname, navigate, canonicalize]);
+  return <div className="app-shell">
+    <a className="skip-link" href="#main-content">Skip to main content</a>
+    <header className="site-header"><div className="site-header-inner">
+      <Link className="brand" to="/store-setup" aria-label="Mr. Lister account home"><img className="brand-icon" src={mrListerBanner} alt="" width="64" height="64" /><span>Mr. Lister</span></Link>
+      <div className="header-controls"><ThemeControl /><div className="session-controls"><span className="session-dot session-dot--authenticated" aria-hidden="true" /><span>Signed in</span><button className="button button--quiet" type="button" onClick={() => { dependencies.auth.signOut(); void navigate("/", { replace: true }); }}>Sign out</button></div></div>
+    </div></header>
+    <main id="main-content" tabIndex={-1}><AccountSetupPage key={identity} identity={identity} controller={controller} onContinue={onContinue} /></main>
+    <footer className="service-notice-footer"><span>Made for your next great listing.</span><ServiceNoticeLinks /></footer>
+  </div>;
+}
+
+function LegacyStoreSetup() {
+  return <section className="page narrow-page"><p className="eyebrow">Your workspace</p><h1>Your store is already managed.</h1><p>Continue to your existing workspace to work on your listings.</p><WorkspaceLink className="button button--primary" to="/">Open workspace</WorkspaceLink></section>;
 }
 
 function RouteFocusManager({ status, judgeMode }: { status: "anonymous" | "authenticated"; judgeMode: boolean }) {
@@ -104,6 +162,7 @@ function RouteFocusManager({ status, judgeMode }: { status: "anonymous" | "authe
 function routeTitle(pathname: string, status: "anonymous" | "authenticated"): string {
   if (pathname === "/") return status === "anonymous" ? "Mr. Lister — Your next listing, made simpler." : "Uploads | Mr. Lister";
   if (pathname === "/auth/callback") return "Secure sign-in | Mr. Lister";
+  if (pathname === "/store-setup") return "Your account | Mr. Lister";
   if (pathname.startsWith("/jobs/")) return "Seller review | Mr. Lister";
   if (pathname.startsWith("/uploads/")) return "Private upload | Mr. Lister";
   return "Not found | Mr. Lister";

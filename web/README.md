@@ -55,3 +55,24 @@ with deterministic local API responses. Passing offline checks does not verify a
 
 OAuth access and refresh tokens stay in memory. Session storage contains only one short-lived
 PKCE transaction with state, verifier, and an allowlisted return path.
+
+## Staged account and Printify setup
+
+The primary runtime may configure `account_access`. Absent optional fields retain the legacy
+owner and judge experience. Public signup and the connected account workflow stay disabled
+until the runtime includes a valid public `support_email` and the current operator-reviewed
+`notices_version` (`2026-10-05`). The browser checks these prerequisites as well as the runtime
+parser; the marker is publication configuration, not a user-facing toggle.
+
+The source privacy notice and terms remain drafts pending the user's review and a confirmed
+public contact. Do not set the reviewed marker merely because an email address is syntactically
+valid or appears in a local preview. Without the marker, `/privacy` and `/terms` explicitly
+show the operator-review draft state. Public notice routes, including their `/judge` variants,
+do not mount private workflow providers or restore a judge session.
+
+Printify connection requires an unchecked-by-default merchant authorization. Validation sends
+the token plus accepted privacy/terms versions; backend receipt time comes from the server.
+The form clears its token and authorization when the account changes, logs out, or restarts
+setup. Candidate discovery verifies store-reading access only. A connected workspace still
+requires the matching server-ready store binding, current account access, and the explicit
+connected-workflow capability.

@@ -473,6 +473,14 @@ const runtimeConfigBaseSchema = z.strictObject({
   client_id: z.string().min(1).max(256),
   redirect_uri: z.string().url(),
   scopes: z.tuple([z.literal("openid"), z.literal("mr-lister-api/seller")]),
+  account_access: z.strictObject({
+    self_service_signup: z.boolean(),
+    issuer: httpsUrl,
+    connection_method: z.enum(["unavailable", "personal_token", "oauth"]).optional(),
+    connected_workflow: z.boolean().optional(),
+    support_email: z.string().email().max(254).optional(),
+    notices_version: z.literal("2026-10-05").optional(),
+  }).optional(),
   judge_access: z.strictObject({
     identity_provider: z.literal("MrListerJudge"),
     upstream_logout_url: httpsUrl,
@@ -517,6 +525,23 @@ export function runtimeConfigSchemaForOrigin(applicationOrigin: string, workspac
     }
     if ((workspaceBasePath === "/judge") !== (value.judge_access !== undefined)) {
       context.addIssue({ code: "custom", path: ["judge_access"], message: "Judge configuration must match the judge workspace" });
+    }
+    if (value.account_access !== undefined) {
+      const issuer = /^https:\/\/cognito-idp\.([a-z0-9-]+)\.amazonaws\.com\/([a-z0-9-]+_[A-Za-z0-9]+)$/u.exec(value.account_access.issuer);
+      const region = issuer?.[1];
+      if (workspaceBasePath !== "" || value.judge_access !== undefined
+        || issuer === null || region === undefined || !issuer[2]?.startsWith(`${region}_`)
+        || !parsedEndpoints.every((endpoint) => endpoint.hostname.endsWith(`.auth.${region}.amazoncognito.com`))) {
+        context.addIssue({ code: "custom", path: ["account_access"], message: "Account configuration must match the primary authentication authority" });
+      }
+      if (value.account_access.connected_workflow === true
+        && (value.account_access.connection_method === undefined || value.account_access.connection_method === "unavailable")) {
+        context.addIssue({ code: "custom", path: ["account_access", "connected_workflow"], message: "Connected workflow requires a configured connection method" });
+      }
+      if ((value.account_access.self_service_signup || value.account_access.connected_workflow === true)
+        && (value.account_access.support_email === undefined || value.account_access.notices_version === undefined)) {
+        context.addIssue({ code: "custom", path: ["account_access"], message: "Public account access requires reviewed notices and a support contact" });
+      }
     }
     if (value.judge_access !== undefined) {
       const upstream = new URL(value.judge_access.upstream_logout_url);

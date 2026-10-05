@@ -11,7 +11,14 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 from pydantic.json_schema import JsonSchemaMode, models_json_schema
 
 from mr_lister.control.models import (
@@ -67,6 +74,23 @@ class CreateUploadRequest(BrowserContractModel):
     content_type: Literal["image/png"]
     content_sha256: Fingerprint
     size_bytes: int = Field(gt=0, le=PHASE6_MAX_SOURCE_ARTWORK_BYTES)
+    shop_binding_id: Annotated[str, StringConstraints(pattern=r"^binding_[a-f0-9]{32}$")] | None = (
+        Field(
+            default=None,
+            exclude_if=lambda value: value is None,
+        )
+    )
+    expected_setup_version: int | None = Field(
+        default=None,
+        ge=1,
+        exclude_if=lambda value: value is None,
+    )
+
+    @model_validator(mode="after")
+    def store_reference_is_complete(self) -> CreateUploadRequest:
+        if (self.shop_binding_id is None) != (self.expected_setup_version is None):
+            raise ValueError("Store selection requires its binding and current setup version")
+        return self
 
     @field_validator("filename")
     @classmethod

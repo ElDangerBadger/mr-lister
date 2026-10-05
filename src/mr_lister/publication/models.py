@@ -13,9 +13,11 @@ from pydantic import (
     Field,
     StrictInt,
     StringConstraints,
+    model_serializer,
     model_validator,
 )
 
+from mr_lister.connections.binding import StoreBindingAuthority
 from mr_lister.publication.contract import (
     PHASE7_PUBLICATION_CONTRACT_VERSION,
     PublicationPermitState,
@@ -57,6 +59,27 @@ class PublicationModel(BaseModel):
     contract_version: PublicationContractVersion = PHASE7_PUBLICATION_CONTRACT_VERSION
 
 
+class StoreBoundPublicationModel(PublicationModel):
+    """Optional destination extension that leaves every legacy fingerprint unchanged."""
+
+    store_binding: StoreBindingAuthority | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_shape(self, handler):
+        value = handler(self)
+        if self.store_binding is None:
+            value.pop("store_binding", None)
+        return value
+
+    @model_validator(mode="after")
+    def store_binding_matches_destination(self):
+        if self.store_binding is not None:
+            self.store_binding.checked_for_owner(self.owner_id)
+            if self.store_binding.shop_id != self.printify_shop_id:
+                raise ValueError("Publication shop differs from the pinned store binding")
+        return self
+
+
 class PublicationWorkStatus(StrEnum):
     """The only work status authorized by the request-creation slice."""
 
@@ -67,7 +90,7 @@ class PublicationEventName(StrEnum):
     PUBLICATION_REQUESTED = "PUBLICATION_REQUESTED"
 
 
-class PublicationSnapshot(PublicationModel):
+class PublicationSnapshot(StoreBoundPublicationModel):
     """The exact immutable authority frozen before any publication work can run."""
 
     snapshot_id: SafeId

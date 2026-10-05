@@ -2,13 +2,17 @@ import { createContext, useContext, useEffect, useId, useRef, useState, type Rea
 import { useNavigate } from "react-router-dom";
 import { useAppDependencies } from "../app-context";
 import { AuthError } from "./session";
+import { areServiceNoticesReviewed } from "../service-notices";
 
 interface SignInFlow {
   startSignIn: (returnPath: string) => void;
+  startSignUp: (returnPath: string) => void;
+  canCreateAccount: boolean;
   error: string | null;
 }
 
 type SignInState = {
+  mode: "signin" | "signup";
   phase: "popup" | "redirect" | "error";
   returnPath: string;
   message: string | null;
@@ -17,7 +21,8 @@ type SignInState = {
 const SignInContext = createContext<SignInFlow | null>(null);
 
 export function SignInProvider({ children }: { children: ReactNode }) {
-  const { auth } = useAppDependencies();
+  const { auth, accountConfig, judgeAccess } = useAppDependencies();
+  const canCreateAccount = judgeAccess === undefined && accountConfig?.selfServiceSignup === true && auth.startSignUp !== undefined && areServiceNoticesReviewed(accountConfig.noticeVersion, accountConfig.supportEmail);
   const navigate = useNavigate();
   const [state, setState] = useState<SignInState | null>(null);
   const generation = useRef(0);
@@ -64,35 +69,38 @@ export function SignInProvider({ children }: { children: ReactNode }) {
     if (state?.phase === "error") heading.current?.focus();
   }, [state?.phase]);
 
-  const fail = (operation: number, returnPath: string, reason: unknown) => {
+  const fail = (operation: number, returnPath: string, mode: SignInState["mode"], reason: unknown) => {
     if (!mounted.current || generation.current !== operation) return;
     ownsPopup.current = false;
-    setState({ phase: "error", returnPath, message: safeSignInError(reason) });
+    setState({ phase: "error", mode, returnPath, message: safeSignInError(reason) });
   };
 
-  const begin = (returnPath: string, popup: boolean, rememberTrigger: boolean) => {
+  const begin = (returnPath: string, popup: boolean, rememberTrigger: boolean, mode: SignInState["mode"]) => {
     if (rememberTrigger) trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const operation = ++generation.current;
-    const usePopup = popup && auth.startPopupSignIn !== undefined;
+    const popupMethod = mode === "signup" ? auth.startPopupSignUp?.bind(auth) : auth.startPopupSignIn?.bind(auth);
+    const redirectMethod = mode === "signup" ? auth.startSignUp?.bind(auth) : auth.startSignIn.bind(auth);
+    const usePopup = popup && popupMethod !== undefined;
     ownsPopup.current = usePopup;
-    setState({ phase: usePopup ? "popup" : "redirect", returnPath, message: null });
+    setState({ phase: usePopup ? "popup" : "redirect", mode, returnPath, message: null });
     // Open during the click event, before any asynchronous work can consume the browser's user activation.
     try {
-      if (usePopup && auth.startPopupSignIn !== undefined) {
-        void auth.startPopupSignIn(returnPath).then(async (destination) => {
+      if (mode === "signup" && !canCreateAccount || redirectMethod === undefined) throw new AuthError("Account creation is not available in this workspace.");
+      if (usePopup && popupMethod !== undefined) {
+        void popupMethod.call(auth, returnPath).then(async (destination) => {
           if (!mounted.current || generation.current !== operation) return;
           ownsPopup.current = false;
           setState(null);
           if (destination !== null) await navigate(destination, { replace: true });
-        }).catch((reason: unknown) => { fail(operation, returnPath, reason); });
+        }).catch((reason: unknown) => { fail(operation, returnPath, mode, reason); });
       } else {
         auth.cancelPopupSignIn?.();
-        void auth.startSignIn(returnPath).then(() => {
+        void redirectMethod.call(auth, returnPath).then(() => {
           if (mounted.current && generation.current === operation) setState(null);
-        }).catch((reason: unknown) => { fail(operation, returnPath, reason); });
+        }).catch((reason: unknown) => { fail(operation, returnPath, mode, reason); });
       }
     } catch (reason: unknown) {
-      fail(operation, returnPath, reason);
+      fail(operation, returnPath, mode, reason);
     }
   };
 
@@ -108,12 +116,12 @@ export function SignInProvider({ children }: { children: ReactNode }) {
     try {
       auth.focusPopupSignIn?.();
     } catch (reason: unknown) {
-      if (state !== null) fail(generation.current, state.returnPath, reason);
+      if (state !== null) fail(generation.current, state.returnPath, state.mode, reason);
     }
   };
 
   return (
-    <SignInContext.Provider value={{ startSignIn: (returnPath) => { begin(returnPath, true, true); }, error: null }}>
+    <SignInContext.Provider value={{ startSignIn: (returnPath) => { begin(returnPath, true, true, "signin"); }, startSignUp: (returnPath) => { begin(returnPath, true, true, "signup"); }, canCreateAccount, error: null }}>
       {children}
       {state !== null && (
         <dialog
@@ -124,19 +132,19 @@ export function SignInProvider({ children }: { children: ReactNode }) {
           onCancel={(event) => { event.preventDefault(); dismiss(); }}
         >
           <p className="eyebrow">Your workspace</p>
-          <h3 ref={heading} id={titleId} tabIndex={-1}>{state.phase === "error" ? "Sign-in needs another try" : "Sign in to Mr. Lister"}</h3>
+          <h3 ref={heading} id={titleId} tabIndex={-1}>{state.phase === "error" ? (state.mode === "signup" ? "Account setup needs another try" : "Sign-in needs another try") : (state.mode === "signup" ? "Create your Mr. Lister account" : "Sign in to Mr. Lister")}</h3>
           <p id={descriptionId} role={state.phase === "error" ? "alert" : "status"}>
             {state.phase === "error"
               ? state.message
               : state.phase === "popup"
-                ? "Complete secure sign-in in the small window. Your workspace will be ready here when you finish."
-                : "Opening secure sign-in…"}
+                ? state.mode === "signup" ? "Create your account and verify your email in the secure window. You’ll return here to continue setup." : "Complete secure sign-in in the small window. Your workspace will be ready here when you finish."
+                : state.mode === "signup" ? "Opening secure account setup…" : "Opening secure sign-in…"}
           </p>
           <div className="form-actions">
             {state.phase === "popup" && <button className="button button--primary" type="button" onClick={focusPopup}>Show sign-in window</button>}
             {state.phase === "error" && <>
-              {auth.startPopupSignIn !== undefined && <button className="button button--primary" type="button" onClick={() => { begin(state.returnPath, true, false); }}>Try popup again</button>}
-              <button className="button" type="button" onClick={() => { begin(state.returnPath, false, false); }}>Continue in this tab</button>
+              {(state.mode === "signup" ? auth.startPopupSignUp !== undefined : auth.startPopupSignIn !== undefined) && <button className="button button--primary" type="button" onClick={() => { begin(state.returnPath, true, false, state.mode); }}>Try popup again</button>}
+              <button className="button" type="button" onClick={() => { begin(state.returnPath, false, false, state.mode); }}>Continue in this tab</button>
             </>}
             <button className="button" type="button" onClick={dismiss}>Cancel</button>
           </div>
@@ -148,7 +156,8 @@ export function SignInProvider({ children }: { children: ReactNode }) {
 
 export function useSignIn(): SignInFlow {
   const context = useContext(SignInContext);
-  const { auth } = useAppDependencies();
+  const { auth, accountConfig, judgeAccess } = useAppDependencies();
+  const canCreateAccount = judgeAccess === undefined && accountConfig?.selfServiceSignup === true && auth.startSignUp !== undefined && areServiceNoticesReviewed(accountConfig.noticeVersion, accountConfig.supportEmail);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -159,6 +168,18 @@ export function useSignIn(): SignInFlow {
   // Standalone page fixtures can keep using their existing full-page auth coordinator.
   return {
     error,
+    canCreateAccount,
+    startSignUp: (returnPath) => {
+      if (!canCreateAccount || auth.startSignUp === undefined) return;
+      setError(null);
+      try {
+        void auth.startSignUp(returnPath).catch((reason: unknown) => {
+          if (mounted.current) setError(safeSignInError(reason));
+        });
+      } catch (reason: unknown) {
+        if (mounted.current) setError(safeSignInError(reason));
+      }
+    },
     startSignIn: (returnPath) => {
       setError(null);
       try {

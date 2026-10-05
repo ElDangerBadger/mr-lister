@@ -10,8 +10,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from threading import RLock
 from types import MappingProxyType
-from typing import Protocol
+from typing import Any, Protocol
 
+from mr_lister.connections.binding import StoreBindingAuthority
 from mr_lister.control.dispatch import deterministic_execution_name, work_input_fingerprint
 from mr_lister.control.errors import (
     ConcurrentControlModificationError,
@@ -56,6 +57,7 @@ from mr_lister.control.upload_models import (
     UploadCompletionCommit,
     UploadIntent,
     UploadIntentCommit,
+    UploadIntentStatus,
     UploadReceipt,
 )
 
@@ -252,6 +254,7 @@ def validate_initial_job(
         source_artifact.job_id != job.job_id
         or source_artifact.owner_id != job.owner_id
         or job.source_artifact_fingerprint != source_artifact.fingerprint
+        or source_artifact.store_binding != job.store_binding
     ):
         raise InvalidControlStateError("The initial source artifact does not match the job")
     if work.work_type is not WorkType.PREPARE or work.review_version is not None:
@@ -280,6 +283,8 @@ def validate_command_commit(commit: CommandCommit) -> None:
 
     current = commit.current
     updated = commit.updated
+    if current.store_binding != updated.store_binding:
+        raise InvalidControlStateError("A job's original store binding is immutable")
     retired_permit_attempt_id = None
     if commit.provider_call_permit_update is not None:
         if commit.provider_call_permit is not None:
@@ -698,6 +703,7 @@ def validate_command_commit(commit: CommandCommit) -> None:
             or updated.provider_payload_fingerprint != sync.payload_fingerprint
             or sync.printify_shop_id is None
             or sync.fingerprint != product_sync_record_fingerprint(sync)
+            or sync.store_binding != updated.store_binding
         ):
             raise InvalidControlStateError("The product synchronization does not match the job")
     elif updated.provider_payload_fingerprint != current.provider_payload_fingerprint:
@@ -991,8 +997,9 @@ class SellerControlStore(Protocol):
 class InMemorySellerControlStore:
     """Thread-safe deterministic oracle for the Phase 6 DynamoDB transaction contract."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, binding_guard: Any | None = None) -> None:
         self._lock = RLock()
+        self._binding_guard = binding_guard
         self._jobs: dict[str, ControlJobRecord] = {}
         self._sources: dict[str, SourceArtifactRecord] = {}
         self._artwork_analyses: dict[tuple[str, str], ArtworkAnalysisRecord] = {}
@@ -1086,8 +1093,18 @@ class InMemorySellerControlStore:
         with self._lock:
             return self._upload_receipts.get((owner_id, command_type, upload_id, key_digest))
 
+    def _require_binding(self, binding: StoreBindingAuthority | None) -> None:
+        if binding is None:
+            return
+        try:
+            self._binding_guard.assert_current(binding)
+        except Exception:
+            raise InvalidControlStateError("Pinned store connection is unavailable") from None
+
     def commit_upload_intent(self, commit: UploadIntentCommit) -> UploadReceipt:
         with self._lock:
+            if commit.updated.status is UploadIntentStatus.OPEN:
+                self._require_binding(commit.updated.store_binding)
             receipt_key = self._upload_receipt_key(commit.receipt)
             existing_receipt = self._upload_receipts.get(receipt_key)
             if existing_receipt is not None:
@@ -1110,6 +1127,7 @@ class InMemorySellerControlStore:
 
     def complete_upload(self, commit: UploadCompletionCommit) -> UploadReceipt:
         with self._lock:
+            self._require_binding(commit.job.store_binding)
             receipt = commit.intent.receipt
             receipt_key = self._upload_receipt_key(receipt)
             existing_receipt = self._upload_receipts.get(receipt_key)
@@ -1240,6 +1258,7 @@ class InMemorySellerControlStore:
         now: datetime,
     ) -> ProviderCallPermit | None:
         with self._lock:
+            self._require_binding(job.store_binding)
             if (
                 self._jobs.get(job.job_id) != job
                 or self._work.get((job.job_id, work.work_request_id)) != work
@@ -1285,6 +1304,7 @@ class InMemorySellerControlStore:
     ) -> CommandReceipt:
         with self._lock:
             validate_initial_job(job, event, receipt, work_request, source_artifact)
+            self._require_binding(job.store_binding)
             key = self._receipt_key(receipt)
             existing_receipt = self._receipts.get(key)
             if existing_receipt is not None:
@@ -1310,6 +1330,11 @@ class InMemorySellerControlStore:
     def commit_command(self, commit: CommandCommit) -> CommandReceipt:
         validate_command_commit(commit)
         with self._lock:
+            if (
+                commit.provider_call_permit is not None
+                or commit.updated.state is ControlJobState.APPROVED
+            ):
+                self._require_binding(commit.updated.store_binding)
             receipt_key = self._receipt_key(commit.receipt)
             existing_receipt = self._receipts.get(receipt_key)
             if existing_receipt is not None:

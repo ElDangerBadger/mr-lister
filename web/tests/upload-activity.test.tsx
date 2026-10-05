@@ -1,9 +1,12 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { AppContext, type AppDependencies } from "../src/app-context";
 import { MemoryAuthSession } from "../src/auth/session";
 import { HomePage } from "../src/pages/HomePage";
+import { BatchWorkspaceProvider } from "../src/navigation/BatchWorkspace";
+import { jobProgressSchema } from "../src/contracts";
+import browserFixtures from "../../contracts/browser/phase6.5.fixtures.json";
 import type { BatchUploadItemPhase, BatchUploadItemState, useUpload } from "../src/upload/upload-context";
 
 const upload = vi.hoisted((): Pick<ReturnType<typeof useUpload>, "state" | "batch" | "reset"> => ({
@@ -16,10 +19,11 @@ vi.mock("../src/upload/upload-context", async (importOriginal) => ({
 
 describe("active upload feedback", () => {
   it.each(["validating", "hashing", "creating_intent", "uploading", "finalizing"] as const)(
-    "shows accessible activity during %s and stops it when that upload fails", (phase) => {
+    "shows accessible activity during %s and stops it when that upload fails", async (phase) => {
       setItem(phase);
       const dependencies = appDependencies();
-      const { container, rerender } = render(<MemoryRouter><AppContext.Provider value={dependencies}><HomePage /></AppContext.Provider></MemoryRouter>);
+      const { container, rerender } = render(tree(dependencies));
+      await act(() => Promise.resolve());
       const activity = container.querySelector(".queue-status .activity-status");
       expect(activity).toHaveAttribute("role", "status");
       expect(activity).toHaveAttribute("aria-live", "polite");
@@ -32,20 +36,26 @@ describe("active upload feedback", () => {
       }
 
       setItem("error");
-      rerender(<MemoryRouter><AppContext.Provider value={dependencies}><HomePage /></AppContext.Provider></MemoryRouter>);
+      rerender(tree(dependencies));
+      await act(() => Promise.resolve());
       expect(container.querySelector(".activity-status")).toBeNull();
       expect(screen.getByText("Upload needs attention")).toBeVisible();
       expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     },
   );
 
-  it.each(["queued", "complete", "expired"] as const)("does not imply upload activity for %s", (phase) => {
+  it.each(["queued", "complete", "expired"] as const)("does not imply upload activity for %s", async (phase) => {
     setItem(phase);
-    const { container } = render(<MemoryRouter><AppContext.Provider value={appDependencies()}><HomePage /></AppContext.Provider></MemoryRouter>);
+    const { container } = render(tree(appDependencies()));
+    await act(() => Promise.resolve());
     expect(container.querySelector(".activity-status")).toBeNull();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 });
+
+function tree(dependencies: AppDependencies) {
+  return <MemoryRouter><AppContext.Provider value={dependencies}><BatchWorkspaceProvider><HomePage /></BatchWorkspaceProvider></AppContext.Provider></MemoryRouter>;
+}
 
 function setItem(phase: BatchUploadItemPhase) {
   const item: BatchUploadItemState = {
@@ -57,11 +67,15 @@ function setItem(phase: BatchUploadItemPhase) {
 }
 
 function appDependencies(): AppDependencies {
-  const never = () => new Promise<never>(() => undefined);
+  const unexpected = () => Promise.reject(new Error("Unexpected API operation in upload activity fixture"));
   const session = new MemoryAuthSession();
   session.set("access", 3600, "refresh");
   return {
-    api: { listJobs: never, clearRecentJobs: never, getJob: never, getUpload: never, getReview: never, createUpload: never, authorizeUpload: never, completeUpload: never, cancelUpload: never, reviseListing: never, runAction: never, fetchArtwork: never },
-    auth: { session, startSignIn: never, completeSignIn: never, signOut: vi.fn() },
+    api: {
+      listJobs: vi.fn().mockResolvedValue({ value: { jobs: [], next_cursor: null }, requestId: "activity-fixture", etag: null }),
+      getJob: vi.fn().mockResolvedValue({ value: jobProgressSchema.parse({ ...browserFixtures.job_progress, job_id: "job_one" }), requestId: "activity-fixture", etag: null }),
+      clearRecentJobs: unexpected, getUpload: unexpected, getReview: unexpected, createUpload: unexpected, authorizeUpload: unexpected, completeUpload: unexpected, cancelUpload: unexpected, reviseListing: unexpected, runAction: unexpected, fetchArtwork: unexpected,
+    },
+    auth: { session, startSignIn: unexpected, completeSignIn: unexpected, signOut: vi.fn() },
   };
 }

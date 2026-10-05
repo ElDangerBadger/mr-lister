@@ -496,6 +496,8 @@ class PublicationRequestService:
             "requested_at": now,
             "verification_deadline": deadline,
         }
+        if current.store_binding is not None:
+            snapshot_values["store_binding"] = current.store_binding
         snapshot = PublicationSnapshot(
             snapshot_id=snapshot_id,
             fingerprint=publication_snapshot_fingerprint(snapshot_values),

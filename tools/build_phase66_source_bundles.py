@@ -96,6 +96,7 @@ _LAMBDA_CLOUD_FILES = (
     "artifacts.py",
     "auth.py",
     "browser_contracts.py",
+    "connection_composition.py",
     "evaluator_publication.py",
     "http.py",
     "phase6_composition.py",
@@ -111,6 +112,38 @@ _LAMBDA_CLOUD_FILES = (
     "phase6_retention_entrypoint.py",
     "printify_secret_contract.py",
     "workspace_history.py",
+)
+# These explicit roots share the reviewed Phase 6 Lambda dependency authority. The same
+# sealed Lambda archive serves the additive account/connection functions; IAM remains per role.
+_LAMBDA_ACCOUNT_FILES = (
+    "__init__.py",
+    "models.py",
+    "store.py",
+    "provision.py",
+    "provision_entrypoint.py",
+    "query.py",
+    "query_entrypoint.py",
+)
+_LAMBDA_CONNECTION_FILES = (
+    "__init__.py",
+    "binding.py",
+    "configuration.py",
+    "models.py",
+    "store.py",
+    "credentials.py",
+    "transport.py",
+    "service.py",
+    "http.py",
+    "cleanup.py",
+    "entrypoint.py",
+)
+_AGENTCORE_ACCOUNT_FILES = ("__init__.py", "models.py")
+_AGENTCORE_CONNECTION_FILES = (
+    "__init__.py",
+    "binding.py",
+    "configuration.py",
+    "models.py",
+    "store.py",
 )
 _LAMBDA_PRODUCTION_FILES = (
     "__init__.py",
@@ -303,6 +336,14 @@ def build_source_bundles(
     _copy_directory(ROOT / "src/mr_lister/contracts", lambda_root / "mr_lister/contracts")
     _copy_directory(ROOT / "src/mr_lister/control", lambda_root / "mr_lister/control")
     _copy_selected(
+        ROOT / "src/mr_lister/accounts", lambda_root / "mr_lister/accounts", _LAMBDA_ACCOUNT_FILES
+    )
+    _copy_selected(
+        ROOT / "src/mr_lister/connections",
+        lambda_root / "mr_lister/connections",
+        _LAMBDA_CONNECTION_FILES,
+    )
+    _copy_selected(
         ROOT / "src/mr_lister/agent",
         lambda_root / "mr_lister/agent",
         _LAMBDA_AGENT_FILES,
@@ -341,6 +382,16 @@ def build_source_bundles(
     _copy_common(agentcore_root)
     _copy_directory(ROOT / "src/mr_lister/contracts", agentcore_root / "mr_lister/contracts")
     _copy_directory(ROOT / "src/mr_lister/control", agentcore_root / "mr_lister/control")
+    _copy_selected(
+        ROOT / "src/mr_lister/accounts",
+        agentcore_root / "mr_lister/accounts",
+        _AGENTCORE_ACCOUNT_FILES,
+    )
+    _copy_selected(
+        ROOT / "src/mr_lister/connections",
+        agentcore_root / "mr_lister/connections",
+        _AGENTCORE_CONNECTION_FILES,
+    )
     _copy_directory(
         ROOT / "src/mr_lister/intelligence",
         agentcore_root / "mr_lister/intelligence",

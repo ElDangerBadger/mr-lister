@@ -24,6 +24,11 @@ from mr_lister.cloud.api import (
 )
 from mr_lister.cloud.artifacts import ExactKeyS3UploadArtifacts
 from mr_lister.cloud.auth import SellerClaimsPolicy
+from mr_lister.cloud.connection_composition import (
+    connection_directory,
+    load_connection_configuration,
+    load_upload_legacy_owner_ids,
+)
 from mr_lister.cloud.evaluator_publication import (
     EVALUATOR_PUBLICATION_ROUTE,
     EVALUATOR_PUBLICATION_SETTING,
@@ -39,6 +44,7 @@ from mr_lister.cloud.preview import (
     ExactVersionArtworkPreviewService,
 )
 from mr_lister.cloud.workspace_history import DynamoWorkspaceHistory, HistoryFilteredJobQuery
+from mr_lister.connections.models import ConnectionConfig
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
 from mr_lister.control.judge_pricing import JudgePricingPolicy, load_judge_pricing_policy
 from mr_lister.control.projection import SellerReviewProjectionService
@@ -119,6 +125,8 @@ class CommonApiConfiguration:
     release_fingerprint: str
     claims_policy: SellerClaimsPolicy
     judge_pricing_policy: JudgePricingPolicy | None = None
+    connections: ConnectionConfig | None = None
+    legacy_owner_ids: frozenset[str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,7 +259,10 @@ def compose_upload_api_adapter(
         common.region,
         required_methods=("generate_presigned_post", "get_object", "put_object_tagging"),
     )
-    store = DynamoDBSellerControlStore(client=dynamodb, table_name=common.state_table)
+    directory = connection_directory(common.connections, dynamodb)
+    store = DynamoDBSellerControlStore(
+        client=dynamodb, table_name=common.state_table, binding_guard=directory
+    )
     artifacts = ExactKeyS3UploadArtifacts(
         client=cast(Any, s3),
         bucket=configuration.artifacts.bucket,
@@ -267,7 +278,12 @@ def compose_upload_api_adapter(
         profile_id=configuration.profile.profile_id,
         profile_version=configuration.profile.profile_version,
     )
-    return UploadApiAdapter(claims_policy=common.claims_policy, uploads=uploads)
+    return UploadApiAdapter(
+        claims_policy=common.claims_policy,
+        uploads=uploads,
+        binding_authority=directory,
+        legacy_owner_ids=common.legacy_owner_ids,
+    )
 
 
 def compose_query_api_adapter(
@@ -290,7 +306,10 @@ def compose_query_api_adapter(
         common.region,
         required_methods=("generate_presigned_url",),
     )
-    store = DynamoDBSellerControlStore(client=dynamodb, table_name=common.state_table)
+    directory = connection_directory(common.connections, dynamodb)
+    store = DynamoDBSellerControlStore(
+        client=dynamodb, table_name=common.state_table, binding_guard=directory
+    )
     profiles = PinnedReviewProductAuthority(configuration.profile.exact)
     preview_issuer = AuthenticatedPreviewLinkIssuer(
         application_origin=configuration.application_origin
@@ -334,7 +353,10 @@ def compose_command_api_adapter(
         common.region,
         required_methods=("get_item", "put_item", "transact_write_items"),
     )
-    store = DynamoDBSellerControlStore(client=dynamodb, table_name=common.state_table)
+    directory = connection_directory(common.connections, dynamodb)
+    store = DynamoDBSellerControlStore(
+        client=dynamodb, table_name=common.state_table, binding_guard=directory
+    )
     commands = SellerControlService(store=store, judge_pricing_policy=common.judge_pricing_policy)
     return SellerCommandApiAdapter(
         claims_policy=common.claims_policy,
@@ -541,6 +563,22 @@ def _common_configuration(environment: Mapping[str, object]) -> CommonApiConfigu
             required_group=group,
         ),
         judge_pricing_policy=load_judge_pricing_policy(environment),
+        connections=load_connection_configuration(
+            environment,
+            region=region,
+            environment_name=table_match.group("environment"),
+            claims_policy=SellerClaimsPolicy(
+                issuer=issuer, client_id=client_id, required_scope=scope, required_group=group
+            ),
+        ),
+        legacy_owner_ids=load_upload_legacy_owner_ids(
+            environment,
+            region=region,
+            environment_name=table_match.group("environment"),
+            claims_policy=SellerClaimsPolicy(
+                issuer=issuer, client_id=client_id, required_scope=scope, required_group=group
+            ),
+        ),
     )
 
 

@@ -8,9 +8,11 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
+from mr_lister.connections.binding import StoreBindingAuthority
 from mr_lister.control.errors import (
     ConcurrentControlModificationError,
     IdempotencyConflictError,
+    InvalidControlStateError,
     NotFoundError,
 )
 from mr_lister.control.models import (
@@ -220,9 +222,10 @@ def _upload_receipt_item(receipt: UploadReceipt) -> dict[str, dict[str, Any]]:
 class DynamoDBSellerControlStore:
     """Single-table adapter whose mutations mirror ``CommandCommit`` exactly."""
 
-    def __init__(self, *, client: Any, table_name: str) -> None:
+    def __init__(self, *, client: Any, table_name: str, binding_guard: Any | None = None) -> None:
         self._client = client
         self._table_name = table_name
+        self._binding_guard = binding_guard
 
     def get_job(self, job_id: str) -> ControlJobRecord:
         item = self._get(_job_pk(job_id), "META")
@@ -370,6 +373,11 @@ class DynamoDBSellerControlStore:
             self._transact(
                 [intent_put, self._put_new(_upload_receipt_item(commit.receipt))],
                 commit.receipt.receipt_id,
+                store_binding=(
+                    commit.updated.store_binding
+                    if commit.updated.status is UploadIntentStatus.OPEN
+                    else None
+                ),
             )
         except ClientError as error:
             if self._is_transaction_replay_error(error):
@@ -419,7 +427,9 @@ class DynamoDBSellerControlStore:
             self._put_new(_work_item(commit.work_request)),
         ]
         try:
-            self._transact(items, commit.intent.receipt.receipt_id)
+            self._transact(
+                items, commit.intent.receipt.receipt_id, store_binding=commit.job.store_binding
+            )
         except ClientError as error:
             if self._is_transaction_replay_error(error):
                 return self._resolve_upload_after_cancel(commit.intent.receipt)
@@ -580,7 +590,8 @@ class DynamoDBSellerControlStore:
                             },
                         }
                     },
-                ],
+                ]
+                + self._binding_conditions(job.store_binding),
                 ClientRequestToken=sha256(
                     (
                         f"consume:{job.job_id}:{attempt_id}:{job.record_version}:{_payload(work)}"
@@ -642,7 +653,7 @@ class DynamoDBSellerControlStore:
         if work_request is not None:
             items.append(self._put_new(_work_item(work_request)))
         try:
-            self._transact(items, receipt.receipt_id)
+            self._transact(items, receipt.receipt_id, store_binding=job.store_binding)
         except ClientError as error:
             if self._is_transaction_replay_error(error):
                 return self._resolve_after_cancel(receipt)
@@ -867,7 +878,15 @@ class DynamoDBSellerControlStore:
                 }
             )
         try:
-            self._transact(items, commit.receipt.receipt_id)
+            binding = (
+                commit.updated.store_binding
+                if (
+                    commit.provider_call_permit is not None
+                    or commit.updated.state.value == "approved"
+                )
+                else None
+            )
+            self._transact(items, commit.receipt.receipt_id, store_binding=binding)
         except ClientError as error:
             if self._is_transaction_replay_error(error):
                 existing = self.resolve_receipt(
@@ -1099,9 +1118,27 @@ class DynamoDBSellerControlStore:
             }
         }
 
-    def _transact(self, items: list[dict[str, Any]], identity: str) -> None:
+    def _binding_conditions(self, binding: StoreBindingAuthority | None) -> list[dict[str, Any]]:
+        if binding is None:
+            return []
+        try:
+            checked = StoreBindingAuthority.model_validate(binding.model_dump(mode="python"))
+            condition = self._binding_guard.current_epoch_condition(checked)
+            if not isinstance(condition, dict) or set(condition) != {"ConditionCheck"}:
+                raise ValueError
+            return [condition]
+        except Exception:
+            raise InvalidControlStateError("Pinned store connection is unavailable") from None
+
+    def _transact(
+        self,
+        items: list[dict[str, Any]],
+        identity: str,
+        *,
+        store_binding: StoreBindingAuthority | None = None,
+    ) -> None:
         self._client.transact_write_items(
-            TransactItems=items,
+            TransactItems=items + self._binding_conditions(store_binding),
             ClientRequestToken=sha256(identity.encode()).hexdigest()[:32],
         )
 

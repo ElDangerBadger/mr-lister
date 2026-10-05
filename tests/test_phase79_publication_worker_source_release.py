@@ -35,12 +35,14 @@ from tools.build_phase79_worker_source_release import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE_PATH = (ROOT / "config/product_profiles/gildan_64000_swiftpod.json").resolve()
-# The 49-module closure is unchanged. Only tag_policy.py adds the soft coverage
-# helper/modifiers and its standard-library import; hard tag validation is unchanged.
-# The worker does not call the new helper. No other bundled source bytes changed.
-# Double-built and verified locally; this is not a deployed-runtime release seal.
-EXPECTED_MANIFEST_FINGERPRINT = "32bf5d726988364353644a0963811fc4ae0119819e759ac223a0488cf7f2797b"
-EXPECTED_ARCHIVE_FINGERPRINT = "9747e4441f9dcf938e3cdcc18184c20009c09ce2b45432d85ea41660876178a3"
+# The reviewed 51-module closure adds only the pure connections initializer and binding
+# type to the historical 49 modules. Control/publication records and their fingerprints
+# now carry optional immutable store bindings; the worker remains triggerless and disabled.
+# No connection management, credential acquisition, topology, or dependency changes enter
+# this artifact. These exact static hashes were double-built and independently verified
+# locally; they are not a deployed-runtime release seal.
+EXPECTED_MANIFEST_FINGERPRINT = "48487e845842068f32f30bd1be5b17cc7e24a3ca56fb291978aacd08a3cf23da"
+EXPECTED_ARCHIVE_FINGERPRINT = "709640c0f7f107e230e6e885ace2b295da0e70e0d8365c6208b6978c50b59539"
 CAPABILITY_FREE_INITIALIZERS = {
     "mr_lister/__init__.py",
     "mr_lister/cloud/__init__.py",
@@ -151,7 +153,13 @@ def test_worker_closure_is_exact_and_has_no_default_aws_or_runtime_registration(
     manifest = _manifest(artifact.source_root)
     paths = {record["path"] for record in manifest["files"]}
 
-    assert len(closure) == 49
+    assert len(closure) == 51
+    assert {module for module in closure if module.startswith("mr_lister.connections")} == {
+        "mr_lister.connections",
+        "mr_lister.connections.binding",
+    }
+    assert not any(module.startswith("mr_lister.accounts") for module in closure)
+    assert "mr_lister.cloud.connection_composition" not in closure
     assert "mr_lister.control.pricing" in closure
     assert "mr_lister.workflow.tag_policy" in closure
     assert WORKER_COMPOSITION_ROOT in closure

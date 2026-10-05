@@ -1364,6 +1364,10 @@ class WorkerControlService:
             "provider_published": False,
             "synchronized_at": now.isoformat(),
         }
+        if current.store_binding is not None:
+            if observation.printify_shop_id != current.store_binding.shop_id:
+                raise InvalidControlStateError("Provider success changed the pinned store binding")
+            sync_material["store_binding"] = current.store_binding.model_dump(mode="json")
         sync = ProductSyncRecord(
             sync_id=self._record_id("sync", current.job_id, attempt.attempt_id),
             fingerprint=product_sync_record_fingerprint(sync_material),

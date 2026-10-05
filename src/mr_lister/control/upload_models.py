@@ -26,6 +26,7 @@ from mr_lister.control.models import (
     OwnerId,
     SafeId,
     SourceArtifactRecord,
+    StoreBoundControlModel,
     WorkRequest,
     WorkRequestStatus,
     WorkType,
@@ -57,7 +58,7 @@ class UploadCommandType(StrEnum):
     CANCEL_UPLOAD = "cancel_upload"
 
 
-class UploadIntent(ControlModel):
+class UploadIntent(StoreBoundControlModel):
     """Durable owner-scoped reservation for one exact direct-upload object."""
 
     # Keep owner identity top-level and early so adapters can reject a caller
@@ -321,6 +322,7 @@ class UploadIntentCommit(ControlModel):
         current = self.current
         updated = self.updated
         immutable_fields = (
+            "store_binding",
             "contract_version",
             "owner_id",
             "upload_id",
@@ -414,10 +416,13 @@ class UploadCompletionCommit(ControlModel):
             or source.version_id != completed.completed_version_id
             or source.fingerprint != completed.completed_source_artifact_fingerprint
             or self.job.source_artifact_fingerprint != source.fingerprint
+            or self.job.store_binding != completed.store_binding
+            or source.store_binding != completed.store_binding
         ):
             raise ValueError("Upload completion changed source or job authority")
         assert completed.completed_at is not None
         expected_job = ControlJobRecord(
+            store_binding=completed.store_binding,
             owner_id=completed.owner_id,
             job_id=completed.job_id,
             state=ControlJobState.INTAKE_VALIDATED,

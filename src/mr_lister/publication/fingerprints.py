@@ -131,6 +131,10 @@ def publication_snapshot_fingerprint(value: BaseModel | Mapping[str, Any]) -> st
         excluded_fields=frozenset({"contract_version", "snapshot_id", "fingerprint"}),
     )
     expected = phase7_publication_contract().snapshot_fields
+    if payload.get("store_binding") is None:
+        payload.pop("store_binding", None)
+    elif "store_binding" in payload:
+        expected = (*expected, "store_binding")
     if set(payload) != set(expected):
         raise ValueError("Publication snapshot fingerprint material differs from contract 7.0.1")
     ordered = {field: payload[field] for field in expected}

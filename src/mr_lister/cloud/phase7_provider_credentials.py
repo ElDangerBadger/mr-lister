@@ -33,10 +33,16 @@ _UNAVAILABLE = "Publication provider credential is unavailable"
 class ProductionPublicationProviderCredentialAuthority:
     """Adapt fresh owner-secret resolution to one exact publication authority."""
 
-    __slots__ = ("_connections",)
+    __slots__ = ("_connections", "_legacy_owner_ids")
 
-    def __init__(self, *, connections: OwnerPrintifyConnectionResolver) -> None:
+    def __init__(
+        self,
+        *,
+        connections: OwnerPrintifyConnectionResolver,
+        legacy_owner_ids: frozenset[str] = frozenset(),
+    ) -> None:
         self._connections = connections
+        self._legacy_owner_ids = frozenset(legacy_owner_ids)
 
     def resolve_exact(
         self,
@@ -45,13 +51,19 @@ class ProductionPublicationProviderCredentialAuthority:
     ) -> BoundPublicationProviderCredential:
         try:
             exact = PublicationProviderAuthority.model_validate(authority.model_dump(mode="python"))
-            resolved = self._connections.resolve(owner_id=exact.owner_id)
+            if exact.store_binding is not None:
+                resolved = self._connections.resolve_exact(binding=exact.store_binding)
+            else:
+                if exact.owner_id not in self._legacy_owner_ids:
+                    raise ValueError
+                resolved = self._connections.resolve(owner_id=exact.owner_id)
             if (
                 not isinstance(resolved, OwnerPrintifyConnection)
                 or resolved.owner_id != exact.owner_id
                 or type(resolved.shop_id) is not int
                 or resolved.shop_id != exact.printify_shop_id
                 or not isinstance(resolved.api_token, SecretStr)
+                or resolved.store_binding != exact.store_binding
             ):
                 raise ValueError
             return issue_bound_publication_provider_credential(
@@ -87,6 +99,7 @@ def build_phase7_publication_provider_credential_authority(
     *,
     client: SecretsManagerGetSecretValueClient,
     secret_arn: str,
+    legacy_owner_ids: frozenset[str] = frozenset(),
 ) -> ProductionPublicationProviderCredentialAuthority:
     """Build the injected adapter without constructing an AWS client or provider transport."""
 
@@ -95,7 +108,9 @@ def build_phase7_publication_provider_credential_authority(
             client=client,
             secret_arn=secret_arn,
         )
-        return ProductionPublicationProviderCredentialAuthority(connections=resolver)
+        return ProductionPublicationProviderCredentialAuthority(
+            connections=resolver, legacy_owner_ids=legacy_owner_ids
+        )
     except Exception:
         pass
     raise PublicationProviderCredentialError(

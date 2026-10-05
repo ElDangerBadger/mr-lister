@@ -134,6 +134,8 @@ GUARD_SOURCE_PATHS = (
     "mr_lister/cloud/__init__.py",
     "mr_lister/cloud/phase7_guard_composition.py",
     "mr_lister/cloud/phase7_guard_entrypoint.py",
+    "mr_lister/connections/__init__.py",
+    "mr_lister/connections/binding.py",
     "mr_lister/contracts/__init__.py",
     "mr_lister/contracts/models.py",
     "mr_lister/contracts/presentation.py",
