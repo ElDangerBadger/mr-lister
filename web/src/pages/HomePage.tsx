@@ -181,7 +181,7 @@ export function HomePage() {
               )}
               {upload.batch.items.length > 0 && (
                 <BatchProgress
-                  items={upload.batch.items}
+                  items={workspace.items}
                   message={upload.batch.message}
                   onReset={() => {
                     upload.reset();

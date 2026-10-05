@@ -143,7 +143,8 @@ export function BatchWorkspaceProvider({ children }: { children: ReactNode }) {
     const canPoll = () => document.visibilityState === "visible" && navigator.onLine;
     const pending = () => jobIds.filter((jobId) => {
       const progress = progressRef.current[jobId];
-      return progress === undefined || PREPARING_STATES.has(progress.display_state);
+      return !cancellation.canceledJobIds.has(jobId)
+        && (progress === undefined || PREPARING_STATES.has(progress.display_state));
     });
     const schedule = () => {
       if (active && canPoll() && pending().length > 0) timeout = window.setTimeout(() => { void poll(); }, delay);
@@ -204,7 +205,7 @@ export function BatchWorkspaceProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("online", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [api, completedKey, status]);
+  }, [api, cancellation.canceledJobIds, completedKey, status]);
 
   useEffect(() => {
     if (status !== "authenticated" || location.pathname !== "/"
@@ -227,7 +228,7 @@ export function BatchWorkspaceProvider({ children }: { children: ReactNode }) {
   }, [batch.items, batch.phase, batchKey, location.pathname, navigate, status]);
 
   return <BatchWorkspaceContext.Provider value={status === "authenticated"
-    ? { items: batch.items, progressByJob, filenameByJob, progressErrorByJob, autoOpenPending, updateFromReview }
+    ? { items: batch.items.filter((item) => item.jobId === null || !cancellation.canceledJobIds.has(item.jobId)), progressByJob, filenameByJob, progressErrorByJob, autoOpenPending, updateFromReview }
     : EMPTY_WORKSPACE}>
     {children}
   </BatchWorkspaceContext.Provider>;

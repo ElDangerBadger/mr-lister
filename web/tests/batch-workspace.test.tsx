@@ -7,6 +7,7 @@ import { AppContext, type AppDependencies } from "../src/app-context";
 import { MemoryAuthSession } from "../src/auth/session";
 import { sellerReviewSchema, type JobProgress, type SellerReview } from "../src/contracts";
 import { BatchNavigator, BatchWorkspaceProvider, useBatchWorkspace } from "../src/navigation/BatchWorkspace";
+import { DraftCancellationProvider, useDraftCancellation } from "../src/navigation/DraftCancellation";
 import type { BatchUploadItemState, UploadBatchState, UploadState } from "../src/upload/upload-context";
 
 const upload = vi.hoisted((): { batch: UploadBatchState; state: Pick<UploadState, "phase">; reset: ReturnType<typeof vi.fn> } => ({
@@ -29,6 +30,33 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); });
 
 describe("batch listing navigation", () => {
+  it("removes a confirmed canceled entry while retaining and polling an active sibling", async () => {
+    upload.batch = batch([item("one", "complete"), item("two", "complete")]);
+    const getJob = vi.fn().mockImplementation((id: string) => Promise.resolve(progress(id, "preparing")));
+    mount(getJob, "/jobs/job_one");
+    await flush();
+    fireEvent.click(screen.getByText("Confirm first draft canceled"));
+    fireEvent.click(screen.getByText("Home"));
+    await flush();
+    const value = JSON.parse(screen.getByTestId("workspace").textContent ?? "{}") as { items: { jobId: string }[] };
+    expect(value.items.map((entry) => entry.jobId)).toEqual(["job_two"]);
+    expect(upload.reset).not.toHaveBeenCalled();
+    getJob.mockClear();
+    fireEvent.focus(window);
+    await flush();
+    expect(getJob).toHaveBeenCalledWith("job_two");
+    expect(getJob).not.toHaveBeenCalledWith("job_one");
+  });
+
+  it("starts fresh after a confirmed canceled draft and a safely prepared sibling settle", async () => {
+    upload.batch = batch([item("one", "complete"), item("two", "complete")]);
+    mount(vi.fn().mockImplementation((id: string) => Promise.resolve(progress(id, "ready_for_review"))), "/jobs/job_one");
+    await flush();
+    fireEvent.click(screen.getByText("Confirm first draft canceled"));
+    fireEvent.click(screen.getByText("Home"));
+    await flush();
+    expect(upload.reset).toHaveBeenCalled();
+  });
   it("starts a fresh upload on return after every listing is prepared, retaining recent labels", async () => {
     upload.batch = batch([item("one", "complete"), item("two", "complete")]);
     const getJob = vi.fn().mockImplementation((jobId: string) => Promise.resolve(progress(jobId,
@@ -323,6 +351,7 @@ describe("batch listing navigation", () => {
 
 function Probe({ currentReview }: { currentReview?: SellerReview }) {
   const workspace = useBatchWorkspace();
+  const cancellation = useDraftCancellation();
   const location = useLocation();
   const navigate = useNavigate();
   return <>
@@ -330,6 +359,7 @@ function Probe({ currentReview }: { currentReview?: SellerReview }) {
     <output data-testid="auto-open">{String(workspace.autoOpenPending)}</output>
     <output data-testid="workspace">{JSON.stringify(workspace)}</output>
     <button type="button" onClick={() => { void navigate("/"); }}>Home</button>
+    <button type="button" onClick={() => cancellation.confirm({ jobId: "job_one", recordVersion: 2, reviewVersion: 0 })}>Confirm first draft canceled</button>
     <button type="button" onClick={() => { void navigate("/jobs/elsewhere"); }}>Elsewhere</button>
     <BatchNavigator {...(currentReview === undefined ? {} : { currentReview })} />
   </>;
@@ -347,7 +377,7 @@ function mount(getJob: ApiPort["getJob"], initialPath = "/") {
   };
   let currentReview: SellerReview | undefined;
   const tree = () => <MemoryRouter initialEntries={[initialPath]}><AppContext.Provider value={dependencies}>
-    <BatchWorkspaceProvider><Probe {...(currentReview === undefined ? {} : { currentReview })} /></BatchWorkspaceProvider>
+    <DraftCancellationProvider><BatchWorkspaceProvider><Probe {...(currentReview === undefined ? {} : { currentReview })} /></BatchWorkspaceProvider></DraftCancellationProvider>
   </AppContext.Provider></MemoryRouter>;
   const result = render(tree());
   return { session, refresh: () => result.rerender(tree()), showReview: (review: SellerReview) => {

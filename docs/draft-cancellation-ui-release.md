@@ -19,12 +19,17 @@ The session-only notice scrolls into view and dismisses when a new file selectio
 Confirmed canceled IDs prevent stale recent-list responses from bringing the draft back into
 the active list. Account history is not deleted or globally cleared. Fully settled upload
 batches can reset on cancellation return; active, unknown and recoverable siblings are preserved.
+Confirmed canceled entries also leave the active batch navigator and stop polling, even while
+an uncanceled sibling continues. The notice confirms closure without implying that every other
+draft or upload has finished.
 
 Verification:
 
 - TypeScript, ESLint and production build/dependency-boundary checks passed.
 - All 528 web tests passed, including 14 new cancellation integration cases. The final review
   control grouping subsequently passed its 72 affected tests.
+- Two subsequent batch regressions verify canceled-entry removal, continued sibling polling,
+  and reset only after all remaining work is settled; all 68 affected tests passed.
 - WebKit ran all eight browser flows against the final nine-file compiled bundle. Desktop/mobile
   cancellation checks used local fixtures, with zero provider transport.
 - At 360px, the review Cancel/Approve buttons share the same row, as do upload Cancel/Submit.

@@ -31,11 +31,11 @@ export function DraftCancellationProvider({ children }: { children: ReactNode })
   const [canceledJobIds, setCanceledJobIds] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => {
     setNotice(false);
-    setCanceledJobIds(new Set());
+    setCanceledJobIds((current) => current.size === 0 ? current : new Set());
   }, [auth.session, status]);
   const confirm = useCallback((draft?: CanceledDraft) => {
     if (auth.session.getStatus() !== "authenticated") return;
-    if (draft !== undefined) setCanceledJobIds((current) => new Set(current).add(draft.jobId));
+    if (draft !== undefined) setCanceledJobIds((current) => current.has(draft.jobId) ? current : new Set(current).add(draft.jobId));
     setNotice(true);
   }, [auth.session]);
   const dismiss = useCallback(() => setNotice(false), []);
@@ -55,7 +55,7 @@ export function DraftCanceledNotice() {
   }, [notice]);
   if (!notice) return null;
   return <div ref={noticeRef} className="alert alert--info draft-canceled-notice" role="status" aria-live="polite" aria-atomic="true">
-    <div><h2>Draft Canceled</h2><p>You’re ready to start a new draft below.</p></div>
+    <div><h2>Draft Canceled</h2><p>Your draft was canceled.</p></div>
     <button className="button button--quiet" type="button" aria-label="Dismiss cancellation message" onClick={dismiss}>Dismiss</button>
   </div>;
 }

@@ -257,7 +257,7 @@ async function expectHomeConfirmation() {
   const heading = screen.getByRole("heading", { name: "Draft Canceled" });
   const notice = heading.closest('[role="status"]');
   expect(notice).not.toBeNull();
-  expect(within(notice as HTMLElement).getByText("You’re ready to start a new draft below.")).toBeInTheDocument();
+  expect(within(notice as HTMLElement).getByText("Your draft was canceled.")).toBeInTheDocument();
   expect(route()).toBe("/");
 }
 
