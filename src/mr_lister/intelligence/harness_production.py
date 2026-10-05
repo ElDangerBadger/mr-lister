@@ -1,7 +1,8 @@
 """Pinned Gemma 4 preparation boundary; user approval remains application-owned.
 
-The frozen v3 harness runs atomically with its standard image budget. This adapter
-projects an accepted pair into existing persisted contracts, without caching results,
+The restored v4 writer runs with frozen v3 inspection and verification, atomically
+within the standard image budget. This adapter projects an accepted pair into existing
+persisted contracts, without caching results,
 creating provider products, granting approval, or publishing anything.
 """
 
@@ -22,9 +23,9 @@ from mr_lister.intelligence.settings import BedrockSettings
 from mr_lister.workflow.errors import IntelligenceConfigurationError, InvalidGeneratedOutputError
 from mr_lister.workflow.models import ArtworkInput
 
-PRODUCTION_HARNESS_REVISION = "v3"
+PRODUCTION_HARNESS_REVISION = "v4"
 PRODUCTION_HARNESS_PROMPT_FINGERPRINT = (
-    "0fda08954b93aa25c8b3b8ff158cbba124bc8d37cb30e311a229c328be64e7b9"
+    "fef64b014379eceae1d8bd421010acef01105be4e85a2c75b584beb3a5ac536e"
 )
 UNCALIBRATED_CONFIDENCE_NOTE = "Interpretation confidence is not calibrated for this model."
 

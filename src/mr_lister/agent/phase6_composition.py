@@ -1,7 +1,7 @@
 """Production composition for the dedicated Phase 6 AgentCore Strands runtime.
 
 The controller is pinned to Nova 2 Lite while the image-review and listing intelligence
-worker is pinned to the checked Gemma 4 v3 harness configuration.  This module has no Printify,
+worker is pinned to the checked Gemma 4 restored-writer harness. This module has no Printify,
 publication, order, fulfillment, Step Functions, or seller-API capability.
 """
 

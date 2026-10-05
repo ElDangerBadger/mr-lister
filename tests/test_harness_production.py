@@ -30,8 +30,8 @@ def settings():
     return BedrockSettings(transport="mantle", model_id="google.gemma-4-31b", max_repair_attempts=2)
 
 
-def accepted(source, listing, *, subject="badger explorer"):
-    bundle = candidate_prompt_bundles(revision="v3")["full"]
+def accepted(source, listing, *, subject="badger explorer", revision="v4"):
+    bundle = candidate_prompt_bundles(revision=revision)["full"]
     return HarnessResult(
         state="accepted_for_evaluation",
         artwork_sha256=source.content_sha256,
@@ -43,7 +43,7 @@ def accepted(source, listing, *, subject="badger explorer"):
     )
 
 
-def test_factory_pins_v3_product_context_settings_and_prompt_before_clients(monkeypatch):
+def test_factory_pins_v4_product_context_settings_and_prompt_before_clients(monkeypatch):
     factory = Mock(return_value=object())
     monkeypatch.setattr(harness_production, "build_harness_candidate_adapter", factory)
     session = object()
@@ -53,11 +53,11 @@ def test_factory_pins_v3_product_context_settings_and_prompt_before_clients(monk
         "session": session,
         "diagnostics": None,
         "product_context": VerifiedProductContext(product_type="T-shirt"),
-        "revision": "v3",
+        "revision": "v4",
     }
     assert (
         PRODUCTION_HARNESS_PROMPT_FINGERPRINT
-        == candidate_prompt_bundles(revision="v3")["full"].fingerprint
+        == candidate_prompt_bundles(revision="v4")["full"].fingerprint
     )
     assert not hasattr(adapter, "approve")
     assert not hasattr(adapter, "publish")
@@ -90,7 +90,7 @@ def test_prompt_drift_fails_before_factory(monkeypatch):
     factory.assert_not_called()
 
 
-def test_frozen_two_call_harness_retains_standard_image_budget(monkeypatch):
+def test_restored_two_call_harness_retains_standard_image_budget(monkeypatch):
     content = png_bytes()
     source = artwork(content)
     client = ScriptedClient(response(evidence()), response(draft()))
@@ -101,7 +101,7 @@ def test_frozen_two_call_harness_retains_standard_image_budget(monkeypatch):
             client=client,
             settings=settings(),
             product_context=VerifiedProductContext(),
-            revision="v3",
+            revision="v4",
         )
     )
     analysis, listing = adapter.prepare_listing(source, content)
@@ -111,6 +111,26 @@ def test_frozen_two_call_harness_retains_standard_image_budget(monkeypatch):
     assert UNCALIBRATED_CONFIDENCE_NOTE in analysis.safety_flags
     assert listing.title == "Badger Explorer Graphic T-Shirt"
     assert content == png_bytes()
+
+
+def test_v4_factory_rejects_an_otherwise_accepted_frozen_v3_result(monkeypatch, listing):
+    content = png_bytes()
+    source = artwork(content)
+    stale_result = accepted(source, listing, revision="v3")
+    prepare = Mock(return_value=stale_result)
+    factory = Mock(return_value=SimpleNamespace(prepare=prepare))
+    monkeypatch.setattr(harness_production, "build_harness_candidate_adapter", factory)
+
+    adapter = build_harness_production_adapter(settings(), session=object())
+
+    assert factory.call_args.kwargs["revision"] == "v4"
+    assert stale_result.state == "accepted_for_evaluation"
+    assert stale_result.subject_verification == "agrees"
+    assert stale_result.listing is not None
+    assert not stale_result.issues
+    with pytest.raises(InvalidGeneratedOutputError, match="requires further review"):
+        adapter.prepare_listing(source, content)
+    prepare.assert_called_once_with(source, content)
 
 
 @pytest.mark.parametrize(
