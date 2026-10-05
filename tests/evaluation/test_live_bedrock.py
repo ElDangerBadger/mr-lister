@@ -20,6 +20,8 @@ import boto3
 import pytest
 
 from mr_lister.contracts import ArtworkAnalysis, JobState, ListingIntelligence
+from mr_lister.intelligence.prompts import ETSY_SEO_RELEASE_PROMPT_BUNDLE, PromptBundle
+from mr_lister.intelligence.settings import BedrockSettings
 from mr_lister.workflow.models import ArtworkInput
 from mr_lister.workflow.ports import IntelligencePort
 from tools.phase2_evaluation import EVALUATION_SPLITS, load_manifest, quality_failures, score_case
@@ -127,6 +129,17 @@ class _EvaluationIntelligence:
             "transport_prompt_fingerprint": self.transport_prompt_fingerprint,
             "provider_responses": self.agent.model.response_metadata,
         }
+
+
+def _validate_evaluation_configuration(
+    settings: BedrockSettings, prompt_bundle: PromptBundle, execution: str
+) -> None:
+    """Fail before AWS access if the candidate is compared using another pipeline."""
+    if settings.transport == "mantle":
+        if execution != "two_call":
+            raise ValueError("Mantle evaluation requires the existing two-call workflow")
+        if prompt_bundle != ETSY_SEO_RELEASE_PROMPT_BUNDLE:
+            raise ValueError("Mantle evaluation requires the exact released SEO reference")
 
 
 def _one_call_intelligence(
@@ -266,6 +279,7 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
 
     config_path = Path(os.getenv("MR_LISTER_BEDROCK_CONFIG", "config/bedrock/nova_2_lite.json"))
     settings = BedrockSettings.model_validate_json(config_path.read_text(encoding="utf-8"))
+    _validate_evaluation_configuration(settings, prompt_bundle, EVALUATION_EXECUTION)
     assert os.getenv("AWS_PROFILE") == "mr-lister-dev"
     session = boto3.Session(profile_name="mr-lister-dev", region_name=settings.region)
     caller = session.client("sts", region_name=settings.region).get_caller_identity()
@@ -350,6 +364,7 @@ def test_bedrock_evaluation_cases_reach_human_approval_with_fake_production(
             "production_publish_calls": production.publish_calls,
         },
         "model_settings": {
+            "transport": settings.transport,
             "output_mode": settings.output_mode,
             "temperature": settings.temperature,
             "max_tokens": settings.max_tokens,

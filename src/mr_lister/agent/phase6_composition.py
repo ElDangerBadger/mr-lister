@@ -1,7 +1,7 @@
 """Production composition for the dedicated Phase 6 AgentCore Strands runtime.
 
 The controller is pinned to Nova 2 Lite while the image-review and listing intelligence
-worker is pinned to the checked Gemma 3 configuration.  This module has no Printify,
+worker is pinned to the checked Gemma 4 v3 harness configuration.  This module has no Printify,
 publication, order, fulfillment, Step Functions, or seller-API capability.
 """
 
@@ -27,8 +27,11 @@ from mr_lister.agent.phase6_producer import PinnedSourcePreparedReviewProducer
 from mr_lister.control.dynamodb import DynamoDBSellerControlStore
 from mr_lister.control.judge_pricing import JudgePricingPolicy, load_judge_pricing_policy
 from mr_lister.control.worker_service import WorkerControlService
-from mr_lister.intelligence.bedrock import build_bedrock_adapter
-from mr_lister.intelligence.prompts import ETSY_SEO_RELEASE_PROMPT_BUNDLE
+from mr_lister.intelligence.harness_production import (
+    PRODUCTION_HARNESS_PROMPT_FINGERPRINT,
+    PRODUCTION_HARNESS_REVISION,
+    build_harness_production_adapter,
+)
 from mr_lister.intelligence.settings import BedrockSettings
 from mr_lister.review_profile import (
     ExactReviewProductProfile,
@@ -36,7 +39,7 @@ from mr_lister.review_profile import (
     ReviewProfileNotFoundError,
 )
 
-PHASE6_GEMMA_MODEL_ID = "google.gemma-3-27b-it"
+PHASE6_GEMMA_MODEL_ID = "google.gemma-4-31b"
 PHASE6_STRANDS_CONTROLLER_MODEL_ID = "us.amazon.nova-2-lite-v1:0"
 
 _REGION = re.compile(r"^[a-z]{2}(?:-[a-z0-9]+){1,2}-[1-9][0-9]?$|^us-gov-[a-z]+-[1-9]$")
@@ -183,7 +186,7 @@ def load_phase6_agentcore_configuration(
         intelligence_path = _exact_path(
             environment,
             "MR_LISTER_GEMMA_CONFIG_PATH",
-            expected_name="google_gemma_3_27b_it.json",
+            expected_name="google_gemma_4_31b.json",
         )
         intelligence_fingerprint = _fingerprint(
             environment,
@@ -197,12 +200,20 @@ def load_phase6_agentcore_configuration(
             raise ValueError
         intelligence = BedrockSettings.model_validate_json(raw_intelligence)
         if intelligence != BedrockSettings(
-            region=region,
+            transport="mantle",
+            region="us-west-2",
             model_id=PHASE6_GEMMA_MODEL_ID,
             output_mode="native_json_schema",
             max_tokens=2048,
             temperature=0.0,
             max_repair_attempts=2,
+        ):
+            raise ValueError
+        if (
+            region != "us-west-2"
+            or _required(environment, "MR_LISTER_HARNESS_REVISION") != PRODUCTION_HARNESS_REVISION
+            or _fingerprint(environment, "MR_LISTER_HARNESS_PROMPT_FINGERPRINT")
+            != PRODUCTION_HARNESS_PROMPT_FINGERPRINT
         ):
             raise ValueError
         controller_model_id = _required(environment, "MR_LISTER_STRANDS_CONTROLLER_MODEL_ID")
@@ -242,8 +253,9 @@ def compose_phase6_agentcore_runtime(
         raise Phase6AgentCoreDependencyError("Phase 6 AgentCore dependency is unavailable")
     if not callable(getattr(s3_client, "get_object", None)):
         raise Phase6AgentCoreDependencyError("Phase 6 AgentCore dependency is unavailable")
-    if not callable(getattr(intelligence, "inspect_artwork", None)) or not callable(
-        getattr(intelligence, "draft_listing", None)
+    if not callable(getattr(intelligence, "prepare_listing", None)) and not (
+        callable(getattr(intelligence, "inspect_artwork", None))
+        and callable(getattr(intelligence, "draft_listing", None))
     ):
         raise Phase6AgentCoreDependencyError("Phase 6 AgentCore dependency is unavailable")
     if isinstance(controller_model, str) and controller_model != configuration.controller_model_id:
@@ -315,10 +327,9 @@ def build_phase6_agentcore_runtime(
                 s3={"addressing_style": "virtual"},
             ),
         )
-        intelligence = build_bedrock_adapter(
+        intelligence = build_harness_production_adapter(
             configuration.intelligence,
             session=active_session,
-            prompt_bundle=ETSY_SEO_RELEASE_PROMPT_BUNDLE,
         )
         controller = BedrockModel(
             boto_session=active_session,

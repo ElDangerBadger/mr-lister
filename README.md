@@ -233,8 +233,12 @@ final listing prose and tags but not the original candidate pools, so they canno
 exact old-selector/new-selector replay. See the [SEO/tag checkpoint](docs/etsy-seo-tag-baseline.md)
 for the bounded implementation, available verification, and that evidence limitation.
 
-Routine development uses the deterministic fake adapter. Cost-gated live evaluation currently
-uses Gemma 3 27B as the provisional quality lead; Amazon Nova 2 Lite remains the low-cost baseline,
+The current production composition pins the frozen Gemma 4 v3 draft harness with standard image
+preparation. See the [Gemma 4 release record](docs/gemma-4-release-state.md) for actual deployment
+and verification status, known limitations and the preserved Gemma 3 rollback.
+
+Routine development uses the deterministic fake adapter. The historical cost-gated comparison
+used Gemma 3 27B as the provisional quality lead; Amazon Nova 2 Lite remains the low-cost baseline,
 while OpenAI GPT-5.6 Luna and Claude Sonnet 4.6 are optional benchmarks. All paths must pass the
 same application validation before reaching human review.
 
@@ -256,7 +260,7 @@ trials, and provider comparisons.
 ## Phase 3 Strands and AgentCore
 
 Phase 3 is complete. Amazon Nova 2 Lite is the selected capability-scoped Strands controller;
-Gemma 3 27B remains the image/listing-intelligence worker. Each invocation is bound to one job and
+the historical Phase 3 checkpoint used Gemma 3 27B as the image/listing worker. Each invocation is bound to one job and
 one application-selected mode. Preparation can move validated intake to staged human review;
 review exposes inspection and validation, while revise additionally exposes listing revision. The
 agent has no approval or publication tool.

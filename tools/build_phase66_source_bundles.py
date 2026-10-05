@@ -363,6 +363,13 @@ def build_source_bundles(
         ROOT / "config/bedrock/google_gemma_3_27b_it.json",
         agentcore_root / "config/bedrock/google_gemma_3_27b_it.json",
     )
+    # Keep the historical Gemma 3 configuration available to source-bound release
+    # evidence. The current composition selects only this active Gemma 4 config;
+    # candidate evaluation settings are deliberately not packaged.
+    _copy_file(
+        ROOT / "config/bedrock/google_gemma_4_31b.json",
+        agentcore_root / "config/bedrock/google_gemma_4_31b.json",
+    )
     _write_text(
         agentcore_root / "requirements.txt",
         render_locked_requirements(authorities["agentcore"])

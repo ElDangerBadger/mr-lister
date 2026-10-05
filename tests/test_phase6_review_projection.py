@@ -1348,3 +1348,34 @@ def test_terminal_and_human_state_capabilities_are_server_derived(
     assert result.display_state is display
     assert result.stage is stage
     assert _enabled(result) == enabled
+
+
+@pytest.mark.parametrize("uncalibrated", [False, True])
+def test_uncalibrated_harness_confidence_is_hidden_without_changing_legacy(uncalibrated):
+    from mr_lister.intelligence.harness_production import UNCALIBRATED_CONFIDENCE_NOTE
+
+    store, preview = _fixture()
+    analysis = store.analysis.analysis.model_copy(
+        update={
+            "confidence": 0.0 if uncalibrated else 0.94,
+            "safety_flags": (
+                (UNCALIBRATED_CONFIDENCE_NOTE, "Review the small text carefully.")
+                if uncalibrated
+                else ("Review the small text carefully.",)
+            ),
+        }
+    )
+    fingerprint = canonical_fingerprint(
+        {
+            "job_id": store.analysis.job_id,
+            "source_artifact_fingerprint": store.analysis.source_artifact_fingerprint,
+            "analysis": analysis.model_dump(mode="json"),
+        }
+    )
+    store.analysis = store.analysis.model_copy(
+        update={"analysis": analysis, "fingerprint": fingerprint}
+    )
+    store.job = store.job.model_copy(update={"artwork_analysis_fingerprint": fingerprint})
+    result = _service(store, preview)._analysis(store.job, store.source, None)
+    assert result.confidence == (None if uncalibrated else 0.94)
+    assert result.safety_notes == ("Review the small text carefully.",)

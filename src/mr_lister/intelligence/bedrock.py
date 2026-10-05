@@ -81,6 +81,13 @@ def build_bedrock_adapter(
 ) -> BedrockListingIntelligenceAdapter:
     """Build an adapter using the AWS default credential chain."""
 
+    if settings.transport == "mantle":
+        from mr_lister.intelligence.mantle import build_mantle_adapter
+
+        return build_mantle_adapter(
+            settings, session=session, diagnostics=diagnostics, prompt_bundle=prompt_bundle
+        )
+
     active_session = session or boto3.Session(region_name=settings.region)
     client = active_session.client(
         "bedrock-runtime",
@@ -115,15 +122,18 @@ class BedrockListingIntelligenceAdapter:
         self._diagnostics = diagnostics or NoOpDiagnosticSink()
         self._prompt_bundle = prompt_bundle
 
-    def inspect_artwork(self, artwork: ArtworkInput, content: bytes) -> ArtworkAnalysis:
+    def _prepare_inspection_image(self, content: bytes) -> BedrockImage:
         # Gemma rejected a valid 3.27 MB PNG inspection rendition at request buffering.
         # These limits are the successful live-preview envelope; the seller's original
         # print artwork and the generic Converse boundary are unchanged.
-        image = (
+        return (
             prepare_bedrock_image(content, max_side=1600, max_bytes=750_000)
             if self._settings.model_id == "google.gemma-3-27b-it"
             else prepare_bedrock_image(content)
         )
+
+    def inspect_artwork(self, artwork: ArtworkInput, content: bytes) -> ArtworkAnalysis:
+        image = self._prepare_inspection_image(content)
         prompt = self._prompt_bundle.artwork + _transparency_note(image)
         return self._invoke_contract(
             operation="inspect_artwork",

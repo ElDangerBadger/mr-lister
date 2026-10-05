@@ -542,8 +542,17 @@ class SellerReviewProjectionService:
             styles=analysis.styles[:20],
             themes=analysis.themes[:20],
             visible_text=analysis.visible_text[:20],
-            safety_notes=analysis.safety_flags[:20],
-            confidence=analysis.confidence,
+            safety_notes=tuple(
+                note
+                for note in analysis.safety_flags
+                if note != "Interpretation confidence is not calibrated for this model."
+            )[:20],
+            # Gemma 4 has no calibrated confidence output. Preserve legacy records,
+            # while hiding its required storage placeholder from the nullable UI field.
+            confidence=None
+            if "Interpretation confidence is not calibrated for this model."
+            in analysis.safety_flags
+            else analysis.confidence,
         )
 
     def _strands(

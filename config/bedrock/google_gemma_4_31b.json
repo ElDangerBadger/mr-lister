@@ -1,0 +1,9 @@
+{
+  "transport": "mantle",
+  "region": "us-west-2",
+  "model_id": "google.gemma-4-31b",
+  "output_mode": "native_json_schema",
+  "max_tokens": 2048,
+  "temperature": 0.0,
+  "max_repair_attempts": 2
+}

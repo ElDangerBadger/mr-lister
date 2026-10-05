@@ -73,6 +73,12 @@ class _ReadableBody(Protocol):
     def read(self, size: int = -1) -> bytes: ...
 
 
+class PairedIntelligencePort(Protocol):
+    def prepare_listing(
+        self, artwork: ArtworkInput, content: bytes
+    ) -> tuple[ArtworkAnalysis, ListingIntelligence]: ...
+
+
 class PinnedSourcePreparedReviewProducer:
     """Produce one analysis and listing from an exact, integrity-checked S3 version."""
 
@@ -82,7 +88,7 @@ class PinnedSourcePreparedReviewProducer:
         store: SourceArtifactAuthority,
         s3: VersionedObjectClient,
         profiles: ProductProfileAuthority,
-        intelligence: IntelligencePort,
+        intelligence: IntelligencePort | PairedIntelligencePort,
     ) -> None:
         self._store = store
         self._s3 = s3
@@ -218,12 +224,19 @@ class PinnedSourcePreparedReviewProducer:
         content: bytes,
     ) -> tuple[ArtworkAnalysis, ListingIntelligence]:
         try:
-            analysis = ArtworkAnalysis.model_validate(
-                self._intelligence.inspect_artwork(artwork, content)
-            )
-            listing = ListingIntelligence.model_validate(
-                self._intelligence.draft_listing(artwork, content, analysis)
-            )
+            paired = getattr(self._intelligence, "prepare_listing", None)
+            if callable(paired):
+                # The evidence and writer result belong to this invocation, not a shared cache.
+                raw_analysis, raw_listing = paired(artwork, content)
+                analysis = ArtworkAnalysis.model_validate(raw_analysis)
+                listing = ListingIntelligence.model_validate(raw_listing)
+            else:
+                # Retain the existing port for local/legacy callers; production is paired.
+                legacy = cast(IntelligencePort, self._intelligence)
+                analysis = ArtworkAnalysis.model_validate(legacy.inspect_artwork(artwork, content))
+                listing = ListingIntelligence.model_validate(
+                    legacy.draft_listing(artwork, content, analysis)
+                )
         except Exception:
             raise PreparedReviewProducerError("Prepared review intelligence failed") from None
         return analysis, listing

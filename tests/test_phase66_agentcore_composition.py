@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -18,12 +19,15 @@ from mr_lister.agent.phase6_composition import (
     compose_phase6_agentcore_runtime,
     load_phase6_agentcore_configuration,
 )
-from mr_lister.intelligence.prompts import ETSY_SEO_RELEASE_PROMPT_BUNDLE
+from mr_lister.intelligence.harness_production import (
+    PRODUCTION_HARNESS_PROMPT_FINGERPRINT,
+    PRODUCTION_HARNESS_REVISION,
+)
 from mr_lister.review_profile import FilesystemReviewProductAuthority
 
 ROOT = Path(__file__).parents[1]
 PROFILE_PATH = (ROOT / "config/product_profiles/gildan_64000_swiftpod.json").resolve()
-GEMMA_PATH = (ROOT / "config/bedrock/google_gemma_3_27b_it.json").resolve()
+GEMMA_PATH = (ROOT / "config/bedrock/google_gemma_4_31b.json").resolve()
 PROFILE = FilesystemReviewProductAuthority(profile_directory=PROFILE_PATH.parent).get_exact(
     profile_id="gildan_64000_swiftpod",
     profile_version=2,
@@ -48,6 +52,8 @@ def _environment() -> dict[str, object]:
         "MR_LISTER_GEMMA_CONFIG_PATH": GEMMA_PATH.as_posix(),
         "MR_LISTER_GEMMA_CONFIG_FINGERPRINT": sha256(GEMMA_PATH.read_bytes()).hexdigest(),
         "MR_LISTER_STRANDS_CONTROLLER_MODEL_ID": PHASE6_STRANDS_CONTROLLER_MODEL_ID,
+        "MR_LISTER_HARNESS_REVISION": PRODUCTION_HARNESS_REVISION,
+        "MR_LISTER_HARNESS_PROMPT_FINGERPRINT": PRODUCTION_HARNESS_PROMPT_FINGERPRINT,
     }
 
 
@@ -98,6 +104,7 @@ class FakeIntelligence:
 def test_configuration_pins_gemma_worker_and_nova_strands_controller() -> None:
     configuration = load_phase6_agentcore_configuration(_environment())
 
+    assert configuration.intelligence.transport == "mantle"
     assert configuration.intelligence.model_id == PHASE6_GEMMA_MODEL_ID
     assert configuration.intelligence.output_mode == "native_json_schema"
     assert configuration.intelligence.temperature == 0.0
@@ -106,14 +113,16 @@ def test_configuration_pins_gemma_worker_and_nova_strands_controller() -> None:
     assert configuration.profile.exact.fingerprint == PROFILE.fingerprint
 
 
-def test_runtime_factory_explicitly_selects_reviewed_seo_release(
+def test_runtime_factory_explicitly_selects_pinned_production_harness(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = Mock()
     adapter_factory = Mock(return_value=FakeIntelligence())
     controller_factory = Mock()
     composer = Mock(return_value=object())
-    monkeypatch.setattr("mr_lister.agent.phase6_composition.build_bedrock_adapter", adapter_factory)
+    monkeypatch.setattr(
+        "mr_lister.agent.phase6_composition.build_harness_production_adapter", adapter_factory
+    )
     monkeypatch.setattr("strands.models.BedrockModel", controller_factory)
     monkeypatch.setattr(
         "mr_lister.agent.phase6_composition.compose_phase6_agentcore_runtime", composer
@@ -125,7 +134,6 @@ def test_runtime_factory_explicitly_selects_reviewed_seo_release(
     assert adapter_factory.call_count == 1
     assert adapter_factory.call_args.kwargs == {
         "session": session,
-        "prompt_bundle": ETSY_SEO_RELEASE_PROMPT_BUNDLE,
     }
     assert adapter_factory.call_args.args[0].model_id == PHASE6_GEMMA_MODEL_ID
     assert controller_factory.call_args.kwargs["model_id"] == PHASE6_STRANDS_CONTROLLER_MODEL_ID
@@ -141,6 +149,8 @@ def test_runtime_factory_explicitly_selects_reviewed_seo_release(
         ("MR_LISTER_PRODUCT_PROFILE_FINGERPRINT", "c" * 64),
         ("MR_LISTER_GEMMA_CONFIG_FINGERPRINT", "d" * 64),
         ("MR_LISTER_STRANDS_CONTROLLER_MODEL_ID", "anthropic.other-model"),
+        ("MR_LISTER_HARNESS_REVISION", "v2"),
+        ("MR_LISTER_HARNESS_PROMPT_FINGERPRINT", "e" * 64),
     ],
 )
 def test_configuration_drift_is_one_generic_failure(name: str, value: str) -> None:
@@ -159,6 +169,24 @@ def test_checked_claude_config_cannot_replace_gemma_without_detection() -> None:
     environment = _environment()
     environment["MR_LISTER_GEMMA_CONFIG_PATH"] = claude.as_posix()
     environment["MR_LISTER_GEMMA_CONFIG_FINGERPRINT"] = sha256(claude.read_bytes()).hexdigest()
+
+    with pytest.raises(Phase6AgentCoreConfigurationError):
+        load_phase6_agentcore_configuration(environment)
+
+
+@pytest.mark.parametrize("replace_model", [False, True])
+def test_legacy_converse_cannot_replace_pinned_mantle_production_config(
+    tmp_path: Path, replace_model: bool
+) -> None:
+    document = json.loads(GEMMA_PATH.read_bytes())
+    document["transport"] = "converse"
+    if replace_model:
+        document["model_id"] = "google.gemma-3-27b-it"
+    candidate = tmp_path / GEMMA_PATH.name
+    candidate.write_text(json.dumps(document), encoding="utf-8")
+    environment = _environment()
+    environment["MR_LISTER_GEMMA_CONFIG_PATH"] = candidate.as_posix()
+    environment["MR_LISTER_GEMMA_CONFIG_FINGERPRINT"] = sha256(candidate.read_bytes()).hexdigest()
 
     with pytest.raises(Phase6AgentCoreConfigurationError):
         load_phase6_agentcore_configuration(environment)
