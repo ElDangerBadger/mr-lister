@@ -105,7 +105,10 @@ def _required_form_fields() -> dict[str, str]:
         "x-amz-checksum-algorithm": "SHA256",
         "x-amz-checksum-sha256": CHECKSUM_BASE64,
         "x-amz-server-side-encryption": "AES256",
-        "x-amz-tagging": "mr-lister-state=staged",
+        "tagging": (
+            "<Tagging><TagSet><Tag><Key>mr-lister-state</Key>"
+            "<Value>staged</Value></Tag></TagSet></Tagging>"
+        ),
     }
 
 
@@ -137,7 +140,12 @@ def test_presigned_post_binds_exact_object_integrity_encryption_size_and_ttl() -
                     {"x-amz-checksum-algorithm": "SHA256"},
                     {"x-amz-checksum-sha256": CHECKSUM_BASE64},
                     {"x-amz-server-side-encryption": "AES256"},
-                    {"x-amz-tagging": "mr-lister-state=staged"},
+                    {
+                        "tagging": (
+                            "<Tagging><TagSet><Tag><Key>mr-lister-state</Key>"
+                            "<Value>staged</Value></Tag></TagSet></Tagging>"
+                        )
+                    },
                     ["content-length-range", len(CONTENT), len(CONTENT)],
                 ],
                 "ExpiresIn": int(UPLOAD_AUTHORIZATION_TTL.total_seconds()),

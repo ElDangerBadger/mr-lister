@@ -1,5 +1,70 @@
 # Recent history release — September 14, 2026
 
+## Operational repair — October 4, 2026
+
+The upload/retention and publication-recovery fixes were deployed after this release.
+The history API and all shared API routes remain unchanged.
+
+- The upload API now signs S3 POST's `tagging` XML field. The previous
+  `x-amz-tagging` form field left abandoned uploads without lifecycle tags.
+  The compatible web bundle is `assets/index-u60MMuab.js`; it accepts both forms
+  during rollout. Reload an already-open client before uploading.
+- Source retention preserves empty-tag versions, reports their count, and continues
+  its bounded sweep. Nonempty malformed tags still fail closed. A deployed sweep
+  scanned 91 versions: 76 pinned, six released under the existing retention policy,
+  and nine untagged versions preserved. The six old sources from cancelled/failed
+  jobs were backed up locally with exact-version metadata and verified SHA-256
+  before the sweep; no source objects were directly deleted by the repair.
+- Scheduled publication recovery can settle an expired, strongly validated record
+  when AWS explicitly returns `ExecutionDoesNotExist`. Other describe failures and
+  malformed observations still fail closed. The September 5 canary settled to
+  `publication_outcome_unknown`; recovery made no new provider call or workflow.
+
+The changed Phase6 functions are `SourceVersionRetentionFunction` and
+`UploadApiFunction`, using component release
+`b553ae7a61866b4ea403b1d1fa2f470cd5c3e2b5f368004589c19225343f6931`
+and archive SHA-256
+`d2a837b88d8c666db5f028e0830e947b05527d535b6d0c044373890656e46371`.
+Only `PublicationRecoveryFunction` changed in Phase7, using release
+`4d3f2ad10c7cc2a7f63852dd82a601e64d95e472ecaee7602658e946982d8a02`
+and archive SHA-256
+`a3cc5a9738b0ca2dad2cb5b1a07035dc9738effd481da0d2e692e781f0713ee9`.
+All other function code/configuration and both web runtime configurations were
+verified unchanged. The web build used an isolated `c991603` source tree plus the
+upload-contract fix, excluding unrelated local preview work. Backend archives
+were sealed from the current source plus the repair; the source changes remain
+uncommitted in the workspace.
+AWS also advanced the three updated functions' managed Python runtime patch;
+their existing `Auto` runtime-management mode was preserved and the exact before/
+after runtime ARNs are retained in the private deployment receipts.
+
+Phase7 used a scoped CloudFormation update. Phase6 used revision-guarded direct
+Lambda updates to avoid reimporting the shared API, which previously removed
+separately managed publication routes. **The two Phase6 functions intentionally
+differ from CloudFormation in Code and `MR_LISTER_RELEASE_FINGERPRINT`.** Future
+deployments must retain these fixes and reconcile those bindings without reimporting
+an incomplete API definition. Do not blindly execute the saved reconciliation
+templates or roll back to code that recreates these failures.
+
+Private build/deployment/rollback receipts and the source backups are in
+`.mr_lister_private/alarm-repair-20261004/`. The deployed retention result is
+`retention-check-result.json`; Phase6's `phase6-repair/` records the intended drift
+and exact rollback archives. A live 70-byte synthetic S3 POST verified the corrected
+tag, checksum, and returned version; it is staged for existing lifecycle expiry.
+Targeted backend suites (84 recovery, 29 composition/release, 231 upload/retention,
+and 36 related smoke tests) passed, along with the three contract drift checks,
+Ruff, and formatting checks. The isolated frontend passed 107 focused tests,
+typechecking, lint, and production build. Public readback verified 14 objects;
+the repaired upload Lambda initialized and returned 401 to an unauthenticated
+request without creating an upload. Post-sweep S3 readback verified all 91 original
+versions' content metadata and expected tags, with no delete markers.
+The next scheduled retention run also reported zero errors. All three original
+alarms returned automatically to `OK` on October 4 (Pacific): Phase6 Lambda errors
+at 11:37:39, publication function errors at 11:41:12, and source retention errors
+at 11:47:21. No alarm was disabled, reset manually, or given a higher threshold.
+
+## September 14 release
+
 The durable **Clear recent list** change is deployed to the seller and judge
 application at https://massskutiny.com. Application source is merged `main`
 commit `02048daeb626f052f740de24d839755dd78c8879` (PR #7).

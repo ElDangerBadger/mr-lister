@@ -392,8 +392,12 @@ const uploadAuthorizationSchema = z.strictObject({
     "x-amz-checksum-algorithm": "SHA256",
     "x-amz-checksum-sha256": hexToBase64(value.content_sha256),
     "x-amz-server-side-encryption": "AES256",
-    "x-amz-tagging": "mr-lister-state=staged",
   };
+  // Accept either release during rollout; new POST grants bind S3's XML tagging field.
+  const taggingFields = value.form_fields.tagging === undefined
+    ? { "x-amz-tagging": "mr-lister-state=staged" }
+    : { tagging: "<Tagging><TagSet><Tag><Key>mr-lister-state</Key><Value>staged</Value></Tag></TagSet></Tagging>" };
+  Object.assign(expectedFields, taggingFields);
   const signingFields = ["x-amz-algorithm", "x-amz-credential", "x-amz-date", "policy", "x-amz-signature"];
   const allowedFields = new Set(["key", ...Object.keys(expectedFields), ...signingFields, "x-amz-security-token"]);
   if (Object.entries(expectedFields).some(([name, expected]) => value.form_fields[name] !== expected)) {

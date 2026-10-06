@@ -312,7 +312,10 @@ class UploadSpy:
                     "x-amz-checksum-algorithm": "SHA256",
                     "x-amz-checksum-sha256": checksum,
                     "x-amz-server-side-encryption": "AES256",
-                    "x-amz-tagging": "mr-lister-state=staged",
+                    "tagging": (
+                        "<Tagging><TagSet><Tag><Key>mr-lister-state</Key>"
+                        "<Value>staged</Value></Tag></TagSet></Tagging>"
+                    ),
                     "x-amz-algorithm": "AWS4-HMAC-SHA256",
                     "x-amz-credential": "ephemeral-credential",
                     "x-amz-date": "20260822T120000Z",

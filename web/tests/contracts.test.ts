@@ -194,6 +194,13 @@ describe("Python-to-browser golden contracts", () => {
     };
     const response = { upload: { upload_id: "upload_1", job_id: "job_1", status: "open", record_version: 0 }, authorization };
     expect(uploadResponseSchema.safeParse(response).success).toBe(true);
+    const postFields: Record<string, string> = { ...authorization.form_fields };
+    delete postFields["x-amz-tagging"];
+    postFields.tagging = "<Tagging><TagSet><Tag><Key>mr-lister-state</Key><Value>staged</Value></Tag></TagSet></Tagging>";
+    const postResponse = { ...response, authorization: { ...authorization, form_fields: postFields } };
+    expect(uploadResponseSchema.safeParse(postResponse).success).toBe(true);
+    expect(uploadResponseSchema.safeParse({ ...postResponse, authorization: { ...authorization, form_fields: { ...postFields, tagging: postFields.tagging.replace("staged", "pinned") } } }).success).toBe(false);
+    expect(uploadResponseSchema.safeParse({ ...postResponse, authorization: { ...authorization, form_fields: { ...postFields, "x-amz-tagging": "mr-lister-state=staged" } } }).success).toBe(false);
     expect(uploadResponseSchema.safeParse({ ...response, authorization: { ...authorization, form_fields: { ...authorization.form_fields, unexpected: "forwarded" } } }).success).toBe(false);
     expect(uploadResponseSchema.safeParse({ ...response, authorization: { ...authorization, form_fields: { ...authorization.form_fields, "x-amz-checksum-sha256": "wrong" } } }).success).toBe(false);
     expect(uploadResponseSchema.safeParse({ ...response, authorization: { ...authorization, url: "https://private-bucket.s3.us-west-2.amazonaws.com.attacker.example/" } }).success).toBe(false);

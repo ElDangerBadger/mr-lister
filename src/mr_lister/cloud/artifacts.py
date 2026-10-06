@@ -8,10 +8,13 @@ from datetime import datetime
 from typing import Any, Protocol, cast
 from urllib.parse import urlsplit
 
-from mr_lister.control.upload_models import UploadAuthorization, UploadIntent
+from mr_lister.control.upload_models import (
+    STAGED_SOURCE_POST_TAGGING_XML,
+    UploadAuthorization,
+    UploadIntent,
+)
 from mr_lister.control.upload_service import CurrentUploadObject
 
-_STAGED_TAG = "mr-lister-state=staged"
 _STAGED_TAG_SET = {"TagSet": [{"Key": "mr-lister-state", "Value": "staged"}]}
 _PINNED_TAG_SET = {"TagSet": [{"Key": "mr-lister-state", "Value": "pinned"}]}
 
@@ -85,7 +88,7 @@ class ExactKeyS3UploadArtifacts:
             "x-amz-checksum-algorithm": "SHA256",
             "x-amz-checksum-sha256": checksum,
             "x-amz-server-side-encryption": "AES256",
-            "x-amz-tagging": _STAGED_TAG,
+            "tagging": STAGED_SOURCE_POST_TAGGING_XML,
         }
         conditions: list[Any] = [
             {"key": intent.object_key},
@@ -93,7 +96,7 @@ class ExactKeyS3UploadArtifacts:
             {"x-amz-checksum-algorithm": "SHA256"},
             {"x-amz-checksum-sha256": checksum},
             {"x-amz-server-side-encryption": "AES256"},
-            {"x-amz-tagging": _STAGED_TAG},
+            {"tagging": STAGED_SOURCE_POST_TAGGING_XML},
             ["content-length-range", intent.size_bytes, intent.size_bytes],
         ]
         response = self._client.generate_presigned_post(

@@ -94,6 +94,29 @@ def _result() -> RetentionSweepResult:
     )
 
 
+def test_handler_reports_preserved_untagged_versions_without_identifiers(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    result = RetentionSweepResult(
+        pages_scanned=1,
+        versions_scanned=9,
+        delete_markers_skipped=0,
+        versions_reasserted_pinned=0,
+        versions_released_to_staged=0,
+        staged_versions_unchanged=0,
+        untagged_versions_preserved=9,
+        scan_complete=True,
+    )
+    handler = Phase6SourceVersionRetentionHandler(sweeper=RecordingSweeper(result))
+
+    response = handler(SOURCE_VERSION_RETENTION_EVENT)
+
+    assert response["untagged_versions_preserved"] == 9
+    assert caplog.messages == [
+        "Source retention preserved 9 untagged versions without changing tags"
+    ]
+
+
 def test_configuration_is_exactly_stack_account_region_and_resource_bound() -> None:
     configuration = load_retention_configuration(
         {

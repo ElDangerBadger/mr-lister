@@ -797,6 +797,7 @@ def _run_live_in_directory(
         "versions_reasserted_pinned": before.source_version_count,
         "versions_released_to_staged": 0,
         "staged_versions_unchanged": 0,
+        "untagged_versions_preserved": 0,
         "scan_complete": True,
     }
     _exact_counter_response(retention, expected_retention, "retention sweep")

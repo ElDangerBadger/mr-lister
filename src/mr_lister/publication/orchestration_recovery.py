@@ -16,6 +16,7 @@ from enum import StrEnum
 from hashlib import sha256
 from typing import Any, Literal, Protocol
 
+from botocore.exceptions import ClientError
 from pydantic import Field, StrictInt
 
 from mr_lister.publication.contract import PublicationPermitState, PublicationState
@@ -79,6 +80,10 @@ class PublicationRecoveryBoundaryInvalidError(PublicationRecoveryError):
 
 class PublicationRecoveryDependencyUnavailableError(PublicationRecoveryError):
     """A required strong read, durable transition, or workflow operation was unavailable."""
+
+
+class _PublicationRecoveryExecutionMissingError(PublicationRecoveryDependencyUnavailableError):
+    """Step Functions explicitly reports that the exact execution does not exist."""
 
 
 class PublicationRecoveryConflictError(PublicationRecoveryError):
@@ -276,7 +281,15 @@ class PublicationWorkflowRecovery:
 
         expected_name = publication_execution_name(authority.work.work_request_id)
         expected_arn = publication_execution_arn(self._state_machine_arn, expected_name)
-        observation = self._describe(expected_arn)
+        try:
+            observation = self._describe(expected_arn)
+        except _PublicationRecoveryExecutionMissingError:
+            if self._now() < authority.snapshot.verification_deadline:
+                raise
+            # The strongly rebound durable authority owns the immutable deadline, even when
+            # no workflow can be described. This never authorizes a new execution/provider call.
+            self._settle_deadline(authority)
+            return PublicationRecoveryResult(PublicationRecoveryDisposition.DEADLINE_SETTLED, 0)
         workflow_input, execution_name, status, error, redrive_count, redrive_status = (
             self._validate_observation(expected_arn, observation)
         )
@@ -401,6 +414,14 @@ class PublicationWorkflowRecovery:
     def _describe(self, execution_arn: str) -> Mapping[str, Any]:
         try:
             observation = self._step_functions.describe_execution(executionArn=execution_arn)
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") == "ExecutionDoesNotExist":
+                raise _PublicationRecoveryExecutionMissingError(
+                    "Publication workflow execution does not exist"
+                ) from None
+            raise PublicationRecoveryDependencyUnavailableError(
+                "Publication workflow observation is unavailable"
+            ) from None
         except Exception:
             raise PublicationRecoveryDependencyUnavailableError(
                 "Publication workflow observation is unavailable"

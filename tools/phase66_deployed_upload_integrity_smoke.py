@@ -780,7 +780,10 @@ def _parse_upload_grant(response: Mapping[str, Any], authority: Authority) -> Up
         "x-amz-checksum-algorithm": "SHA256",
         "x-amz-checksum-sha256": base64.b64encode(bytes.fromhex(PRIMARY_SHA256)).decode(),
         "x-amz-server-side-encryption": "AES256",
-        "x-amz-tagging": "mr-lister-state=staged",
+        "tagging": (
+            "<Tagging><TagSet><Tag><Key>mr-lister-state</Key>"
+            "<Value>staged</Value></Tag></TagSet></Tagging>"
+        ),
     }
     expected_origin = f"https://{authority.bucket}.s3.{REGION}.amazonaws.com/"
     allowed_field_names = {

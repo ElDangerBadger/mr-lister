@@ -121,6 +121,7 @@ def _retention_response() -> dict[str, Any]:
         "versions_reasserted_pinned": 2,
         "versions_released_to_staged": 0,
         "staged_versions_unchanged": 0,
+        "untagged_versions_preserved": 0,
         "scan_complete": True,
     }
 

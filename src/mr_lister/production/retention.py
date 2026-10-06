@@ -153,6 +153,7 @@ class RetentionSweepResult(RetentionModel):
     versions_reasserted_pinned: int = Field(ge=0)
     versions_released_to_staged: int = Field(ge=0)
     staged_versions_unchanged: int = Field(ge=0)
+    untagged_versions_preserved: int = Field(default=0, ge=0)
     scan_complete: bool
 
     @model_validator(mode="after")
@@ -161,6 +162,7 @@ class RetentionSweepResult(RetentionModel):
             self.versions_reasserted_pinned
             + self.versions_released_to_staged
             + self.staged_versions_unchanged
+            + self.untagged_versions_preserved
         )
         if classified != self.versions_scanned:
             raise ValueError("Retention result counters are inconsistent")
@@ -277,6 +279,7 @@ class ReferenceAwareSourceVersionSweeper:
         pinned = 0
         released = 0
         unchanged = 0
+        untagged = 0
         scan_complete = False
 
         while pages < self._max_pages_per_run and entries_scanned < self._max_items_per_run:
@@ -302,6 +305,12 @@ class ReferenceAwareSourceVersionSweeper:
 
             observed_states = tuple(self._get_state(version) for version in versions)
             for version, observed_state in zip(versions, observed_states, strict=True):
+                if observed_state is None:
+                    # Legacy POST uploads may have no lifecycle tag. Preserve those exact
+                    # versions without writing tags: staging could immediately expire old
+                    # artwork, and pinning could race a concurrent upload completion.
+                    untagged += 1
+                    continue
                 outcome = self._reconcile_version(
                     version,
                     observed_state,
@@ -334,6 +343,7 @@ class ReferenceAwareSourceVersionSweeper:
             versions_reasserted_pinned=pinned,
             versions_released_to_staged=released,
             staged_versions_unchanged=unchanged,
+            untagged_versions_preserved=untagged,
             scan_complete=scan_complete,
         )
 
@@ -437,7 +447,7 @@ class ReferenceAwareSourceVersionSweeper:
             identities.add(identity)
         return page.versions
 
-    def _get_state(self, version: ListedSourceVersion) -> SourceLifecycleState:
+    def _get_state(self, version: ListedSourceVersion) -> SourceLifecycleState | None:
         try:
             response = self._tags.get_version_tags(
                 object_key=version.object_key,
@@ -456,6 +466,8 @@ class ReferenceAwareSourceVersionSweeper:
             )
         except Exception:
             raise RetentionBoundaryInvalidError("Retention version tags are invalid") from None
+        if not response.tags:
+            return None
         if len(response.tags) != 1:
             raise RetentionBoundaryInvalidError("Retention version tags are invalid")
         tag = response.tags[0]

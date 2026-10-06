@@ -8,8 +8,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from mr_lister.publication.contract import PublicationPermitState, PublicationState
+from mr_lister.publication.execution_commands import RecordPublicationPostOutcomeCommand
 from mr_lister.publication.execution_models import PublicationExecutionWorkStatus
 from mr_lister.publication.orchestration import (
     publication_execution_arn,
@@ -157,6 +159,13 @@ def _envelope() -> PublicationWorkflowFailureEnvelope:
         execution_arn=EXECUTION_ARN,
         machine_arn=MACHINE_ARN,
         status="FAILED",
+    )
+
+
+def _describe_client_error(code: str) -> ClientError:
+    return ClientError(
+        {"Error": {"Code": code, "Message": "private workflow details"}},
+        "DescribeExecution",
     )
 
 
@@ -340,6 +349,139 @@ def test_scheduled_candidate_reuses_deadline_settlement_without_start_or_provide
 
     assert result.disposition is PublicationRecoveryDisposition.DEADLINE_SETTLED
     assert len(execution.deadline_commands) == 1
+    assert step_functions.redrive_calls == []
+
+
+@pytest.mark.parametrize("elapsed_seconds", [0, 30 * 24 * 60 * 60])
+def test_scheduled_missing_execution_settles_only_expired_bound_authority(
+    elapsed_seconds: int,
+) -> None:
+    deadline = NOW - timedelta(seconds=elapsed_seconds)
+    execution = RecordingExecution()
+    step_functions = RecordingStepFunctions(
+        _observation(), describe_error=_describe_client_error("ExecutionDoesNotExist")
+    )
+    recovery = RecoveryHarness(
+        _authority(deadline=deadline),
+        _authority(state=PublicationState.PUBLICATION_FAILED, deadline=deadline),
+        step_functions=step_functions,
+        execution=execution,
+    )
+
+    result = recovery.recover_scheduled(_recovery_candidate())
+
+    assert result == PublicationRecoveryResult(PublicationRecoveryDisposition.DEADLINE_SETTLED, 0)
+    assert recovery.loaded_aggregates == [AGGREGATE_ID]
+    assert step_functions.describe_calls == [{"executionArn": EXECUTION_ARN}]
+    assert len(execution.deadline_commands) == 1
+    assert execution.recover_commands == []
+    assert step_functions.redrive_calls == []
+
+
+def test_scheduled_missing_execution_before_deadline_remains_retryable() -> None:
+    execution = RecordingExecution()
+    step_functions = RecordingStepFunctions(
+        _observation(), describe_error=_describe_client_error("ExecutionDoesNotExist")
+    )
+    recovery = RecoveryHarness(
+        _authority(deadline=NOW + timedelta(seconds=1)),
+        step_functions=step_functions,
+        execution=execution,
+    )
+
+    with pytest.raises(PublicationRecoveryDependencyUnavailableError) as captured:
+        recovery.recover_scheduled(_recovery_candidate())
+
+    assert captured.value.__cause__ is None
+    assert "private workflow details" not in str(captured.value)
+    assert execution.deadline_commands == []
+    assert step_functions.redrive_calls == []
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        _describe_client_error("AccessDeniedException"),
+        _describe_client_error("ThrottlingException"),
+        EndpointConnectionError(endpoint_url="https://states.us-west-2.amazonaws.com"),
+        RuntimeError("ExecutionDoesNotExist"),
+    ],
+)
+def test_scheduled_expired_authority_does_not_settle_on_other_describe_failures(
+    error: Exception,
+) -> None:
+    execution = RecordingExecution()
+    step_functions = RecordingStepFunctions(_observation(), describe_error=error)
+    recovery = RecoveryHarness(
+        _authority(deadline=NOW), step_functions=step_functions, execution=execution
+    )
+
+    with pytest.raises(PublicationRecoveryDependencyUnavailableError):
+        recovery.recover_scheduled(_recovery_candidate())
+
+    assert execution.deadline_commands == []
+    assert execution.recover_commands == []
+    assert step_functions.redrive_calls == []
+
+
+def test_failure_event_missing_execution_cannot_settle_without_strong_binding() -> None:
+    execution = RecordingExecution()
+    recovery = RecoveryHarness(
+        _authority(deadline=NOW),
+        step_functions=RecordingStepFunctions(
+            _observation(), describe_error=_describe_client_error("ExecutionDoesNotExist")
+        ),
+        execution=execution,
+    )
+
+    with pytest.raises(PublicationRecoveryDependencyUnavailableError):
+        recovery.recover(_envelope())
+
+    assert recovery.loaded_inputs == []
+    assert execution.deadline_commands == []
+
+
+def test_scheduled_missing_execution_settles_verifying_authority_and_replay() -> None:
+    harness = ExecutionHarness(short_pricing_window=True)
+    harness.dispatch_and_reconstruct()
+    harness.complete_preflight()
+    _, publish_claim = harness.claim_publish()
+    evidence = harness.publish_evidence(publish_claim, accepted=True)
+    harness.clock.tick()
+    harness.service.record_post_outcome(
+        harness.command(RecordPublicationPostOutcomeCommand, "accepted_post", evidence=evidence)
+    )
+    authority = harness.authority
+    assert authority.aggregate.state is PublicationState.PUBLICATION_VERIFYING
+    candidate = PublicationRecoveryCandidate(
+        aggregate_id=authority.aggregate.aggregate_id,
+        work_request_id=authority.work.work_request_id,
+        indexed_at_epoch_second=int(authority.work.updated_at.timestamp()),
+    )
+    harness.clock.now = authority.snapshot.verification_deadline
+    step_functions = RecordingStepFunctions(
+        _observation(), describe_error=_describe_client_error("ExecutionDoesNotExist")
+    )
+    recovery = PublicationWorkflowRecovery(
+        store=harness.store,
+        execution=harness.service,
+        step_functions=step_functions,
+        state_machine_arn=MACHINE_ARN,
+        clock=harness.clock,
+    )
+
+    first = recovery.recover_scheduled(candidate)
+    replay = recovery.recover_scheduled(candidate)
+    terminal = harness.authority
+
+    assert first.disposition is PublicationRecoveryDisposition.DEADLINE_SETTLED
+    assert replay.disposition is PublicationRecoveryDisposition.TERMINAL
+    assert terminal.aggregate.state is PublicationState.PUBLICATION_OUTCOME_UNKNOWN
+    assert terminal.permit.status is PublicationPermitState.CONSUMED
+    assert terminal.work.status is PublicationExecutionWorkStatus.OUTCOME_UNKNOWN
+    assert terminal.attempt.publish_post_call_count == 1
+    assert terminal.call_claims == authority.call_claims
+    assert len(step_functions.describe_calls) == 1
     assert step_functions.redrive_calls == []
 
 

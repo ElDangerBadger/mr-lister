@@ -117,7 +117,10 @@ class FakeUploadArtifacts:
                     "ascii"
                 ),
                 "x-amz-server-side-encryption": "AES256",
-                "x-amz-tagging": "mr-lister-state=staged",
+                "tagging": (
+                    "<Tagging><TagSet><Tag><Key>mr-lister-state</Key>"
+                    "<Value>staged</Value></Tag></TagSet></Tagging>"
+                ),
                 "x-amz-algorithm": "AWS4-HMAC-SHA256",
                 "x-amz-credential": "redacted-credential-scope",
                 "x-amz-date": "20260822T200000Z",

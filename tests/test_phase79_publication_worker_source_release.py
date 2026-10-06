@@ -41,8 +41,8 @@ PROFILE_PATH = (ROOT / "config/product_profiles/gildan_64000_swiftpod.json").res
 # No connection management, credential acquisition, topology, or dependency changes enter
 # this artifact. These exact static hashes were double-built and independently verified
 # locally; they are not a deployed-runtime release seal.
-EXPECTED_MANIFEST_FINGERPRINT = "48487e845842068f32f30bd1be5b17cc7e24a3ca56fb291978aacd08a3cf23da"
-EXPECTED_ARCHIVE_FINGERPRINT = "709640c0f7f107e230e6e885ace2b295da0e70e0d8365c6208b6978c50b59539"
+EXPECTED_MANIFEST_FINGERPRINT = "1b5c123dd155971ebad94536df06e6cd4713f9a32269e07005d2b953c6c2d1af"
+EXPECTED_ARCHIVE_FINGERPRINT = "7eaee273fa4aa7e6402cc534b932eb5fbfd6a97b9899d3d9421d898ec1ed0977"
 CAPABILITY_FREE_INITIALIZERS = {
     "mr_lister/__init__.py",
     "mr_lister/cloud/__init__.py",

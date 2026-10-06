@@ -37,6 +37,10 @@ UPLOAD_AUTHORIZATION_TTL = timedelta(minutes=5)
 UPLOAD_INTENT_TTL = timedelta(days=1)
 COMPLETED_UPLOAD_INTENT_TTL = timedelta(days=90)
 UPLOAD_RECEIPT_TTL = timedelta(days=90)
+# S3 POST uses a `tagging` XML form field; `x-amz-tagging` belongs to PUT.
+STAGED_SOURCE_POST_TAGGING_XML = (
+    "<Tagging><TagSet><Tag><Key>mr-lister-state</Key><Value>staged</Value></Tag></TagSet></Tagging>"
+)
 _DNS_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 _S3_POST_URL = re.compile(
     rf"https://(?:(?:{_DNS_LABEL}\.)+)?s3(?:\.[a-z0-9-]+)?"
@@ -249,7 +253,7 @@ class UploadAuthorization(ControlModel):
             "x-amz-checksum-algorithm": "SHA256",
             "x-amz-checksum-sha256": expected_checksum,
             "x-amz-server-side-encryption": "AES256",
-            "x-amz-tagging": "mr-lister-state=staged",
+            "tagging": STAGED_SOURCE_POST_TAGGING_XML,
         }
         if any(self.form_fields.get(key) != value for key, value in expected_fields.items()):
             raise ValueError("Upload authorization does not bind the required object fields")
@@ -468,6 +472,7 @@ class UploadCompletionCommit(ControlModel):
 
 __all__ = [
     "COMPLETED_UPLOAD_INTENT_TTL",
+    "STAGED_SOURCE_POST_TAGGING_XML",
     "UPLOAD_AUTHORIZATION_TTL",
     "UPLOAD_INTENT_TTL",
     "UPLOAD_RECEIPT_TTL",

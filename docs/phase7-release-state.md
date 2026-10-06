@@ -1,5 +1,11 @@
 # Phase 7 release state
 
+The [October 4 operational repair](recent-history-release-state.md#operational-repair--october-4-2026)
+updates the recovery component described below. Its scheduled recovery safely
+settled the September 5 canary's expired record to `publication_outcome_unknown`
+after confirming its expected Step Functions execution does not exist. This does
+not alter the external listing, claim positive verification, or retry publication.
+
 ## Decision
 
 The [September 13 pricing and shipping release](listing-pricing-release-state.md) supersedes

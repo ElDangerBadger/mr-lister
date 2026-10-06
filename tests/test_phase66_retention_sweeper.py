@@ -811,7 +811,6 @@ def test_inventory_cannot_return_more_items_than_the_requested_bound() -> None:
 @pytest.mark.parametrize(
     "bad_tags",
     (
-        SourceVersionTags(tags=()),
         SourceVersionTags(tags=(SourceVersionTag(key="unexpected", value="pinned"),)),
         SourceVersionTags(tags=(SourceVersionTag(key="mr-lister-state", value="other"),)),
         SourceVersionTags(
@@ -822,7 +821,7 @@ def test_inventory_cannot_return_more_items_than_the_requested_bound() -> None:
         ),
     ),
 )
-def test_missing_duplicate_or_unexpected_version_tags_fail_before_any_mutation(
+def test_duplicate_or_unexpected_version_tags_fail_before_any_mutation(
     bad_tags: SourceVersionTags,
 ) -> None:
     tags = _Tags({(OBJECT_KEY, VERSION_ID): "pinned"})
@@ -835,6 +834,65 @@ def test_missing_duplicate_or_unexpected_version_tags_fail_before_any_mutation(
     assert tags.set_calls == []
     assert authority.calls == []
     assert checkpoints.saves == []
+
+
+def test_untagged_old_version_is_preserved_while_managed_version_is_reconciled() -> None:
+    inventory = _Inventory(
+        {
+            None: _page(
+                _version(OTHER_VERSION_ID, last_modified=NOW - timedelta(days=90)), _version()
+            )
+        }
+    )
+    tags = _Tags({(OBJECT_KEY, VERSION_ID): "pinned"})
+    tags.get_overrides[(OBJECT_KEY, OTHER_VERSION_ID)] = SourceVersionTags(tags=())
+    sweeper, _inventory, tags, authority, checkpoints = _sweeper(
+        inventory=inventory,
+        tags=tags,
+    )
+
+    result = sweeper.sweep()
+
+    assert result.versions_scanned == 2
+    assert result.untagged_versions_preserved == 1
+    assert result.versions_reasserted_pinned == 1
+    assert result.versions_released_to_staged == 0
+    assert result.scan_complete is True
+    assert tags.set_calls == [(OBJECT_KEY, VERSION_ID, "pinned")]
+    assert authority.calls == [JOB_ID]
+    assert checkpoints.checkpoint == RetentionCheckpoint(revision=1)
+
+
+def test_untagged_versions_consume_run_budget_and_preserve_pagination_progress() -> None:
+    cursor = "next-page"
+    inventory = _Inventory(
+        {
+            None: _page(_version(), next_cursor=cursor),
+            cursor: _page(_version(OTHER_VERSION_ID)),
+        }
+    )
+    tags = _Tags({})
+    for version_id in (VERSION_ID, OTHER_VERSION_ID):
+        tags.get_overrides[(OBJECT_KEY, version_id)] = SourceVersionTags(tags=())
+    sweeper, _inventory, tags, authority, checkpoints = _sweeper(
+        inventory=inventory,
+        tags=tags,
+        max_items_per_run=1,
+        page_size=1,
+    )
+
+    first = sweeper.sweep()
+    assert first.untagged_versions_preserved == 1
+    assert first.scan_complete is False
+    assert checkpoints.checkpoint.cursor == cursor
+    assert checkpoints.checkpoint.scan_items == 1
+    second = sweeper.sweep()
+
+    assert second.untagged_versions_preserved == 1
+    assert second.scan_complete is True
+    assert tags.set_calls == []
+    assert authority.calls == []
+    assert checkpoints.checkpoint == RetentionCheckpoint(revision=2)
 
 
 def test_inconsistent_owner_job_source_authority_fails_closed() -> None:
@@ -975,6 +1033,7 @@ def test_sanitized_result_has_only_bounded_counters_and_completion_state() -> No
         "versions_reasserted_pinned",
         "versions_released_to_staged",
         "staged_versions_unchanged",
+        "untagged_versions_preserved",
         "scan_complete",
     }
     assert OBJECT_KEY not in serialized

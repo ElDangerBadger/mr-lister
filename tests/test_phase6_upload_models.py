@@ -94,7 +94,10 @@ def _authorization(**updates: object) -> UploadAuthorization:
         "x-amz-checksum-algorithm": "SHA256",
         "x-amz-checksum-sha256": b64encode(bytes.fromhex(CONTENT_SHA256)).decode("ascii"),
         "x-amz-server-side-encryption": "AES256",
-        "x-amz-tagging": "mr-lister-state=staged",
+        "tagging": (
+            "<Tagging><TagSet><Tag><Key>mr-lister-state</Key>"
+            "<Value>staged</Value></Tag></TagSet></Tagging>"
+        ),
         "x-amz-algorithm": "AWS4-HMAC-SHA256",
         "x-amz-credential": "redacted-credential-scope",
         "x-amz-date": "20260822T170000Z",
@@ -160,9 +163,14 @@ def test_upload_authorization_is_exact_short_lived_and_repr_redacts_presign_fiel
     with pytest.raises(ValidationError, match="required object fields"):
         _authorization(form_fields=wrong_fields)
     wrong_fields = dict(authorization.form_fields)
-    wrong_fields["x-amz-tagging"] = "mr-lister-state=pinned"
+    wrong_fields["tagging"] = "mr-lister-state=pinned"
     with pytest.raises(ValidationError, match="required object fields"):
         _authorization(form_fields=wrong_fields)
+    legacy_fields = dict(authorization.form_fields)
+    legacy_fields.pop("tagging")
+    legacy_fields["x-amz-tagging"] = "mr-lister-state=staged"
+    with pytest.raises(ValidationError, match="required object fields"):
+        _authorization(form_fields=legacy_fields)
     wrong_fields = dict(authorization.form_fields)
     wrong_fields["acl"] = "public-read"
     with pytest.raises(ValidationError, match="unsupported form fields"):

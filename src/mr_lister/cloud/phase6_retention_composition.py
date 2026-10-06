@@ -8,6 +8,7 @@ not represented by this composition surface.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ _ENVIRONMENT = re.compile(r"^[a-z][a-z0-9-]{1,15}$")
 _ACCOUNT_ID = re.compile(r"^[0-9]{12}$")
 _GENERIC_CONFIGURATION_ERROR = "Phase 6 source retention configuration is invalid"
 _GENERIC_EXECUTION_ERROR = "Phase 6 source retention sweep failed safely"
+_LOGGER = logging.getLogger(__name__)
 
 
 class Phase6RetentionConfigurationError(RuntimeError):
@@ -82,6 +84,11 @@ class Phase6SourceVersionRetentionHandler:
             result = self.sweeper.sweep()
             if not isinstance(result, RetentionSweepResult):
                 raise TypeError
+            if result.untagged_versions_preserved:
+                _LOGGER.warning(
+                    "Source retention preserved %d untagged versions without changing tags",
+                    result.untagged_versions_preserved,
+                )
             return result.model_dump(mode="json")
         except Exception:
             raise Phase6RetentionExecutionError(_GENERIC_EXECUTION_ERROR) from None
